@@ -32,8 +32,9 @@ openspec list          # see active changes
 /opsx:propose "your idea"
 ```
 
-Project context and conventions live in
-[`openspec/project.md`](openspec/project.md).
+Project context, invariants and conventions live in
+[`openspec/config.yaml`](openspec/config.yaml); agent workflow in
+[`CLAUDE.md`](CLAUDE.md).
 
 ## Status
 

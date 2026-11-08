@@ -4,8 +4,9 @@
 # Rust
 /target/
 **/target/
-# The root workspace lock is committed; standalone spikes keep theirs local.
-spikes/**/Cargo.lock
+
+# Throwaway spikes: never committed; deleted once their result is in design.md.
+spikes/
 
 # Flutter / Dart
 .dart_tool/

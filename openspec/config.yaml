@@ -1,0 +1,60 @@
+schema: spec-driven
+
+context: |
+  vyajena2: end-to-end encrypted, text-only chat for one admin-run group (admin and
+  owner: Akhil). Flutter UI (view only, never opens a connection) -> Rust core on
+  each device (OpenMLS RFC 9420, networking, SQLite, keys in Keystore/Keychain, via
+  flutter_rust_bridge) -> dumb GCP TCP relay (rathole) -> Rust Pi server (tokio +
+  tonic, SQLite WAL). gRPC over HTTP/2 with pinned TLS on port 443.
+
+  Source of truth, in order: docs/architecture-decisions.md, the proto contract
+  (proto/vyajena/v1, package vyajena.v1), then openspec/specs. Proto-first: the
+  .proto changes before any code that depends on it. Open decisions are listed in
+  the architecture doc and belong to the owner.
+
+  Invariants (changed only by an owner-approved change):
+  - Plaintext, decrypted content and keys never leave the Rust core and are never
+    logged. The relay and the Pi see ciphertext only.
+  - The Pi is the authority for routing, ordering and membership, never history.
+    Group settings and profiles travel only inside encrypted messages.
+  - Strict epoch rule; OpenMLS max_past_epochs = 0.
+  - Commit authority: admin devices commit anything; other devices only their own
+    leaf update, adding or removing their own user's devices, and Pi-issued
+    inactivity Removes. The Pi and every client both check it.
+  - OpenMLS skips credential checks: verify each leaf's device certificate against
+    the user's pinned identity key, and that its MLS key equals the leaf key.
+  - Accepted means durable. Nothing is dropped silently.
+  - Keys live only in the OS key store; no other encryption at rest.
+  - User ids are <username>@<server_id>; the admin chooses the username.
+  - Limits, timings and signing context strings are defined once in code.
+
+  Rust: edition 2024, one Cargo workspace at the repo root. thiserror in
+  libraries, anyhow only in binaries. tracing for logs (ids, epochs, sizes; never
+  content). forbid(unsafe_code) except isolated FFI glue. No unwrap, expect or
+  panicking indexing on bytes from the network, MLS or the database. clippy
+  -D warnings clean. Generated proto code goes to OUT_DIR, never into the repo.
+
+rules:
+  proposal:
+    - Name the open decisions it resolves and the .proto files it touches.
+  specs:
+    - Put SHALL or MUST in the first sentence of every requirement.
+    - Scenarios use concrete actors (Alice, Bob, the admin) and name the RPC, message or enum value involved.
+    - "Requirement titles are test ids (// spec: <capability>/<title-slug>); change one only with RENAMED."
+    - Security requirements say who enforces them, the Pi or the client.
+  design:
+    - Number decisions D1, D2, ... and draw changed flows as Mermaid diagrams.
+    - Record each spike's result under the decision it tests.
+  tasks:
+    - Proto tasks come first; a spike comes before code that relies on a risky assumption.
+    - If an invariant changes, include updating docs/architecture-decisions.md and this config's context.
+
+operations:
+  apply:
+    guidance:
+      - "Every spec requirement gets at least one test naming it, // spec: <capability>/<title-slug>."
+      - If the code shows a spec is wrong, fix the spec first and record why in design.md.
+      - Spikes go in spikes/<name>/ (git-ignored, outside the workspace) and are deleted once their result is in design.md.
+  archive:
+    guidance:
+      - Check that no spike code is left under spikes/ before archiving.
