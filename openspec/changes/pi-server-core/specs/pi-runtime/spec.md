@@ -3,8 +3,9 @@
 ### Requirement: Configuration
 The Pi server SHALL read its settings from one TOML file given on the command
 line: server id, admin username, listen address, database path and key
-directory. It SHALL refuse to start, naming the bad field, if a setting is
-missing or invalid.
+directory, plus an optional public address (the relay's `host:port`, written
+into invite payloads, defaulting to the listen address). It SHALL refuse to
+start, naming the bad field, if a setting is missing, invalid or unknown.
 
 #### Scenario: Missing admin username
 - **WHEN** the admin starts the server with a config file that has no admin

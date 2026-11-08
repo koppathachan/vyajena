@@ -1,21 +1,21 @@
 ## 1. Code generation and skeleton
 
-- [ ] 1.1 Check `buf generate` with the community prost and tonic plugins against tonic 0.14; if the output does not compile, add a small workspace generator binary using `tonic-prost-build` + `protox` instead (D2)
-- [ ] 1.2 Generate and commit `server/src/pb.rs` (server stubs) and `server/tests/support/pb.rs` (client stubs); document the one regenerate command in `CLAUDE.md`
-- [ ] 1.3 Create the `server` crate with the D1 folders, an empty tonic Router and tracing; add it to the workspace
+- [x] 1.1 Check `buf generate` with the community prost and tonic plugins against tonic 0.14; if the output does not compile, add a small workspace generator binary using `tonic-prost-build` + `protox` instead (D2)
+- [x] 1.2 Generate and commit `server/src/pb.rs` (server stubs) and `server/tests/support/pb.rs` (client stubs); document the one regenerate command in `CLAUDE.md`
+- [x] 1.3 Create the `server` crate with the D1 folders, an empty tonic Router and tracing; add it to the workspace
 
 ## 2. Shared rules in protocol/
 
-- [ ] 2.1 `device_identity`: certificate signature check and device id derivation, with tests in `protocol/tests/`
-- [ ] 2.2 `group_membership`: the commit-authority rule on plain types (D3), with tests covering every allowed and rejected case in `group-membership: Commit authority`
+- [x] 2.1 `device_identity`: certificate signature check and device id derivation, with tests in `protocol/tests/`
+- [x] 2.2 `group_membership`: the commit-authority rule on plain types (D3), with tests covering every allowed and rejected case in `group-membership: Commit authority`
 
 ## 3. Runtime and storage (pi-runtime)
 
-- [ ] 3.1 TOML config with field-level errors (Configuration)
-- [ ] 3.2 First start: TLS and external sender keys with mode 0600, pin logged, keys reused on restart (First start)
-- [ ] 3.3 SQLite store on one writer thread: WAL, synchronous FULL, mode 0600, embedded migrations (Durable storage; D5)
-- [ ] 3.4 Injectable clock (D7) and the example local config on `127.0.0.1:8443` (Running locally)
-- [ ] 3.5 Bootstrap admin invite created and printed on first start (device-identity: Bootstrap admin)
+- [x] 3.1 TOML config with field-level errors (Configuration)
+- [x] 3.2 First start: TLS and external sender keys with mode 0600, pin logged, keys reused on restart (First start)
+- [x] 3.3 SQLite store on one writer thread: WAL, synchronous FULL, mode 0600, embedded migrations (Durable storage; D5)
+- [x] 3.4 Injectable clock (D7) and the example local config on `127.0.0.1:8443` (Running locally)
+- [x] 3.5 Bootstrap admin invite created and printed on first start (device-identity: Bootstrap admin)
 
 ## 4. Devices and authentication
 

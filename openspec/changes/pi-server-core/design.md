@@ -53,6 +53,14 @@ Services talk to each other only through `store/`, `membership/` and `auth/`, so
 any of them can later move into its own binary. **Alternative:** one module per
 layer (handlers, db, models). Rejected: it cuts every feature into pieces.
 
+**As built (tasks 1.3, 3.x).** The crate is a library plus a thin binary, so the
+integration tests in `server/tests/` can drive it through its public API.
+`src/main.rs` only parses `--config`, sets up tracing and runs
+`runtime::Pi::start` then `Pi::serve`. One folder joins the D1 list:
+`src/runtime/` for the `pi-runtime` capability (config, first-start keys, TLS
+listener, clock, bootstrap invite), and `runtime::routes()` is where each service
+gets its `add_service`. The workspace also gains `pbgen/` (D2).
+
 ### D2. Code generation: one local command, output committed
 
 `server/src/pb.rs` (server stubs) and `server/tests/support/pb.rs` (client stubs
@@ -62,6 +70,22 @@ which is the same workflow as Go. Task 1.1 checks that their output compiles
 against tonic 0.14. **Fallback:** a small workspace binary that runs
 `tonic-prost-build` with `protox` and writes the same two files. Either way it
 is one command, documented in `CLAUDE.md`, and CI never runs it.
+
+**Result (task 1.1): the fallback, `cargo run -p pbgen`.** `buf generate` with
+the BSR remote plugins `buf.build/community/neoeinstein-prost:v0.5.0` and
+`neoeinstein-tonic:v0.5.0` works, and its output compiles against tonic 0.14.9 /
+prost 0.14.4 (the plugins are built on tonic-build 0.14 and emit
+`tonic_prost::ProstCodec`). But it writes two files per side
+(`vyajena.v1.rs` with an `include!("vyajena.v1.tonic.rs")`), so one `pb.rs` per
+side would need an extra concatenation step, and it needs the network (BSR) on
+every run. `pbgen/` is a small workspace binary that parses `proto/` with
+`protox` (no system `protoc`), runs `tonic-prost-build` 0.14 once per side and
+writes exactly `server/src/pb.rs` (messages + server stubs) and
+`server/tests/support/pb.rs` (messages + client stubs, no `connect()` helper).
+It works offline with versions pinned by `Cargo.lock`. No `buf.gen.yaml` is
+committed. The generated modules are declared `#[rustfmt::skip]`, so
+regenerating is byte-for-byte stable. CI builds `pbgen` with the workspace but
+never runs it.
 
 ### D3. Shared rules in `protocol/` use plain types
 
@@ -112,6 +136,17 @@ also gives D4's single writer. **Alternative:** sqlx. Rejected for now: async
 SQLite gains little on a Pi, and compile-time query checks need a database or
 committed query metadata.
 
+**As built (task 3.3).** `store::Store` is a cloneable handle to the thread;
+`Store::call(|conn| ...)` runs a closure on it and returns its result. The
+database file is created with mode 0600 before SQLite opens it (SQLite gives the
+`-wal` and `-shm` files the same mode). Migrations are SQL files under
+`server/src/store/migrations/`, embedded with `include_str!`, each applied in its
+own transaction and counted in `PRAGMA user_version`; a newer database than the
+binary knows is refused. Migration 1 holds only `meta`, `users` and `invites`;
+later tasks add files. Times are stored as Unix milliseconds. At first start the
+server id is recorded in `meta`, and a later start with another `server_id` is
+refused, since every stored user id contains it.
+
 ### D6. TLS and keys
 
 rustls with a self-signed certificate around the Pi's key; clients check only
@@ -119,11 +154,31 @@ the SPKI pin. The external sender key for inactivity Removes is a separate Ed255
 key. Both are created on first start under the key directory with mode 0600
 (`pi-runtime: First start`).
 
+**As built (task 3.2).** The TLS key is ECDSA P-256 (the most widely supported
+TLS 1.3 server key), stored as `tls_key.pem` (PKCS#8); the self-signed
+certificate is rebuilt from it at every start, which keeps the SPKI pin fixed.
+The external sender key is Ed25519, `mls_external_sender_key.pem` (PKCS#8). The
+key folder is created with mode 0700. Two safety rules beyond the spec, both
+"refuse to start" rather than guess: if only one of the two key files exists,
+the server stops instead of generating the other (a new external sender key
+would silently break inactivity Removes for an existing group); and a key file
+readable or writable by group or others is refused. The listener is TLS 1.3
+only with ALPN `h2`, accepts handshakes in their own tasks (10 s timeout), and
+attaches `runtime::TlsConnectInfo` to every request: the peer address and the
+32-byte TLS exporter (`EXPORTER-vyajena2-auth-v1`, empty context) that
+`Devices.Authenticate` (task 4.1) checks.
+
 ### D7. Time is injectable
 
 Inactivity (7 days), expiry (7 days), challenge TTL (60 s) and heartbeats run off
 a clock the tests can move, so integration tests can cover a week without
 waiting.
+
+**As built (task 3.4).** `runtime::Clock` (`now() -> SystemTime`), with
+`SystemClock` and a shareable `ManualClock` (`advance`, `set`). It covers
+timestamps and deadlines; timers that sleep (heartbeats, idle timeout) still need
+`tokio::time` and are for task 7.1 to wire to the same clock or to
+`tokio::time::pause` in tests.
 
 ### D8. Testing
 
@@ -134,6 +189,31 @@ Welcomes. Each test is tagged `// spec: <capability>/<title-slug>`. The three
 tests dropped with `vyajena-proto` come back here: the signed certificate
 round-trip, and the Welcome counting toward the commit cap. The unknown-content
 test belongs to the core.
+
+### D9. Runtime details settled while building (tasks 3.1, 3.5)
+
+Small technical choices the specs leave open; none changes a requirement.
+
+- **Config.** Fields: `server_id`, `admin_username`, `listen_address`,
+  `public_address` (optional, the `host:port` put into invite payloads, default
+  `listen_address`; the Pi cannot know the relay's address otherwise, so the
+  `pi-runtime: Configuration` text now names it), `database_path`, `key_dir`.
+  Unknown fields are refused by name (typos would otherwise be silent). Relative
+  paths are resolved from the config file's folder. `server_id` and
+  `admin_username` must be non-empty and free of `@`, whitespace and control
+  characters; no further username policy is set here. The example is
+  `server/local.toml`, with data in the git-ignored `server/.pi-local/`.
+- **Bootstrap invite.** Created when the database has no users and no
+  unused, unexpired bootstrap invite; printed only when created
+  (`device-identity: Bootstrap admin` says once). A restart before the admin
+  signs up logs that an invite is pending, without its code. If it expires
+  unused (7 days), the next start creates and prints a new one. To see a lost
+  code on a dev machine, delete `server/.pi-local/` and start again.
+- **Invite codes and payload text.** A code is 16 random bytes in base64url
+  without padding (22 characters). The printed payload is the encoded
+  `InvitePayload` in base64url without padding; the log line also shows the user
+  id, code, relay address and expiry. The client changes may wrap this text in a
+  QR code or link; that is theirs to decide.
 
 ## Risks / Trade-offs
 

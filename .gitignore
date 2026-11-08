@@ -37,3 +37,6 @@ build/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# Local Pi server data (server/local.toml): database and private keys.
+.pi-local/

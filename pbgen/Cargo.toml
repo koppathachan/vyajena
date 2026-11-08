@@ -1,0 +1,13 @@
+[package]
+name = "pbgen"
+version = "0.1.0"
+description = "Regenerates the committed gRPC code from proto/: run `cargo run -p pbgen` locally after changing a .proto file. CI never runs it."
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow = "1"
+# protox is a pure-Rust protobuf compiler, so no system protoc is needed.
+protox = "0.10"
+tonic-prost-build = "0.14"

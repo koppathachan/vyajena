@@ -23,8 +23,13 @@ must never break, and the Rust conventions. This file only adds how to work here
 
 ```
 proto/vyajena/v1/       wire contract (package vyajena.v1); buf.yaml at the root
-protocol/               rules the Pi and core share (limits, timings, signing labels),
-                        one module per spec capability; tests in protocol/tests/
+protocol/               rules the Pi and core share (limits, timings, signing labels,
+                        certificate checks, commit authority), one module per spec
+                        capability; tests in protocol/tests/
+server/                 the Pi server: one folder per feature in src/, src/pb.rs
+                        (generated server stubs), tests/ with tests/support/pb.rs
+                        (generated client stubs); example config server/local.toml
+pbgen/                  regenerates the committed pb.rs files from proto/
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)
 ```
@@ -36,9 +41,21 @@ buf lint
 buf breaking --against '.git#branch=main'
 cargo build --workspace
 cargo test --workspace
-cargo clippy --workspace -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 openspec validate <change> --strict
+cargo run -p server -- --config server/local.toml   # local Pi on 127.0.0.1:8443
 ```
+
+After changing any `.proto` file, regenerate the committed gRPC code with this
+one command, and commit the result with the proto change (CI never runs it):
+
+```
+cargo run -p pbgen
+```
+
+It writes `server/src/pb.rs` (messages + server stubs) and
+`server/tests/support/pb.rs` (messages + client stubs). Never edit those files
+by hand.
 
 ## Working with other sessions
 

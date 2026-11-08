@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["protocol"]
+members = ["pbgen", "protocol", "server"]
 # Throwaway spikes (git-ignored) build on their own, outside the workspace.
 exclude = ["spikes"]
 
