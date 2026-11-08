@@ -137,6 +137,21 @@ Every member sees it in the ratchet tree and verifies it against the user's pinn
 identity key, offline. **Alternative:** a custom leaf-node extension. Rejected as
 more OpenMLS surface for no gain; X.509 credentials are not a good fit for one key.
 
+**Spike result (task 4.2, openmls 0.9.2, `spikes/openmls/tests/credential.rs`):
+works.** The identity bytes are a prost-encoded signed wrapper: the exact encoded
+certificate bytes plus an Ed25519 signature over `vyajena2-device-cert-v1 || bytes`
+(176 bytes in all). It survives KeyPackage creation, the wire and
+`KeyPackageIn::validate` on the Pi, Add, Welcome and later path updates. The
+joiner (on the staged Welcome, before `into_group`), existing members
+(`StagedCommit::add_proposals`, `update_path_leaf_node`) and the Pi
+(`PublicGroup::members`) all read and verify it from the tree. A 16 KiB identity
+also works, so size is not a concern. Caveats: OpenMLS never checks credentials
+itself, so the core must verify every new or changed leaf; and it must also check
+that the certificate's MLS key equals the leaf's `signature_key`, or a valid
+certificate could be paired with another key. Signing the carried bytes (not a
+re-encoding) means the signed wrapper in task 2.1 holds `bytes certificate`, not
+a nested message, and no protobuf canonical form is needed.
+
 ### D5. Handshakes are `PublicMessage`; the Pi runs OpenMLS `PublicGroup`
 
 To enforce commit authority the Pi has to read proposals, so Commits and Proposals
@@ -155,6 +170,47 @@ messages stay `PrivateMessage`; for those the Pi reads only the unencrypted head
 - **Alternative:** encrypted handshakes with client-declared metadata the Pi
   trusts. Rejected: one dishonest member could get a bad commit accepted and fork
   the group for everyone.
+
+**Spike result (task 4.1, openmls 0.9.2, `spikes/openmls/tests/public_group.rs`):
+works.** `PublicGroup::from_external` builds the Pi's view from the GroupInfo
+(without the tree extension) plus the ratchet tree. On a `PublicMessage` commit,
+`process_message` verifies the signature against the sender's leaf (one flipped
+byte gives `InvalidSignature`). `ProcessedMessage::sender()` names the committing
+leaf. `StagedCommit::queued_proposals()` returns every proposal with
+`proposal_or_ref_type()` (by value or by reference) and `sender()` (member or
+`External(index)`). That is enough to implement D6; the spike does, including the
+rejection cases. After `merge_commit`, the Pi's group context and tree are
+byte-identical to every member's. This held for an admin Add with Welcome, an
+own-device Add, a member Remove, a self Update, a Pi external Remove committed by
+reference, and the D7 re-add commit. The re-add combined the pending external
+Remove (by reference) with an Add of a fresh KeyPackage that has the same
+certificate and MLS signature key; OpenMLS accepts it because the old leaf is
+removed first. Caveats:
+
+- **Membership tags.** A member's `PublicMessage` must carry one, but the Pi has
+  no membership key, so `PublicGroup` skips the check. A commit with a bad tag is
+  accepted by the Pi and rejected by members (`InvalidMembershipTag`). Confirmation
+  tags and encrypted path secrets are member-only checks too. So a dishonest
+  member with a valid leaf can still get a commit sequenced that honest clients
+  reject. D5 still enforces D6 policy and sender authenticity (signature plus D9
+  stream auth), but this liveness gap remains with any MLS delivery service.
+- **The Pi keeps its own proposal store.** On a `ProposalMessage` it must call
+  `add_proposal`, including for its own external Removes, which it runs through
+  its own `PublicGroup`. `merge_commit` clears the store, and a proposal from an
+  earlier epoch is rejected (`WrongEpoch`), which confirms D7's reissue rule.
+- `queued_proposals()` does not keep the commit's order.
+- Some getters are `pub(crate)` in 0.9.2 (`ExternalSender::signature_key`,
+  `SenderExtensionIndex::index`), and `MlsGroup::export_group_context` exists only
+  under `test-utils`. Compare whole values, or use `public_group().group_context()`.
+- `PURE_PLAINTEXT_WIRE_FORMAT_POLICY` sends handshakes as `PublicMessage`, and
+  application messages stay `PrivateMessage`. For those, `PublicGroup` returns
+  `IncompatibleWireFormat`; the Pi reads group id, epoch and content type from
+  `ProtocolMessage`.
+- A returning device must join with
+  `StagedWelcome::build_from_welcome(..).replace_old_group()`; otherwise it gets
+  `GroupAlreadyExists`.
+- OpenMLS `self_update` commits all pending proposals, so any member's next commit
+  carries a pending inactivity Remove.
 
 ### D6. Commit authority (relaxed invariant)
 

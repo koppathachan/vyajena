@@ -22,9 +22,9 @@
 
 ## 4. De-risking spikes
 
-- [ ] 4.1 Spike: OpenMLS `PublicGroup` on a non-member verifies a `PublicMessage` commit (Add, Remove, self Update, external Remove proposal, and a re-add commit combining the pending external Remove with an Add) and applies it; record the outcome in `design.md`
-- [ ] 4.2 Spike: an OpenMLS `BasicCredential` whose identity is a serialized `DeviceCertificate` round-trips through KeyPackage creation, Add and Welcome; record the outcome in `design.md`
-- [ ] 4.3 If either spike fails, update D4/D5 and the affected specs before continuing
+- [x] 4.1 Spike: OpenMLS `PublicGroup` on a non-member verifies a `PublicMessage` commit (Add, Remove, self Update, external Remove proposal, and a re-add commit combining the pending external Remove with an Add) and applies it; record the outcome in `design.md`
+- [x] 4.2 Spike: an OpenMLS `BasicCredential` whose identity is a serialized `DeviceCertificate` round-trips through KeyPackage creation, Add and Welcome; record the outcome in `design.md`
+- [x] 4.3 If either spike fails, update D4/D5 and the affected specs before continuing
 
 ## 5. Docs
 
