@@ -33,9 +33,12 @@ domain name.
 The Pi SHALL require a valid session token in the `authorization` metadata on
 every RPC except `Devices.GetServerInfo`, `Devices.Register`,
 `Devices.GetChallenge` and `Devices.Authenticate`. A device SHALL obtain a token by signing
-the Pi's single-use challenge nonce with its device auth key, over the context
-string `vyajena2-auth-v1`, the nonce and the TLS exporter value of the current
-connection. Tokens SHALL expire after at most 1 hour.
+the Pi's challenge nonce with its device auth key, over the context string
+`vyajena2-auth-v1`, the nonce and the TLS exporter value of the current
+connection. The nonce SHALL be 32 random bytes, single-use, and valid for 60
+seconds after it is issued. The TLS exporter value SHALL be the 32-byte TLS 1.3
+exporter output with label `EXPORTER-vyajena2-auth-v1` and an empty context.
+Tokens SHALL expire after at most 1 hour.
 
 #### Scenario: Successful authentication
 - **WHEN** a registered, non-revoked device returns a valid signature over a fresh
@@ -47,6 +50,15 @@ connection. Tokens SHALL expire after at most 1 hour.
   expired
 - **THEN** the Pi rejects the request with `UNAUTHENTICATED`
 
+#### Scenario: Slow answer
+- **WHEN** a device submits a signature for a nonce issued 61 seconds earlier
+- **THEN** the Pi rejects the request with `UNAUTHENTICATED`
+
+#### Scenario: Signature from another connection
+- **WHEN** a signature was computed over the TLS exporter value of a different
+  connection than the one carrying `Authenticate`
+- **THEN** the Pi rejects the request with `UNAUTHENTICATED`
+
 #### Scenario: Missing or expired token
 - **WHEN** a client calls an authenticated RPC without a token or with an expired
   one
@@ -56,11 +68,12 @@ connection. Tokens SHALL expire after at most 1 hour.
 A device SHALL carry all messaging over one `Messaging.Connect` bidirectional
 stream per connection: outgoing envelopes, incoming envelopes, send results,
 acks, catch-up replay and heartbeats. The Pi SHALL allow at most one open
-`Connect` stream per device and SHALL close the older stream when a new one opens.
+`Connect` stream per device and SHALL close the older stream with gRPC status
+`ABORTED` when a new one opens.
 
 #### Scenario: Second stream from same device
 - **WHEN** a device opens a `Connect` stream while an earlier one is still open
-- **THEN** the Pi closes the earlier stream and serves the new one
+- **THEN** the Pi ends the earlier stream with `ABORTED` and serves the new one
 
 ### Requirement: Heartbeats
 While a `Connect` stream is idle the client SHALL send a heartbeat at least every
@@ -73,8 +86,8 @@ received nothing for 90 seconds.
 
 ### Requirement: Size limits
 The ciphertext of an `APPLICATION` envelope SHALL NOT exceed 65,536 bytes.
-Handshake envelopes (`COMMIT`, `WELCOME`, `PROPOSAL`) SHALL NOT exceed 262,144
-bytes. The client SHALL refuse to send an envelope over its limit, and the Pi
+Handshake envelopes (`COMMIT` and `PROPOSAL`) SHALL NOT exceed 262,144 bytes,
+encoded as sent; for a `COMMIT` this includes the Welcome it carries. The client SHALL refuse to send an envelope over its limit, and the Pi
 SHALL reject one with `TOO_LARGE`. The Pi SHALL advertise both limits in
 `GetServerInfo`.
 
@@ -82,6 +95,11 @@ SHALL reject one with `TOO_LARGE`. The Pi SHALL advertise both limits in
 - **WHEN** the Pi receives an `APPLICATION` envelope whose ciphertext is 65,537
   bytes
 - **THEN** the Pi rejects it with reason `TOO_LARGE` and stores nothing
+
+#### Scenario: Commit with a large Welcome
+- **WHEN** a `COMMIT` envelope is 200,000 bytes and its Welcome bundle adds
+  70,000 bytes
+- **THEN** the Pi rejects the envelope, Welcome included, with `TOO_LARGE`
 
 #### Scenario: Client-side check
 - **WHEN** encrypting a message would produce more than 65,536 bytes of ciphertext

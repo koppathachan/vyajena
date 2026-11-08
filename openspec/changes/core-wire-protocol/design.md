@@ -117,11 +117,12 @@ sequenceDiagram
   P->>P: Verify against the user's identity key
   N->>P: GetChallenge, Authenticate
   N->>P: Keys.UploadKeyPackages
-  F->>P: Keys.FetchKeyPackages (own user)
-  F->>P: COMMIT adding the new device, plus WELCOME
+  F->>P: Keys.FetchKeyPackages (own user, new device only)
+  F->>P: COMMIT adding the new device, Welcome inside
   P->>P: Commit authority, own user's device (D6)
+  P->>P: Accept commit and Welcome together
   P->>G: Commit
-  P->>N: Welcome
+  P->>N: WELCOME (sent by the Pi)
 ```
 
 ### D3. Two keys per device
@@ -237,7 +238,11 @@ When the device comes back, the Pi tells it that it was removed and since when,
 and sends a rejoin notice to the user's other devices and the admin's devices.
 Whichever gets it first re-adds the device in one commit (Add, plus the pending
 Remove of its old leaf) with no user action. The commit rule (D6) already allows
-both. Messages from the inactive period are not delivered.
+both. The re-adder fetches a KeyPackage for the returning device only, and sends
+the Welcome inside the `COMMIT` envelope, so a device that loses the re-add race
+has its commit and Welcome rejected together and the returning device only ever
+receives the winner's Welcome. Messages from the inactive period are not
+delivered.
 
 ```mermaid
 sequenceDiagram
@@ -252,9 +257,11 @@ sequenceDiagram
   P-->>D: Removed for inactivity since X
   P->>A: Rejoin notice for Bob's phone
   A->>A: Verify certificate against Bob's pinned identity key
-  A->>P: COMMIT Remove old leaf + Add, plus WELCOME
+  A->>P: Keys.FetchKeyPackages (Bob, phone only)
+  A->>P: COMMIT Remove old leaf + Add, Welcome inside
+  P->>P: Accept commit and Welcome together
   P->>G: Commit
-  P->>D: Welcome
+  P->>D: WELCOME (sent by the Pi)
   Note over D: Shows messages since X were not kept
 ```
 
@@ -291,15 +298,17 @@ sequenceDiagram
 `GetChallenge` / `Authenticate` yields a short-lived bearer token (≤ 1 h, stored
 hashed on the Pi) used in metadata for unary RPCs and `Connect`. The signature
 covers the TLS exporter value, so a challenge answered on one connection cannot be
-replayed on another. **Alternative:** challenge per RPC; rejected as a round trip
-on every call.
+replayed on another. The exporter value is 32 bytes with label
+`EXPORTER-vyajena2-auth-v1` and an empty context; the nonce is 32 random bytes,
+single-use and valid for 60 seconds. **Alternative:** challenge per RPC; rejected
+as a round trip on every call.
 
 ### D10. Limits
 
 - `APPLICATION` ciphertext ≤ 65,536 bytes (decision #5).
 - Handshake envelopes ≤ 262,144 bytes: a Welcome carries the ratchet tree, which
   grows with the number of devices. Confirmed by the owner; fits roughly 200
-  devices.
+  devices. The cap applies to the whole `COMMIT` envelope, Welcome included.
 - 20 one-time KeyPackages per device, replenish below 5.
 
 ### D11. Tooling and layout
@@ -333,6 +342,25 @@ element; every other DEFAULT rule applies. `vyajena-proto` uses tonic 0.14 with
 generates transport-agnostic clients, and exports the D10 limits, counts,
 timings and context strings as constants.
 
+**Contract gaps closed (task 6).** Four gaps found while writing the protos
+were closed in this change, before anything was released:
+
+- *Welcome bound to its commit.* `Envelope.welcome` (`WelcomeBundle`: Welcome
+  bytes plus recipients) rides on the `COMMIT` that creates it and replaces the
+  client-sent `WELCOME` envelope (field 6 `recipients` is reserved). The Pi
+  accepts or rejects both together, then emits `WELCOME` envelopes itself at the
+  commit's `server_seq`. A client-sent `WELCOME` is `MALFORMED`. Before this the
+  Pi could not link a Welcome to its commit, so a re-add race loser's Welcome
+  could still reach the returning device.
+- *Per-device fetch.* `FetchKeyPackagesRequest.device_ids` limits the fetch, and
+  the KeyPackages consumed, to the listed devices (D7 re-add, D2 linking).
+- *Admin awareness.* `GetSelfResponse.is_admin` (D13).
+- *Pinned details.* TLS exporter label and length, challenge nonce length and
+  lifetime (D9; constants in `vyajena-proto`), and status codes: `Register` with
+  a certificate for another user is `PERMISSION_DENIED`, `FetchKeyPackages` for
+  an unknown user is `NOT_FOUND`, and an older `Connect` stream replaced by a
+  newer one ends with `ABORTED`.
+
 ### D12. Usernames are the admin's; profiles are the user's
 
 The admin picks each user's username when creating the invite, and it is the
@@ -347,7 +375,8 @@ change it. The Pi never sees profiles.
 The admin's user id is set in the Pi's config, the bootstrap invite creates that
 user, and the admin creates the group with `Admin.CreateGroup` before inviting
 anyone. The admin id is also in the group context, which the Pi can read; it
-learns nothing new from that.
+learns nothing new from that. `Devices.GetSelf` returns `is_admin`, so the
+admin's app knows to call `Admin.CreateGroup` before any group exists.
 
 ## Risks / Trade-offs
 

@@ -95,12 +95,16 @@ enum RejectionReason {
   // current epoch and resends with the same `msg_id` (message-delivery: Strict
   // epoch rule).
   REJECTION_REASON_STALE_EPOCH = 1;
-  // `APPLICATION` ciphertext over 65,536 bytes, or a handshake envelope over
-  // 262,144 bytes. Nothing is stored (wire-transport: Size limits).
+  // `APPLICATION` ciphertext over 65,536 bytes, or a `COMMIT` (with its
+  // Welcome) or `PROPOSAL` envelope over 262,144 bytes. Nothing is stored
+  // (wire-transport: Size limits).
   REJECTION_REASON_TOO_LARGE = 2;
   // The MLS framing does not parse, or its group id, epoch or content type do
   // not match the envelope, or the wire format is wrong for the kind
-  // (message-delivery: Framing matches the envelope).
+  // (message-delivery: Framing matches the envelope). Also: a client envelope
+  // of kind `WELCOME`, a Welcome on anything but a `COMMIT`, or a `COMMIT` whose
+  // Welcome is missing, does not parse, or names other recipients than the
+  // devices it adds (message-delivery: Welcome travels with its commit).
   REJECTION_REASON_MALFORMED = 3;
   // A retry reused a `msg_id` with different ciphertext (message-delivery:
   // Idempotent sends).

@@ -52,9 +52,10 @@ break it.
 - **THEN** the Pi rejects the commit with `POLICY_VIOLATION`
 
 #### Scenario: Admin adds a user
-- **WHEN** the admin's device commits Adds for all of Carol's devices with a
-  Welcome
-- **THEN** the Pi accepts the commit and delivers the Welcome to Carol's devices
+- **WHEN** the admin's device sends one `COMMIT` envelope with Adds for all of
+  Carol's devices and the Welcome for them
+- **THEN** the Pi accepts the commit and its Welcome together, and only then
+  delivers the Welcome to Carol's devices
 
 ### Requirement: Pi validates handshakes without group secrets
 The Pi SHALL track the group's public state (ratchet tree and group context) from
@@ -98,9 +99,10 @@ When an inactive device of a non-revoked user reconnects, the Pi SHALL tell it
 that it was removed for inactivity and since when, and SHALL send a rejoin notice
 for it to the user's other connected devices and to the admin's connected
 devices. The first of those devices to receive the notice SHALL, without user
-action, verify the device's certificate against the user's pinned identity key
-and commit its Add together with any pending Remove of its old leaf. The
-returning device SHALL then continue from the Welcome; messages from while it
+action, verify the device's certificate against the user's pinned identity key,
+fetch a KeyPackage for that device only, and commit its Add together with any
+pending Remove of its old leaf, with the Welcome in the same `COMMIT` envelope.
+The returning device SHALL then continue from the Welcome; messages from while it
 was inactive SHALL NOT be delivered to it.
 
 #### Scenario: Back from holiday
@@ -112,7 +114,8 @@ was inactive SHALL NOT be delivered to it.
 #### Scenario: Two devices race to re-add
 - **WHEN** Bob's tablet and the admin's phone both commit a re-add in the same
   epoch
-- **THEN** the Pi accepts one, rejects the other with `STALE_EPOCH`, and the
+- **THEN** the Pi accepts one, rejects the other with `STALE_EPOCH` together
+  with its Welcome, Bob's phone receives only the winner's Welcome, and the
   losing device sees the phone is already a member and does nothing more
 
 #### Scenario: Nobody able to re-add is online

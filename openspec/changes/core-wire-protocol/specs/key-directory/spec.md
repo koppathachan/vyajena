@@ -18,10 +18,15 @@ MLS signature key.
 - **THEN** the Pi rejects the whole upload with `PERMISSION_DENIED`
 
 ### Requirement: KeyPackage fetch
-`Keys.FetchKeyPackages` SHALL take a user id and return, for each non-revoked
-device of that user, one KeyPackage together with the device certificate and the
-user's identity public key. The Pi SHALL hand out each one-time KeyPackage at most
-once and SHALL fall back to the last-resort KeyPackage when none remain.
+`Keys.FetchKeyPackages` SHALL take a user id and an optional list of device ids
+and return, for each non-revoked device of that user, or only for the listed
+devices when the list is given, one KeyPackage together with the device
+certificate and the user's identity public key. The Pi SHALL consume KeyPackages
+only for the devices it returns. The Pi SHALL hand out each one-time KeyPackage at
+most once and SHALL fall back to the last-resort KeyPackage when none remain. The
+Pi SHALL reject a fetch for an unknown user with `NOT_FOUND`, and a fetch listing
+a device that is not a non-revoked device of that user with `NOT_FOUND`,
+consuming nothing.
 
 #### Scenario: One-time KeyPackage is consumed
 - **WHEN** two callers fetch KeyPackages for the same user
@@ -30,6 +35,16 @@ once and SHALL fall back to the last-resort KeyPackage when none remain.
 #### Scenario: One-time KeyPackages exhausted
 - **WHEN** a device has no one-time KeyPackages left
 - **THEN** the Pi returns its last-resort KeyPackage
+
+#### Scenario: Fetch for one device
+- **WHEN** the admin's device re-adds Bob's phone and fetches with Bob's user id
+  and only the phone's device id
+- **THEN** the Pi returns and consumes a KeyPackage for the phone only, and Bob's
+  tablet keeps all its one-time KeyPackages
+
+#### Scenario: Unknown user
+- **WHEN** a device fetches KeyPackages for a user id the Pi does not know
+- **THEN** the Pi rejects the call with `NOT_FOUND`
 
 ### Requirement: Replenishment signal
 The Pi SHALL notify a connected device on its `Connect` stream when its one-time

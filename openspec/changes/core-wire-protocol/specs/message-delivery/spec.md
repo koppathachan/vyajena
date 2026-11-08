@@ -4,9 +4,10 @@
 Every message on the `Connect` stream SHALL be carried in an `Envelope` with a
 client-generated 16-byte `msg_id`, the `group_id`, the `epoch`, a `kind`
 (`APPLICATION`, `COMMIT`, `WELCOME` or `PROPOSAL`) and the MLS message bytes as
-`ciphertext`. `WELCOME` envelopes SHALL also list their recipient devices. The Pi
-SHALL set `sender` from the authenticated device and SHALL add a per-group
-`server_seq` and an `accepted_at` time when it accepts the envelope.
+`ciphertext`. Only the Pi SHALL send `WELCOME` envelopes. A `COMMIT` envelope
+SHALL carry the Welcome the commit creates, if any, together with its recipient
+devices. The Pi SHALL set `sender` from the authenticated device and SHALL add a
+per-group `server_seq` and an `accepted_at` time when it accepts the envelope.
 
 #### Scenario: Sender cannot be spoofed
 - **WHEN** a device sends an envelope
@@ -18,7 +19,8 @@ The Pi SHALL parse the MLS framing of every envelope and SHALL reject it with
 `MALFORMED` if its group id, epoch or content type do not match the envelope's
 `group_id`, `epoch` and `kind`. `APPLICATION` envelopes SHALL carry an MLS
 `PrivateMessage`; `COMMIT` and `PROPOSAL` envelopes SHALL carry an MLS
-`PublicMessage`.
+`PublicMessage`. The Pi SHALL reject a client-sent envelope of kind `WELCOME`
+with `MALFORMED`.
 
 #### Scenario: Mismatched epoch
 - **WHEN** an envelope says epoch 7 but its MLS header says epoch 6
@@ -27,6 +29,36 @@ The Pi SHALL parse the MLS framing of every envelope and SHALL reject it with
 #### Scenario: Encrypted commit
 - **WHEN** a `COMMIT` envelope carries a `PrivateMessage`
 - **THEN** the Pi rejects it with `MALFORMED`
+
+#### Scenario: Client sends a Welcome on its own
+- **WHEN** a client sends an envelope of kind `WELCOME`
+- **THEN** the Pi rejects it with `MALFORMED` and delivers nothing
+
+### Requirement: Welcome travels with its commit
+A client SHALL send a Welcome only inside the `COMMIT` envelope that creates it,
+as a Welcome bundle holding the MLS `Welcome` bytes and the recipient devices.
+The Pi SHALL reject the whole envelope with `MALFORMED` if the bundle is on any
+other kind, if its Welcome does not parse as an MLS `Welcome`, if its recipients
+are not exactly the devices the commit adds, or if a commit that adds devices
+has no bundle. The Pi SHALL accept or reject the commit and its Welcome together.
+Only after accepting the commit SHALL the Pi send each recipient a `WELCOME`
+envelope carrying the Welcome bytes, the commit's `msg_id`, `sender`,
+`server_seq` and `accepted_at`, and the epoch the commit creates.
+
+#### Scenario: Commit and Welcome accepted together
+- **WHEN** the Pi accepts a `COMMIT` that adds Carol's phone and carries its
+  Welcome
+- **THEN** Carol's phone receives a `WELCOME` envelope at the commit's
+  `server_seq`, and the other members receive the commit
+
+#### Scenario: Rejected commit drops its Welcome
+- **WHEN** the Pi rejects a `COMMIT` that carries a Welcome, for any reason
+- **THEN** no device ever receives that Welcome and nothing is stored
+
+#### Scenario: Welcome for a device the commit does not add
+- **WHEN** a `COMMIT` adds Carol's phone but its Welcome bundle also lists Bob's
+  tablet
+- **THEN** the Pi rejects the envelope with `MALFORMED`
 
 ### Requirement: Accepted means durable
 The Pi SHALL send `Accepted` for an envelope only after it has durably written the
@@ -40,9 +72,11 @@ as sending until it receives `Accepted` for its `msg_id`, then as accepted.
 
 ### Requirement: Idempotent sends
 The Pi SHALL deduplicate accepted envelopes on (sender device, `msg_id`) for at
-least 7 days; rejected envelopes SHALL leave no dedup record. A retry with the same `msg_id` and identical ciphertext SHALL receive the
-original result without creating new entries. A retry with the same `msg_id` and
-different ciphertext SHALL be rejected with `DUPLICATE_MISMATCH`.
+least 7 days; rejected envelopes SHALL leave no dedup record. A retry with the
+same `msg_id`, identical ciphertext and an identical Welcome bundle SHALL receive
+the original result without creating new entries. A retry with the same `msg_id`
+and different ciphertext or a different Welcome bundle SHALL be rejected with
+`DUPLICATE_MISMATCH`.
 
 #### Scenario: Retry after lost ack
 - **WHEN** a client resends an envelope it already sent because the `Accepted`
@@ -85,9 +119,11 @@ SHALL never reject a send because of another device's queue.
 
 ### Requirement: Commit log
 The Pi SHALL append every accepted `COMMIT` and `PROPOSAL` to the group's commit
-log and SHALL keep a delivery cursor per member device. `COMMIT`, `PROPOSAL` and
-`WELCOME` entries SHALL be exempt from expiry and the queue cap, and SHALL be
-deleted once every device that must receive them has acknowledged them.
+log and SHALL keep a delivery cursor per member device. An accepted commit's
+Welcome SHALL be stored with it and delivered only to its recipients, in place of
+the commit. `COMMIT`, `PROPOSAL` and `WELCOME` entries SHALL be exempt from
+expiry and the queue cap, and SHALL be deleted once every device that must
+receive them has acknowledged them.
 
 #### Scenario: Commit kept for an offline member
 - **WHEN** a member device has been offline for 5 days

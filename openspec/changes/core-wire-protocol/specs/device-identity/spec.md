@@ -52,6 +52,11 @@ username.
 - **WHEN** a device registers with an invite created for `alice@pi`
 - **THEN** the new user's id is `alice@pi`, whatever the device sends
 
+#### Scenario: Certificate for another user
+- **WHEN** a device registers with an invite created for `alice@pi` and a
+  certificate naming `mallory@pi`
+- **THEN** the Pi rejects it with `PERMISSION_DENIED` and creates nothing
+
 ### Requirement: Signup with an invite
 A user's first device SHALL register by calling `Devices.Register` with an invite
 code, the new user identity public key and a device certificate for itself. The
@@ -74,6 +79,20 @@ server log once. The user created from it SHALL be the admin.
 #### Scenario: First start
 - **WHEN** the Pi starts with no users
 - **THEN** it creates and prints one bootstrap invite for the admin user id
+
+### Requirement: Admin awareness
+`Devices.GetSelf` SHALL return the calling device's user id and certificate and
+whether the caller's user is the admin, so the admin's app knows, before any
+group exists, that it should create the group with `Admin.CreateGroup`.
+
+#### Scenario: Admin's first device
+- **WHEN** the device registered from the bootstrap invite calls `Devices.GetSelf`
+- **THEN** the Pi reports that its user is the admin, and the app creates the
+  group with `Admin.CreateGroup`
+
+#### Scenario: Ordinary member
+- **WHEN** a device of a user other than the admin calls `Devices.GetSelf`
+- **THEN** the Pi reports that its user is not the admin
 
 ### Requirement: Device linking
 A user SHALL be able to add a device by having the new device display its device

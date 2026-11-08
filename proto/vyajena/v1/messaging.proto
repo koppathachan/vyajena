@@ -16,7 +16,8 @@ service Messaging {
   // wire-transport: Single persistent messaging stream. One bidirectional stream
   // per connection carries outgoing envelopes, incoming envelopes, send results,
   // acks, catch-up replay and heartbeats. The Pi allows at most one open stream
-  // per device and closes the older stream when a new one opens.
+  // per device. When a new stream opens it closes the older one with gRPC status
+  // `ABORTED`.
   //
   // wire-transport: Protocol version negotiation. The first client frame is a
   // `Hello`. If the Pi does not support its version it closes the stream with
@@ -30,7 +31,8 @@ service Messaging {
   // message-delivery: Ordered delivery and catch-up. On connect the Pi sends
   // everything after the device's cursor (commit log entries, welcomes and
   // queued application entries, merged in `server_seq` order) before any live
-  // traffic.
+  // traffic. A device added by a commit gets that commit's `WELCOME` instead of
+  // the commit itself, at the commit's `server_seq`.
   //
   // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
   // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
@@ -74,15 +76,23 @@ message Hello {
 // message-delivery: Envelope. Every message on the stream is carried in one.
 //
 // Size (wire-transport: Size limits): an `APPLICATION` envelope's `ciphertext`
-// is at most 65,536 bytes; a `COMMIT`, `WELCOME` or `PROPOSAL` envelope is at
-// most 262,144 bytes. The client refuses to send one over its limit; the Pi
-// rejects it with `REJECTION_REASON_TOO_LARGE` and stores nothing.
+// is at most 65,536 bytes; a `COMMIT` envelope, encoded with its `welcome`, and a
+// `PROPOSAL` envelope are at most 262,144 bytes. The client refuses to send one
+// over its limit; the Pi rejects it with `REJECTION_REASON_TOO_LARGE` and stores
+// nothing.
 //
 // Framing (message-delivery: Framing matches the envelope): the Pi parses the
 // MLS framing of every envelope and rejects it with `REJECTION_REASON_MALFORMED`
 // if its group id, epoch or content type do not match `group_id`, `epoch` and
 // `kind`. `APPLICATION` carries an MLS `PrivateMessage`; `COMMIT` and `PROPOSAL`
-// carry an MLS `PublicMessage` (design D5).
+// carry an MLS `PublicMessage` (design D5). A client never sends `WELCOME`: the
+// Pi rejects a client envelope of that kind with `REJECTION_REASON_MALFORMED`.
+//
+// Welcomes (message-delivery: Welcome travels with its commit): a client sends
+// a Welcome only in `welcome` of the `COMMIT` envelope that creates it. The Pi
+// accepts or rejects the commit and its Welcome together, and only after
+// accepting the commit emits a `WELCOME` envelope to each recipient device
+// (design D7).
 //
 // Epoch (message-delivery: Strict epoch rule): the Pi rejects any envelope whose
 // `epoch` is not the group's current epoch with `REJECTION_REASON_STALE_EPOCH`.
@@ -100,12 +110,18 @@ message Envelope {
     KIND_APPLICATION = 1;
     // A commit (MLS `PublicMessage`).
     KIND_COMMIT = 2;
-    // An MLS `Welcome`, delivered only to `recipients`.
+    // An MLS `Welcome`. Sent only by the Pi, to each recipient of an accepted
+    // commit's `welcome`; a client envelope of this kind is rejected with
+    // `REJECTION_REASON_MALFORMED` (message-delivery: Welcome travels with its
+    // commit).
     KIND_WELCOME = 3;
     // A proposal (MLS `PublicMessage`), including the Pi's external Remove
     // proposals (group-membership: Inactive devices are kept out).
     KIND_PROPOSAL = 4;
   }
+
+  reserved 6;
+  reserved "recipients";
 
   // --- Set by the sending client. ---
 
@@ -124,9 +140,10 @@ message Envelope {
   Kind kind = 4;
   // The TLS-serialized MLS `MLSMessage`.
   bytes ciphertext = 5;
-  // `WELCOME` only: the devices the Welcome is for (message-delivery:
-  // Envelope). Empty for every other kind.
-  repeated DeviceRef recipients = 6;
+  // `COMMIT` only, and required when the commit adds devices: the Welcome the
+  // commit creates (message-delivery: Welcome travels with its commit). Unset
+  // on every other kind, and on every envelope the Pi sends.
+  WelcomeBundle welcome = 10;
 
   // --- Set by the Pi when it accepts the envelope; ignored if a client sets
   // them. ---
@@ -140,6 +157,26 @@ message Envelope {
   uint64 server_seq = 8;
   // When the Pi accepted the envelope.
   google.protobuf.Timestamp accepted_at = 9;
+}
+
+// message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
+// creates, sent inside that `COMMIT` envelope.
+//
+// The Pi rejects the whole envelope with `REJECTION_REASON_MALFORMED` if
+// `welcome` is not an MLS `Welcome`, if `recipients` is not exactly the devices
+// the commit adds (read from the certificates in the Add proposals), or if a
+// commit that adds devices carries no `WelcomeBundle`.
+//
+// After accepting the commit, the Pi sends each recipient one `Envelope` of kind
+// `KIND_WELCOME` with: `ciphertext` = `welcome`; `group_id`, `msg_id`, `sender`,
+// `server_seq` and `accepted_at` of the commit; `epoch` = the epoch the commit
+// creates (the commit's `epoch` + 1). If the commit is rejected, no recipient
+// ever receives its Welcome (group-membership: Automatic re-add).
+message WelcomeBundle {
+  // The TLS-serialized MLS `MLSMessage` with wire format `mls_welcome`.
+  bytes welcome = 1;
+  // The devices the Welcome is for: exactly the devices the commit adds.
+  repeated DeviceRef recipients = 2;
 }
 
 // The Pi's answer to one client `Envelope`, matched by `msg_id`.
@@ -211,10 +248,13 @@ message RemovedNotice {
 // group-membership: Automatic re-add. Sent to the returning device's user's
 // other connected devices and to the admin's connected devices. The first to
 // receive it, with no user action, verifies the device's certificate against
-// the user's pinned identity key and commits its Add together with any pending
-// Remove of its old leaf (allowed by the commit authority rule, design D6). A
-// device that loses the race gets `REJECTION_REASON_STALE_EPOCH`, sees the
-// device is already a member, and does nothing more.
+// the user's pinned identity key, fetches a KeyPackage for that device only
+// (`FetchKeyPackagesRequest.device_ids`), and commits its Add together with any
+// pending Remove of its old leaf, with the Welcome in the same `COMMIT` envelope
+// (allowed by the commit authority rule, design D6). A device that loses the
+// race gets `REJECTION_REASON_STALE_EPOCH` for the commit and its Welcome
+// together, so its Welcome is never delivered; it sees the device is already a
+// member and does nothing more.
 message RejoinNotice {
   bytes group_id = 1;
   // The returning device.

@@ -45,8 +45,9 @@ service Devices {
   // device that holds the user identity key (device-identity: Device linking).
   rpc LinkDevice(LinkDeviceRequest) returns (LinkDeviceResponse);
 
-  // Returns the calling device's user id and certificate (device-identity:
-  // Device linking).
+  // Returns the calling device's user id and certificate, and whether its user
+  // is the admin (device-identity: Device linking; device-identity: Admin
+  // awareness).
   rpc GetSelf(GetSelfRequest) returns (GetSelfResponse);
 
   // Revokes another device of the caller's user (device-identity: Device
@@ -86,8 +87,9 @@ message ServerInfo {
 message Limits {
   // Maximum `Envelope.ciphertext` length of an `APPLICATION` envelope: 65,536.
   uint32 max_application_ciphertext_bytes = 1;
-  // Maximum size of a `COMMIT`, `WELCOME` or `PROPOSAL` envelope: 262,144. It
-  // applies to the encoded `Envelope` as the client sends it.
+  // Maximum size of a `COMMIT` or `PROPOSAL` envelope: 262,144. It applies to
+  // the encoded `Envelope` as the client sends it, so a `COMMIT`'s `welcome`
+  // counts toward it.
   uint32 max_handshake_envelope_bytes = 2;
 }
 
@@ -105,7 +107,7 @@ message ExternalSender {
 //
 // device-identity: Admin-owned usernames. The new user's id is the one the
 // invite was created for, whatever the device sends. A certificate naming any
-// other user id is rejected.
+// other user id is rejected with `PERMISSION_DENIED` and nothing is created.
 message RegisterRequest {
   // `InvitePayload.invite_code`.
   string invite_code = 1;
@@ -121,17 +123,23 @@ message RegisterResponse {
 
 message GetChallengeRequest {}
 
-// wire-transport: Session authentication. The nonce is single-use and expires.
+// wire-transport: Session authentication. The nonce is 32 random bytes
+// (vyajena_proto::CHALLENGE_NONCE_LEN), single-use, and valid for 60 seconds
+// after it is issued (vyajena_proto::CHALLENGE_TTL).
 message GetChallengeResponse {
+  // 32 random bytes.
   bytes nonce = 1;
+  // Issue time plus 60 seconds.
   google.protobuf.Timestamp expires_at = 2;
 }
 
 // wire-transport: Session authentication. `signature` is an Ed25519 signature by
 // the device auth key over `"vyajena2-auth-v1" || nonce || tls_exporter`
 // (plain concatenation, see vyajena_proto::AUTH_CONTEXT), where `tls_exporter`
-// is the TLS exporter value of the connection carrying this call, so a signed
-// challenge cannot be replayed on another connection (design D9).
+// is the 32-byte TLS 1.3 exporter value (RFC 8446 section 7.5) of the connection
+// carrying this call, with label `EXPORTER-vyajena2-auth-v1` and an empty
+// context (vyajena_proto::AUTH_TLS_EXPORTER_LABEL, AUTH_TLS_EXPORTER_LEN), so a
+// signed challenge cannot be replayed on another connection (design D9).
 //
 // A nonce that was already used or has expired is rejected with
 // `UNAUTHENTICATED`, as is a device that is not registered or is revoked.
@@ -168,6 +176,10 @@ message GetSelfRequest {}
 message GetSelfResponse {
   UserId user_id = 1;
   SignedDeviceCertificate certificate = 2;
+  // True when the caller's user is the admin configured on the Pi (design D13),
+  // so the admin's app knows to create the group with `Admin.CreateGroup`
+  // before any group exists (device-identity: Admin awareness).
+  bool is_admin = 3;
 }
 
 // device-identity: Device revocation. Any authenticated device of a user may

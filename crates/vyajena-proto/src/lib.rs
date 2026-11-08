@@ -33,6 +33,15 @@ pub const DEVICE_CERT_CONTEXT: &[u8] = b"vyajena2-device-cert-v1";
 /// authentication; design D9).
 pub const AUTH_CONTEXT: &[u8] = b"vyajena2-auth-v1";
 
+/// TLS 1.3 exporter label (RFC 8446 section 7.5) for the `tls_exporter` value
+/// in the auth signature, used with an empty context (wire-transport: Session
+/// authentication; design D9).
+pub const AUTH_TLS_EXPORTER_LABEL: &[u8] = b"EXPORTER-vyajena2-auth-v1";
+
+/// Length of the `tls_exporter` value in the auth signature (wire-transport:
+/// Session authentication).
+pub const AUTH_TLS_EXPORTER_LEN: usize = 32;
+
 // --- Identifiers and MLS ----------------------------------------------------
 
 /// Length of a device id: the first 16 bytes of SHA-256(device auth public key)
@@ -62,14 +71,23 @@ pub const AUTHORIZATION_BEARER_PREFIX: &str = "Bearer ";
 /// authentication).
 pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(60 * 60);
 
+/// Length of a challenge nonce: random bytes from `Devices.GetChallenge`
+/// (wire-transport: Session authentication).
+pub const CHALLENGE_NONCE_LEN: usize = 32;
+
+/// A challenge nonce is valid this long after it is issued, and only once
+/// (wire-transport: Session authentication).
+pub const CHALLENGE_TTL: Duration = Duration::from_secs(60);
+
 // --- Size limits ------------------------------------------------------------
 
 /// Maximum `Envelope.ciphertext` length of an `APPLICATION` envelope
 /// (wire-transport: Size limits; design D10).
 pub const MAX_APPLICATION_CIPHERTEXT_BYTES: usize = 65_536;
 
-/// Maximum encoded size of a `COMMIT`, `WELCOME` or `PROPOSAL` envelope
-/// (wire-transport: Size limits; design D10).
+/// Maximum encoded size of a `COMMIT` envelope, including its `welcome`, or a
+/// `PROPOSAL` envelope (wire-transport: Size limits; message-delivery: Welcome
+/// travels with its commit; design D10).
 pub const MAX_HANDSHAKE_ENVELOPE_BYTES: usize = 262_144;
 
 // --- KeyPackages ------------------------------------------------------------
@@ -149,6 +167,32 @@ mod tests {
         let decoded = v1::SignedDeviceCertificate::decode(&*signed.encode_to_vec()).unwrap();
         assert_eq!(decoded, signed);
         assert_eq!(v1::DeviceCertificate::decode(&*decoded.certificate).unwrap(), cert);
+    }
+
+    #[test]
+    fn welcome_counts_toward_the_commit_envelope_cap() {
+        // The Welcome travels inside its COMMIT envelope, and the handshake cap
+        // applies to the whole encoded envelope (message-delivery: Welcome
+        // travels with its commit; wire-transport: Size limits).
+        let commit = v1::Envelope {
+            msg_id: vec![1; super::MSG_ID_LEN],
+            kind: v1::envelope::Kind::Commit as i32,
+            ciphertext: vec![0; super::MAX_HANDSHAKE_ENVELOPE_BYTES / 2],
+            welcome: Some(v1::WelcomeBundle {
+                welcome: vec![0; super::MAX_HANDSHAKE_ENVELOPE_BYTES / 2],
+                recipients: vec![],
+            }),
+            ..Default::default()
+        };
+        assert!(commit.encoded_len() > super::MAX_HANDSHAKE_ENVELOPE_BYTES);
+        let decoded = v1::Envelope::decode(&*commit.encode_to_vec()).unwrap();
+        assert_eq!(decoded, commit);
+    }
+
+    #[test]
+    fn tls_exporter_label_uses_the_exporter_prefix() {
+        // RFC 5705 / RFC 8446: application exporter labels start with "EXPORTER-".
+        assert!(super::AUTH_TLS_EXPORTER_LABEL.starts_with(b"EXPORTER-"));
     }
 
     #[test]
