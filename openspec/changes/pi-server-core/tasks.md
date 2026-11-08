@@ -32,6 +32,8 @@
 - [x] 6.1 `CreateInvite`, `ListInvites`, `RevokeInvite`, `RemoveUser`
 - [x] 6.2 `CreateGroup` building the OpenMLS `PublicGroup` from GroupInfo and ratchet tree; persist public state
 - [x] 6.3 Commit checks: signature, committer is the authenticated device, commit authority via `protocol` (Pi validates handshakes without group secrets)
+- [ ] 6.4 Let a removed user's username be invited again (group-membership: Removing a user, as modified here); test the admin reset end to end
+- [ ] 6.5 Reject KeyPackages whose capabilities lack extension type `0xF0A1` with `INVALID_ARGUMENT` (key-directory: KeyPackage upload, as modified here)
 
 ## 7. Messaging
 

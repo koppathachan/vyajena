@@ -35,9 +35,16 @@ tested locally before anything else is published.
 
 ### Modified Capabilities
 
-None. The server implements the existing `wire-transport`, `device-identity`,
-`key-directory`, `message-delivery` and `group-membership` requirements without
-changing them. `message-content` is client-only.
+Found while building tasks 4-6 and approved by the owner:
+
+- `group-membership` (Removing a user): a removed user's username can be invited
+  again, which the owner's admin-driven identity recovery needs.
+- `key-directory` (KeyPackage upload): the Pi rejects KeyPackages whose
+  capabilities do not list the admin group-context extension type `0xF0A1`
+  (design D10), since such a device could never be added.
+
+Every other existing requirement is implemented unchanged. `message-content` is
+client-only.
 
 ## Impact
 
