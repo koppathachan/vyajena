@@ -1,0 +1,222 @@
+// Messaging service: the one persistent stream that carries all messaging.
+//
+// `Connect` requires a session token (wire-transport: Session authentication).
+// The sender of everything a device sends on the stream is the device that
+// authenticated it.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+import "vyajena/v1/common.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs and design D11.
+service Messaging {
+  // wire-transport: Single persistent messaging stream. One bidirectional stream
+  // per connection carries outgoing envelopes, incoming envelopes, send results,
+  // acks, catch-up replay and heartbeats. The Pi allows at most one open stream
+  // per device and closes the older stream when a new one opens.
+  //
+  // wire-transport: Protocol version negotiation. The first client frame is a
+  // `Hello`. If the Pi does not support its version it closes the stream with
+  // `FAILED_PRECONDITION` and lists the supported versions in the status.
+  //
+  // wire-transport: Heartbeats. While the stream is idle the client sends a
+  // `Heartbeat` at least every 25 seconds and the Pi replies to each. The Pi
+  // closes a stream that has received nothing for 90 seconds and treats the
+  // device as offline.
+  //
+  // message-delivery: Ordered delivery and catch-up. On connect the Pi sends
+  // everything after the device's cursor (commit log entries, welcomes and
+  // queued application entries, merged in `server_seq` order) before any live
+  // traffic.
+  //
+  // buf:lint:ignore RPC_REQUEST_STANDARD_NAME
+  // buf:lint:ignore RPC_RESPONSE_STANDARD_NAME
+  // The stream frames keep the names `ClientFrame` and `ServerFrame` from D11.
+  rpc Connect(stream ClientFrame) returns (stream ServerFrame);
+}
+
+// A frame from the device to the Pi.
+message ClientFrame {
+  oneof frame {
+    // Must be the first frame, and only the first.
+    Hello hello = 1;
+    Envelope envelope = 2;
+    Ack ack = 3;
+    Heartbeat heartbeat = 4;
+  }
+}
+
+// A frame from the Pi to the device.
+message ServerFrame {
+  oneof frame {
+    // An incoming envelope, with the Pi-set fields filled in.
+    Envelope envelope = 1;
+    SendResult send_result = 2;
+    GapNotice gap_notice = 3;
+    LowKeyPackages low_key_packages = 4;
+    RemovedNotice removed_notice = 5;
+    RejoinNotice rejoin_notice = 6;
+    // The Pi's reply to a client `Heartbeat`.
+    Heartbeat heartbeat = 7;
+  }
+}
+
+// wire-transport: Protocol version negotiation.
+message Hello {
+  // The protocol version this client speaks, one of
+  // `ServerInfo.supported_protocol_versions` (vyajena_proto::PROTOCOL_VERSION).
+  uint32 protocol_version = 1;
+}
+
+// message-delivery: Envelope. Every message on the stream is carried in one.
+//
+// Size (wire-transport: Size limits): an `APPLICATION` envelope's `ciphertext`
+// is at most 65,536 bytes; a `COMMIT`, `WELCOME` or `PROPOSAL` envelope is at
+// most 262,144 bytes. The client refuses to send one over its limit; the Pi
+// rejects it with `REJECTION_REASON_TOO_LARGE` and stores nothing.
+//
+// Framing (message-delivery: Framing matches the envelope): the Pi parses the
+// MLS framing of every envelope and rejects it with `REJECTION_REASON_MALFORMED`
+// if its group id, epoch or content type do not match `group_id`, `epoch` and
+// `kind`. `APPLICATION` carries an MLS `PrivateMessage`; `COMMIT` and `PROPOSAL`
+// carry an MLS `PublicMessage` (design D5).
+//
+// Epoch (message-delivery: Strict epoch rule): the Pi rejects any envelope whose
+// `epoch` is not the group's current epoch with `REJECTION_REASON_STALE_EPOCH`.
+//
+// Commits (group-membership: Commit authority; group-membership: Pi validates
+// handshakes without group secrets): the Pi verifies a `COMMIT`'s signature
+// against the committing leaf, checks that the committing leaf is the
+// authenticated device's leaf, and applies the commit authority rule (design D6),
+// rejecting with `REJECTION_REASON_POLICY_VIOLATION`.
+message Envelope {
+  // The kind of MLS message in `ciphertext`.
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    // An application message (MLS `PrivateMessage`).
+    KIND_APPLICATION = 1;
+    // A commit (MLS `PublicMessage`).
+    KIND_COMMIT = 2;
+    // An MLS `Welcome`, delivered only to `recipients`.
+    KIND_WELCOME = 3;
+    // A proposal (MLS `PublicMessage`), including the Pi's external Remove
+    // proposals (group-membership: Inactive devices are kept out).
+    KIND_PROPOSAL = 4;
+  }
+
+  // --- Set by the sending client. ---
+
+  // Client-generated, 16 bytes, unique per sending device (vyajena_proto::
+  // MSG_ID_LEN). message-delivery: Idempotent sends. The Pi deduplicates
+  // accepted envelopes on (sender device, `msg_id`) for at least 7 days; a
+  // retry with identical ciphertext gets the original result and creates no new
+  // entries, a retry with different ciphertext is rejected with
+  // `REJECTION_REASON_DUPLICATE_MISMATCH`. Rejected envelopes leave no dedup
+  // record.
+  bytes msg_id = 1;
+  // The MLS group id.
+  bytes group_id = 2;
+  // The MLS epoch the message was created in.
+  uint64 epoch = 3;
+  Kind kind = 4;
+  // The TLS-serialized MLS `MLSMessage`.
+  bytes ciphertext = 5;
+  // `WELCOME` only: the devices the Welcome is for (message-delivery:
+  // Envelope). Empty for every other kind.
+  repeated DeviceRef recipients = 6;
+
+  // --- Set by the Pi when it accepts the envelope; ignored if a client sets
+  // them. ---
+
+  // The device that authenticated the sending stream, regardless of anything
+  // the client put here (message-delivery: Envelope). Unset when the Pi itself
+  // is the sender, as for its external Remove proposals.
+  DeviceRef sender = 7;
+  // The next number in the group's single sequence (message-delivery: Envelope;
+  // design D8).
+  uint64 server_seq = 8;
+  // When the Pi accepted the envelope.
+  google.protobuf.Timestamp accepted_at = 9;
+}
+
+// The Pi's answer to one client `Envelope`, matched by `msg_id`.
+//
+// message-delivery: Accepted means durable. The Pi sends `accepted` only after
+// it has durably written the envelope and every queue or log entry it creates.
+// The client shows the message as sending until then, and as accepted after.
+message SendResult {
+  bytes msg_id = 1;
+  oneof result {
+    Accepted accepted = 2;
+    Rejected rejected = 3;
+  }
+
+  message Accepted {
+    uint64 server_seq = 1;
+    google.protobuf.Timestamp accepted_at = 2;
+  }
+
+  message Rejected {
+    RejectionReason reason = 1;
+    // Set with `REJECTION_REASON_STALE_EPOCH`: the group's current epoch
+    // (message-delivery: Strict epoch rule).
+    uint64 current_epoch = 2;
+  }
+}
+
+// message-delivery: Acknowledgement. The highest `server_seq` the device has
+// durably processed in `group_id`; cumulative. The Pi then deletes that device's
+// queue entries up to it, advances its commit-log cursor and does not redeliver
+// them.
+message Ack {
+  bytes group_id = 1;
+  uint64 server_seq = 2;
+}
+
+// wire-transport: Heartbeats. Sent by the client while idle, and by the Pi in
+// reply.
+message Heartbeat {}
+
+// message-delivery: Expiry and gap notice. Sent when the device connects after
+// `APPLICATION` entries for it expired (7 days after `accepted_at`) so it can
+// show "messages before X expired".
+message GapNotice {
+  bytes group_id = 1;
+  // `accepted_at` of the newest expired entry.
+  google.protobuf.Timestamp newest_expired_at = 2;
+}
+
+// key-directory: Replenishment signal. Sent when the device's one-time
+// KeyPackage count drops below 5; the device then uploads more with
+// `Keys.UploadKeyPackages`.
+message LowKeyPackages {
+  // One-time KeyPackages the Pi still holds for this device.
+  uint32 remaining = 1;
+}
+
+// group-membership: Automatic re-add. Sent to a device that was removed for
+// inactivity (group-membership: Inactive devices are kept out) when it
+// reconnects. The device waits on the stream for the Welcome that re-adds it;
+// messages from while it was inactive are not delivered.
+message RemovedNotice {
+  bytes group_id = 1;
+  // The start of the period whose messages this device will not receive, so
+  // the app can show that messages since then were not kept.
+  google.protobuf.Timestamp missed_since = 2;
+}
+
+// group-membership: Automatic re-add. Sent to the returning device's user's
+// other connected devices and to the admin's connected devices. The first to
+// receive it, with no user action, verifies the device's certificate against
+// the user's pinned identity key and commits its Add together with any pending
+// Remove of its old leaf (allowed by the commit authority rule, design D6). A
+// device that loses the race gets `REJECTION_REASON_STALE_EPOCH`, sees the
+// device is already a member, and does nothing more.
+message RejoinNotice {
+  bytes group_id = 1;
+  // The returning device.
+  DeviceRef device = 2;
+}

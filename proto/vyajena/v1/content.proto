@@ -1,0 +1,51 @@
+// The plaintext inside every MLS application message.
+//
+// message-content: Inner content format. The plaintext of every MLS application
+// message is an encoded `Content`. Only the Rust core encodes or decodes it; the
+// Pi never sees it and Flutter never sees protobuf.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// message-content: Inner content format. A client send time and exactly one
+// body. A client that decrypts a `Content` whose body it does not know (the
+// oneof decodes as unset) shows a placeholder saying the message needs a newer
+// app version, and does not fail.
+message Content {
+  // The sender's clock when the user sent the message.
+  google.protobuf.Timestamp sent_at = 1;
+  oneof body {
+    Text text = 2;
+    GroupSettings group_settings = 3;
+    Profile profile = 4;
+  }
+}
+
+// message-content: Text only. UTF-8 text and nothing else: no attachments, link
+// previews or rich formatting. The client limits text to what encrypts within
+// the 65,536-byte ciphertext cap and refuses to send longer text
+// (wire-transport: Size limits).
+message Text {
+  string text = 1;
+}
+
+// message-content: Group settings travel encrypted. The group name and settings,
+// which the Pi never sees (group-membership: Membership state on the Pi).
+// Only messages from admin devices change them; clients ignore `GroupSettings`
+// from non-admin devices.
+message GroupSettings {
+  // The group's display name.
+  optional string name = 1;
+}
+
+// message-content: User-owned profiles. Clients apply a `Profile` only to the
+// user whose device sent it, always show the username alongside the display
+// name (e.g. "Ali (alice)"), and fall back to the username when no display name
+// is set.
+message Profile {
+  optional string display_name = 1;
+  // A short "about" text.
+  optional string about = 2;
+}

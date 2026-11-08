@@ -323,6 +323,16 @@ crates/vyajena-proto   prost + tonic-build, re-exports generated code and limits
 reasons are an enum in `SendResult` on the stream, and standard gRPC status codes
 for unary RPCs.
 
+As built (tasks 1-3): `buf.yaml` is a v2 config, where the DEFAULT lint category
+is named `STANDARD`. The service names (`Devices`, `Keys`, `Admin`, `Messaging`)
+and the stream frames (`ClientFrame`, `ServerFrame`) keep the names above, so
+those six lint findings (`SERVICE_SUFFIX`, `RPC_REQUEST_STANDARD_NAME`,
+`RPC_RESPONSE_STANDARD_NAME`) are silenced with `buf:lint:ignore` comments on the
+element; every other DEFAULT rule applies. `vyajena-proto` uses tonic 0.14 with
+`tonic-prost-build`, parses the protos with `protox` (no system `protoc`),
+generates transport-agnostic clients, and exports the D10 limits, counts,
+timings and context strings as constants.
+
 ### D12. Usernames are the admin's; profiles are the user's
 
 The admin picks each user's username when creating the invite, and it is the

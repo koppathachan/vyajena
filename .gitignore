@@ -4,7 +4,8 @@
 # Rust
 /target/
 **/target/
-Cargo.lock
+# The root workspace lock is committed; standalone spikes keep theirs local.
+spikes/**/Cargo.lock
 
 # Flutter / Dart
 .dart_tool/

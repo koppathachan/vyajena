@@ -1,0 +1,112 @@
+// Admin service: invites, the group and user removal.
+//
+// Every RPC requires a session token (wire-transport: Session authentication)
+// and may be called only by a device of the admin user, whose id is set in the
+// Pi's config (design D13). Any other device is rejected with
+// `PERMISSION_DENIED` (device-identity: Invites).
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+import "vyajena/v1/common.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs and design D11.
+service Admin {
+  // device-identity: Invites; device-identity: Admin-owned usernames.
+  rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse);
+
+  // device-identity: Invites. Lists unused invites.
+  rpc ListInvites(ListInvitesRequest) returns (ListInvitesResponse);
+
+  // device-identity: Invites. Revokes an unused invite.
+  rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse);
+
+  // group-membership: Group creation.
+  rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
+
+  // group-membership: Removing a user.
+  rpc RemoveUser(RemoveUserRequest) returns (RemoveUserResponse);
+}
+
+// device-identity: Admin-owned usernames. The admin chooses the username; the
+// new user's id is `<username>@<server_id>` of this Pi.
+message CreateInviteRequest {
+  string username = 1;
+}
+
+message CreateInviteResponse {
+  Invite invite = 1;
+  // The payload to share with the invited person.
+  InvitePayload payload = 2;
+}
+
+// device-identity: Invites. An invite is single-use, names the user id it
+// creates, and expires 7 days after creation unless used
+// (vyajena_proto::INVITE_TTL).
+message Invite {
+  string code = 1;
+  UserId user_id = 2;
+  google.protobuf.Timestamp created_at = 3;
+  google.protobuf.Timestamp expires_at = 4;
+}
+
+// device-identity: Invites. What an invited person's app needs to sign up: the
+// relay address, the Pi's TLS key pin and the invite code.
+//
+// device-identity: Bootstrap admin. On first start with an empty database the Pi
+// creates one bootstrap invite for the configured admin user id and prints this
+// payload to its log once; the user created from it is the admin.
+message InvitePayload {
+  // Where to reach the Pi through the relay, as `host:port`.
+  string relay_address = 1;
+  // SHA-256 of the Pi's TLS SubjectPublicKeyInfo (32 bytes) (wire-transport:
+  // gRPC over HTTP/2 and pinned TLS on TCP 443).
+  bytes tls_spki_sha256 = 2;
+  // The single-use invite code for `RegisterRequest.invite_code`.
+  string invite_code = 3;
+  // The user id the invite creates, so the first device can put it in the
+  // device certificate it signs before calling `Devices.Register`. The Pi
+  // still uses the id it stored for the invite (device-identity: Admin-owned
+  // usernames).
+  UserId user_id = 4;
+}
+
+message ListInvitesRequest {}
+
+message ListInvitesResponse {
+  repeated Invite invites = 1;
+}
+
+message RevokeInviteRequest {
+  string code = 1;
+}
+
+message RevokeInviteResponse {}
+
+// group-membership: Group creation. The admin's device sends the group's public
+// state at epoch 0. The group context lists the Pi as an MLS external sender
+// (`ServerInfo.external_sender`) and names the admin's user id. The Pi records
+// the group at epoch 0 with that device as its only member. The MVP Pi holds at
+// most one group: a second `CreateGroup` is rejected with `ALREADY_EXISTS`.
+message CreateGroupRequest {
+  // The MLS group id.
+  bytes group_id = 1;
+  // TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+  // ratchet tree extension.
+  bytes group_info = 2;
+  // TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+  bytes ratchet_tree = 3;
+}
+
+message CreateGroupResponse {}
+
+// group-membership: Removing a user. The admin first commits Removes of all the
+// user's devices, then calls this, which revokes every device of the user. A
+// revoked device fails authentication and receives no further envelopes.
+message RemoveUserRequest {
+  UserId user_id = 1;
+}
+
+message RemoveUserResponse {}

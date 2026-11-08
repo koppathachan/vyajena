@@ -1,0 +1,203 @@
+// Devices service: server info, signup, authentication, linking, revocation and
+// push tokens.
+//
+// Transport (wire-transport: gRPC over HTTP/2 and pinned TLS on TCP 443): gRPC
+// over HTTP/2 over TLS 1.3 on TCP 443, TLS terminated on the Pi. The client
+// authenticates the Pi only by the SHA-256 hash of its TLS SubjectPublicKeyInfo,
+// compared with the pin from its invite (`InvitePayload.tls_spki_sha256`); it
+// uses no certificate authority or domain name, and aborts before sending any
+// gRPC request on a mismatch.
+//
+// Authentication (wire-transport: Session authentication): every RPC in every
+// service requires a valid session token in the `authorization` metadata, as
+// `Bearer <session_token>`, except `GetServerInfo`, `Register`, `GetChallenge`
+// and `Authenticate` in this service. A missing or expired token is rejected with
+// `UNAUTHENTICATED`.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+import "vyajena/v1/common.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// The service names `Devices`, `Keys`, `Admin` and `Messaging` are the names the
+// specs and design D11 use (`Devices.Register`, `Messaging.Connect`, ...).
+service Devices {
+  // Unauthenticated. Returns the server id, supported protocol versions, size
+  // limits and the Pi's external sender key (wire-transport: Protocol version
+  // negotiation; wire-transport: Size limits).
+  rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+
+  // Unauthenticated. Signup of a user's first device with an invite
+  // (device-identity: Signup with an invite).
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Unauthenticated. Issues a single-use challenge nonce (wire-transport:
+  // Session authentication).
+  rpc GetChallenge(GetChallengeRequest) returns (GetChallengeResponse);
+
+  // Unauthenticated. Exchanges a signed challenge for a session token
+  // (wire-transport: Session authentication).
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+
+  // Uploads a certificate for a new device of the caller's user, signed on the
+  // device that holds the user identity key (device-identity: Device linking).
+  rpc LinkDevice(LinkDeviceRequest) returns (LinkDeviceResponse);
+
+  // Returns the calling device's user id and certificate (device-identity:
+  // Device linking).
+  rpc GetSelf(GetSelfRequest) returns (GetSelfResponse);
+
+  // Revokes another device of the caller's user (device-identity: Device
+  // revocation).
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+
+  // Registers, replaces or clears the calling device's push token
+  // (device-identity: Push token registration).
+  rpc UpdatePushToken(UpdatePushTokenRequest) returns (UpdatePushTokenResponse);
+}
+
+message GetServerInfoRequest {}
+
+message GetServerInfoResponse {
+  ServerInfo server_info = 1;
+}
+
+// What a client needs to know about the Pi before talking to it.
+message ServerInfo {
+  // The `server_id` part of every user id on this Pi (device-identity:
+  // Federation-ready identifiers).
+  string server_id = 1;
+  // Protocol versions this Pi supports. A client states its version in
+  // `Hello.protocol_version` (wire-transport: Protocol version negotiation).
+  repeated uint32 supported_protocol_versions = 2;
+  // wire-transport: Size limits. The Pi advertises both limits here.
+  Limits limits = 3;
+  // The Pi's MLS external sender entry. The group context lists it in
+  // `external_senders`, and the Pi signs its external Remove proposals with it
+  // (group-membership: Group creation; group-membership: Inactive devices are
+  // kept out; design D7).
+  ExternalSender external_sender = 4;
+}
+
+// wire-transport: Size limits. The client refuses to send an envelope over its
+// limit; the Pi rejects one with `REJECTION_REASON_TOO_LARGE`.
+message Limits {
+  // Maximum `Envelope.ciphertext` length of an `APPLICATION` envelope: 65,536.
+  uint32 max_application_ciphertext_bytes = 1;
+  // Maximum size of a `COMMIT`, `WELCOME` or `PROPOSAL` envelope: 262,144. It
+  // applies to the encoded `Envelope` as the client sends it.
+  uint32 max_handshake_envelope_bytes = 2;
+}
+
+// An MLS ExternalSender (RFC 9420 section 12.1.8.1), split into its two parts.
+message ExternalSender {
+  // The Pi's MLS signature public key (Ed25519, 32 bytes).
+  bytes signature_public_key = 1;
+  // The TLS-serialized MLS `Credential` of this external sender entry.
+  bytes credential = 2;
+}
+
+// device-identity: Signup with an invite. The Pi creates the user and the device
+// atomically and marks the invite used. A used, revoked or expired invite is
+// rejected and nothing is created.
+//
+// device-identity: Admin-owned usernames. The new user's id is the one the
+// invite was created for, whatever the device sends. A certificate naming any
+// other user id is rejected.
+message RegisterRequest {
+  // `InvitePayload.invite_code`.
+  string invite_code = 1;
+  // The new user identity public key (Ed25519, 32 bytes).
+  bytes identity_public_key = 2;
+  // A certificate for this device, signed by `identity_public_key`.
+  SignedDeviceCertificate certificate = 3;
+}
+
+message RegisterResponse {
+  UserId user_id = 1;
+}
+
+message GetChallengeRequest {}
+
+// wire-transport: Session authentication. The nonce is single-use and expires.
+message GetChallengeResponse {
+  bytes nonce = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// wire-transport: Session authentication. `signature` is an Ed25519 signature by
+// the device auth key over `"vyajena2-auth-v1" || nonce || tls_exporter`
+// (plain concatenation, see vyajena_proto::AUTH_CONTEXT), where `tls_exporter`
+// is the TLS exporter value of the connection carrying this call, so a signed
+// challenge cannot be replayed on another connection (design D9).
+//
+// A nonce that was already used or has expired is rejected with
+// `UNAUTHENTICATED`, as is a device that is not registered or is revoked.
+message AuthenticateRequest {
+  DeviceRef device = 1;
+  // The nonce from `GetChallengeResponse`.
+  bytes nonce = 2;
+  // Ed25519 signature (64 bytes) by the device auth key.
+  bytes signature = 3;
+}
+
+// wire-transport: Session authentication. The token expires after at most 1 hour
+// (vyajena_proto::SESSION_TOKEN_MAX_LIFETIME) and is sent as
+// `authorization: Bearer <session_token>`.
+message AuthenticateResponse {
+  string session_token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// device-identity: Device linking. The certificate is for a new device of the
+// caller's user and is signed on the device that holds the user identity key.
+// The Pi accepts it only if it verifies against the identity key stored for that
+// user (device-identity: User identity key and device certificates), so a device
+// without the identity key cannot link one. The new device then authenticates
+// with its own auth key and needs no invite.
+message LinkDeviceRequest {
+  SignedDeviceCertificate certificate = 1;
+}
+
+message LinkDeviceResponse {}
+
+message GetSelfRequest {}
+
+message GetSelfResponse {
+  UserId user_id = 1;
+  SignedDeviceCertificate certificate = 2;
+}
+
+// device-identity: Device revocation. Any authenticated device of a user may
+// revoke another device of the same user. A revoked device fails authentication
+// from then on and its open `Connect` stream is closed.
+message RevokeDeviceRequest {
+  // The device to revoke, a device of the caller's user (16 bytes).
+  bytes device_id = 1;
+}
+
+message RevokeDeviceResponse {}
+
+// device-identity: Push token registration. Setting `push_token` registers or
+// replaces the device's token; leaving it unset clears it.
+message UpdatePushTokenRequest {
+  PushToken push_token = 1;
+}
+
+message UpdatePushTokenResponse {}
+
+message PushToken {
+  PushPlatform platform = 1;
+  // The token as the platform's SDK hands it to the app.
+  string token = 2;
+}
+
+enum PushPlatform {
+  PUSH_PLATFORM_UNSPECIFIED = 0;
+  // Firebase Cloud Messaging.
+  PUSH_PLATFORM_FCM = 1;
+  // Apple Push Notification service.
+  PUSH_PLATFORM_APNS = 2;
+}

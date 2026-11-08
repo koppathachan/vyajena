@@ -1,0 +1,12 @@
+# buf configuration for the vyajena.v1 wire contract (core-wire-protocol D11).
+# Lint: the DEFAULT rule set (called STANDARD in buf v2 configs).
+# Breaking: FILE rules, checked in CI against main.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

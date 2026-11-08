@@ -1,0 +1,112 @@
+// Shared identifiers, device certificates and rejection reasons.
+//
+// Normative rules are stated in comments with the OpenSpec requirement they come
+// from, written as `capability: Requirement name` (change `core-wire-protocol`).
+// Byte encodings: "TLS-serialized" means the RFC 9420 TLS presentation-language
+// encoding that OpenMLS produces with `tls_serialize_detached`.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// A user, identified as `<username>@<server_id>`.
+//
+// device-identity: Federation-ready identifiers. The textual form of a user id
+// is `username` + "@" + `server_id`.
+//
+// device-identity: Admin-owned usernames. `username` is chosen by the admin when
+// creating the user's invite and is the local part of the user id. No RPC lets a
+// user change it.
+message UserId {
+  // Local part, chosen by the admin.
+  string username = 1;
+  // The Pi's server id, as returned in `ServerInfo.server_id`.
+  string server_id = 2;
+}
+
+// A device: its user plus its device id.
+//
+// device-identity: Federation-ready identifiers. `device_id` is exactly 16 bytes:
+// the first 16 bytes of SHA-256(device auth public key). A device computes it
+// itself; the Pi never assigns it.
+message DeviceRef {
+  UserId user_id = 1;
+  // 16 bytes (see vyajena_proto::DEVICE_ID_LEN).
+  bytes device_id = 2;
+}
+
+// The statement a user identity key signs about one of the user's devices.
+//
+// device-identity: User identity key and device certificates. It binds the user
+// id, the device id, the device auth public key, the device's MLS signature
+// public key and a creation time.
+//
+// This message is never signed or sent on its own. It is encoded once, by the
+// signer, and carried as opaque bytes in `SignedDeviceCertificate.certificate`.
+message DeviceCertificate {
+  // The certified device. `device.device_id` MUST equal the first 16 bytes of
+  // SHA-256(`auth_public_key`) (device-identity: Federation-ready identifiers).
+  DeviceRef device = 1;
+  // Ed25519 public key (32 bytes) the device signs Pi challenges with
+  // (wire-transport: Session authentication).
+  bytes auth_public_key = 2;
+  // Ed25519 public key (32 bytes) the device signs MLS messages and its leaf
+  // with. Clients MUST check that it equals the `signature_key` of the MLS leaf
+  // carrying this certificate, or reject the commit (group-membership:
+  // Device-level membership).
+  bytes mls_signature_public_key = 3;
+  // When the identity device signed the certificate.
+  google.protobuf.Timestamp created_at = 4;
+}
+
+// A device certificate plus the user identity key's signature over it.
+//
+// device-identity: User identity key and device certificates. `signature` is an
+// Ed25519 signature by the user identity key over the bytes
+// `"vyajena2-device-cert-v1" || certificate` (plain concatenation, see
+// vyajena_proto::DEVICE_CERT_CONTEXT). The Pi accepts a certificate only if it
+// verifies against the identity key stored for that user, and rejects a forged
+// one with `PERMISSION_DENIED`.
+//
+// Verifiers check the signature over the carried `certificate` bytes and only
+// then decode them as a `DeviceCertificate`. They never re-encode the
+// certificate, so no canonical protobuf encoding is needed (design D4).
+//
+// group-membership: Device-level membership. The encoded `SignedDeviceCertificate`
+// is the `identity` of the device's MLS BasicCredential (design D4).
+message SignedDeviceCertificate {
+  // An encoded `DeviceCertificate`, exactly as signed.
+  bytes certificate = 1;
+  // Ed25519 signature (64 bytes) by the user identity key.
+  bytes signature = 2;
+}
+
+// Why the Pi rejected an envelope on the `Connect` stream. Returned in
+// `SendResult.Rejected`. Unary RPCs use standard gRPC status codes instead
+// (design D11).
+//
+// There is no queue-full reason: the Pi never rejects a send because of another
+// device's queue (message-delivery: Per-device queues).
+enum RejectionReason {
+  REJECTION_REASON_UNSPECIFIED = 0;
+  // The envelope's epoch is not the group's current epoch. The rejection carries
+  // the current epoch; the client processes pending commits, re-encrypts in the
+  // current epoch and resends with the same `msg_id` (message-delivery: Strict
+  // epoch rule).
+  REJECTION_REASON_STALE_EPOCH = 1;
+  // `APPLICATION` ciphertext over 65,536 bytes, or a handshake envelope over
+  // 262,144 bytes. Nothing is stored (wire-transport: Size limits).
+  REJECTION_REASON_TOO_LARGE = 2;
+  // The MLS framing does not parse, or its group id, epoch or content type do
+  // not match the envelope, or the wire format is wrong for the kind
+  // (message-delivery: Framing matches the envelope).
+  REJECTION_REASON_MALFORMED = 3;
+  // A retry reused a `msg_id` with different ciphertext (message-delivery:
+  // Idempotent sends).
+  REJECTION_REASON_DUPLICATE_MISMATCH = 4;
+  // A commit breaks the commit authority rule, or its sender leaf is not the
+  // authenticated device's leaf (group-membership: Commit authority;
+  // group-membership: Pi validates handshakes without group secrets).
+  REJECTION_REASON_POLICY_VIOLATION = 5;
+}

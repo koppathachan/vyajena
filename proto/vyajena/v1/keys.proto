@@ -1,0 +1,62 @@
+// Keys service: the KeyPackage directory.
+//
+// All RPCs require a session token (wire-transport: Session authentication).
+// KeyPackages are TLS-serialized MLS `KeyPackage` structures (RFC 9420 section
+// 10), not wrapped in an `MLSMessage`.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "vyajena/v1/common.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs and design D11.
+service Keys {
+  // key-directory: KeyPackage upload.
+  rpc UploadKeyPackages(UploadKeyPackagesRequest) returns (UploadKeyPackagesResponse);
+
+  // key-directory: KeyPackage fetch.
+  rpc FetchKeyPackages(FetchKeyPackagesRequest) returns (FetchKeyPackagesResponse);
+}
+
+// key-directory: KeyPackage upload. One-time KeyPackages plus exactly one
+// last-resort KeyPackage. A device keeps 20 one-time KeyPackages on the Pi and
+// uploads more when told its count dropped below 5 (design D10;
+// key-directory: Replenishment signal).
+//
+// The Pi accepts a KeyPackage only if it parses, uses ciphersuite
+// `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`, its credential carries the
+// uploading device's certificate, and its signature key equals that
+// certificate's MLS signature key. A KeyPackage whose credential names a
+// different device fails the whole upload with `PERMISSION_DENIED`.
+message UploadKeyPackagesRequest {
+  // One-time KeyPackages; each is handed out at most once.
+  repeated bytes key_packages = 1;
+  // The last-resort KeyPackage, handed out when no one-time KeyPackage remains.
+  bytes last_resort_key_package = 2;
+}
+
+message UploadKeyPackagesResponse {}
+
+message FetchKeyPackagesRequest {
+  UserId user_id = 1;
+}
+
+// key-directory: KeyPackage fetch. One entry per non-revoked device of the user.
+// The Pi hands out each one-time KeyPackage at most once and falls back to the
+// device's last-resort KeyPackage when none remain.
+//
+// key-directory: Clients verify the identity chain. The client verifies every
+// device certificate against `identity_public_key`, pins each user's identity
+// key on first sight, and refuses to add a user's devices (and warns the user)
+// if a later fetch returns a different identity key for a pinned user.
+message FetchKeyPackagesResponse {
+  // The user's identity public key (Ed25519, 32 bytes).
+  bytes identity_public_key = 1;
+  repeated DeviceKeyPackage devices = 2;
+}
+
+message DeviceKeyPackage {
+  SignedDeviceCertificate certificate = 1;
+  bytes key_package = 2;
+}

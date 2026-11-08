@@ -1,0 +1,71 @@
+# Contract and build checks (core-wire-protocol task 3.1; wire-transport:
+# Protobuf contract is the source of truth).
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  proto:
+    name: buf lint and breaking
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: bufbuild/buf-action@v1
+        with:
+          version: 1.50.0
+          setup_only: true
+
+      - name: buf lint
+        run: buf lint
+
+      # Pull requests compare against the base branch (main); pushes to main
+      # compare against the previous main. The check is skipped while the
+      # baseline has no .proto files yet (the commit that adds the contract).
+      - name: buf breaking against main
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            against="origin/$BASE_REF"
+          else
+            against="$BEFORE"
+          fi
+          if [ -z "$against" ] || [ "$against" = "0000000000000000000000000000000000000000" ] \
+              || ! git rev-parse --verify --quiet "$against^{commit}" > /dev/null; then
+            echo "::notice::No baseline commit for buf breaking; skipping."
+            exit 0
+          fi
+          if ! git ls-tree -r --name-only "$against" -- proto | grep -q '\.proto$'; then
+            echo "::notice::Baseline $against has no .proto files yet; skipping buf breaking."
+            exit 0
+          fi
+          sha=$(git rev-parse "$against^{commit}")
+          buf breaking --against ".git#ref=$sha"
+
+  rust:
+    name: cargo build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # No system protoc needed: vyajena-proto compiles the protos with protox.
+      - name: cargo build
+        run: cargo build --workspace --locked
+
+      - name: cargo test
+        run: cargo test --workspace --locked
