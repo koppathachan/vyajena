@@ -8,7 +8,13 @@ of the group when at least one of their devices is.
 #### Scenario: Member verifies a new device
 - **WHEN** a client processes an Add proposal
 - **THEN** it verifies the device certificate in the new leaf against that user's
-  pinned identity key and rejects the commit if it does not verify
+  pinned identity key, checks that the certificate's MLS signature key equals the
+  leaf's signature key, and rejects the commit if either check fails
+
+#### Scenario: Valid certificate on the wrong key
+- **WHEN** a leaf carries a genuine certificate for Alice's phone but a different
+  signature key
+- **THEN** clients reject the commit
 
 ### Requirement: Group creation
 The admin's device SHALL create the group by calling `Admin.CreateGroup` with the
