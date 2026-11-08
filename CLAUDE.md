@@ -42,9 +42,15 @@ buf breaking --against '.git#branch=main'
 cargo build --workspace
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --check
 openspec validate <change> --strict
 cargo run -p server -- --config server/local.toml   # local Pi on 127.0.0.1:8443
 ```
+
+The local server prints its one-time bootstrap invite only on first start, and
+its data lives in the git-ignored `server/.pi-local/` (README: "Run the server
+locally"). Never start it with `server/local.toml` for testing: that uses up the
+owner's invite. Tests start their own servers in temp folders.
 
 After changing any `.proto` file, regenerate the committed gRPC code with this
 one command, and commit the result with the proto change (CI never runs it):

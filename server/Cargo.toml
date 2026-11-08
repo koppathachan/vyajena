@@ -61,5 +61,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 # OpenMLS test clients: KeyPackages, groups, commits and Welcomes.
 openmls_basic_credential = "0.6"
+# The test client may offer TLS 1.2, to check that the Pi refuses it.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging", "tls12"] }
 # Parses the served certificate's SPKI in the pinned-TLS test client.
 webpki = { package = "rustls-webpki", version = "0.103", default-features = false, features = ["alloc", "ring"] }

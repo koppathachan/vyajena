@@ -301,8 +301,10 @@ Technical choices the specs leave open; none changes a requirement.
   refuses only a username whose user exists and is not removed. `Register`
   with an invite for a removed username replaces that row's identity key and
   clears `removed_at`; the old devices stay revoked, so only the new devices
-  can authenticate or be added. An unused invite created for that username
-  before the removal stays usable (the admin made it).
+  can authenticate or be added. `RemoveUser` also revokes every unused invite
+  for that username in the same transaction (task 6.6, owner decision after
+  session C), so only an invite created after the removal can bring the user
+  back.
 - **KeyPackage capability (6.5).** Checked after OpenMLS validation, before
   the certificate checks; a one-time or last-resort KeyPackage without
   `0xF0A1` fails the whole upload with `INVALID_ARGUMENT`.
@@ -423,3 +425,72 @@ None. First server; no deployed data.
 ## Open Questions
 
 None.
+
+## Appendix: requirement coverage (task 10.2)
+
+Every requirement in the main specs `wire-transport`, `device-identity`,
+`key-directory`, `message-delivery`, `group-membership`, `message-content`, plus
+this change's `pi-runtime` and its two modified requirements. **Pi** = the Pi
+enforces it (or its Pi side), with tests tagged `// spec: <capability>/<slug>`
+in the files named (`s/` = `server/tests/`, `p/` = `protocol/tests/`).
+**Client** = only the client enforces it; the core change tests it. Count: 44
+Pi, 5 client-only, 1 CI-only. Every Pi requirement has a test.
+
+| Requirement | Who | Tests |
+|---|---|---|
+| wire-transport/protobuf-contract-is-the-source-of-truth | CI | `buf lint` + `buf breaking` in `.github/workflows/ci.yml`; committed `pb.rs` from `cargo run -p pbgen` |
+| wire-transport/grpc-over-http-2-and-pinned-tls-on-tcp-443 | Pi (TLS 1.3, h2, pinned key); pin check is the client's | s/pinned_tls.rs |
+| wire-transport/session-authentication | Pi | s/session_authentication.rs, s/messaging_stream.rs, p/wire_transport.rs |
+| wire-transport/single-persistent-messaging-stream | Pi | s/messaging_stream.rs |
+| wire-transport/heartbeats | Pi (90 s close); 25 s sending is the client's | s/messaging_stream.rs |
+| wire-transport/size-limits | Pi; "Client-side check" is the client's | s/messaging_stream.rs, s/server_info.rs, p/wire_transport.rs |
+| wire-transport/protocol-version-negotiation | Pi | s/messaging_stream.rs, s/server_info.rs |
+| device-identity/federation-ready-identifiers | Pi | s/signup.rs, p/device_identity.rs |
+| device-identity/user-identity-key-and-device-certificates | Pi (incl. opaque certificate bytes); key store is the client's | s/signup.rs, p/device_identity.rs |
+| device-identity/invites | Pi | s/invites.rs |
+| device-identity/admin-owned-usernames | Pi | s/signup.rs |
+| device-identity/signup-with-an-invite | Pi | s/signup.rs |
+| device-identity/bootstrap-admin | Pi | s/bootstrap_admin.rs, s/signup.rs, s/running_locally.rs |
+| device-identity/admin-awareness | Pi | s/devices.rs |
+| device-identity/device-linking | Pi; QR scan is the client's | s/devices.rs |
+| device-identity/device-revocation | Pi | s/devices.rs, s/messaging_stream.rs |
+| device-identity/push-token-registration | Pi | s/devices.rs |
+| key-directory/keypackage-upload (modified: 0xF0A1) | Pi | s/key_packages.rs |
+| key-directory/keypackage-fetch | Pi | s/key_packages.rs |
+| key-directory/replenishment-signal | Pi (notice); uploading more is the client's | s/inactivity.rs |
+| key-directory/clients-verify-the-identity-chain | Client | identity pinning, core change |
+| message-delivery/envelope | Pi | s/message_delivery.rs |
+| message-delivery/framing-matches-the-envelope | Pi | s/message_delivery.rs |
+| message-delivery/welcome-travels-with-its-commit | Pi | s/message_delivery.rs, s/messaging_stream.rs (Welcome counts toward the commit cap) |
+| message-delivery/accepted-means-durable | Pi; "sending" display is the client's | s/message_delivery.rs |
+| message-delivery/idempotent-sends | Pi | s/message_delivery.rs |
+| message-delivery/strict-epoch-rule | Pi; re-encrypt and resend is the client's | s/message_delivery.rs |
+| message-delivery/per-device-queues | Pi | s/message_delivery.rs |
+| message-delivery/commit-log | Pi | s/message_delivery.rs |
+| message-delivery/ordered-delivery-and-catch-up | Pi | s/message_delivery.rs |
+| message-delivery/acknowledgement | Pi; acking after durable processing is the client's | s/message_delivery.rs |
+| message-delivery/expiry-and-gap-notice | Pi | s/message_delivery.rs |
+| message-delivery/content-free-wake-pings | Pi | s/wake_pings.rs |
+| group-membership/device-level-membership | Client, mirrored by the Pi (D10) | s/group_membership.rs |
+| group-membership/group-creation | Pi | s/group_membership.rs, p/group_membership.rs |
+| group-membership/commit-authority | Pi; the client's own check is the core's | s/group_membership.rs, p/group_membership.rs |
+| group-membership/pi-validates-handshakes-without-group-secrets | Pi | s/group_membership.rs |
+| group-membership/removing-a-user (modified: re-invite, old invites revoked) | Pi | s/group_membership.rs, s/message_delivery.rs |
+| group-membership/inactive-devices-are-kept-out | Pi; admins committing pending Removes is the client's | s/inactivity.rs, s/message_delivery.rs |
+| group-membership/automatic-re-add | Pi (notices, one winner, no old messages); the re-add itself is the client's | s/inactivity.rs |
+| group-membership/membership-state-on-the-pi | Pi | s/group_membership.rs |
+| message-content/inner-content-format | Client | core change (incl. the dropped "unknown body decodes as unset" test) |
+| message-content/text-only | Client | core change |
+| message-content/group-settings-travel-encrypted | Client | core change |
+| message-content/user-owned-profiles | Client | core change |
+| pi-runtime/configuration | Pi | s/configuration.rs |
+| pi-runtime/first-start | Pi | s/first_start.rs, s/running_locally.rs |
+| pi-runtime/durable-storage | Pi | s/durable_storage.rs, s/message_delivery.rs |
+| pi-runtime/push-provider-interface | Pi | s/push_provider.rs |
+| pi-runtime/running-locally | Pi | s/running_locally.rs, s/clock.rs |
+
+The two tests dropped with `vyajena-proto` that belong to the Pi are back:
+`signed_certificate_round_trips_as_opaque_bytes` (s/signup.rs, now through
+`Register`, `GetSelf` and `FetchKeyPackages` with a certificate holding a field
+the Pi does not know) and `welcome_counts_toward_the_commit_cap`
+(s/messaging_stream.rs).

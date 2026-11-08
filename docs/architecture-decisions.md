@@ -248,4 +248,4 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 - [ ] Key rotation for idle groups: every 7 days (proposed)?
 - [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
 - [ ] Relay on the shared VM or its own VM?
-- [ ] Build order (deferred to the end)
+- [x] Build order? **Decided** (pi-server-core): 1. Pi server, 2. Rust core library, 3. terminal client (the first point where two people can chat locally), 4. relay and Pi deployment, 5. Flutter app with real push (FCM/APNs).

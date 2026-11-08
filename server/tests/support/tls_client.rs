@@ -74,9 +74,19 @@ pub async fn connect_pinned(
     addr: SocketAddr,
     pin: [u8; 32],
 ) -> Result<TlsStream<TcpStream>, std::io::Error> {
+    connect_pinned_with(addr, pin, &[&rustls::version::TLS13]).await
+}
+
+/// Like [`connect_pinned`], offering only the given TLS `versions` (for
+/// negative tests).
+pub async fn connect_pinned_with(
+    addr: SocketAddr,
+    pin: [u8; 32],
+    versions: &[&'static rustls::SupportedProtocolVersion],
+) -> Result<TlsStream<TcpStream>, std::io::Error> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let mut config = ClientConfig::builder_with_provider(provider.clone())
-        .with_protocol_versions(&[&rustls::version::TLS13])
+        .with_protocol_versions(versions)
         .map_err(std::io::Error::other)?
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(PinVerifier { pin, provider }))

@@ -151,3 +151,18 @@ pub fn revoke(
         }
     }
 }
+
+/// Revokes every unused invite for `username` at `now` and returns how many
+/// (group-membership: Removing a user). Used and already revoked invites are
+/// left as they are.
+pub fn revoke_unused_for(
+    tx: &Transaction<'_>,
+    username: &str,
+    now: SystemTime,
+) -> Result<usize, StoreError> {
+    Ok(tx.execute(
+        "UPDATE invites SET revoked_at = ?2
+         WHERE username = ?1 AND used_at IS NULL AND revoked_at IS NULL",
+        params![username, unix_millis(now)],
+    )?)
+}

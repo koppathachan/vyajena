@@ -181,7 +181,7 @@ impl Admin for AdminService {
             return Err(Status::failed_precondition("the admin cannot be removed"));
         }
         let now = self.state.clock.now();
-        let revoked = self
+        let (revoked, invites) = self
             .state
             .store
             .call(move |conn| {
@@ -197,17 +197,18 @@ impl Admin for AdminService {
                     "UPDATE users SET removed_at = coalesce(removed_at, ?2) WHERE username = ?1",
                     rusqlite::params![user_id.username, unix_millis(now)],
                 )?;
+                let invites = invites::revoke_unused_for(&tx, &user_id.username, now)?;
                 tx.commit()?;
-                Ok(Ok(devices
-                    .into_iter()
-                    .map(|d| d.device_id)
-                    .collect::<Vec<_>>()))
+                Ok(Ok((
+                    devices.into_iter().map(|d| d.device_id).collect::<Vec<_>>(),
+                    invites,
+                )))
             })
             .await??;
         for device_id in &revoked {
             let _ = self.state.revocations.send(*device_id);
         }
-        tracing::info!(devices = revoked.len(), "removed a user");
+        tracing::info!(devices = revoked.len(), invites, "removed a user");
         Ok(Response::new(pb::RemoveUserResponse {}))
     }
 }

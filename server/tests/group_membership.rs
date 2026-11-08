@@ -1,5 +1,6 @@
-//! group-membership: Group creation; Commit authority; Pi validates handshakes
-//! without group secrets; Removing a user; Membership state on the Pi.
+//! group-membership: Device-level membership (the Pi's mirror of the client
+//! check); Group creation; Commit authority; Pi validates handshakes without
+//! group secrets; Removing a user; Membership state on the Pi.
 //!
 //! `Admin.CreateGroup` and `Admin.RemoveUser` run over gRPC. The commit checks
 //! run through `server::membership::GroupState` on the store's writer, as the
@@ -7,10 +8,12 @@
 
 mod support;
 
+use openmls::prelude::CredentialWithKey;
 use openmls::prelude::tls_codec::Serialize as _;
+use openmls_basic_credential::SignatureKeyPair;
 use server::auth::Caller;
 use server::membership::{AcceptedCommit, GroupState, HandshakeRejection};
-use support::clients::{TestDevice, TestUser};
+use support::clients::{CIPHERSUITE, TestDevice, TestUser};
 use support::harness::{Conn, TestPi, authed};
 use support::{Check, bootstrap_admin, invite_user, link_device, pb, pi_external_sender};
 use tonic::Code;
@@ -195,6 +198,51 @@ async fn setup() -> Setup {
         alice,
         laptop,
     }
+}
+
+// spec: group-membership/device-level-membership
+#[tokio::test]
+async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
+    let Setup {
+        pi,
+        conn,
+        mut admin,
+        alice,
+        mut laptop,
+    } = setup().await;
+    let mut tablet = link_device(&conn, &alice, &laptop).await;
+
+    // Clients reject this commit; the Pi refuses to sequence it too (D10).
+    let other = SignatureKeyPair::new(CIPHERSUITE.signature_algorithm()).check("key");
+    let swapped = tablet.key_package_signed_by(
+        CIPHERSUITE,
+        &other,
+        CredentialWithKey {
+            credential: tablet.credential_with_key().credential,
+            signature_key: other.public().into(),
+        },
+    );
+    let (commit, _) = admin.add(&[swapped]);
+    let result = submit(&pi, &admin, &commit).await;
+    assert!(
+        matches!(result, Err(HandshakeRejection::PolicyViolation(_))),
+        "{result:?}"
+    );
+    admin.abort();
+
+    // The certificate on its own key: a member device, which makes Alice a
+    // member through it as well as through her laptop.
+    let genuine = tablet.key_package();
+    let accepted = add_accepted(
+        &pi,
+        &mut admin,
+        &[genuine],
+        &mut [&mut laptop],
+        &mut [&mut tablet],
+    )
+    .await;
+    assert_eq!(accepted.added.len(), 1);
+    assert_eq!(accepted.added[0].device_id, tablet.device_id);
 }
 
 // spec: group-membership/group-creation
@@ -851,6 +899,58 @@ async fn only_the_admin_removes_users_and_not_the_admin() {
         .await,
         Some(Code::NotFound)
     );
+}
+
+// spec: group-membership/removing-a-user
+#[tokio::test]
+async fn old_invite_dies_with_the_removal() {
+    let Setup {
+        pi: _pi,
+        conn,
+        admin,
+        ..
+    } = setup().await;
+    // Two invites for bob@pi: Bob signs up with one, the other stays unused.
+    let spare = support::create_invite(&conn, &admin, "bob")
+        .await
+        .invite
+        .check("spare invite")
+        .code;
+    let (bob, _phone) = invite_user(&conn, &admin, "bob").await;
+
+    conn.admin()
+        .remove_user(authed(
+            admin.token(),
+            pb::RemoveUserRequest {
+                user_id: Some(bob.pb_user_id()),
+            },
+        ))
+        .await
+        .check("RemoveUser");
+
+    // The old invite is gone from the list and no longer registers anyone.
+    let listed = conn
+        .admin()
+        .list_invites(authed(admin.token(), pb::ListInvitesRequest {}))
+        .await
+        .check("ListInvites")
+        .into_inner();
+    assert!(listed.invites.iter().all(|i| i.code != spare));
+    let intruder = TestUser::new("bob");
+    let old = support::register(&conn, &spare, &intruder, &intruder.new_device()).await;
+    assert_eq!(old.err().map(|s| s.code()), Some(Code::PermissionDenied));
+
+    // Only an invite created after the removal works.
+    let fresh = support::create_invite(&conn, &admin, "bob")
+        .await
+        .invite
+        .check("fresh invite")
+        .code;
+    let new_bob = TestUser::new("bob");
+    let registered = support::register(&conn, &fresh, &new_bob, &new_bob.new_device())
+        .await
+        .check("Register with the new invite");
+    assert_eq!(registered.user_id, Some(new_bob.pb_user_id()));
 }
 
 // spec: group-membership/membership-state-on-the-pi

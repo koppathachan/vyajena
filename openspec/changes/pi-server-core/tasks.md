@@ -34,7 +34,7 @@
 - [x] 6.3 Commit checks: signature, committer is the authenticated device, commit authority via `protocol` (Pi validates handshakes without group secrets)
 - [x] 6.4 Let a removed user's username be invited again (group-membership: Removing a user, as modified here); test the admin reset end to end
 - [x] 6.5 Reject KeyPackages whose capabilities lack extension type `0xF0A1` with `INVALID_ARGUMENT` (key-directory: KeyPackage upload, as modified here)
-- [ ] 6.6 `RemoveUser` revokes every unused invite for that username (group-membership: Removing a user, as modified here)
+- [x] 6.6 `RemoveUser` revokes every unused invite for that username (group-membership: Removing a user, as modified here)
 
 ## 7. Messaging
 
@@ -54,11 +54,11 @@
 
 ## 10. Integration tests and local run
 
-- [ ] 10.1 Test harness: in-process server on a random port, temp database and keys, pinned TLS client, OpenMLS test clients, controllable clock
-- [ ] 10.2 One or more tagged tests for every server-enforced requirement in `wire-transport`, `device-identity`, `key-directory`, `message-delivery`, `group-membership` and `pi-runtime`, including the two tests dropped with `vyajena-proto`
-- [ ] 10.3 README section "Run the server locally": start it, read the pin and bootstrap invite, run the tests
+- [x] 10.1 Test harness: in-process server on a random port, temp database and keys, pinned TLS client, OpenMLS test clients, controllable clock
+- [x] 10.2 One or more tagged tests for every server-enforced requirement in `wire-transport`, `device-identity`, `key-directory`, `message-delivery`, `group-membership` and `pi-runtime`, including the two tests dropped with `vyajena-proto`
+- [x] 10.3 README section "Run the server locally": start it, read the pin and bootstrap invite, run the tests
 
 ## 11. Docs and validation
 
-- [ ] 11.1 Check off decision #7 in `docs/architecture-decisions.md` with the build order; update `CLAUDE.md` layout and commands
-- [ ] 11.2 `cargo clippy --workspace --all-targets -- -D warnings` and `buf lint` clean; `openspec validate pi-server-core --strict` passes
+- [x] 11.1 Check off decision #7 in `docs/architecture-decisions.md` with the build order; update `CLAUDE.md` layout and commands
+- [x] 11.2 `cargo clippy --workspace --all-targets -- -D warnings` and `buf lint` clean; `openspec validate pi-server-core --strict` passes

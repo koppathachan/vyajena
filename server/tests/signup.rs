@@ -1,11 +1,13 @@
 //! device-identity: Signup with an invite; Admin-owned usernames; User identity
-//! key and device certificates; Bootstrap admin (Devices.Register).
+//! key and device certificates; Federation-ready identifiers; Bootstrap admin
+//! (Devices.Register).
 
 mod support;
 
 use std::time::Duration;
 
-use protocol::device_identity::INVITE_TTL;
+use prost::Message as _;
+use protocol::device_identity::{INVITE_TTL, sign_device_certificate};
 use support::clients::{TestUser, sign_certificate};
 use support::harness::{TestPi, authed};
 use support::{Check, bootstrap_admin, create_invite, pb, register};
@@ -181,7 +183,7 @@ async fn forged_certificate_is_permission_denied() {
     assert_eq!(counts(&pi).await, (0, 0));
 }
 
-// spec: device-identity/user-identity-key-and-device-certificates
+// spec: device-identity/federation-ready-identifiers
 #[tokio::test]
 async fn certificate_with_a_wrong_device_id_is_invalid() {
     let pi = TestPi::start().await;
@@ -210,6 +212,69 @@ async fn certificate_with_a_wrong_device_id_is_invalid() {
     let result = register(&conn, &pi.bootstrap_code, &admin, &device).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::InvalidArgument));
     assert_eq!(counts(&pi).await, (0, 0));
+}
+
+// spec: device-identity/user-identity-key-and-device-certificates
+#[tokio::test]
+async fn signed_certificate_round_trips_as_opaque_bytes() {
+    let pi = TestPi::start().await;
+    let conn = pi.connect().await;
+    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let code = create_invite(&conn, &admin, "alice")
+        .await
+        .invite
+        .check("invite")
+        .code;
+    let alice = TestUser::new("alice");
+    let mut phone = alice.new_device();
+
+    // A certificate encoded with a field this version does not know (111,
+    // varint 1). Decoding and re-encoding would drop it and break the
+    // signature, so the Pi must keep the signed bytes exactly as sent.
+    let mut bytes = phone.certificate.certificate.clone();
+    bytes.extend_from_slice(&[0xf8, 0x06, 0x01]);
+    let decoded = pb::DeviceCertificate::decode(&*bytes).check("decode certificate");
+    assert_ne!(decoded.encode_to_vec(), bytes);
+    phone.certificate = pb::SignedDeviceCertificate {
+        signature: sign_device_certificate(&alice.identity, &bytes).to_vec(),
+        certificate: bytes,
+    };
+    let wire = pb::SignedDeviceCertificate::decode(&*phone.certificate.encode_to_vec())
+        .check("decode signed certificate");
+    assert_eq!(wire, phone.certificate);
+
+    register(&conn, &code, &alice, &phone)
+        .await
+        .check("Register with the extended certificate");
+    phone.authenticate(&conn).await;
+    let me = conn
+        .devices()
+        .get_self(authed(phone.token(), pb::GetSelfRequest {}))
+        .await
+        .check("GetSelf")
+        .into_inner();
+    assert_eq!(me.certificate.as_ref(), Some(&phone.certificate));
+
+    // The same bytes reach other members with the KeyPackage.
+    phone.upload_key_packages(&conn, 1).await;
+    let fetched = conn
+        .keys()
+        .fetch_key_packages(authed(
+            admin.token(),
+            pb::FetchKeyPackagesRequest {
+                user_id: Some(alice.pb_user_id()),
+                device_ids: vec![],
+            },
+        ))
+        .await
+        .check("FetchKeyPackages")
+        .into_inner();
+    let certificates: Vec<_> = fetched
+        .devices
+        .iter()
+        .map(|d| d.certificate.as_ref())
+        .collect();
+    assert_eq!(certificates, vec![Some(&phone.certificate)]);
 }
 
 // spec: device-identity/bootstrap-admin
