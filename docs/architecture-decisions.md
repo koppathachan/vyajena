@@ -28,7 +28,37 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 
 Four components; plaintext exists only inside the Rust core on each device.
 
-&#91;embedded content: MVP architecture · 4 components + push\]
+```mermaid
+flowchart LR
+  subgraph device["Member device — plaintext lives only here"]
+    ui["Flutter UI<br/>screens only, no network"]
+    core["Rust core<br/>OpenMLS · networking"]
+    db[("SQLite<br/>messages, incl. own sent plaintext")]
+    ks[("Keystore / Keychain<br/>device key · MLS keys")]
+    ui <-->|"flutter_rust_bridge"| core
+    core --- db
+    core --- ks
+  end
+
+  subgraph gcp["GCP e2-micro, US — sees TLS bytes only"]
+    relay["rathole relay<br/>TCP passthrough, no state"]
+  end
+
+  subgraph home["Home network, India — sees ciphertext only"]
+    pi["Pi server<br/>tokio + tonic, one binary"]
+    pidb[("SQLite WAL<br/>devices · KeyPackages · invites<br/>commit log · queues · push tokens")]
+    pi --- pidb
+  end
+
+  push["FCM / APNs"]
+
+  core -->|"gRPC · HTTP/2 · TLS on 443"| relay
+  pi -->|"dials out: rathole token + Noise"| relay
+  relay ==>|"client bytes through the tunnel"| pi
+  core -. "TLS session ends on the Pi, key pinned" .- pi
+  pi -->|"content-free wake ping"| push
+  push -.->|"wake"| core
+```
 
 - **Flutter UI:** draws screens only; never opens a connection.
 - **Rust core:** OpenMLS, networking, local SQLite, keys in Keystore/Keychain. Linked through `flutter_rust_bridge`.
@@ -44,6 +74,21 @@ OpenMLS (RFC 9420) runs inside the Rust core on every device, so the relay and t
 | GCP relay | TLS bytes, client IPs, timing | Anything inside TLS |
 | Pi server | Group id, member devices, epoch, sender, time, size | Message content, group name and settings |
 | Apple / Google | When a device gets a wake ping | Content, sender |
+
+Each layer of a message on the wire, and who can open it:
+
+```mermaid
+flowchart TB
+  subgraph tcp["TCP: relay"]
+    subgraph tls["TLS 1.3: Pi"]
+      subgraph env["Envelope: Pi reads metadata"]
+        subgraph mls["MLS: members only"]
+          pt["Text message, plaintext"]
+        end
+      end
+    end
+  end
+```
 
 - **Epoch rule (strict):** the Pi rejects any message tagged with an old epoch; the client re-encrypts and resends.
 - **Key pruning:** OpenMLS default `max_past_epochs = 0` is kept; the strict rule makes it safe.
@@ -69,6 +114,23 @@ The Pi is the single authority for routing, ordering and membership, and never f
 
 Messages wait on the Pi at most 7 days and are deleted as soon as the recipient device acknowledges them.
 
+Life of one application message on the Pi (Commits and Welcomes skip the cap and expiry):
+
+```mermaid
+stateDiagram-v2
+  [*] --> Received: device sends envelope
+  Received --> Rejected: old epoch, too large or queue full
+  Received --> Accepted: durably written, sender shows accepted
+  Accepted --> Queued: one entry per recipient device
+  Queued --> Delivered: device online, or woken by push
+  Delivered --> Queued: disconnects before acking
+  Delivered --> Deleted: device acks
+  Queued --> Expired: 7 days without an ack
+  Rejected --> [*]: sender is told
+  Deleted --> [*]
+  Expired --> [*]: device shows messages before X expired
+```
+
 | Rule | Value |
 | --- | --- |
 | Message expiry | 7 days |
@@ -86,6 +148,21 @@ Messages wait on the Pi at most 7 days and are deleted as soon as the recipient 
 ## Connectivity
 
 No port is opened at home: the Pi dials out to a free GCP relay, and TLS ends on the Pi, not the relay.
+
+```mermaid
+sequenceDiagram
+  participant C as Rust core (phone)
+  participant R as GCP relay (rathole)
+  participant P as Pi server
+  P->>R: Dial out, authenticate with rathole token + Noise
+  Note over R,P: Tunnel stays up. Nothing listens at home.
+  C->>R: TCP connect to port 443
+  R->>P: Forward the connection through the tunnel
+  C->>P: TLS 1.3 handshake, relayed byte for byte
+  Note over C,P: Client compares the Pi's key with its pin
+  C->>P: Device signs the Pi's challenge
+  C->>P: gRPC over HTTP/2, Messaging.Connect stream
+```
 
 - **Relay:** GCP free-tier e2-micro (US region) running rathole as a TCP passthrough. It holds no state and can move to any VPS with a config change.
 - **Tunnel auth:** rathole token + Noise transport, so only the Pi can attach.
