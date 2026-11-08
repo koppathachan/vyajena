@@ -4,9 +4,11 @@
 use std::time::SystemTime;
 
 use openmls::prelude::tls_codec::Deserialize as _;
-use openmls::prelude::{KeyPackageIn, ProtocolVersion};
+use openmls::prelude::{ExtensionType, KeyPackageIn, ProtocolVersion};
 use openmls_rust_crypto::RustCrypto;
 use protocol::device_identity::DeviceId;
+use protocol::group_membership::ADMIN_EXTENSION_TYPE;
+use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
 use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
 
@@ -14,8 +16,8 @@ use crate::auth::caller;
 use crate::membership::{CIPHERSUITE, certificate};
 use crate::pb;
 use crate::pb::keys_server::{Keys, KeysServer};
-use crate::runtime::State;
 use crate::runtime::clock::unix_millis;
+use crate::runtime::{KeyPackagesLow, State};
 use crate::store::StoreError;
 use crate::store::records::{self, DeviceRow};
 
@@ -34,7 +36,8 @@ pub struct KeysService {
 /// Checks one uploaded KeyPackage against the uploading device
 /// (key-directory: KeyPackage upload): it parses and verifies, uses the one
 /// ciphersuite, its credential carries exactly the device's registered
-/// certificate, and its leaf signature key is the certificate's MLS key.
+/// certificate, its leaf signature key is the certificate's MLS key, and its
+/// capabilities list [`ADMIN_EXTENSION_TYPE`].
 fn check_key_package(crypto: &RustCrypto, bytes: &[u8], device: &DeviceRow) -> Result<(), Status> {
     let key_package = KeyPackageIn::tls_deserialize_exact(bytes)
         .map_err(|_| Status::invalid_argument("a KeyPackage does not parse"))?
@@ -46,6 +49,17 @@ fn check_key_package(crypto: &RustCrypto, bytes: &[u8], device: &DeviceRow) -> R
         ));
     }
     let leaf = key_package.leaf_node();
+    // Without the admin group-context extension in its capabilities the
+    // device could never be added (pi-server-core design D10).
+    if !leaf
+        .capabilities()
+        .extensions()
+        .contains(&ExtensionType::Unknown(ADMIN_EXTENSION_TYPE))
+    {
+        return Err(Status::invalid_argument(
+            "a KeyPackage's capabilities do not list the admin group-context extension 0xF0A1",
+        ));
+    }
     let carries_own_certificate =
         certificate::from_credential(leaf.credential()).is_some_and(|signed| {
             signed.certificate == device.certificate
@@ -213,10 +227,19 @@ impl Keys for KeysService {
                     devices.retain(|d| wanted.contains(&d.device_id));
                 }
                 let mut entries = Vec::with_capacity(devices.len());
+                let mut low = Vec::new();
                 for device in devices {
+                    let before = records::one_time_key_packages(&tx, &device.device_id)?;
                     // A device that never uploaded KeyPackages cannot be added
                     // yet and is left out.
                     if let Some(key_package) = take_key_package(&tx, &device.device_id)? {
+                        let remaining = before.saturating_sub(1);
+                        if before > 0 && (remaining as usize) < KEY_PACKAGES_LOW_WATER_MARK {
+                            low.push(KeyPackagesLow {
+                                device_id: device.device_id,
+                                remaining,
+                            });
+                        }
                         entries.push(pb::DeviceKeyPackage {
                             certificate: Some(pb::SignedDeviceCertificate {
                                 certificate: device.certificate,
@@ -227,12 +250,21 @@ impl Keys for KeysService {
                     }
                 }
                 tx.commit()?;
-                Ok(Ok(pb::FetchKeyPackagesResponse {
-                    identity_public_key: user.identity_public_key,
-                    devices: entries,
-                }))
+                Ok(Ok((
+                    pb::FetchKeyPackagesResponse {
+                        identity_public_key: user.identity_public_key,
+                        devices: entries,
+                    },
+                    low,
+                )))
             })
             .await??;
+        let (response, low) = response;
+        // key-directory: Replenishment signal; the messaging service tells
+        // the device if it is connected.
+        for count in low {
+            let _ = self.state.key_packages_low.send(count);
+        }
         Ok(Response::new(response))
     }
 }

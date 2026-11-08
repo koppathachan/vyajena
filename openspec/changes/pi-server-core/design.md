@@ -236,7 +236,7 @@ Technical choices the specs leave open; none changes a requirement.
   created). A certificate that verifies but is malformed (no user, keys not 32
   bytes, device id not derived from the auth key): `INVALID_ARGUMENT`. A user or
   device id that exists already: `ALREADY_EXISTS`; `CreateInvite` for an
-  existing username too, so a removed user's username stays taken.
+  existing username too, unless that user was removed (task 6.4, D11).
   `RevokeDevice` of the caller itself: `INVALID_ARGUMENT` (the spec says
   "another device"); of a device that is not the caller's user's: `NOT_FOUND`.
   `RevokeInvite`: unknown `NOT_FOUND`, already used `FAILED_PRECONDITION`,
@@ -265,7 +265,8 @@ Technical choices the specs leave open; none changes a requirement.
   the configured admin. Consequence for the core (rust-core-messaging): RFC 9420
   requires every member to support every group context extension, so each
   KeyPackage and leaf must list 0xF0A1 in `capabilities.extensions`, or OpenMLS
-  refuses the Add. The Pi does not check this at upload.
+  refuses the Add. Since task 6.5 the Pi refuses such KeyPackages at upload
+  (`INVALID_ARGUMENT`, whole upload).
 - **Public state storage.** OpenMLS `PublicGroup` writes into its in-memory
   `MemoryStorage`; `membership::GroupState::save` copies that key-value map into
   `mls_public_state`, plus the epoch (`mls_group`) and each member device's leaf
@@ -291,6 +292,118 @@ Technical choices the specs leave open; none changes a requirement.
   member's `PROPOSAL` and keeps it in the Pi's proposal store, so a later
   commit can include it by reference. Membership tags stay unchecked (the
   spike's caveat).
+
+### D11. Messaging, inactivity and push as built (tasks 6.4-9.1)
+
+Technical choices the specs leave open; none changes a requirement.
+
+- **Admin reset (6.4).** `RemoveUser` sets `users.removed_at`. `CreateInvite`
+  refuses only a username whose user exists and is not removed. `Register`
+  with an invite for a removed username replaces that row's identity key and
+  clears `removed_at`; the old devices stay revoked, so only the new devices
+  can authenticate or be added. An unused invite created for that username
+  before the removal stays usable (the admin made it).
+- **KeyPackage capability (6.5).** Checked after OpenMLS validation, before
+  the certificate checks; a one-time or last-resort KeyPackage without
+  `0xF0A1` fails the whole upload with `INVALID_ARGUMENT`.
+- **Storage (migration 3).** One `envelopes` row per accepted envelope and one
+  `deliveries` row per device that still has to receive it. A device's
+  application queue is its deliveries of `APPLICATION` envelopes; its
+  commit-log entries are its deliveries of `COMMIT` and `PROPOSAL` envelopes
+  (`welcome = 1` for the devices a commit adds, which get the Welcome in place
+  of the commit); `cursors.acked_seq` is its delivery cursor. An envelope row
+  goes once no delivery references it. `sequence` holds the last `server_seq`
+  (one sequence, as the Pi holds one group). `dedup` keeps SHA-256 of the
+  ciphertext and of the encoded Welcome bundle per (sender device, `msg_id`).
+  New tables avoid the `mls_` prefix, which is the membership state alone
+  (`group-membership: Membership state on the Pi`).
+- **Recipients.** "Active members": devices in the tree that are neither
+  revoked nor inactive. Every kind goes to the active members except the
+  sending device; a `COMMIT` goes to the members of the epoch it was sent in
+  (removed devices included, so they learn of it) plus a `WELCOME` to each
+  added device. The Pi's own proposals go to every active member.
+- **Check order** (in `messaging::write`): `msg_id` of 16 bytes and a known
+  client kind (`MALFORMED`; a client `WELCOME` included), size
+  (`TOO_LARGE`), a bundle on anything but `COMMIT` (`MALFORMED`), dedup
+  (so an identical retry gets its original result even after the epoch
+  moved on; different content `DUPLICATE_MISMATCH`), group id and MLS
+  framing (`MALFORMED`), the strict epoch rule (`STALE_EPOCH`), the sender
+  being an active member (`POLICY_VIOLATION`; a device inactive or revoked
+  but still in the tree may not send while it waits to be re-added), then
+  `check_commit` / `check_proposal`, then the Welcome bundle (`MALFORMED`).
+  Beyond D10, a commit that adds a device which still holds a leaf is a
+  `POLICY_VIOLATION` unless the same commit removes that leaf (a device has
+  one leaf).
+- **Stream.** The first frame must be `Hello` (else, and for a later `Hello`,
+  `INVALID_ARGUMENT`); an unsupported version ends the stream with
+  `FAILED_PRECONDITION` and the message `supported versions: 1`. The stream
+  registers with `messaging::Hub` only after `Hello`; the older stream of the
+  device gets `ABORTED`. The idle timeout is read from the injectable clock
+  every second (D7), so tests move past 90 s without waiting; the stream ends
+  with `UNAVAILABLE`. The session token is checked once, when the stream
+  opens; the stream outlives the token's hour and is closed by revocation
+  (`UNAUTHENTICATED`, from `State::revocations`). Acks are cumulative and
+  clamped to the highest `server_seq` this stream sent; an ack for another
+  group id is ignored.
+- **Delivery.** A stream sends its device's deliveries after the last
+  `server_seq` it sent, in order, starting at the cursor. Writes wake the
+  recipients' streams; each stream reads from the database again, so catch-up
+  and live traffic are one sequence and nothing depends on in-memory queues.
+- **Sweep.** `messaging::sweep` runs every 60 s of real time and on demand
+  (the tests call it after moving the clock): refresh presence of connected
+  devices, mark inactive the member devices not seen for 7 days, reissue
+  missing Pi Removes, expire application entries accepted 7 days ago or more,
+  prune dedup records older than 7 days, drop unreferenced envelopes.
+- **Inactivity.** "Connected" means an open stream after `Hello`. Presence is
+  refreshed when a stream opens and closes, at each sweep while it is open,
+  and when a commit adds the device; a member that never connected counts
+  from its registration. A revoked device still in the tree is treated the
+  same, so the Pi proposes its removal too. Marking a device inactive deletes
+  all its deliveries and records `missed_since`: the `accepted_at` of the
+  oldest application entry deleted, or the time of marking if there was none.
+  The Pi's external Remove is a `PROPOSAL` envelope with a random `msg_id`, no
+  sender, the current epoch, sequenced in the same transaction. After every
+  accepted commit, and at a sweep, the Pi issues a new one for each inactive
+  device still in the tree that has none for the current epoch. A commit
+  adding the device back clears the inactive record.
+- **Notices.** At connect, in this order before the catch-up: `RemovedNotice`
+  for an inactive device (and its first return is recorded), the
+  `RejoinNotice`s an active device of the same user or of the admin is owed
+  for returned devices still waiting, `GapNotice` if entries expired since it
+  was last told (connected devices get it at the sweep; each expiry is
+  reported once), `LowKeyPackages` if fewer than 5 one-time KeyPackages
+  remain. A returning device's `RejoinNotice` goes at once to the connected
+  active devices of its user and of the admin. A fetch that hands out a
+  one-time KeyPackage and leaves fewer than 5 sends `LowKeyPackages` through
+  `State::key_packages_low` to the device if connected.
+- **Wake pings.** Any new delivery for a device without an open stream that
+  has a push token (application entry, commit, proposal or Welcome) asks for
+  a ping, after the transaction commits. The limit of one per device per 60 s
+  (injectable clock) is kept in memory; a ping inside the window is dropped,
+  not deferred, since the app fetches everything when it connects. The
+  provider gets only the device id and its token; `LoggingProvider` logs the
+  device id and platform. `Pi::start_with_push` takes another provider (the
+  tests record pings with it).
+
+```mermaid
+sequenceDiagram
+  participant D as Device
+  participant S as stream task
+  participant H as Hub
+  participant W as store writer
+  D->>S: Hello(version)
+  S->>H: register (older stream gets ABORTED)
+  S->>W: presence, cursor, notices owed
+  W-->>S: RemovedNotice / RejoinNotice / GapNotice / LowKeyPackages
+  S-->>D: notices, then deliveries after the cursor in server_seq order
+  D->>S: Envelope
+  S->>W: D4 write path (one transaction)
+  W-->>S: Accepted + devices with new entries
+  S-->>D: SendResult
+  S->>H: wake connected recipients
+  H-->>D: (their streams read and send the new entries)
+  S->>H: offline recipients with a token: wake ping (1 per 60 s)
+```
 
 ## Risks / Trade-offs
 

@@ -11,6 +11,7 @@ use super::StoreError;
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_runtime.sql"),
     include_str!("migrations/0002_devices_keys_group.sql"),
+    include_str!("migrations/0003_messaging.sql"),
 ];
 
 /// The schema version this binary writes.

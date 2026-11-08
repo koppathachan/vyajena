@@ -185,6 +185,34 @@ async fn unparsable_wrong_suite_or_missing_last_resort_is_invalid() {
     assert_eq!(stored_count(&pi).await, 0);
 }
 
+// spec: key-directory/keypackage-upload
+#[tokio::test]
+async fn keypackage_without_the_admin_extension_capability_fails_the_whole_upload() {
+    let pi = TestPi::start().await;
+    let conn = pi.connect().await;
+    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let (_, phone) = invite_user(&conn, &admin, "bob").await;
+
+    let lacking = phone.key_package_without_admin_capability();
+    let one_time = upload(
+        &conn,
+        &phone,
+        vec![phone.key_package(), lacking.clone()],
+        phone.key_package(),
+    )
+    .await;
+    assert_eq!(
+        one_time.err().map(|s| s.code()),
+        Some(Code::InvalidArgument)
+    );
+    let last_resort = upload(&conn, &phone, vec![phone.key_package()], lacking).await;
+    assert_eq!(
+        last_resort.err().map(|s| s.code()),
+        Some(Code::InvalidArgument)
+    );
+    assert_eq!(stored_count(&pi).await, 0, "the Pi stores nothing");
+}
+
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn two_callers_get_different_one_time_keypackages() {

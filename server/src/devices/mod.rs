@@ -380,14 +380,27 @@ fn register(
             "the certificate must name {username}@{server_id}, the user the invite creates"
         )));
     }
-    if records::user(tx, &username)?.is_some() {
-        return Err(Status::already_exists("this user already exists"));
+    match records::user(tx, &username)? {
+        None => {
+            tx.execute(
+                "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
+                params![username, identity_public_key, unix_millis(now)],
+            )
+            .map_err(StoreError::from)?;
+        }
+        // The admin reset a removed user (group-membership: Removing a user):
+        // the new signup brings the new identity key. The old devices stay
+        // revoked.
+        Some(user) if user.removed => {
+            tx.execute(
+                "UPDATE users SET identity_public_key = ?2, created_at = ?3, removed_at = NULL
+                 WHERE username = ?1",
+                params![username, identity_public_key, unix_millis(now)],
+            )
+            .map_err(StoreError::from)?;
+        }
+        Some(_) => return Err(Status::already_exists("this user already exists")),
     }
-    tx.execute(
-        "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
-        params![username, identity_public_key, unix_millis(now)],
-    )
-    .map_err(StoreError::from)?;
     insert_device(tx, &cert, now)?;
     tx.execute(
         "UPDATE invites SET used_at = ?2 WHERE code = ?1",

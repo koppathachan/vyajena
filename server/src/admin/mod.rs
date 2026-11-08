@@ -12,7 +12,7 @@ use crate::membership::{self, GroupState};
 use crate::pb;
 use crate::pb::admin_server::{Admin, AdminServer};
 use crate::runtime::State;
-use crate::runtime::clock::to_timestamp;
+use crate::runtime::clock::{to_timestamp, unix_millis};
 use crate::runtime::config::user_id_part_problem;
 use crate::store::records;
 
@@ -70,7 +70,9 @@ impl Admin for AdminService {
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
-                if records::user(&tx, &username)?.is_some() {
+                // A removed user's username is free again (group-membership:
+                // Removing a user).
+                if records::user(&tx, &username)?.is_some_and(|user| !user.removed) {
                     return Ok(Err(Status::already_exists(
                         "a user with this username exists",
                     )));
@@ -191,6 +193,10 @@ impl Admin for AdminService {
                 for device in &devices {
                     auth::revoke_device(&tx, &device.device_id, now)?;
                 }
+                tx.execute(
+                    "UPDATE users SET removed_at = coalesce(removed_at, ?2) WHERE username = ?1",
+                    rusqlite::params![user_id.username, unix_millis(now)],
+                )?;
                 tx.commit()?;
                 Ok(Ok(devices
                     .into_iter()

@@ -20,6 +20,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::service::Routes;
 
 use crate::auth::AuthLayer;
+use crate::messaging::Hub;
+use crate::push::{LoggingProvider, PushProvider};
 use crate::store::{Store, StoreError};
 
 pub use bootstrap::{Bootstrap, BootstrapInvite};
@@ -67,7 +69,21 @@ pub enum StartError {
 /// Revocations buffered for slow subscribers before they lag.
 const REVOCATION_CHANNEL_CAPACITY: usize = 256;
 
-/// What every service shares: config, keys, storage and the clock.
+/// Low-KeyPackage notices buffered for the messaging service.
+const KEY_PACKAGES_LOW_CHANNEL_CAPACITY: usize = 256;
+
+/// A device's one-time KeyPackage count dropped below the low water mark
+/// (key-directory: Replenishment signal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyPackagesLow {
+    /// The device.
+    pub device_id: DeviceId,
+    /// One-time KeyPackages left.
+    pub remaining: u32,
+}
+
+/// What every service shares: config, keys, storage, the clock, and the
+/// channels and registry the services use to reach each other's streams.
 #[derive(Clone)]
 pub struct State {
     /// The server's settings.
@@ -82,6 +98,14 @@ pub struct State {
     /// `Admin.RemoveUser`), so the messaging service can close their open
     /// streams (device-identity: Device revocation).
     pub revocations: broadcast::Sender<DeviceId>,
+    /// Devices whose one-time KeyPackages ran low at a fetch, so the
+    /// messaging service can tell them (key-directory: Replenishment signal).
+    pub key_packages_low: broadcast::Sender<KeyPackagesLow>,
+    /// The open `Connect` streams (wire-transport: Single persistent
+    /// messaging stream).
+    pub hub: Arc<Hub>,
+    /// Where wake pings go (pi-runtime: Push provider interface).
+    pub push: Arc<dyn PushProvider>,
 }
 
 /// A started server: keys loaded, database open, port bound.
@@ -96,6 +120,16 @@ impl Pi {
     /// Starts the server: keys, database, bootstrap invite, then the port. Logs
     /// the TLS pin and, when one is created, the bootstrap invite payload.
     pub async fn start(config: Config, clock: Arc<dyn Clock>) -> Result<Self, StartError> {
+        Self::start_with_push(config, clock, Arc::new(LoggingProvider)).await
+    }
+
+    /// [`Pi::start`] with a given push provider. Without one the server uses
+    /// [`LoggingProvider`] (pi-runtime: Push provider interface).
+    pub async fn start_with_push(
+        config: Config,
+        clock: Arc<dyn Clock>,
+        push: Arc<dyn PushProvider>,
+    ) -> Result<Self, StartError> {
         let keys = ServerKeys::load_or_create(&config.key_dir)?;
         if keys.created() {
             tracing::info!(key_dir = %config.key_dir.display(), "first start: created the TLS and MLS external sender keys");
@@ -135,6 +169,9 @@ impl Pi {
                 store,
                 clock,
                 revocations: broadcast::channel(REVOCATION_CHANNEL_CAPACITY).0,
+                key_packages_low: broadcast::channel(KEY_PACKAGES_LOW_CHANNEL_CAPACITY).0,
+                hub: Arc::new(Hub::new()),
+                push,
             },
             listener,
             local_addr,
@@ -167,11 +204,16 @@ impl Pi {
             self.state.config.clone(),
             self.state.clock.clone(),
         );
-        tonic::transport::Server::builder()
+        let background = crate::messaging::background(&self.state);
+        let served = tonic::transport::Server::builder()
             .layer(auth)
             .add_routes(routes(&self.state))
             .serve_with_incoming_shutdown(incoming, shutdown)
-            .await?;
+            .await;
+        for task in background {
+            task.abort();
+        }
+        served?;
         Ok(())
     }
 }
@@ -184,6 +226,7 @@ pub fn routes(state: &State) -> Routes {
         .add_service(crate::devices::service(state))
         .add_service(crate::keys::service(state))
         .add_service(crate::admin::service(state))
+        .add_service(crate::messaging::service(state))
 }
 
 /// Records the server id on first start and refuses a different one later.

@@ -32,24 +32,24 @@
 - [x] 6.1 `CreateInvite`, `ListInvites`, `RevokeInvite`, `RemoveUser`
 - [x] 6.2 `CreateGroup` building the OpenMLS `PublicGroup` from GroupInfo and ratchet tree; persist public state
 - [x] 6.3 Commit checks: signature, committer is the authenticated device, commit authority via `protocol` (Pi validates handshakes without group secrets)
-- [ ] 6.4 Let a removed user's username be invited again (group-membership: Removing a user, as modified here); test the admin reset end to end
-- [ ] 6.5 Reject KeyPackages whose capabilities lack extension type `0xF0A1` with `INVALID_ARGUMENT` (key-directory: KeyPackage upload, as modified here)
+- [x] 6.4 Let a removed user's username be invited again (group-membership: Removing a user, as modified here); test the admin reset end to end
+- [x] 6.5 Reject KeyPackages whose capabilities lack extension type `0xF0A1` with `INVALID_ARGUMENT` (key-directory: KeyPackage upload, as modified here)
 
 ## 7. Messaging
 
-- [ ] 7.1 `Connect`: Hello and version check, one stream per device (`ABORTED` for the older one), heartbeats and idle timeout
-- [ ] 7.2 Envelope checks: size caps, framing matches envelope, client-sent WELCOME rejected, dedup with `DUPLICATE_MISMATCH`, strict epoch rule
-- [ ] 7.3 The D4 write path: `server_seq`, queue rows, commit log, Welcome fan-out, durable `Accepted`
-- [ ] 7.4 Ordered delivery and catch-up merged by `server_seq`, cumulative acks, expiry with gap notices, low-KeyPackages notice
+- [x] 7.1 `Connect`: Hello and version check, one stream per device (`ABORTED` for the older one), heartbeats and idle timeout
+- [x] 7.2 Envelope checks: size caps, framing matches envelope, client-sent WELCOME rejected, dedup with `DUPLICATE_MISMATCH`, strict epoch rule
+- [x] 7.3 The D4 write path: `server_seq`, queue rows, commit log, Welcome fan-out, durable `Accepted`
+- [x] 7.4 Ordered delivery and catch-up merged by `server_seq`, cumulative acks, expiry with gap notices, low-KeyPackages notice
 
 ## 8. Inactivity and re-add
 
-- [ ] 8.1 Mark devices inactive after 7 days or a full queue; stop queueing, delete their queue, issue and reissue external Remove proposals
-- [ ] 8.2 `RemovedNotice` to a returning device and `RejoinNotice` to its user's and the admin's connected devices
+- [x] 8.1 Mark devices inactive after 7 days or a full queue; stop queueing, delete their queue, issue and reissue external Remove proposals
+- [x] 8.2 `RemovedNotice` to a returning device and `RejoinNotice` to its user's and the admin's connected devices
 
 ## 9. Push
 
-- [ ] 9.1 Push provider trait, logging provider, at most one ping per device per 60 seconds, no ping to connected devices
+- [x] 9.1 Push provider trait, logging provider, at most one ping per device per 60 seconds, no ping to connected devices
 
 ## 10. Integration tests and local run
 

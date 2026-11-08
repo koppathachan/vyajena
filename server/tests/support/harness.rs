@@ -14,6 +14,8 @@ use tonic::transport::{Channel, Endpoint};
 use super::pb::admin_client::AdminClient;
 use super::pb::devices_client::DevicesClient;
 use super::pb::keys_client::KeysClient;
+use super::pb::messaging_client::MessagingClient;
+use super::push::RecordingPush;
 use super::{Check, config_in, manual_clock, tls_client};
 
 /// A running test server.
@@ -28,18 +30,41 @@ pub struct TestPi {
     pub state: State,
     /// The bootstrap invite code created at start.
     pub bootstrap_code: String,
+    /// Every wake ping the server sent (it also logs them, as the logging
+    /// provider does).
+    pub pushes: RecordingPush,
     stop: Option<oneshot::Sender<()>>,
     _dir: tempfile::TempDir,
 }
 
 impl TestPi {
-    /// Starts a fresh server (admin `akhil@pi`).
+    /// Starts a fresh server (admin `akhil@pi`) whose wake pings are
+    /// recorded in [`TestPi::pushes`].
     pub async fn start() -> Self {
+        Self::start_inner(true).await
+    }
+
+    /// Starts a fresh server with the default push provider (the logging
+    /// one); [`TestPi::pushes`] stays empty.
+    pub async fn start_with_default_push() -> Self {
+        Self::start_inner(false).await
+    }
+
+    async fn start_inner(record: bool) -> Self {
         let dir = tempfile::tempdir().check("temp dir");
         let clock = manual_clock();
-        let pi = Pi::start(config_in(dir.path()), Arc::new(clock.clone()))
+        let pushes = RecordingPush::default();
+        let pi = if record {
+            Pi::start_with_push(
+                config_in(dir.path()),
+                Arc::new(clock.clone()),
+                Arc::new(pushes.clone()),
+            )
             .await
-            .check("server start");
+        } else {
+            Pi::start(config_in(dir.path()), Arc::new(clock.clone())).await
+        }
+        .check("server start");
         let bootstrap_code = match pi.bootstrap() {
             Bootstrap::Created(invite) => invite.invite.code.clone(),
             other => panic!("expected a bootstrap invite, got {other:?}"),
@@ -57,14 +82,48 @@ impl TestPi {
             pin,
             state,
             bootstrap_code,
+            pushes,
             stop: Some(stop),
             _dir: dir,
         }
     }
 
+    /// Stops the server and starts a new one on the same database and keys
+    /// (another port), as after a power cut. Connections to the old one are
+    /// left to fail.
+    pub async fn restart(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            let _ = stop.send(());
+        }
+        let pi = Pi::start_with_push(
+            config_in(self._dir.path()),
+            Arc::new(self.clock.clone()),
+            Arc::new(self.pushes.clone()),
+        )
+        .await
+        .check("server restart");
+        self.addr = pi.local_addr();
+        self.state = pi.state().clone();
+        let (stop, stopped) = oneshot::channel::<()>();
+        tokio::spawn(pi.serve(async {
+            let _ = stopped.await;
+        }));
+        self.stop = Some(stop);
+    }
+
     /// A new pinned TLS connection.
     pub async fn connect(&self) -> Conn {
         Conn::open(self.addr, self.pin).await
+    }
+
+    /// The server's current time.
+    pub fn clock_now(&self) -> std::time::SystemTime {
+        server::runtime::Clock::now(&self.clock)
+    }
+
+    /// Runs the server's time-driven upkeep now (inactivity, expiry, dedup).
+    pub async fn sweep(&self) {
+        server::messaging::sweep(&self.state).await.check("sweep");
     }
 
     /// Runs a read-only query on the server's database.
@@ -136,6 +195,11 @@ impl Conn {
     /// A `Keys` client.
     pub fn keys(&self) -> KeysClient<Channel> {
         KeysClient::new(self.channel.clone())
+    }
+
+    /// A `Messaging` client.
+    pub fn messaging(&self) -> MessagingClient<Channel> {
+        MessagingClient::new(self.channel.clone())
     }
 
     /// An `Admin` client.

@@ -8,6 +8,8 @@
 pub mod pb;
 pub mod clients;
 pub mod harness;
+pub mod messaging;
+pub mod push;
 pub mod tls_client;
 
 use std::path::Path;

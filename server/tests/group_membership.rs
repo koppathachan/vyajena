@@ -711,6 +711,106 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
 
 // spec: group-membership/removing-a-user
 #[tokio::test]
+async fn admin_resets_a_user_who_lost_their_identity_device() {
+    let Setup {
+        pi,
+        conn,
+        mut admin,
+        mut laptop,
+        ..
+    } = setup().await;
+    let (old_bob, mut old_phone) = invite_user(&conn, &admin, "bob").await;
+    old_phone.upload_key_packages(&conn, 1).await;
+    let key_packages = fetch_all(&conn, &admin, &old_bob).await;
+    add_accepted(
+        &pi,
+        &mut admin,
+        &key_packages,
+        &mut [&mut laptop],
+        &mut [&mut old_phone],
+    )
+    .await;
+
+    // Bob lost his phone: the admin removes him from the group and the Pi.
+    let commit = admin.remove(&[old_phone.leaf()]);
+    submit(&pi, &admin, &commit)
+        .await
+        .check("remove Bob's phone");
+    admin.confirm();
+    laptop.receive_commit(&commit);
+    conn.admin()
+        .remove_user(authed(
+            admin.token(),
+            pb::RemoveUserRequest {
+                user_id: Some(old_bob.pb_user_id()),
+            },
+        ))
+        .await
+        .check("RemoveUser");
+
+    // The username is free again: the Pi issues a new invite for bob@pi.
+    let invite = support::create_invite(&conn, &admin, "bob").await;
+    let invite = invite.invite.check("invite");
+    assert_eq!(invite.user_id.check("user id").username, "bob");
+
+    // Bob's new phone registers as bob@pi with a new identity key.
+    let new_bob = TestUser::new("bob");
+    assert_ne!(new_bob.identity_public_key(), old_bob.identity_public_key());
+    let mut new_phone = new_bob.new_device();
+    let registered = support::register(&conn, &invite.code, &new_bob, &new_phone)
+        .await
+        .check("Register after reset");
+    assert_eq!(registered.user_id, Some(new_bob.pb_user_id()));
+    new_phone.authenticate(&conn).await;
+    new_phone.upload_key_packages(&conn, 1).await;
+
+    // Members see the changed identity key in the fetch, and the old phone
+    // stays locked out.
+    let fetched = conn
+        .keys()
+        .fetch_key_packages(authed(
+            admin.token(),
+            pb::FetchKeyPackagesRequest {
+                user_id: Some(new_bob.pb_user_id()),
+                device_ids: vec![],
+            },
+        ))
+        .await
+        .check("FetchKeyPackages")
+        .into_inner();
+    assert_eq!(fetched.identity_public_key, new_bob.identity_public_key());
+    assert_eq!(fetched.devices.len(), 1, "only the new phone");
+    let old = old_phone.try_authenticate_with(&conn, &conn.exporter).await;
+    assert_eq!(old.err().map(|s| s.code()), Some(Code::Unauthenticated));
+
+    // The admin adds the new phone back into the group.
+    let key_packages: Vec<_> = fetched.devices.into_iter().map(|d| d.key_package).collect();
+    let accepted = add_accepted(
+        &pi,
+        &mut admin,
+        &key_packages,
+        &mut [&mut laptop],
+        &mut [&mut new_phone],
+    )
+    .await;
+    assert_eq!(accepted.added.len(), 1);
+    assert_eq!(accepted.added[0].device_id, new_phone.device_id);
+
+    // A second invite while the new Bob exists is refused again.
+    let again = conn
+        .admin()
+        .create_invite(authed(
+            admin.token(),
+            pb::CreateInviteRequest {
+                username: "bob".to_owned(),
+            },
+        ))
+        .await;
+    assert_eq!(again.err().map(|s| s.code()), Some(Code::AlreadyExists));
+}
+
+// spec: group-membership/removing-a-user
+#[tokio::test]
 async fn only_the_admin_removes_users_and_not_the_admin() {
     let Setup {
         pi: _pi,

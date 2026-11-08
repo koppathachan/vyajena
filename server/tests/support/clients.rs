@@ -213,6 +213,29 @@ impl TestDevice {
             .check("KeyPackage bytes")
     }
 
+    /// A KeyPackage whose leaf capabilities do not list the admin
+    /// group-context extension (for negative tests).
+    pub fn key_package_without_admin_capability(&self) -> Vec<u8> {
+        KeyPackage::builder()
+            .leaf_node_capabilities(Capabilities::new(
+                None,
+                Some(&[CIPHERSUITE]),
+                None,
+                None,
+                None,
+            ))
+            .build(
+                CIPHERSUITE,
+                &self.provider,
+                &self.signer,
+                self.credential_with_key(),
+            )
+            .check("KeyPackage")
+            .key_package()
+            .tls_serialize_detached()
+            .check("KeyPackage bytes")
+    }
+
     /// A KeyPackage in `ciphersuite`, signed by `signer`, with `credential`
     /// (for negative tests).
     pub fn key_package_signed_by(
@@ -499,6 +522,44 @@ impl TestDevice {
             .build()
             .check("StagedWelcome build");
         self.group = Some(staged.into_group(&self.provider).check("join"));
+    }
+
+    /// The group's current epoch on this device.
+    pub fn epoch(&self) -> u64 {
+        self.group().epoch().as_u64()
+    }
+
+    /// Encrypts `text` as an application message (an MLS `PrivateMessage`).
+    pub fn message(&mut self, text: &[u8]) -> Vec<u8> {
+        let provider = &self.provider;
+        let signer = &self.signer;
+        let group = match &mut self.group {
+            Some(group) => group,
+            None => panic!("device has no group"),
+        };
+        wire(
+            &group
+                .create_message(provider, signer, text)
+                .check("create_message"),
+        )
+    }
+
+    /// Decrypts an application message.
+    pub fn read_message(&mut self, message: &[u8]) -> Vec<u8> {
+        let message = MlsMessageIn::tls_deserialize_exact(message)
+            .check("message parse")
+            .try_into_protocol_message()
+            .check("protocol message");
+        let provider = &self.provider;
+        let group = match &mut self.group {
+            Some(group) => group,
+            None => panic!("device has no group"),
+        };
+        let processed = group.process_message(provider, message).check("process");
+        match processed.into_content() {
+            ProcessedMessageContent::ApplicationMessage(message) => message.into_bytes(),
+            _ => panic!("not an application message"),
+        }
     }
 
     /// Processes a commit as a member and merges it.

@@ -14,6 +14,9 @@ pub struct UserRow {
     pub username: String,
     /// The user identity public key (Ed25519, 32 bytes).
     pub identity_public_key: Vec<u8>,
+    /// Whether `Admin.RemoveUser` removed the user; the username may then be
+    /// invited again (group-membership: Removing a user).
+    pub removed: bool,
 }
 
 /// A stored device.
@@ -44,12 +47,14 @@ pub fn device_id_from(bytes: &[u8]) -> Option<DeviceId> {
 pub fn user(conn: &Connection, username: &str) -> Result<Option<UserRow>, StoreError> {
     Ok(conn
         .query_row(
-            "SELECT username, identity_public_key FROM users WHERE username = ?1",
+            "SELECT username, identity_public_key, removed_at IS NOT NULL
+             FROM users WHERE username = ?1",
             params![username],
             |row| {
                 Ok(UserRow {
                     username: row.get(0)?,
                     identity_public_key: row.get(1)?,
+                    removed: row.get(2)?,
                 })
             },
         )

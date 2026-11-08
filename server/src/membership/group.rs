@@ -22,15 +22,18 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+use openmls::prelude::tls_codec::Deserialize as _;
 use openmls::prelude::tls_codec::Serialize as _;
 use openmls::prelude::{
-    BasicCredential, Ciphersuite, ContentType, Credential, ExternalSender, GroupId, LeafNode,
-    LeafNodeIndex, MlsMessageBodyIn, MlsMessageIn, ProcessedMessageContent, Proposal,
-    ProposalStore, ProtocolMessage, PublicGroup, PublicProcessMessageError, RatchetTreeIn, Sender,
-    SenderExtensionIndex, SignaturePublicKey, StagedCommit, ValidationError,
+    BasicCredential, Ciphersuite, ContentType, Credential, ExternalProposal, ExternalSender,
+    GroupId, LeafNode, LeafNodeIndex, MlsMessageBodyIn, MlsMessageIn, ProcessedMessageContent,
+    Proposal, ProposalStore, ProtocolMessage, PublicGroup, PublicProcessMessageError,
+    RatchetTreeIn, Sender, SenderExtensionIndex, SignaturePublicKey, StagedCommit, ValidationError,
 };
 use openmls_memory_storage::MemoryStorage;
-use openmls_rust_crypto::RustCrypto;
+use openmls_rust_crypto::{OpenMlsRustCrypto, RustCrypto};
+use openmls_traits::signatures::{Signer, SignerError};
+use openmls_traits::types::SignatureScheme;
 use protocol::device_identity::DeviceId;
 use protocol::group_membership::{
     ADMIN_EXTENSION_TYPE, Committer, ProposalKind, ProposalSender, admin_extension_data,
@@ -465,6 +468,19 @@ impl GroupState {
             Err(rejection) => return Ok(Err(rejection)),
         };
 
+        // A device can hold only one leaf: re-adding a member needs the Remove
+        // of its old leaf in the same commit (group-membership: Automatic
+        // re-add).
+        for (_, device_id) in &review.added {
+            let still_member = self.leaf_of(conn, device_id)?.is_some()
+                && !review.removed.iter().any(|m| m.device_id == *device_id);
+            if still_member {
+                return Ok(Err(policy(
+                    "an added device is already a member and its old leaf is not removed",
+                )));
+            }
+        }
+
         let proposals: Vec<protocol::group_membership::Proposal<'_>> = review
             .proposals
             .iter()
@@ -539,8 +555,58 @@ impl GroupState {
         }
     }
 
+    /// Issues the Pi's MLS external Remove proposal for the member at `leaf`
+    /// in the current epoch, signed with the Pi's external sender key, and
+    /// adds it to the Pi's own proposal store so a member's commit can include
+    /// it by reference (group-membership: Inactive devices are kept out;
+    /// core-wire-protocol design D5). Returns the TLS-serialized `MLSMessage`
+    /// (a `PublicMessage`) for the `PROPOSAL` envelope. Persist with
+    /// [`GroupState::save`].
+    pub fn issue_external_remove(
+        &mut self,
+        leaf: u32,
+        keys: &ServerKeys,
+    ) -> Result<Vec<u8>, StoreError> {
+        let inconsistent = |what: &str, e: &dyn std::fmt::Debug| {
+            StoreError::Inconsistent(format!("issuing an external Remove ({what}): {e:?}"))
+        };
+        let signer = PiSigner(keys.external_sender_key());
+        let message = ExternalProposal::new_remove::<OpenMlsRustCrypto>(
+            LeafNodeIndex::new(leaf),
+            self.group.group_id().clone(),
+            self.group.group_context().epoch(),
+            &signer,
+            SenderExtensionIndex::new(self.pi_sender_index),
+        )
+        .map_err(|e| inconsistent("sign", &e))?;
+        let bytes = message
+            .tls_serialize_detached()
+            .map_err(|e| inconsistent("serialize", &e))?;
+        // Run it through the Pi's own PublicGroup, as for a member's proposal.
+        let protocol_message = MlsMessageIn::tls_deserialize_exact(bytes.as_slice())
+            .map_err(|e| inconsistent("parse", &e))?
+            .try_into_protocol_message()
+            .map_err(|e| inconsistent("protocol message", &e))?;
+        let processed = self
+            .group
+            .process_message(&self.crypto, protocol_message)
+            .map_err(|e| inconsistent("process", &e))?;
+        match processed.into_content() {
+            ProcessedMessageContent::ProposalMessage(proposal) => self
+                .group
+                .add_proposal(&self.storage, *proposal)
+                .map_err(storage_error("add external proposal"))?,
+            _ => return Err(inconsistent("content", &"not a proposal")),
+        }
+        Ok(bytes)
+    }
+
     /// The leaf of `device_id`, if it is a member.
-    fn leaf_of(&self, conn: &Connection, device_id: &DeviceId) -> Result<Option<u32>, StoreError> {
+    pub fn leaf_of(
+        &self,
+        conn: &Connection,
+        device_id: &DeviceId,
+    ) -> Result<Option<u32>, StoreError> {
         Ok(conn
             .query_row(
                 "SELECT leaf_index FROM mls_members WHERE device_id = ?1",
@@ -831,4 +897,18 @@ fn leaf_is_device(credential: &Credential, signature_key: &[u8], device: &Device
         signed.certificate == device.certificate && signed.signature == device.certificate_signature
     }) && signature_key == device.mls_signature_public_key.as_slice()
         && !device.revoked
+}
+
+/// The Pi's external sender key as an OpenMLS signer.
+struct PiSigner<'a>(&'a ed25519_dalek::SigningKey);
+
+impl Signer for PiSigner<'_> {
+    fn sign(&self, payload: &[u8]) -> Result<Vec<u8>, SignerError> {
+        use ed25519_dalek::Signer as _;
+        Ok(self.0.sign(payload).to_bytes().to_vec())
+    }
+
+    fn signature_scheme(&self) -> SignatureScheme {
+        SignatureScheme::ED25519
+    }
 }
