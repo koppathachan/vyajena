@@ -63,7 +63,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      # No system protoc needed: vyajena-proto compiles the protos with protox.
       - name: cargo build
         run: cargo build --workspace --locked
 

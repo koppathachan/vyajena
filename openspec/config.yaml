@@ -26,13 +26,19 @@ context: |
   - Accepted means durable. Nothing is dropped silently.
   - Keys live only in the OS key store; no other encryption at rest.
   - User ids are <username>@<server_id>; the admin chooses the username.
-  - Limits, timings and signing context strings are defined once in code.
+  - Limits, timings and signing context strings are defined once, in protocol/,
+    which both the Pi and the core use.
 
   Rust: edition 2024, one Cargo workspace at the repo root. thiserror in
   libraries, anyhow only in binaries. tracing for logs (ids, epochs, sizes; never
   content). forbid(unsafe_code) except isolated FFI glue. No unwrap, expect or
   panicking indexing on bytes from the network, MLS or the database. clippy
-  -D warnings clean. Generated proto code goes to OUT_DIR, never into the repo.
+  -D warnings clean. Generated proto code is committed: one pb.rs per side,
+  server stubs in the Pi crate, client stubs in the core; regenerated locally by
+  one command, never in CI. Tests live in each crate's tests/ folder (public API
+  only, like a Go _test package), never in source files. Folders follow
+  features (one module per gRPC service on the Pi) so a feature can be split
+  out later.
 
 rules:
   proposal:

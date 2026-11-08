@@ -38,6 +38,6 @@ Project context, invariants and conventions live in
 
 ## Status
 
-MVP, in design. The `vyajena.v1` wire contract and the `vyajena-proto` crate
+MVP, in design. The `vyajena.v1` wire contract and the shared `protocol` crate
 are in place (OpenSpec change `core-wire-protocol`); the Pi server, Rust core
 and Flutter app come next. See the open decisions in the architecture doc.

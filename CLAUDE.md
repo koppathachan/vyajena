@@ -11,8 +11,9 @@ must never break, and the Rust conventions. This file only adds how to work here
    active change and read its proposal, design, tasks and specs before coding.
 2. Proto-first: change `proto/vyajena/v1/` (and its spec) before dependent code.
 3. Do `tasks.md` in order; tick a task only when its tests pass.
-4. Tests name the requirement they cover: `// spec: <capability>/<title-slug>`,
-   e.g. `// spec: group-membership/commit-authority`.
+4. Tests live in the crate's `tests/` folder, never in source files, and name
+   the requirement they cover: `// spec: <capability>/<title-slug>`, e.g.
+   `// spec: group-membership/commit-authority`.
 5. A wrong spec is fixed in the spec first, with the reason in the change's
    `design.md`. Policy and open decisions go to the owner, not decided alone.
 6. Spikes are throwaway: `spikes/<name>/` is git-ignored and outside the
@@ -22,7 +23,8 @@ must never break, and the Rust conventions. This file only adds how to work here
 
 ```
 proto/vyajena/v1/       wire contract (package vyajena.v1); buf.yaml at the root
-crates/vyajena-proto/   generated gRPC code (into OUT_DIR) and protocol constants
+protocol/               rules the Pi and core share (limits, timings, signing labels),
+                        one module per spec capability; tests in protocol/tests/
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)
 ```

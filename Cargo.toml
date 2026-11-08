@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/vyajena-proto"]
+members = ["protocol"]
 # Throwaway spikes (git-ignored) build on their own, outside the workspace.
 exclude = ["spikes"]
 
