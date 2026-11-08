@@ -90,3 +90,64 @@ pub fn usable_bootstrap(
         .optional()?;
     Ok(row)
 }
+
+/// Every invite that is unused, unrevoked and unexpired at `now`, oldest first
+/// (device-identity: Invites).
+pub fn list_unused(tx: &Transaction<'_>, now: SystemTime) -> Result<Vec<Invite>, StoreError> {
+    let mut stmt = tx.prepare(
+        "SELECT code, username, created_at, expires_at, bootstrap FROM invites
+         WHERE used_at IS NULL AND revoked_at IS NULL AND expires_at > ?1
+         ORDER BY created_at, code",
+    )?;
+    let rows = stmt.query_map(params![unix_millis(now)], |row| {
+        Ok(Invite {
+            code: row.get(0)?,
+            username: row.get(1)?,
+            created_at: from_unix_millis(row.get(2)?),
+            expires_at: from_unix_millis(row.get(3)?),
+            bootstrap: row.get(4)?,
+        })
+    })?;
+    let mut invites = Vec::new();
+    for row in rows {
+        invites.push(row?);
+    }
+    Ok(invites)
+}
+
+/// What [`revoke`] found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RevokeOutcome {
+    /// The invite is now revoked (or already was).
+    Revoked,
+    /// No invite has that code.
+    NotFound,
+    /// The invite was already used; it cannot be revoked.
+    AlreadyUsed,
+}
+
+/// Revokes the unused invite `code` at `now`.
+pub fn revoke(
+    tx: &Transaction<'_>,
+    code: &str,
+    now: SystemTime,
+) -> Result<RevokeOutcome, StoreError> {
+    let used: Option<Option<i64>> = tx
+        .query_row(
+            "SELECT used_at FROM invites WHERE code = ?1",
+            params![code],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match used {
+        None => Ok(RevokeOutcome::NotFound),
+        Some(Some(_)) => Ok(RevokeOutcome::AlreadyUsed),
+        Some(None) => {
+            tx.execute(
+                "UPDATE invites SET revoked_at = coalesce(revoked_at, ?2) WHERE code = ?1",
+                params![code, unix_millis(now)],
+            )?;
+            Ok(RevokeOutcome::Revoked)
+        }
+    }
+}

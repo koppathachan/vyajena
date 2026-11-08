@@ -17,6 +17,7 @@ use rusqlite::Connection;
 use tokio::sync::oneshot;
 
 mod migrations;
+pub mod records;
 
 pub use migrations::SCHEMA_VERSION;
 
@@ -55,6 +56,15 @@ pub enum StoreError {
     /// Stored data breaks an invariant the server relies on.
     #[error("inconsistent database: {0}")]
     Inconsistent(String),
+}
+
+/// A database failure seen by a client: logged here, reported as `INTERNAL`
+/// without details.
+impl From<StoreError> for tonic::Status {
+    fn from(error: StoreError) -> Self {
+        tracing::error!(%error, "database error");
+        tonic::Status::internal("internal error")
+    }
 }
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;

@@ -12,11 +12,14 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use protocol::device_identity::DeviceId;
 use rusqlite::{OptionalExtension, params};
 use tokio::net::TcpListener;
+use tokio::sync::broadcast;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::service::Routes;
 
+use crate::auth::AuthLayer;
 use crate::store::{Store, StoreError};
 
 pub use bootstrap::{Bootstrap, BootstrapInvite};
@@ -61,6 +64,9 @@ pub enum StartError {
     Serve(#[from] tonic::transport::Error),
 }
 
+/// Revocations buffered for slow subscribers before they lag.
+const REVOCATION_CHANNEL_CAPACITY: usize = 256;
+
 /// What every service shares: config, keys, storage and the clock.
 #[derive(Clone)]
 pub struct State {
@@ -72,6 +78,10 @@ pub struct State {
     pub store: Store,
     /// The time source.
     pub clock: Arc<dyn Clock>,
+    /// Ids of devices just revoked (`Devices.RevokeDevice`,
+    /// `Admin.RemoveUser`), so the messaging service can close their open
+    /// streams (device-identity: Device revocation).
+    pub revocations: broadcast::Sender<DeviceId>,
 }
 
 /// A started server: keys loaded, database open, port bound.
@@ -124,6 +134,7 @@ impl Pi {
                 keys: Arc::new(keys),
                 store,
                 clock,
+                revocations: broadcast::channel(REVOCATION_CHANNEL_CAPACITY).0,
             },
             listener,
             local_addr,
@@ -151,7 +162,13 @@ impl Pi {
         let tls = tls::server_config(&self.state.keys)?;
         let incoming = ReceiverStream::new(tls::accept_loop(self.listener, tls));
         tracing::info!(listen_address = %self.local_addr, "listening (TLS 1.3, HTTP/2)");
+        let auth = AuthLayer::new(
+            self.state.store.clone(),
+            self.state.config.clone(),
+            self.state.clock.clone(),
+        );
         tonic::transport::Server::builder()
+            .layer(auth)
             .add_routes(routes(&self.state))
             .serve_with_incoming_shutdown(incoming, shutdown)
             .await?;
@@ -159,10 +176,14 @@ impl Pi {
     }
 }
 
-/// The gRPC services, one `add_service` per feature folder. Empty until the
-/// services land (pi-server-core tasks 4-7).
-pub fn routes(_state: &State) -> Routes {
+/// The gRPC services, one `add_service` per feature folder. [`Pi::serve`] puts
+/// the [`AuthLayer`] in front of all of them (wire-transport: Session
+/// authentication).
+pub fn routes(state: &State) -> Routes {
     Routes::default()
+        .add_service(crate::devices::service(state))
+        .add_service(crate::keys::service(state))
+        .add_service(crate::admin::service(state))
 }
 
 /// Records the server id on first start and refuses a different one later.

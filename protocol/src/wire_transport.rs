@@ -2,6 +2,10 @@
 
 use std::time::Duration;
 
+use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
+
+use crate::device_identity::{ED25519_PUBLIC_KEY_LEN, ED25519_SIGNATURE_LEN};
+
 /// The protocol version this contract defines, sent in `Hello.protocol_version`
 /// and listed in `ServerInfo.supported_protocol_versions`
 /// (Protocol version negotiation).
@@ -50,3 +54,69 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(25);
 
 /// The Pi closes a stream that has received nothing for this long (Heartbeats).
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// The exact bytes a device auth key signs to answer a challenge:
+/// [`AUTH_CONTEXT`] `|| nonce || tls_exporter` (Session authentication).
+pub fn auth_signing_input(nonce: &[u8], tls_exporter: &[u8]) -> Vec<u8> {
+    let mut input = Vec::with_capacity(AUTH_CONTEXT.len() + nonce.len() + tls_exporter.len());
+    input.extend_from_slice(AUTH_CONTEXT);
+    input.extend_from_slice(nonce);
+    input.extend_from_slice(tls_exporter);
+    input
+}
+
+/// Signs a challenge with a device auth key, as the device core does
+/// (Session authentication).
+pub fn sign_auth_challenge(
+    auth_key: &SigningKey,
+    nonce: &[u8],
+    tls_exporter: &[u8],
+) -> [u8; ED25519_SIGNATURE_LEN] {
+    auth_key
+        .sign(&auth_signing_input(nonce, tls_exporter))
+        .to_bytes()
+}
+
+/// Why an answer to a challenge was not accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AuthSignatureError {
+    /// The device auth public key is not 32 bytes or not a valid Ed25519 point.
+    #[error("device auth public key is not a valid Ed25519 key")]
+    InvalidAuthKey,
+    /// The nonce is not [`CHALLENGE_NONCE_LEN`] bytes or the exporter value is
+    /// not [`AUTH_TLS_EXPORTER_LEN`] bytes.
+    #[error("nonce or TLS exporter value has the wrong length")]
+    InvalidInputLength,
+    /// The signature is not 64 bytes.
+    #[error("signature is not {ED25519_SIGNATURE_LEN} bytes")]
+    InvalidSignatureLength,
+    /// The signature does not verify.
+    #[error("signature does not verify against the device auth key")]
+    BadSignature,
+}
+
+/// Verifies `AuthenticateRequest.signature` over
+/// `AUTH_CONTEXT || nonce || tls_exporter` against a device auth public key
+/// (Session authentication). Strict Ed25519, as for device certificates.
+pub fn verify_auth_signature(
+    auth_public_key: &[u8],
+    nonce: &[u8],
+    tls_exporter: &[u8],
+    signature: &[u8],
+) -> Result<(), AuthSignatureError> {
+    if nonce.len() != CHALLENGE_NONCE_LEN || tls_exporter.len() != AUTH_TLS_EXPORTER_LEN {
+        return Err(AuthSignatureError::InvalidInputLength);
+    }
+    let key_bytes: &[u8; ED25519_PUBLIC_KEY_LEN] = auth_public_key
+        .try_into()
+        .map_err(|_| AuthSignatureError::InvalidAuthKey)?;
+    let key =
+        VerifyingKey::from_bytes(key_bytes).map_err(|_| AuthSignatureError::InvalidAuthKey)?;
+    if key.is_weak() {
+        return Err(AuthSignatureError::InvalidAuthKey);
+    }
+    let signature =
+        Signature::from_slice(signature).map_err(|_| AuthSignatureError::InvalidSignatureLength)?;
+    key.verify_strict(&auth_signing_input(nonce, tls_exporter), &signature)
+        .map_err(|_| AuthSignatureError::BadSignature)
+}

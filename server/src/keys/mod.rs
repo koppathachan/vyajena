@@ -1,1 +1,238 @@
-//! Keys service: KeyPackage upload and fetch (pi-server-core task 5.1).
+//! Keys service: the KeyPackage directory (key-directory: KeyPackage upload;
+//! KeyPackage fetch; pi-server-core task 5.1).
+
+use std::time::SystemTime;
+
+use openmls::prelude::tls_codec::Deserialize as _;
+use openmls::prelude::{KeyPackageIn, ProtocolVersion};
+use openmls_rust_crypto::RustCrypto;
+use protocol::device_identity::DeviceId;
+use rusqlite::{OptionalExtension, Transaction, params};
+use tonic::{Request, Response, Status};
+
+use crate::auth::caller;
+use crate::membership::{CIPHERSUITE, certificate};
+use crate::pb;
+use crate::pb::keys_server::{Keys, KeysServer};
+use crate::runtime::State;
+use crate::runtime::clock::unix_millis;
+use crate::store::StoreError;
+use crate::store::records::{self, DeviceRow};
+
+/// The gRPC service.
+pub fn service(state: &State) -> KeysServer<KeysService> {
+    KeysServer::new(KeysService {
+        state: state.clone(),
+    })
+}
+
+/// Implements `vyajena.v1.Keys`.
+pub struct KeysService {
+    state: State,
+}
+
+/// Checks one uploaded KeyPackage against the uploading device
+/// (key-directory: KeyPackage upload): it parses and verifies, uses the one
+/// ciphersuite, its credential carries exactly the device's registered
+/// certificate, and its leaf signature key is the certificate's MLS key.
+fn check_key_package(crypto: &RustCrypto, bytes: &[u8], device: &DeviceRow) -> Result<(), Status> {
+    let key_package = KeyPackageIn::tls_deserialize_exact(bytes)
+        .map_err(|_| Status::invalid_argument("a KeyPackage does not parse"))?
+        .validate(crypto, ProtocolVersion::Mls10)
+        .map_err(|e| Status::invalid_argument(format!("a KeyPackage is invalid: {e}")))?;
+    if key_package.ciphersuite() != CIPHERSUITE {
+        return Err(Status::invalid_argument(
+            "KeyPackages must use MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+        ));
+    }
+    let leaf = key_package.leaf_node();
+    let carries_own_certificate =
+        certificate::from_credential(leaf.credential()).is_some_and(|signed| {
+            signed.certificate == device.certificate
+                && signed.signature == device.certificate_signature
+        });
+    if !carries_own_certificate {
+        return Err(Status::permission_denied(
+            "a KeyPackage's credential is not the uploading device's certificate",
+        ));
+    }
+    if leaf.signature_key().as_slice() != device.mls_signature_public_key.as_slice() {
+        return Err(Status::permission_denied(
+            "a KeyPackage's signature key is not the certificate's MLS key",
+        ));
+    }
+    Ok(())
+}
+
+fn store_key_packages(
+    tx: &Transaction<'_>,
+    device_id: &DeviceId,
+    one_time: &[Vec<u8>],
+    last_resort: &[u8],
+    now: SystemTime,
+) -> Result<(), StoreError> {
+    let mut insert = tx.prepare(
+        "INSERT INTO key_packages (device_id, key_package, last_resort, uploaded_at)
+         VALUES (?1, ?2, ?3, ?4)",
+    )?;
+    for key_package in one_time {
+        insert.execute(params![
+            device_id.as_slice(),
+            key_package,
+            false,
+            unix_millis(now)
+        ])?;
+    }
+    // The new last-resort KeyPackage replaces the old one.
+    tx.execute(
+        "DELETE FROM key_packages WHERE device_id = ?1 AND last_resort = 1",
+        params![device_id.as_slice()],
+    )?;
+    insert.execute(params![
+        device_id.as_slice(),
+        last_resort,
+        true,
+        unix_millis(now)
+    ])?;
+    Ok(())
+}
+
+/// Takes one KeyPackage of `device_id`: the oldest one-time one, which is
+/// deleted, or else the last-resort one, which stays.
+fn take_key_package(
+    tx: &Transaction<'_>,
+    device_id: &DeviceId,
+) -> Result<Option<Vec<u8>>, StoreError> {
+    let one_time: Option<Vec<u8>> = tx
+        .query_row(
+            "DELETE FROM key_packages WHERE id = (
+                 SELECT id FROM key_packages WHERE device_id = ?1 AND last_resort = 0
+                 ORDER BY id LIMIT 1)
+             RETURNING key_package",
+            params![device_id.as_slice()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if one_time.is_some() {
+        return Ok(one_time);
+    }
+    Ok(tx
+        .query_row(
+            "SELECT key_package FROM key_packages WHERE device_id = ?1 AND last_resort = 1",
+            params![device_id.as_slice()],
+            |row| row.get(0),
+        )
+        .optional()?)
+}
+
+#[tonic::async_trait]
+impl Keys for KeysService {
+    async fn upload_key_packages(
+        &self,
+        request: Request<pb::UploadKeyPackagesRequest>,
+    ) -> Result<Response<pb::UploadKeyPackagesResponse>, Status> {
+        let caller = caller(&request)?.clone();
+        let request = request.into_inner();
+        if request.last_resort_key_package.is_empty() {
+            return Err(Status::invalid_argument(
+                "exactly one last-resort KeyPackage is required",
+            ));
+        }
+        let now = self.state.clock.now();
+        let count = request.key_packages.len();
+        self.state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let device = records::device(&tx, &caller.device_id)?
+                    .ok_or_else(|| StoreError::Inconsistent("caller's device is missing".into()))?;
+                let crypto = RustCrypto::default();
+                // One bad KeyPackage fails the whole upload.
+                for bytes in request
+                    .key_packages
+                    .iter()
+                    .chain(std::iter::once(&request.last_resort_key_package))
+                {
+                    if let Err(status) = check_key_package(&crypto, bytes, &device) {
+                        return Ok(Err(status));
+                    }
+                }
+                store_key_packages(
+                    &tx,
+                    &caller.device_id,
+                    &request.key_packages,
+                    &request.last_resort_key_package,
+                    now,
+                )?;
+                tx.commit()?;
+                Ok(Ok(()))
+            })
+            .await??;
+        tracing::debug!(one_time = count, "stored KeyPackages");
+        Ok(Response::new(pb::UploadKeyPackagesResponse {}))
+    }
+
+    async fn fetch_key_packages(
+        &self,
+        request: Request<pb::FetchKeyPackagesRequest>,
+    ) -> Result<Response<pb::FetchKeyPackagesResponse>, Status> {
+        caller(&request)?;
+        let request = request.into_inner();
+        let user_id = request
+            .user_id
+            .ok_or_else(|| Status::invalid_argument("user_id is required"))?;
+        if user_id.server_id != self.state.config.server_id {
+            return Err(Status::not_found("unknown user"));
+        }
+        let mut wanted = Vec::with_capacity(request.device_ids.len());
+        for id in &request.device_ids {
+            let id = records::device_id_from(id)
+                .ok_or_else(|| Status::invalid_argument("device ids are 16 bytes"))?;
+            if !wanted.contains(&id) {
+                wanted.push(id);
+            }
+        }
+        let response = self
+            .state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let Some(user) = records::user(&tx, &user_id.username)? else {
+                    return Ok(Err(Status::not_found("unknown user")));
+                };
+                let mut devices = records::active_devices(&tx, &user.username)?;
+                if !wanted.is_empty() {
+                    if wanted
+                        .iter()
+                        .any(|id| !devices.iter().any(|d| d.device_id == *id))
+                    {
+                        return Ok(Err(Status::not_found(
+                            "a listed device is not a non-revoked device of this user",
+                        )));
+                    }
+                    devices.retain(|d| wanted.contains(&d.device_id));
+                }
+                let mut entries = Vec::with_capacity(devices.len());
+                for device in devices {
+                    // A device that never uploaded KeyPackages cannot be added
+                    // yet and is left out.
+                    if let Some(key_package) = take_key_package(&tx, &device.device_id)? {
+                        entries.push(pb::DeviceKeyPackage {
+                            certificate: Some(pb::SignedDeviceCertificate {
+                                certificate: device.certificate,
+                                signature: device.certificate_signature,
+                            }),
+                            key_package,
+                        });
+                    }
+                }
+                tx.commit()?;
+                Ok(Ok(pb::FetchKeyPackagesResponse {
+                    identity_public_key: user.identity_public_key,
+                    devices: entries,
+                }))
+            })
+            .await??;
+        Ok(Response::new(response))
+    }
+}

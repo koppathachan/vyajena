@@ -13,6 +13,20 @@ use crate::DAY;
 /// (Inactive devices are kept out).
 pub const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(7 * DAY);
 
+/// MLS extension type (RFC 9420 private-use range) of the group context
+/// extension that names the admin (Group creation). Its `extension_data` is the
+/// admin's user id in its textual form `<username>@<server_id>`, as UTF-8. The
+/// Pi checks it at `Admin.CreateGroup`. Because it is a group context extension,
+/// every device lists this type in its leaf `capabilities.extensions` (in each
+/// KeyPackage and leaf update), or OpenMLS refuses to add it.
+pub const ADMIN_EXTENSION_TYPE: u16 = 0xF0A1;
+
+/// The `extension_data` of the [`ADMIN_EXTENSION_TYPE`] extension for an admin
+/// user id.
+pub fn admin_extension_data(admin_user_id: &str) -> Vec<u8> {
+    admin_user_id.as_bytes().to_vec()
+}
+
 /// The device that sent a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Committer<'a> {

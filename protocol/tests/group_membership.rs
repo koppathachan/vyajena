@@ -301,3 +301,12 @@ fn user_ids_compare_exactly() {
         );
     }
 }
+
+// spec: group-membership/group-creation
+#[test]
+fn admin_extension_is_private_use_and_holds_the_user_id() {
+    use protocol::group_membership::{ADMIN_EXTENSION_TYPE, admin_extension_data};
+    // RFC 9420 section 17.3: 0xF000-0xFFFF is reserved for private use.
+    const { assert!(ADMIN_EXTENSION_TYPE >= 0xF000) };
+    assert_eq!(admin_extension_data("akhil@pi"), b"akhil@pi".to_vec());
+}

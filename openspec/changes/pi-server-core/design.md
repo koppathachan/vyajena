@@ -215,6 +215,83 @@ Small technical choices the specs leave open; none changes a requirement.
   id, code, relay address and expiry. The client changes may wrap this text in a
   QR code or link; that is theirs to decide.
 
+### D10. Devices, keys and membership as built (tasks 4-6)
+
+Technical choices the specs leave open; none changes a requirement.
+
+- **Auth layer.** Token checks need the database, and tonic interceptors are
+  synchronous, so the "interceptor" of task 4.2 is a tower layer
+  (`auth::AuthLayer`) that `Pi::serve` puts in front of every service. It
+  lets only `Devices.GetServerInfo`, `Register`, `GetChallenge` and
+  `Authenticate` through without `authorization: Bearer <token>` and puts the
+  `auth::Caller` (device id, user, admin flag) into the request extensions.
+  Tokens are 32 random bytes in base64url, live exactly 1 hour, and only their
+  SHA-256 is stored. A nonce is spent by any answer, right or wrong. Revoking a
+  device ends its sessions, deletes its KeyPackages, and announces its id on
+  `State::revocations` so the messaging service (task 7.1) can close its stream.
+  The signing input and check are `protocol::wire_transport::{auth_signing_input,
+  sign_auth_challenge, verify_auth_signature}`, for the core to reuse.
+- **Status codes not named by the specs.** Register with an unknown, used,
+  revoked or expired invite: `PERMISSION_DENIED` (one answer for all, nothing
+  created). A certificate that verifies but is malformed (no user, keys not 32
+  bytes, device id not derived from the auth key): `INVALID_ARGUMENT`. A user or
+  device id that exists already: `ALREADY_EXISTS`; `CreateInvite` for an
+  existing username too, so a removed user's username stays taken.
+  `RevokeDevice` of the caller itself: `INVALID_ARGUMENT` (the spec says
+  "another device"); of a device that is not the caller's user's: `NOT_FOUND`.
+  `RevokeInvite`: unknown `NOT_FOUND`, already used `FAILED_PRECONDITION`,
+  already revoked or expired succeeds. `RemoveUser` of the admin:
+  `FAILED_PRECONDITION`. KeyPackage upload: does not parse, fails OpenMLS
+  validation, wrong ciphersuite or no last resort: `INVALID_ARGUMENT`; the
+  credential is not the uploader's certificate, or the leaf key is not the
+  certificate's MLS key: `PERMISSION_DENIED` (whole upload refused).
+  `CreateGroup`: bad or inconsistent public state `INVALID_ARGUMENT`, the only
+  member not the calling admin device `PERMISSION_DENIED`.
+- **KeyPackages.** "Carries the uploading device's certificate" is checked
+  strictly: the credential holds exactly the `SignedDeviceCertificate` bytes
+  stored for the device. Uploads add one-time KeyPackages and replace the last
+  resort. A fetch hands out the oldest one-time KeyPackage, else the last
+  resort, and leaves out a device that has none at all (a freshly linked device
+  that has not uploaded yet), with or without `device_ids`.
+- **External sender entry.** The Pi's credential in `ServerInfo.external_sender`
+  is an MLS basic credential whose identity is the server id (UTF-8). The group
+  may list it at any position of `external_senders`; the Pi records the index
+  for its external Removes (task 8.1).
+- **Admin in the group context.** `group-membership: Group creation` says the
+  group context names the admin's user id but no encoding was fixed. It is a
+  group context extension of private-use type
+  `protocol::group_membership::ADMIN_EXTENSION_TYPE` (0xF0A1) whose data is the
+  UTF-8 user id `<username>@<server_id>`; `CreateGroup` requires it to equal
+  the configured admin. Consequence for the core (rust-core-messaging): RFC 9420
+  requires every member to support every group context extension, so each
+  KeyPackage and leaf must list 0xF0A1 in `capabilities.extensions`, or OpenMLS
+  refuses the Add. The Pi does not check this at upload.
+- **Public state storage.** OpenMLS `PublicGroup` writes into its in-memory
+  `MemoryStorage`; `membership::GroupState::save` copies that key-value map into
+  `mls_public_state`, plus the epoch (`mls_group`) and each member device's leaf
+  (`mls_members`, rebuilt from the tree). It is loaded per operation and saved in
+  the same transaction as the rest of an accepted envelope, on the store's
+  writer thread (D4, D5). `mls_group.id` is fixed to 1, so the database itself
+  allows at most one group.
+- **Commit checks (task 6.3).** `GroupState::check_commit(conn, caller,
+  server_id, mls_message)` returns `AcceptedCommit` (new epoch, committer,
+  added devices at their new leaves, removed devices) or a
+  `HandshakeRejection` that maps to `RejectionReason`: not a `PublicMessage`
+  commit of this group, or invalid to OpenMLS: `MALFORMED`; other epoch:
+  `STALE_EPOCH` with the current epoch; a bad signature, a sender leaf that is
+  not the authenticated device's, a sender that is not a member, or a commit
+  breaking `protocol::group_membership::check_commit_authority`:
+  `POLICY_VIOLATION`. Beyond the rule, so the Pi never sequences what honest
+  members must reject: every added leaf must carry the certificate of a
+  registered, non-revoked device that verifies against its user's stored
+  identity key and names the leaf's key; the committer's new path leaf and any
+  Update must keep their device's registered certificate and key. A
+  `SelfRemove` counts as a Remove of the proposer's own device.
+  `GroupState::check_proposal` does the same parsing and sender checks for a
+  member's `PROPOSAL` and keeps it in the Pi's proposal store, so a later
+  commit can include it by reference. Membership tags stay unchecked (the
+  spike's caveat).
+
 ## Risks / Trade-offs
 
 - [The community buf plugins may lag tonic 0.14] → task 1.1 checks first; the

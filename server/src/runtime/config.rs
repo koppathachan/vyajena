@@ -181,21 +181,32 @@ fn required_str(table: &toml::Table, field: &'static str) -> Result<String, Conf
     optional_str(table, field)?.ok_or(ConfigError::Missing { field })
 }
 
-/// A username or server id: one side of `<username>@<server_id>`.
-fn check_user_id_part(field: &'static str, value: &str) -> Result<(), ConfigError> {
+/// What is wrong with a username or server id (one side of
+/// `<username>@<server_id>`), if anything: it must be non-empty and free of
+/// `@`, whitespace and control characters. Also used for the usernames the
+/// admin picks in `Admin.CreateInvite`.
+pub fn user_id_part_problem(value: &str) -> Option<&'static str> {
+    if value.is_empty() {
+        return Some("must not be empty");
+    }
     if value.contains('@') {
-        return Err(ConfigError::Invalid {
-            field,
-            reason: "must not contain '@'".into(),
-        });
+        return Some("must not contain '@'");
     }
     if value.chars().any(|c| c.is_whitespace() || c.is_control()) {
-        return Err(ConfigError::Invalid {
-            field,
-            reason: "must not contain spaces or control characters".into(),
-        });
+        return Some("must not contain spaces or control characters");
     }
-    Ok(())
+    None
+}
+
+/// A username or server id: one side of `<username>@<server_id>`.
+fn check_user_id_part(field: &'static str, value: &str) -> Result<(), ConfigError> {
+    match user_id_part_problem(value) {
+        Some(reason) => Err(ConfigError::Invalid {
+            field,
+            reason: reason.into(),
+        }),
+        None => Ok(()),
+    }
 }
 
 fn check_host_port(field: &'static str, value: &str) -> Result<(), ConfigError> {

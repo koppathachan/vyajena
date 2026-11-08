@@ -19,19 +19,19 @@
 
 ## 4. Devices and authentication
 
-- [ ] 4.1 `GetServerInfo`, `Register` with invites and admin-owned usernames, `GetChallenge`, `Authenticate` with TLS exporter binding and hashed session tokens
-- [ ] 4.2 Auth interceptor for every other RPC (wire-transport: Session authentication)
-- [ ] 4.3 `LinkDevice`, `GetSelf` (with `is_admin`), `RevokeDevice`, `UpdatePushToken`
+- [x] 4.1 `GetServerInfo`, `Register` with invites and admin-owned usernames, `GetChallenge`, `Authenticate` with TLS exporter binding and hashed session tokens
+- [x] 4.2 Auth interceptor for every other RPC (wire-transport: Session authentication)
+- [x] 4.3 `LinkDevice`, `GetSelf` (with `is_admin`), `RevokeDevice`, `UpdatePushToken`
 
 ## 5. Keys
 
-- [ ] 5.1 `UploadKeyPackages` with full validation, `FetchKeyPackages` with optional device ids, one-time consumption and last-resort fallback
+- [x] 5.1 `UploadKeyPackages` with full validation, `FetchKeyPackages` with optional device ids, one-time consumption and last-resort fallback
 
 ## 6. Admin and membership
 
-- [ ] 6.1 `CreateInvite`, `ListInvites`, `RevokeInvite`, `RemoveUser`
-- [ ] 6.2 `CreateGroup` building the OpenMLS `PublicGroup` from GroupInfo and ratchet tree; persist public state
-- [ ] 6.3 Commit checks: signature, committer is the authenticated device, commit authority via `protocol` (Pi validates handshakes without group secrets)
+- [x] 6.1 `CreateInvite`, `ListInvites`, `RevokeInvite`, `RemoveUser`
+- [x] 6.2 `CreateGroup` building the OpenMLS `PublicGroup` from GroupInfo and ratchet tree; persist public state
+- [x] 6.3 Commit checks: signature, committer is the authenticated device, commit authority via `protocol` (Pi validates handshakes without group secrets)
 
 ## 7. Messaging
 
