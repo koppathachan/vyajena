@@ -1,6 +1,6 @@
 # Chat App MVP — Architecture Decisions
 
-Nov 7, 2026 · @Akhil Sasidharan
+Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol) · @Akhil Sasidharan
 
 ## Scope
 
@@ -10,6 +10,7 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 
 - Text messages only
 - One group, created and managed by the admin (Akhil)
+- Several devices per user, each its own MLS member
 - Invite-only signup
 - Store-and-forward through the Pi server
 - One delivery status: accepted by the server (⏳ sending → ✓ accepted)
@@ -46,7 +47,7 @@ flowchart LR
 
   subgraph home["Home network, India — sees ciphertext only"]
     pi["Pi server<br/>tokio + tonic, one binary"]
-    pidb[("SQLite WAL<br/>devices · KeyPackages · invites<br/>commit log · queues · push tokens")]
+    pidb[("SQLite WAL<br/>users · devices · KeyPackages · invites<br/>public group state · commit log · queues")]
     pi --- pidb
   end
 
@@ -72,7 +73,7 @@ OpenMLS (RFC 9420) runs inside the Rust core on every device, so the relay and t
 | Party | Sees | Cannot see |
 | --- | --- | --- |
 | GCP relay | TLS bytes, client IPs, timing | Anything inside TLS |
-| Pi server | Group id, member devices, epoch, sender, time, size | Message content, group name and settings |
+| Pi server | Group id, member devices and their public leaf keys, admin id, epoch, sender, time, size, membership changes | Message content, group name and settings, profiles |
 | Apple / Google | When a device gets a wake ping | Content, sender |
 
 Each layer of a message on the wire, and who can open it:
@@ -93,57 +94,68 @@ flowchart TB
 - **Epoch rule (strict):** the Pi rejects any message tagged with an old epoch; the client re-encrypts and resends.
 - **Key pruning:** OpenMLS default `max_past_epochs = 0` is kept; the strict rule makes it safe.
 - **Sent messages:** the sender cannot decrypt its own ciphertext, so the client stores its own plaintext locally on send.
-- **Group metadata** (name, admin list, settings) lives inside the MLS group, never on the server.
-- **Admin-only changes:** the Pi accepts membership Commits only from the admin's devices; members may only update their own keys.
-- **Residual risk:** the Pi could hand out a fake KeyPackage and read new messages. Only fingerprint verification stops this (open decision).
+- **Devices:** every MLS member is a device. Each user has one Ed25519 identity key, held by their first device, which signs a certificate for each device; the certificate is the device's MLS credential. Losing the first device means an admin-driven reset (remove the user, new invite).
+- **Credentials:** OpenMLS does not check credentials, so the core verifies every new or changed leaf's certificate against the user's pinned identity key, and that the certificate's MLS key equals the leaf's signature key.
+- **Handshakes in the clear:** Commits and Proposals are MLS `PublicMessage`, so the Pi can check them with OpenMLS `PublicGroup` (signature, sender, commit rule) without any group secret. Application messages stay `PrivateMessage`.
+- **Commit rule:** admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the Pi's inactivity Removes. The Pi and every client check the same rule.
+- **Group metadata:** the admin's user id is in the group context, which the Pi can read (it enforces it anyway). Group name and settings travel only as encrypted `GroupSettings` messages, from admin devices.
+- **Names:** the admin picks each username at invite time; it is the local part of `user@<server>` and users cannot change it. Display name and "about" travel as an encrypted `Profile`, set only by that user's devices.
+- **Residual risk:** the Pi could hand out a fake identity key and KeyPackage the first time a client sees a user (keys are pinned on first sight) and read new messages. Only fingerprint verification stops this (open decision).
+- **Residual risk:** the Pi cannot check membership tags, confirmation tags or encrypted path secrets. A dishonest member with a valid leaf can get a commit sequenced that honest clients reject, which stalls the group. Any MLS delivery service has this gap; there is no recovery flow yet.
 
 ## Server (Pi)
 
 The Pi is the single authority for routing, ordering and membership, and never for message history. Rust, tokio + tonic, SQLite in WAL mode, one static binary.
 
-- **Invites:** admin creates single-use invite codes; signup = code + device public key.
-- **Auth:** each device holds an Ed25519 key and signs a server challenge on every connect.
-- **Key directory:** stores and hands out each device's MLS KeyPackages.
-- **Ordering:** checks the epoch on every message and appends Commits to the group's commit log.
-- **Queues:** per-device store-and-forward queue of ciphertext envelopes.
-- **Push:** sends a wake ping to FCM or APNs when a queue gets a new item.
+- **Admin:** the admin's user id is in the Pi's config; the bootstrap invite creates that user, who creates the group with `Admin.CreateGroup` before inviting anyone.
+- **Invites:** admin creates single-use invite codes, each for a username; signup = code + user identity key + device certificate.
+- **Auth:** each device holds an Ed25519 auth key and signs a server challenge, bound to the TLS connection, for a session token of at most 1 hour.
+- **Key directory:** stores and hands out each device's MLS KeyPackages with its certificate.
+- **Membership:** tracks the group's public state with OpenMLS `PublicGroup`, checks every Commit, and as an MLS external sender proposes the removal of inactive devices.
+- **Ordering:** checks the epoch on every envelope, gives each accepted one the next `server_seq` for the group, and appends Commits and Proposals to the commit log.
+- **Queues:** per-device store-and-forward queue of application ciphertext.
+- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute.
 
-**What it stores:** devices and their public keys, KeyPackages, invite codes, push tokens, group id + member devices + epoch, the commit log with a cursor per member, and pending ciphertext. Nothing else.
+**What it stores:** users and their identity public keys, devices with their certificates, KeyPackages, invite codes, push tokens, session token hashes, the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
 
 ## Delivery and limits
 
 Messages wait on the Pi at most 7 days and are deleted as soon as the recipient device acknowledges them.
 
-Life of one application message on the Pi (Commits and Welcomes skip the cap and expiry):
+Life of one application message on the Pi (Commits, Proposals and Welcomes skip the cap and expiry):
 
 ```mermaid
 stateDiagram-v2
   [*] --> Received: device sends envelope
-  Received --> Rejected: old epoch, too large or queue full
+  Received --> Rejected: old epoch, too large, malformed or duplicate mismatch
   Received --> Accepted: durably written, sender shows accepted
-  Accepted --> Queued: one entry per recipient device
+  Accepted --> Queued: one entry per active recipient device
   Queued --> Delivered: device online, or woken by push
   Delivered --> Queued: disconnects before acking
   Delivered --> Deleted: device acks
-  Queued --> Expired: 7 days without an ack
+  Queued --> Dropped: device inactive, 7 days offline or queue at 1,000
+  Queued --> Expired: connected 7 days without an ack
   Rejected --> [*]: sender is told
   Deleted --> [*]
+  Dropped --> [*]: device removed, re-added on return
   Expired --> [*]: device shows messages before X expired
 ```
 
 | Rule | Value |
 | --- | --- |
-| Message expiry | 7 days |
-| Queue cap | 1,000 messages per recipient device |
-| Queue full | Reject the send and tell the sender; never drop silently |
-| Max message size | 64 KB (proposed) |
-| Commits and Welcomes | Exempt from expiry and cap; deleted once every member has acknowledged |
-| Inactivity | Member auto-removed after 30 days offline; admin re-adds |
+| Message expiry | 7 days, a backstop for a device that connects but never acks |
+| Queue cap | 1,000 application messages per recipient device |
+| Inactivity | A device offline 7 days, or whose queue reaches 1,000, is removed and re-added automatically when it returns |
+| Max message size | 64 KB of application ciphertext |
+| Handshake size | 256 KB per Commit or Proposal envelope, a Commit's Welcome included |
+| Commits, Proposals and Welcomes | Exempt from expiry and cap; deleted once every device that must receive them has acknowledged |
 
-- **Accepted** = the Pi has durably written the envelope before it acknowledges.
-- **Idempotent sends:** each envelope carries a client-generated id; the Pi deduplicates on it, so retries never create duplicates.
-- **Catch-up:** a returning device replays the commit log from its cursor, then drains its queue.
-- **Expired gap:** messages that expired while a device was offline are lost; the app shows "messages before X expired".
+- **Accepted** = the Pi has durably written the envelope and all its queue and log entries before it acknowledges.
+- **Idempotent sends:** each envelope carries a client-generated id; the Pi deduplicates on (sender device, id) for 7 days, so retries never create duplicates.
+- **Never blocked by one device:** a send is never rejected because of another device's queue. The full device is marked inactive instead.
+- **Inactive devices:** the Pi stops queueing for the device, deletes its queue and sends an MLS external Remove proposal, reissued each epoch until committed. When the device returns, the Pi tells it so and sends a rejoin notice to the user's other devices and the admin's devices; the first one online re-adds it in one commit with no user action. The app shows "messages since X were not kept".
+- **Catch-up:** a returning device gets everything after its cursor, commits, Welcomes and queued messages merged in `server_seq` order, before live traffic. (Replaying all commits first would leave older-epoch messages undecryptable, since `max_past_epochs = 0`.)
+- **Expired gap:** messages that expired before a connected device acked them are lost; the app shows "messages before X expired".
 
 ## Connectivity
 
@@ -201,16 +213,19 @@ There is no encryption at rest; keys live in the OS key store and every machine 
 
 One persistent bidirectional gRPC stream carries all messaging; `.proto` files are the contract, independent of the Rust code.
 
-| Service | Purpose |
+The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
+
+| Service | RPCs |
 | --- | --- |
-| `Messaging.Connect` (bidi stream) | Send envelopes, receive envelopes, acks, commit log replay, heartbeat |
-| `Devices` | Register with invite code, auth challenge, push token update |
-| `Keys` | Upload and fetch MLS KeyPackages |
-| `Admin` | Create invites, add or remove members |
+| `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / low-KeyPackage notices, heartbeats |
+| `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
+| `Keys` | `UploadKeyPackages`, `FetchKeyPackages` (one user, optionally only some devices) |
+| `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` |
 
-**Envelope:** `msg_id` (client-generated, for dedup) · `group_id` · `sender_device` · `epoch` · `kind` (application, commit, welcome) · `ciphertext`.
+**Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.
 
-- Server ids are `user@<server>` from day one, so federation can be added later.
+- **Welcome inside its commit:** clients never send `welcome` envelopes. A Welcome rides inside the commit that creates it; the Pi accepts or rejects both together, then sends each new device a `welcome` envelope itself.
+- Server ids are `user@<server>` from day one, so federation can be added later. A device id is the first 16 bytes of SHA-256 of its auth public key.
 - Every message passes through the Rust core; Flutter never opens a connection.
 
 ## Future
@@ -227,10 +242,10 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 
 ## Open decisions
 
-- [ ] Multi-device in the MVP? If yes: each device is a member, signed by a user identity key; a user may add their own devices.
+- [x] Multi-device in the MVP? **Yes** (core-wire-protocol): each device is an MLS member with a certificate signed by the user identity key; the first device holds that key and links the others; recovery is admin-driven.
 - [ ] Fingerprint verification in the MVP?
 - [ ] Desktop clients in the MVP, or mobile only?
 - [ ] Key rotation for idle groups: every 7 days (proposed)?
-- [ ] Max message size: 64 KB?
+- [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
 - [ ] Relay on the shared VM or its own VM?
 - [ ] Build order (deferred to the end)

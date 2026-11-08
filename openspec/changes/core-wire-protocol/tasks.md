@@ -28,9 +28,9 @@
 
 ## 5. Docs
 
-- [ ] 5.1 In `docs/architecture-decisions.md`, check off multi-device and max message size, and record the relaxed commit rule, the catch-up ordering fix, admin id in the group context, group settings in encrypted messages, admin-owned usernames with user-owned profiles, and the 7-day / full-queue inactivity rule with automatic re-add (replacing `QUEUE_FULL` rejection and the 30-day removal, including the delivery state diagram)
-- [ ] 5.2 Update `openspec/project.md` invariants and open decisions to match
-- [ ] 5.3 Run `openspec validate core-wire-protocol --strict` and fix any findings
+- [x] 5.1 In `docs/architecture-decisions.md`, check off multi-device and max message size, and record the relaxed commit rule, the catch-up ordering fix, admin id in the group context, group settings in encrypted messages, admin-owned usernames with user-owned profiles, and the 7-day / full-queue inactivity rule with automatic re-add (replacing `QUEUE_FULL` rejection and the 30-day removal, including the delivery state diagram)
+- [x] 5.2 Update `openspec/project.md` invariants and open decisions to match
+- [x] 5.3 Run `openspec validate core-wire-protocol --strict` and fix any findings
 
 ## 6. Contract gaps
 
