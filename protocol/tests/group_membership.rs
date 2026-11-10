@@ -310,3 +310,28 @@ fn admin_extension_is_private_use_and_holds_the_user_id() {
     const { assert!(ADMIN_EXTENSION_TYPE >= 0xF000) };
     assert_eq!(admin_extension_data("akhil@pi"), b"akhil@pi".to_vec());
 }
+
+// spec: group-membership/own-leaf-rotation
+#[test]
+fn own_leaf_rotates_after_seven_days() {
+    use protocol::group_membership::{
+        INACTIVITY_TIMEOUT, OWN_LEAF_MAX_AGE, ROTATION_CHECK_INTERVAL, ROTATION_MAX_JITTER,
+        own_leaf_rotation_due,
+    };
+    use std::time::Duration;
+    const DAY: Duration = Duration::from_secs(24 * 60 * 60);
+
+    assert_eq!(OWN_LEAF_MAX_AGE, 7 * DAY);
+    // Same week as the inactivity removal (decision #4).
+    assert_eq!(OWN_LEAF_MAX_AGE, INACTIVITY_TIMEOUT);
+    // Quiet group: untouched for 7 days is due; a day less is not.
+    assert!(own_leaf_rotation_due(7 * DAY));
+    assert!(own_leaf_rotation_due(30 * DAY));
+    assert!(!own_leaf_rotation_due(7 * DAY - Duration::from_secs(1)));
+    assert!(!own_leaf_rotation_due(Duration::ZERO));
+    // Checked at least daily, with up to an hour of jitter, so a rotation is
+    // never more than a day and an hour late while the device is online.
+    assert_eq!(ROTATION_CHECK_INTERVAL, DAY);
+    assert_eq!(ROTATION_MAX_JITTER, Duration::from_secs(60 * 60));
+    const { assert!(ROTATION_MAX_JITTER.as_secs() < ROTATION_CHECK_INTERVAL.as_secs()) };
+}

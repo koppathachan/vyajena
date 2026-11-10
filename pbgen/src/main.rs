@@ -11,6 +11,8 @@
 //!
 //! - `server/src/pb.rs`: messages plus server stubs (the Pi).
 //! - `server/tests/support/pb.rs`: messages plus client stubs (the Pi's tests).
+//! - `client/src/pb.rs`: messages plus client stubs (the device core,
+//!   client-core design D1).
 //!
 //! The output is committed. CI never runs this; it only builds the committed
 //! files.
@@ -37,6 +39,11 @@ const TARGETS: &[Target] = &[
     },
     Target {
         path: "server/tests/support/pb.rs",
+        server: false,
+        client: true,
+    },
+    Target {
+        path: "client/src/pb.rs",
         server: false,
         client: true,
     },

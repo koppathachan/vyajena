@@ -59,9 +59,9 @@ one command, and commit the result with the proto change (CI never runs it):
 cargo run -p pbgen
 ```
 
-It writes `server/src/pb.rs` (messages + server stubs) and
-`server/tests/support/pb.rs` (messages + client stubs). Never edit those files
-by hand.
+It writes `server/src/pb.rs` (messages + server stubs),
+`server/tests/support/pb.rs` (messages + client stubs) and `client/src/pb.rs`
+(messages + client stubs, the device core). Never edit those files by hand.
 
 ## Working with other sessions
 

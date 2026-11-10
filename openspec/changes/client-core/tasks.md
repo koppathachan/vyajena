@@ -1,18 +1,18 @@
 ## 1. Spikes and code generation
 
-- [ ] 1.1 Spike (git-ignored `spikes/`): persistent OpenMLS storage on SQLite (an existing crate or a `StorageProvider` over rusqlite) that survives restart mid-group, with every value encrypted under a storage key from the key store (D3); record the result in design.md and delete the spike
-- [ ] 1.2 Spike: `keyring` on macOS (prompts, persistence, headless behaviour); record the result and delete the spike
-- [ ] 1.3 Add a `client/src/pb.rs` target (messages + client stubs) to `pbgen`; generate and commit it
+- [x] 1.1 Spike (git-ignored `spikes/`): persistent OpenMLS storage on SQLite (an existing crate or a `StorageProvider` over rusqlite) that survives restart mid-group, with every value encrypted under a storage key from the key store (D3); record the result in design.md and delete the spike
+- [x] 1.2 Spike: `keyring` on macOS (prompts, persistence, headless behaviour); record the result and delete the spike
+- [x] 1.3 Add a `client/src/pb.rs` target (messages + client stubs) to `pbgen`; generate and commit it
 
 ## 2. Skeleton and shared rules
 
-- [ ] 2.1 Create the `client` crate with the D1 folders, the public `Client` type, event types and an injectable clock; add it to the workspace
-- [ ] 2.2 Add the 7-day leaf and last-resort age constants to `protocol/` with tests
+- [x] 2.1 Create the `client` crate with the D1 folders, the public `Client` type, event types and an injectable clock; add it to the workspace
+- [x] 2.2 Add the 7-day leaf and last-resort age constants to `protocol/` with tests
 
 ## 3. Key storage and local store
 
-- [ ] 3.1 `KeyStore` trait with OS keychain, opt-in 0600 file and memory implementations (client-runtime: Key storage)
-- [ ] 3.2 SQLite store: messages with send status, own sent plaintext, pinned identity keys, OpenMLS state encrypted under the storage key (D3; client-runtime: Key storage, Local message store)
+- [x] 3.1 `KeyStore` trait with OS keychain, opt-in 0600 file and memory implementations (client-runtime: Key storage)
+- [x] 3.2 SQLite store: messages with send status, own sent plaintext, pinned identity keys, OpenMLS state encrypted under the storage key (D3; client-runtime: Key storage, Local message store)
 
 ## 4. Identity, devices and networking
 

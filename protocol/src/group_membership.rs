@@ -13,6 +13,25 @@ use crate::DAY;
 /// (Inactive devices are kept out).
 pub const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(7 * DAY);
 
+/// A device commits an update of its own leaf once its leaf is this old (Own
+/// leaf rotation; open decision #4). Matches [`INACTIVITY_TIMEOUT`], so a quiet
+/// group still moves its keys forward weekly.
+pub const OWN_LEAF_MAX_AGE: Duration = Duration::from_secs(7 * DAY);
+
+/// How often a connected device checks whether its leaf is due, besides on
+/// every connect (Own leaf rotation).
+pub const ROTATION_CHECK_INTERVAL: Duration = Duration::from_secs(DAY);
+
+/// A due rotation waits a random delay in `[0, ROTATION_MAX_JITTER]` so that
+/// devices do not all commit at the same moment (Own leaf rotation).
+pub const ROTATION_MAX_JITTER: Duration = Duration::from_secs(60 * 60);
+
+/// Whether a leaf last updated `leaf_age` ago is due for rotation (Own leaf
+/// rotation): at [`OWN_LEAF_MAX_AGE`] or older.
+pub fn own_leaf_rotation_due(leaf_age: Duration) -> bool {
+    leaf_age >= OWN_LEAF_MAX_AGE
+}
+
 /// MLS extension type (RFC 9420 private-use range) of the group context
 /// extension that names the admin (Group creation). Its `extension_data` is the
 /// admin's user id in its textual form `<username>@<server_id>`, as UTF-8. The

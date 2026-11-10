@@ -56,6 +56,17 @@ structs and enums with no OpenMLS or protobuf types, so `flutter_rust_bridge`
 can wrap them later unchanged. **Alternative:** design the FFI surface now.
 Rejected: the terminal client is Rust and needs no FFI.
 
+Clarifications from task 2.1: `lib.rs` declares the modules and re-exports;
+`Client` lives in `src/client.rs`, the event and plain types in
+`src/events.rs`, the clock in `src/clock.rs`. The feature modules are `pub` so
+the tests in `tests/` (public API only) can reach them, as the server's are;
+UIs use `Client` and `Event` only, and only those must stay free of OpenMLS and
+protobuf types (`client::mls::MlsProvider` is an OpenMLS provider by nature).
+`Client::open` runs the key store and database on `spawn_blocking`, since a
+keychain call can wait on a user prompt. `Event`, `MessageBody`,
+`ConnectionState` and `ClientError` are `#[non_exhaustive]`; later groups add
+variants. There is one `EventStream`, taken once with `Client::take_events`.
+
 ### D3. Keys: a key-store interface
 
 `KeyStore` stores and loads named secrets. Implementations: OS keychain via the
@@ -69,6 +80,99 @@ created on first start and kept in the key store (owner decision, option A).
 Messages are not encrypted, as the architecture decided. **Alternatives:** plain
 rows relying on disk encryption (B), or the key store itself (C, impractical:
 many entries changing every epoch).
+
+**Spike result (task 1.1, openmls 0.9.2, rusqlite 0.37): works, with our own
+`StorageProvider`.** The existing `openmls_sqlite_storage` 0.3 does not fit: its
+`Codec` is a static trait with no access to a key, it encodes lookup keys with
+the same codec (so a randomised AEAD would break lookups), it needs Rust 1.91
+(the workspace pins 1.88) and pulls in `refinery`. Chosen approach, in
+`client/src/mls/storage.rs`:
+
+- One table `mls_storage(slot BLOB PRIMARY KEY, value BLOB)` in the client's
+  SQLite file, shared with the message store (one connection).
+- `slot` = HMAC-SHA256(slot key, storage version ‖ label ‖ serde_json key); the
+  rows reveal neither labels nor group ids. `value` = 24-byte random nonce ‖
+  XChaCha20-Poly1305(seal key, serde_json value, AAD = slot), so a value cannot
+  be moved to another slot. Slot and seal keys are HMAC-derived from one 32-byte
+  storage key that lives in the key store.
+- A key-check row is written on first open and opened on every later one, so a
+  wrong storage key fails with `WrongKey` instead of looking like "no group".
+- The provider **refuses** `write_signature_key_pair` (and reads none): OpenMLS
+  takes the signer as a parameter, so the MLS signature key never needs to be in
+  storage and stays in the key store only (client-runtime: Key storage).
+- The method layout follows `openmls_memory_storage` 0.6 (same key-value
+  shape), without its `clear_proposal_queue` bug (it deleted unlabeled keys).
+
+Proved in the spike: Alice and Bob each on their own encrypted file; Bob joins,
+one message read, a second message in flight, both processes "restart" (all
+OpenMLS objects dropped), `MlsGroup::load` restores both, Bob reads the
+in-flight message, chats both ways, commits a leaf update, and restarts again.
+A KeyPackage created before a restart is joined from after it (its init key
+survives). The wrong key gives `WrongKey`; values swapped between rows fail to
+load; the raw file contains no label, group id or credential bytes. **Atomicity:**
+an OpenMLS call inside `BEGIN IMMEDIATE … ROLLBACK` on the shared connection
+leaves the stored group as before (reloading decrypts the same message again),
+so receiving does "decrypt + store message" in one transaction and acks after
+`COMMIT`; after `COMMIT` the consumed message key is gone. The in-memory
+`MlsGroup` must be reloaded after a rollback. Side finding for task 5.4: a
+last-resort KeyPackage must list `LastResort` in its leaf capabilities (as well
+as `0xF0A1`), or `validate` fails with `UnsupportedExtension`.
+
+**Spike result (task 1.2, `keyring` 4.2 `v1` feature, macOS 26): works, with
+caveats.** The `v1` API is `Entry::new(service, user)` with `set_secret`,
+`get_secret`, `delete_credential`; on macOS it uses the login keychain (legacy
+file keychain, generic passwords).
+
+- **Persistence:** a secret set by one run is read by the next; missing entries
+  are `Error::NoEntry`. About 10 ms per call.
+- **Prompts:** none for the binary that created the item. A *different* binary
+  (a rebuild, which changes the ad-hoc code signature, or a copy) blocks on the
+  macOS "wants to use your confidential information" dialog for both
+  `get_secret` and overwriting `set_secret`, until the user answers. Deleting
+  needs no prompt; new entries from the new binary need none. So during
+  development every rebuild of the terminal client prompts once per key
+  ("Always Allow" answers it until the next rebuild); a signed release keeps its
+  identity across updates. Consequences: keychain calls run off the async
+  runtime (`spawn_blocking`), can take arbitrarily long, and real-keychain tests
+  are `#[ignore]` (CI and `cargo test` use the memory store).
+- **No keychain:** `Entry::store_status()` is an error when no store can be
+  initialised (e.g. Linux without a Secret Service session); a locked or
+  unavailable keychain shows up per call as `NoStorageAccess` or
+  `PlatformFailure` (errSecInteractionNotAllowed over SSH is not mapped to its
+  own code). Not reproduced on this Mac (a GUI session always has a login
+  keychain). So the OS-keychain store probes availability with `store_status()`
+  plus a read of a probe entry (`NoEntry` means available) before creating keys;
+  anything else means "no keychain", and with no file opt-in the core refuses to
+  create keys and says how to opt in.
+
+Clarifications from tasks 3.1 and 3.2:
+
+- `KeyStore` stores a fixed set of names (`KeyName`: identity key, device auth
+  key, MLS signature key, storage key), so nothing else can end up in it by
+  accident. Keychain entries are service `vyajena2`, account
+  `<profile>/<key name>`, so several clients on one machine do not share keys.
+- The opt-in is a value (`KeyFileOptIn`) a UI creates only from an explicit
+  user action. Selection (`choose_key_store`): an opted-in key file that
+  **already exists** keeps its keys even if a keychain has appeared since
+  (otherwise the device would look new); else the keychain when available;
+  else the opted-in file; else `NoKeychain`, whose message says how to opt in.
+  The file is one binary file (magic line, then name/length/secret records),
+  rewritten through a 0600 temp file, `fsync` and `rename`; a file with any
+  group or other permission bits is refused, as is a damaged one. Unix only.
+- The store and OpenMLS share one connection behind a re-entrant lock;
+  `Store::transaction` is a savepoint that rolls back on error or panic. WAL,
+  `synchronous = FULL`, file mode 0600, migrations embedded as in the server.
+- `messages` keeps the whole encoded `Content` (plaintext), so a body this
+  version does not know can still be shown by a later one. An own message in
+  flight also keeps the epoch and the exact envelope ciphertext last sent: a
+  resend after a crash must repeat identical bytes, because the Pi answers a
+  retry with different ciphertext for an accepted `msg_id` with
+  `REJECTION_REASON_DUPLICATE_MISMATCH`. Re-encryption (new bytes) happens only
+  after `STALE_EPOCH`, which leaves no dedup record. The bytes are dropped once
+  accepted or failed. Received messages are unique on `server_seq` and on
+  (sender device, `msg_id`); a redelivery is reported as `Duplicate`.
+- `identity_keys` pins one key per user id; a different key is kept as
+  `pending_key` until `accept_identity_key` is called with exactly that key.
 
 ### D4. Sending and receiving
 
