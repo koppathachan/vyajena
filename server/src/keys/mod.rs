@@ -1,5 +1,6 @@
-//! Keys service: the KeyPackage directory (key-directory: KeyPackage upload;
-//! KeyPackage fetch; pi-server-core task 5.1).
+//! Keys service: the KeyPackage directory and identity keys (key-directory:
+//! KeyPackage upload; KeyPackage fetch; Identity key lookup; pi-server-core
+//! task 5.1, client-core task 5.5).
 
 use std::time::SystemTime;
 
@@ -266,5 +267,46 @@ impl Keys for KeysService {
             let _ = self.state.key_packages_low.send(count);
         }
         Ok(Response::new(response))
+    }
+
+    /// key-directory: Identity key lookup. All or nothing: one unknown user,
+    /// or one without a non-revoked device, fails the call with `NOT_FOUND`.
+    async fn get_identity_keys(
+        &self,
+        request: Request<pb::GetIdentityKeysRequest>,
+    ) -> Result<Response<pb::GetIdentityKeysResponse>, Status> {
+        caller(&request)?;
+        let mut wanted: Vec<pb::UserId> = Vec::new();
+        for user_id in request.into_inner().user_ids {
+            if user_id.server_id != self.state.config.server_id {
+                return Err(Status::not_found("unknown user"));
+            }
+            if !wanted.contains(&user_id) {
+                wanted.push(user_id);
+            }
+        }
+        let keys = self
+            .state
+            .store
+            .call(move |conn| {
+                let mut keys = Vec::with_capacity(wanted.len());
+                for user_id in wanted {
+                    let Some(user) = records::user(conn, &user_id.username)? else {
+                        return Ok(Err(Status::not_found("unknown user")));
+                    };
+                    if records::active_devices(conn, &user.username)?.is_empty() {
+                        return Ok(Err(Status::not_found(
+                            "a listed user has no non-revoked device",
+                        )));
+                    }
+                    keys.push(pb::UserIdentityKey {
+                        user_id: Some(user_id),
+                        identity_public_key: user.identity_public_key,
+                    });
+                }
+                Ok(Ok(keys))
+            })
+            .await??;
+        Ok(Response::new(pb::GetIdentityKeysResponse { keys }))
     }
 }

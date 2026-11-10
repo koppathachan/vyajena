@@ -126,3 +126,57 @@ pub fn rotation_jitter() -> Duration {
     let max = u64::try_from(ROTATION_MAX_JITTER.as_millis()).unwrap_or(u64::MAX);
     Duration::from_millis(random_below(max.saturating_add(1)))
 }
+
+/// key-directory: Identity key lookup. The identity keys the Pi has for
+/// `users`, from `Keys.GetIdentityKeys` (which consumes no KeyPackages). The
+/// Pi fails the whole call with `NOT_FOUND` if one user is unknown or has no
+/// non-revoked device; then each user is looked up alone, and those it does
+/// not know are left out.
+pub(crate) async fn identity_keys(
+    session: &crate::net::Session,
+    users: &[crate::events::UserId],
+) -> Result<std::collections::BTreeMap<crate::events::UserId, Vec<u8>>, crate::net::NetError> {
+    use crate::events::UserId;
+    use crate::net::NetError;
+    let call = |users: Vec<crate::pb::UserId>| async move {
+        session
+            .conn()
+            .keys()
+            .get_identity_keys(
+                session.request(crate::pb::GetIdentityKeysRequest { user_ids: users })?,
+            )
+            .await
+            .map(|response| response.into_inner().keys)
+            .map_err(NetError::from)
+    };
+    let mut found = std::collections::BTreeMap::new();
+    if users.is_empty() {
+        return Ok(found);
+    }
+    let keys = match call(users.iter().map(UserId::to_pb).collect()).await {
+        Ok(keys) => keys,
+        Err(NetError::Rpc(status)) if status.code() == tonic::Code::NotFound && users.len() > 1 => {
+            let mut keys = Vec::new();
+            for user in users {
+                match call(vec![user.to_pb()]).await {
+                    Ok(mut one) => keys.append(&mut one),
+                    Err(NetError::Rpc(status)) if status.code() == tonic::Code::NotFound => {
+                        tracing::debug!(user = %user, "the Pi knows no identity key");
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+            keys
+        }
+        Err(NetError::Rpc(status)) if status.code() == tonic::Code::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    for key in keys {
+        if let Some(user) = key.user_id.as_ref().map(UserId::from_pb)
+            && users.contains(&user)
+        {
+            found.insert(user, key.identity_public_key);
+        }
+    }
+    Ok(found)
+}

@@ -311,6 +311,36 @@ pub fn review_commit(
     Ok(review)
 }
 
+/// Whether `committer` is a device of the admin the group context's `0xF0A1`
+/// extension names.
+pub fn committed_by_admin(group: &MlsGroup, committer: LeafNodeIndex) -> bool {
+    let Some(admin) = super::group::admin_user_id(group.extensions()) else {
+        return false;
+    };
+    member_claim(group, committer).is_ok_and(|claim| claim.user().to_string() == admin)
+}
+
+/// key-directory: Clients verify the identity chain. When [`review_commit`]
+/// refused a commit because a certificate does not verify against its user's
+/// pinned key, the user whose identity key the device may look up again: only
+/// for a commit from the admin (a reset user being re-added). The commit is
+/// then accepted only if the Pi returns a new key that makes the review pass.
+/// From any other member, `None`: the commit stays refused.
+pub fn key_lookup_allowed(
+    group: &MlsGroup,
+    committer: LeafNodeIndex,
+    problem: &LeafProblem,
+) -> Option<UserId> {
+    let LeafProblem::Unverified(user) = problem else {
+        return None;
+    };
+    if !committed_by_admin(group, committer) {
+        return None;
+    }
+    let (username, server_id) = user.split_once('@')?;
+    Some(UserId::new(username, server_id))
+}
+
 /// Checks a Welcome's group before joining it: every member's leaf, the admin
 /// extension, and the Pi as external sender.
 pub fn check_welcome(

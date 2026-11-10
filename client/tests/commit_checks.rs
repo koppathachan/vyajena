@@ -347,3 +347,91 @@ fn clients_reject_a_certificate_that_does_not_verify_against_the_pinned_key() {
     let refused = review(&mut setup, &commit, &users);
     assert_eq!(refused, Err(LeafProblem::NotPinned("bob@pi".into())));
 }
+
+/// What Carol decides about `commit` with `users` pinned: the review, and
+/// whether she may look up the key of a user whose certificate failed.
+fn review_with_lookup(
+    setup: &mut Setup,
+    commit: &[u8],
+    users: &BTreeMap<UserId, Vec<u8>>,
+    new_keys: &BTreeMap<UserId, Vec<u8>>,
+) -> Result<verify::CommitReview, LeafProblem> {
+    let (staged, committer) = setup.carol.stage(commit);
+    let committer = openmls::prelude::LeafNodeIndex::new(committer);
+    let group = setup.carol.group.as_ref().check("group");
+    let pi_index = mls_group::pi_sender_index(group.extensions(), &setup.pi);
+    let mut pinned = users.clone();
+    loop {
+        let result = verify::review_commit(group, &staged, committer, SERVER, pi_index, &|user| {
+            pinned.get(user).cloned()
+        });
+        let problem = match result {
+            Ok(review) => return Ok(review),
+            Err(problem) => problem,
+        };
+        let Some(user) = verify::key_lookup_allowed(group, committer, &problem) else {
+            return Err(problem);
+        };
+        // The Pi's answer to `Keys.GetIdentityKeys`.
+        match new_keys.get(&user) {
+            Some(key) if pinned.get(&user) != Some(key) => {
+                pinned.insert(user, key.clone());
+            }
+            _ => return Err(problem),
+        }
+    }
+}
+
+// spec: key-directory/clients-verify-the-identity-chain
+// spec: group-membership/device-level-membership
+#[test]
+fn an_admin_commit_with_a_reset_users_new_key_passes_after_a_lookup() {
+    let mut setup = setup();
+    let old_bob = User::new("bob");
+    let new_bob = User::new("bob");
+    let new_phone = new_bob.device();
+    // Carol still has Bob's old key pinned; the Pi now has his new one.
+    let mut users = setup.users.clone();
+    users.insert(old_bob.id.clone(), old_bob.public());
+    let new_keys: BTreeMap<UserId, Vec<u8>> = [(new_bob.id.clone(), new_bob.public())]
+        .into_iter()
+        .collect();
+
+    let (commit, _) = setup.admin.add(vec![new_phone.key_package()]);
+    let accepted =
+        review_with_lookup(&mut setup, &commit, &users, &new_keys).check("admin re-adds bob");
+    assert_eq!(
+        accepted.added,
+        vec![(new_bob.id.clone(), new_phone.keys.device_id())]
+    );
+
+    // A lookup that returns the old key again (a forged certificate) does
+    // not help.
+    let mut setup = self::setup();
+    let forged = new_bob.device();
+    let mut users = setup.users.clone();
+    users.insert(old_bob.id.clone(), old_bob.public());
+    let same: BTreeMap<UserId, Vec<u8>> = [(old_bob.id.clone(), old_bob.public())]
+        .into_iter()
+        .collect();
+    let (commit, _) = setup.admin.add(vec![forged.key_package()]);
+    let refused = review_with_lookup(&mut setup, &commit, &users, &same);
+    assert_eq!(refused, Err(LeafProblem::Unverified("bob@pi".into())));
+}
+
+// spec: key-directory/clients-verify-the-identity-chain
+#[test]
+fn a_non_admin_commit_with_a_changed_key_is_refused_without_a_lookup() {
+    let mut setup = setup();
+    // Alice's tablet is certified by a new identity key of Alice, which the
+    // Pi would confirm; Alice's own device commits its Add.
+    let new_alice = User::new("alice");
+    let tablet = new_alice.device();
+    let users = setup.users.clone();
+    let new_keys: BTreeMap<UserId, Vec<u8>> = [(new_alice.id.clone(), new_alice.public())]
+        .into_iter()
+        .collect();
+    let (commit, _) = setup.alice.add(vec![tablet.key_package()]);
+    let refused = review_with_lookup(&mut setup, &commit, &users, &new_keys);
+    assert_eq!(refused, Err(LeafProblem::Unverified("alice@pi".into())));
+}

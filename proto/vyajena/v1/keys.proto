@@ -17,6 +17,9 @@ service Keys {
 
   // key-directory: KeyPackage fetch.
   rpc FetchKeyPackages(FetchKeyPackagesRequest) returns (FetchKeyPackagesResponse);
+
+  // key-directory: Identity key lookup.
+  rpc GetIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
 }
 
 // key-directory: KeyPackage upload. One-time KeyPackages plus exactly one
@@ -70,4 +73,27 @@ message FetchKeyPackagesResponse {
 message DeviceKeyPackage {
   SignedDeviceCertificate certificate = 1;
   bytes key_package = 2;
+}
+
+// key-directory: Identity key lookup. Each listed user's current identity
+// public key, consuming no KeyPackages. A device uses it to pin the identity
+// keys of users it meets in a Welcome or in someone else's commit, and to look
+// a key up again when a certificate does not verify against the pinned one
+// (key-directory: Clients verify the identity chain). If any listed user id is
+// unknown or has no non-revoked device, the call fails with `NOT_FOUND` and
+// returns nothing.
+message GetIdentityKeysRequest {
+  repeated UserId user_ids = 1;
+}
+
+// key-directory: Identity key lookup. One entry per distinct requested user,
+// in request order.
+message GetIdentityKeysResponse {
+  repeated UserIdentityKey keys = 1;
+}
+
+message UserIdentityKey {
+  UserId user_id = 1;
+  // The user's identity public key (Ed25519, 32 bytes).
+  bytes identity_public_key = 2;
 }

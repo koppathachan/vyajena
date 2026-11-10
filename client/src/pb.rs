@@ -1071,6 +1071,33 @@ pub struct DeviceKeyPackage {
     #[prost(bytes = "vec", tag = "2")]
     pub key_package: ::prost::alloc::vec::Vec<u8>,
 }
+/// key-directory: Identity key lookup. Each listed user's current identity
+/// public key, consuming no KeyPackages. A device uses it to pin the identity
+/// keys of users it meets in a Welcome or in someone else's commit, and to look
+/// a key up again when a certificate does not verify against the pinned one
+/// (key-directory: Clients verify the identity chain). If any listed user id is
+/// unknown or has no non-revoked device, the call fails with `NOT_FOUND` and
+/// returns nothing.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityKeysRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub user_ids: ::prost::alloc::vec::Vec<UserId>,
+}
+/// key-directory: Identity key lookup. One entry per distinct requested user,
+/// in request order.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityKeysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub keys: ::prost::alloc::vec::Vec<UserIdentityKey>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UserIdentityKey {
+    #[prost(message, optional, tag = "1")]
+    pub user_id: ::core::option::Option<UserId>,
+    /// The user's identity public key (Ed25519, 32 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub identity_public_key: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated client implementations.
 pub mod keys_client {
     #![allow(
@@ -1201,6 +1228,31 @@ pub mod keys_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("vyajena.v1.Keys", "FetchKeyPackages"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// key-directory: Identity key lookup.
+        pub async fn get_identity_keys(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetIdentityKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityKeysResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Keys/GetIdentityKeys",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Keys", "GetIdentityKeys"));
             self.inner.unary(req, path, codec).await
         }
     }

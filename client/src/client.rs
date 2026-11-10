@@ -438,19 +438,14 @@ impl Client {
                 self.now(),
             )
             .await?;
-        // The user's identity key, from the Pi (pinned on first sight; this
-        // device has no KeyPackages yet, so the fetch consumes none).
-        let identity = session
-            .conn()
-            .keys()
-            .fetch_key_packages(session.request(pb::FetchKeyPackagesRequest {
-                user_id: Some(approval.user.to_pb()),
-                device_ids: vec![keys.device_id().to_vec()],
-            })?)
-            .await
-            .map_err(NetError::from)?
-            .into_inner()
-            .identity_public_key;
+        // The user's identity key, from the Pi (pinned on first sight), with
+        // `Keys.GetIdentityKeys` (key-directory: Identity key lookup).
+        let identity = crate::keys::identity_keys(&session, std::slice::from_ref(&approval.user))
+            .await?
+            .remove(&approval.user)
+            .ok_or_else(|| {
+                NetError::Protocol("the server has no identity key for this user".into())
+            })?;
         self.finish_signup(
             &conn,
             &keys,

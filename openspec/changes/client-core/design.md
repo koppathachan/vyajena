@@ -283,13 +283,16 @@ sequenceDiagram
 
 Clarifications from task groups 4 and 5:
 
-- **Learning identity keys.** The only RPC that returns a user's identity key
-  is `Keys.FetchKeyPackages`. A device that meets a user for the first time in
-  a Welcome or in someone else's commit fetches it for one device of that
-  user (the device in the leaf), which consumes one of that device's
-  KeyPackages; replenishment tops it up. The key is pinned on first sight, as
-  for the admin's own fetch. The proto has no cheaper way; see Open
-  Questions.
+- **Learning identity keys** (task 5.5, owner 2026-11-11). A device that
+  meets a user for the first time in a Welcome or in someone else's commit,
+  and a newly linked device learning its own user's key, call
+  `Keys.GetIdentityKeys` with every such user in one request; it consumes no
+  KeyPackages (key-directory: Identity key lookup). The Pi answers all or
+  nothing, so on `NOT_FOUND` the core asks for each user alone and leaves out
+  the ones the Pi does not know (their leaves then fail as `NotPinned`). The
+  key is pinned on first sight, as for the admin's own fetch. Only adding a
+  user's devices still reads the key from `Keys.FetchKeyPackages`, which
+  returns it with the KeyPackages it hands out.
 - **Leaf checks** (`client::mls::verify`): every added leaf's certificate
   verifies against the pinned key, names a user of this Pi and certifies the
   leaf's signature key; a member's path leaf or Update keeps exactly its
@@ -301,8 +304,21 @@ Clarifications from task groups 4 and 5:
   so the device records it as stalled (`group_state.stalled`), acks it, emits
   `CommitRefused` and ignores the group until a Welcome re-adds it. If the
   failure was a certificate that does not verify against the pinned key, the
-  device fetches the user's current key; a different one is stored as
+  device looks up the user's current key; a different one is stored as
   pending and raises `IdentityKeyChanged`.
+- **A reset user re-added by the admin** (task 5.6, owner 2026-11-11). When
+  the review fails with `Unverified(user)` and the committer's leaf is the
+  admin's (`verify::key_lookup_allowed`), the device looks the user's key up
+  with `Keys.GetIdentityKeys`. If the Pi returns a key different from the
+  pinned one, the review runs again with it (once per user, so a commit that
+  re-adds several reset users works); if it passes, the new key is re-pinned
+  (`Store::repin_identity_key`, which also clears a pending key) in the same
+  transaction that merges the commit, and `IdentityKeyChanged` is emitted
+  after it. The member does nothing: the admin already decides who joins, so
+  this adds no new trust. Any other failure, the same key again, or a commit
+  from a non-admin stalls as above. Not covered (no spec asks for it): a
+  Welcome that names a reset user whose old key this device has pinned is
+  still refused; see the session C hand-over.
 - **Adding** (admin `add_user`, re-add, linked devices) pins or compares the
   fetched identity key first: a changed key raises `IdentityKeyChanged` and
   fails with `ClientError::IdentityKeyChanged` until `accept_identity_key`.

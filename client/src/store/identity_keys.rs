@@ -117,4 +117,28 @@ impl Store {
         }
         Ok(changed == 1)
     }
+
+    /// Replaces the pinned key of `user_id` with `key` without the user
+    /// accepting it first: only for a key the Pi confirmed for a device the
+    /// admin added (key-directory: Clients verify the identity chain, "Admin
+    /// re-adds a reset user"). The UI is warned that the key changed.
+    pub fn repin_identity_key(
+        &self,
+        user_id: &str,
+        key: &[u8],
+        now: SystemTime,
+    ) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.execute(
+                "INSERT INTO identity_keys (user_id, identity_key, pinned_at)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT (user_id) DO UPDATE
+                 SET identity_key = excluded.identity_key, pinned_at = excluded.pinned_at,
+                     pending_key = NULL, pending_since = NULL",
+                params![user_id, key, unix_millis(now)],
+            )
+        })?;
+        tracing::warn!(user = user_id, "re-pinned a changed identity key");
+        Ok(())
+    }
 }

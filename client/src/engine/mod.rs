@@ -178,6 +178,12 @@ fn random_msg_id() -> Result<[u8; 16], MlsError> {
     Ok(id)
 }
 
+/// `<username>@<server_id>` as a [`UserId`].
+fn parse_user_id(text: &str) -> Option<UserId> {
+    let (username, server_id) = text.split_once('@')?;
+    Some(UserId::new(username, server_id))
+}
+
 fn pending_forever<T>() -> std::future::Pending<T> {
     std::future::pending()
 }
@@ -751,25 +757,50 @@ impl Engine {
                 .await;
         };
         let needed = verify::users_in_commit(&staged);
-        let pinned = self.resolve_users(needed).await?;
+        let mut pinned = self.resolve_users(needed.into_keys()).await?;
         let pi_index = mls_group::pi_sender_index(group.extensions(), &self.pi);
-        let review = verify::review_commit(
-            group,
-            &staged,
-            committer,
-            &self.account.server_id,
-            pi_index,
-            &|user| pinned.get(user).cloned(),
-        );
-        let review = match review {
-            Ok(review) => review,
-            Err(problem) => {
+        // key-directory: Clients verify the identity chain. An admin commit
+        // that adds a device certified by a user's new identity key (a reset
+        // user) is accepted once the Pi confirms the new key; the key is
+        // re-pinned and the UI warned. From anyone else it is refused.
+        let mut repinned: Vec<(UserId, Vec<u8>)> = Vec::new();
+        let review = loop {
+            let review = verify::review_commit(
+                group,
+                &staged,
+                committer,
+                &self.account.server_id,
+                pi_index,
+                &|user| pinned.get(user).cloned(),
+            );
+            let problem = match review {
+                Ok(review) => break review,
+                Err(problem) => problem,
+            };
+            let user = verify::key_lookup_allowed(group, committer, &problem)
+                .filter(|user| !repinned.iter().any(|(done, _)| done == user));
+            let new_key = match user {
+                Some(user) => self
+                    .changed_identity_key(&user)
+                    .await
+                    .map(|key| (user, key)),
+                None => None,
+            };
+            let Some((user, key)) = new_key else {
                 self.note_key_change(&problem).await;
                 return self.stall(envelope, problem.to_string()).await;
-            }
+            };
+            tracing::info!(user = %user, "an admin commit uses a new identity key; checking it");
+            pinned.insert(user.clone(), key.clone());
+            repinned.push((user, key));
         };
         let seq = envelope.server_seq;
+        let now = self.now();
         let merged = self.store().transaction(|| -> Result<(), EngineError> {
+            for (user, key) in &repinned {
+                self.store()
+                    .repin_identity_key(&user.to_string(), key, now)?;
+            }
             group
                 .merge_staged_commit(self.store().mls(), *staged)
                 .map_err(|e| MlsError::new("merging a commit", e))?;
@@ -779,6 +810,9 @@ impl Engine {
         if let Err(error) = merged {
             self.reload_group()?;
             return Err(error);
+        }
+        for (user, _) in repinned {
+            self.emit(Event::IdentityKeyChanged { user });
         }
         tracing::info!(
             server_seq = seq,
@@ -891,7 +925,7 @@ impl Engine {
             }
         };
         let needed = verify::users_in_welcome(staged.members());
-        let pinned = self.resolve_users(needed).await?;
+        let pinned = self.resolve_users(needed.into_keys()).await?;
         let checked = verify::check_welcome(
             staged.members(),
             staged.group_context().extensions(),
@@ -945,92 +979,80 @@ impl Engine {
     // --- Identity keys (key-directory: Clients verify the identity chain) ---
 
     /// The pinned identity key of each user, pinning on first sight with a
-    /// key fetched from the Pi (`Keys.FetchKeyPackages` for one device: the
-    /// only RPC that returns identity keys; design D5 clarification).
+    /// key looked up with `Keys.GetIdentityKeys` (key-directory: Identity key
+    /// lookup; design D5 clarification "Learning identity keys").
     async fn resolve_users(
         &self,
-        users: BTreeMap<UserId, DeviceId>,
+        users: impl IntoIterator<Item = UserId>,
     ) -> Result<BTreeMap<UserId, Vec<u8>>, EngineError> {
         let mut keys = BTreeMap::new();
-        for (user, device) in users {
-            let id = user.to_string();
-            if let Some(pinned) = self.store().pinned_identity_key(&id)? {
-                keys.insert(user, pinned.key);
-                continue;
+        let mut unknown = Vec::new();
+        for user in users {
+            match self.store().pinned_identity_key(&user.to_string())? {
+                Some(pinned) => {
+                    keys.insert(user, pinned.key);
+                }
+                None => unknown.push(user),
             }
-            match self.fetch_identity_key(&user, &device).await {
-                Ok(key) => {
-                    if self.store().pin_identity_key(&id, &key, self.now())? == PinOutcome::Pinned {
+        }
+        if unknown.is_empty() {
+            return Ok(keys);
+        }
+        let looked_up = match self.session() {
+            Ok(session) => crate::keys::identity_keys(&session, &unknown).await,
+            Err(error) => return Err(error),
+        };
+        match looked_up {
+            Ok(found) => {
+                for (user, key) in found {
+                    if self
+                        .store()
+                        .pin_identity_key(&user.to_string(), &key, self.now())?
+                        == PinOutcome::Pinned
+                    {
                         keys.insert(user, key);
                     }
                 }
-                Err(error) => tracing::warn!(user = %id, %error, "cannot fetch an identity key"),
             }
+            Err(error) => tracing::warn!(%error, "cannot look up identity keys"),
         }
         Ok(keys)
     }
 
-    /// The identity key the Pi has for `user`, fetched with one device's
-    /// KeyPackage (falling back to all devices if that one is gone).
-    async fn fetch_identity_key(
-        &self,
-        user: &UserId,
-        device: &DeviceId,
-    ) -> Result<Vec<u8>, EngineError> {
-        let session = self.session()?;
-        let mut request = pb::FetchKeyPackagesRequest {
-            user_id: Some(user.to_pb()),
-            device_ids: vec![device.to_vec()],
-        };
-        let response = match session
-            .conn()
-            .keys()
-            .fetch_key_packages(session.request(request.clone())?)
-            .await
-        {
-            Ok(response) => response,
-            Err(status) if status.code() == tonic::Code::NotFound => {
-                request.device_ids.clear();
-                session
-                    .conn()
-                    .keys()
-                    .fetch_key_packages(session.request(request)?)
-                    .await
-                    .map_err(NetError::from)?
+    /// The identity key the Pi has now for `user`, if it differs from the
+    /// pinned one.
+    async fn changed_identity_key(&self, user: &UserId) -> Option<Vec<u8>> {
+        let session = self.session().ok()?;
+        let found = match crate::keys::identity_keys(&session, std::slice::from_ref(user)).await {
+            Ok(found) => found,
+            Err(error) => {
+                tracing::warn!(user = %user, %error, "cannot look up an identity key");
+                return None;
             }
-            Err(status) => return Err(NetError::from(status).into()),
         };
-        Ok(response.into_inner().identity_public_key)
+        let key = found.get(user)?.clone();
+        let pinned = self.store().pinned_identity_key(&user.to_string()).ok()??;
+        (pinned.key != key).then_some(key)
     }
 
-    /// After a certificate failed against a pinned key, checks whether the
-    /// user's key changed and, if so, warns the UI.
+    /// After a certificate failed against a pinned key in something this
+    /// device refuses, checks whether the user's key changed and, if so,
+    /// keeps the new key as pending and warns the UI.
     async fn note_key_change(&self, problem: &LeafProblem) {
         let LeafProblem::Unverified(user) = problem else {
             return;
         };
-        let Some((username, server_id)) = user.split_once('@') else {
+        let Some(user) = parse_user_id(user) else {
             return;
         };
-        let user = UserId::new(username, server_id);
-        let session = match self.session() {
-            Ok(session) => session,
-            Err(_) => return,
-        };
-        let Ok(request) = session.request(pb::FetchKeyPackagesRequest {
-            user_id: Some(user.to_pb()),
-            device_ids: Vec::new(),
-        }) else {
+        let Some(key) = self.changed_identity_key(&user).await else {
             return;
         };
-        if let Ok(response) = session.conn().keys().fetch_key_packages(request).await {
-            let key = response.into_inner().identity_public_key;
-            if let Ok(PinOutcome::Changed) =
-                self.store()
-                    .pin_identity_key(&user.to_string(), &key, self.now())
-            {
-                self.emit(Event::IdentityKeyChanged { user });
-            }
+        if let Ok(PinOutcome::Changed) =
+            self.store()
+                .pin_identity_key(&user.to_string(), &key, self.now())
+        {
+            self.emit(Event::IdentityKeyChanged { user });
         }
     }
 

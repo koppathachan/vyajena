@@ -1518,6 +1518,33 @@ pub struct DeviceKeyPackage {
     #[prost(bytes = "vec", tag = "2")]
     pub key_package: ::prost::alloc::vec::Vec<u8>,
 }
+/// key-directory: Identity key lookup. Each listed user's current identity
+/// public key, consuming no KeyPackages. A device uses it to pin the identity
+/// keys of users it meets in a Welcome or in someone else's commit, and to look
+/// a key up again when a certificate does not verify against the pinned one
+/// (key-directory: Clients verify the identity chain). If any listed user id is
+/// unknown or has no non-revoked device, the call fails with `NOT_FOUND` and
+/// returns nothing.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityKeysRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub user_ids: ::prost::alloc::vec::Vec<UserId>,
+}
+/// key-directory: Identity key lookup. One entry per distinct requested user,
+/// in request order.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetIdentityKeysResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub keys: ::prost::alloc::vec::Vec<UserIdentityKey>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UserIdentityKey {
+    #[prost(message, optional, tag = "1")]
+    pub user_id: ::core::option::Option<UserId>,
+    /// The user's identity public key (Ed25519, 32 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub identity_public_key: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated server implementations.
 pub mod keys_server {
     #![allow(
@@ -1545,6 +1572,14 @@ pub mod keys_server {
             request: tonic::Request<super::FetchKeyPackagesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::FetchKeyPackagesResponse>,
+            tonic::Status,
+        >;
+        /// key-directory: Identity key lookup.
+        async fn get_identity_keys(
+            &self,
+            request: tonic::Request<super::GetIdentityKeysRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetIdentityKeysResponse>,
             tonic::Status,
         >;
     }
@@ -1701,6 +1736,51 @@ pub mod keys_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = FetchKeyPackagesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/vyajena.v1.Keys/GetIdentityKeys" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetIdentityKeysSvc<T: Keys>(pub Arc<T>);
+                    impl<
+                        T: Keys,
+                    > tonic::server::UnaryService<super::GetIdentityKeysRequest>
+                    for GetIdentityKeysSvc<T> {
+                        type Response = super::GetIdentityKeysResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetIdentityKeysRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Keys>::get_identity_keys(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetIdentityKeysSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
