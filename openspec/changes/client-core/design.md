@@ -364,9 +364,9 @@ Clarifications from task groups 4 and 5:
   transaction that merges the commit, and `IdentityKeyChanged` is emitted
   after it. The member does nothing: the admin already decides who joins, so
   this adds no new trust. Any other failure, the same key again, or a commit
-  from a non-admin stalls as above. Not covered (no spec asks for it): a
-  Welcome that names a reset user whose old key this device has pinned is
-  still refused; see the session C hand-over.
+  from a non-admin stalls as above. A Welcome that names a reset user whose
+  old key this device has pinned is handled the same way, whoever signed it
+  (owner 2026-11-11; task 6.4).
 - **Adding** (admin `add_user`, re-add, linked devices) pins or compares the
   fetched identity key first: a changed key raises `IdentityKeyChanged` and
   fails with `ClientError::IdentityKeyChanged` until `accept_identity_key`.
@@ -455,6 +455,15 @@ building task groups 4 and 5 (tasks 5.5–5.7):
    stream, every entry below the commit's `server_seq` before its `Accepted`
    (message-delivery: Ordered delivery and catch-up). The core's 200 ms settle
    wait goes away.
+
+From session C (task group 6), resolved by the owner (2026-11-11), task 6.4:
+
+4. **Welcome naming a reset user.** A device re-added from a Welcome that still
+   pins a reset user's old key looks the key up like a member does for a
+   commit, whoever signed the Welcome, then joins, re-pins and warns. The Pi
+   already vouches for every key a device first sees in a Welcome.
+5. **Message typed while removed.** It stays sending and goes out after the
+   re-add with the same `msg_id` (client-runtime: Send status).
 
 Resolved by the owner (2026-11-10): OpenMLS group state is stored in SQLite
 encrypted under a storage key kept in the key store (option A; see D3).

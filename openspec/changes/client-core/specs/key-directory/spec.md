@@ -38,7 +38,10 @@ from the admin that adds a device whose certificate does not verify against the
 pinned key SHALL look up the user's identity key; if the Pi returns a new key that
 verifies the certificate, the member SHALL accept the commit, pin the new key and
 warn the user that the key changed. The same change in a commit from any other
-member SHALL be rejected.
+member SHALL be rejected. A device joining from a Welcome whose tree holds a leaf
+that does not verify against that user's pinned key SHALL look up the user's
+identity key the same way, whoever signed the Welcome; if the Pi's key verifies
+the leaf, the device SHALL join, pin the new key and warn the user.
 
 #### Scenario: Identity key changed
 - **WHEN** a fetch returns an identity key for `bob@pi` that differs from the one
@@ -55,3 +58,9 @@ member SHALL be rejected.
 - **WHEN** a commit not from the admin adds a device of Bob whose certificate
   needs a new identity key
 - **THEN** members reject the commit
+
+#### Scenario: Back from holiday after a reset
+- **WHEN** Alice's laptop, with Bob's old key pinned, is re-added after Bob was
+  reset and receives a Welcome whose tree holds Bob's new phone
+- **THEN** it looks up Bob's key, joins the group, pins the new key and shows a
+  key-changed warning

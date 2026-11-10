@@ -34,6 +34,7 @@
 - [x] 6.1 Content bodies: Text with the size check, GroupSettings (admin only), Profile (own user only), unknown bodies as a placeholder (message-content)
 - [x] 6.2 Send with status, `STALE_EPOCH` re-encrypt and resend with the same `msg_id` (client-runtime: Send status)
 - [x] 6.3 Receive in `server_seq` order, store before ack, gap / removed / rejoin notices, one ordered event stream (client-runtime: Events in order)
+- [ ] 6.4 A device joining from a Welcome looks up any user whose leaf fails against the pinned key and, if the Pi's key verifies it, joins, re-pins and emits `IdentityKeyChanged` (key-directory: Clients verify the identity chain); a test for a message typed while removed going out after the re-add (client-runtime: Send status); update D5 and remove both from the open questions (owner 2026-11-11)
 
 ## 7. End-to-end tests
 

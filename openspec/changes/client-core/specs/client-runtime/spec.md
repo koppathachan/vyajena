@@ -65,6 +65,11 @@ report the message as failed with the reason.
 - **THEN** the core applies the commit, resends the message in the new epoch, and
   Alice sees it go from sending to accepted
 
+#### Scenario: Message typed while removed for inactivity
+- **WHEN** Bob sends "back" while his laptop is removed for inactivity
+- **THEN** it stays sending, and after the re-add the core sends it in the new
+  epoch with the same `msg_id` and Bob sees it go to accepted
+
 ### Requirement: Events in order
 The core SHALL deliver events to the UI in `server_seq` order through one event
 stream: received messages, profile and group-setting changes, gap notices,
