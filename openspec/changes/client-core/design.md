@@ -272,6 +272,46 @@ sequenceDiagram
   and skipped. Jobs run only when the stream has been quiet for 100 ms, so a
   catch-up burst is processed first.
 
+Clarifications from task group 6 (messaging):
+
+- **Bodies** (`client::messaging`). `send_text`, `set_profile` and
+  `set_group_settings` (admin devices only; others get `NotAdmin`) encode a
+  `Content` with the sender's clock as `sent_at`. An encoded `Content` above
+  `MAX_CONTENT_BYTES` (the 65,536-byte cap minus a 512-byte margin; MLS adds
+  under 200 bytes, no padding) is refused with `ClientError::TooLong` before
+  anything is stored; the engine checks the real ciphertext against the cap
+  again and marks a message failed if it is over. A `Content` that does not
+  decode, or whose oneof is unset, is `MessageBody::Unsupported`, never an
+  error. Migration `0003_messaging.sql` adds `messages.kind` (`chat`,
+  `profile`, `settings`; the history shows only `chat`), `profiles` and
+  `group_settings`.
+- **Sending** (`engine/outbox.rs`). The API stores the message as sending and
+  wakes the engine; it works offline and the message goes out on the next
+  connect. The engine sends every sending message not in flight, oldest
+  first, on connect, after each frame and on each tick: stored ciphertext
+  again byte for byte, otherwise it encrypts in the current epoch and stores
+  the ciphertext in the same transaction. It sends nothing while an own
+  commit waits, while envelopes are held, while the group is behind the
+  epoch a `STALE_EPOCH` named (keeping the order of own messages), or while
+  stalled. On `STALE_EPOCH` the ciphertext is dropped (`clear_sent`) and the
+  message is encrypted again after catching up, with the same `msg_id`;
+  any other rejection marks it failed with the reason. In-flight results
+  lost with a link are recovered by resending the same bytes. OpenMLS
+  encrypts nothing while proposals are pending, so a device with a message
+  to send commits the Pi's pending inactivity Removes itself
+  (`CommitPiRemoves`), which commit authority allows any member; the admin's
+  devices still commit them as soon as they arrive.
+- **Own profile and settings** apply on the sending device when the Pi
+  accepts them (with the same event the other devices emit on receipt).
+- **Receiving** decrypts, checks that the MLS sender leaf's certificate names
+  the device in `envelope.sender`, stores, and applies a `Profile` to the
+  sending user only and a `GroupSettings` only from the admin named in the
+  `0xF0A1` extension, in one transaction with `processed_seq`; the event is
+  emitted after it commits and before the ack. A message that does not
+  decrypt or whose MLS sender differs from the Pi's is acked and reported as
+  `Event::Unreadable { sender, accepted_at }` (nothing dropped silently). A
+  redelivery (at or below `processed_seq`, or a duplicate row) emits nothing.
+
 ### D5. Membership on the device
 
 - Every new or changed leaf: verify the device certificate against the user's

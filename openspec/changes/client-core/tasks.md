@@ -31,9 +31,9 @@
 
 ## 6. Messaging
 
-- [ ] 6.1 Content bodies: Text with the size check, GroupSettings (admin only), Profile (own user only), unknown bodies as a placeholder (message-content)
-- [ ] 6.2 Send with status, `STALE_EPOCH` re-encrypt and resend with the same `msg_id` (client-runtime: Send status)
-- [ ] 6.3 Receive in `server_seq` order, store before ack, gap / removed / rejoin notices, one ordered event stream (client-runtime: Events in order)
+- [x] 6.1 Content bodies: Text with the size check, GroupSettings (admin only), Profile (own user only), unknown bodies as a placeholder (message-content)
+- [x] 6.2 Send with status, `STALE_EPOCH` re-encrypt and resend with the same `msg_id` (client-runtime: Send status)
+- [x] 6.3 Receive in `server_seq` order, store before ack, gap / removed / rejoin notices, one ordered event stream (client-runtime: Events in order)
 
 ## 7. End-to-end tests
 

@@ -6,8 +6,10 @@
 //! [`Client::start`], which connects and keeps the device in the group. Admin
 //! actions ([`Client::create_group`], [`Client::add_user`],
 //! [`Client::remove_user`], invites) and linking other devices need the
-//! client to be started and connected. Messaging (`send_text`, ...) is task
-//! group 6.
+//! client to be started and connected. Messaging ([`Client::send_text`],
+//! [`Client::set_profile`], [`Client::set_group_settings`]) stores the
+//! message first and sends it whenever the engine can, so it works offline;
+//! its status arrives as [`Event::SendStatus`].
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,17 +22,19 @@ use tokio::sync::{mpsc, oneshot};
 use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
-    self, DeviceId, Event, EventStream, InviteInfo, Member, PushPlatform, PushToken, UserId,
+    self, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member, Message, MessageId,
+    Profile, PushPlatform, PushToken, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
 use crate::identity::{DeviceKeys, Invite, LinkApproval, LinkRequest, PayloadError};
 use crate::keystore::{KeyStore, KeyStoreError, KeyStoreKind};
+use crate::messaging::ContentError;
 use crate::mls::MlsError;
 use crate::mls::verify;
 use crate::net::{Conn, NetError, Session};
 use crate::pb;
-use crate::store::{AccountRow, Store, StoreError};
+use crate::store::{AccountRow, OutgoingMessage, ProfileRow, Store, StoreError};
 
 /// The database file inside [`ClientConfig::data_dir`].
 pub const DATABASE_FILE: &str = "vyajena2.sqlite";
@@ -146,6 +150,10 @@ pub enum ClientError {
     /// The commit would be larger than the handshake limit.
     #[error("the commit is larger than the server accepts")]
     TooLarge,
+    /// The message would encrypt to more than the 65,536-byte ciphertext cap
+    /// (message-content: Text only).
+    #[error("the message is too long")]
+    TooLong,
     /// The Pi rejected the commit.
     #[error("the server rejected the commit: {0}")]
     Rejected(String),
@@ -253,12 +261,6 @@ impl Client {
     /// The time on this client's clock.
     pub fn now(&self) -> SystemTime {
         self.shared.clock.now()
-    }
-
-    /// The local store, for the feature modules.
-    #[allow(dead_code)] // used by task group 6
-    pub(crate) fn store(&self) -> &Store {
-        &self.shared.store
     }
 
     fn account(&self) -> Result<AccountRow, ClientError> {
@@ -759,6 +761,121 @@ impl Client {
             .accept_identity_key(&id, &pending, self.now())?)
     }
 
+    // --- Messaging (message-content; client-runtime: Send status) ---
+
+    /// Sends a text message (message-content: Text only). It is stored with
+    /// its plaintext as sending first (client-runtime: Local message store)
+    /// and sent as soon as the engine can, also after a restart; its status
+    /// arrives as [`Event::SendStatus`]. Fails with [`ClientError::TooLong`]
+    /// for text that would encrypt to more than the ciphertext cap.
+    pub fn send_text(&self, text: &str) -> Result<MessageId, ClientError> {
+        let content = crate::messaging::encode_text(text, self.now()).map_err(too_long)?;
+        self.send_content(&content)
+    }
+
+    /// Sets this user's display name and "about" text for every member
+    /// (message-content: User-owned profiles); `None` clears one. Members
+    /// apply it to this user only.
+    pub fn set_profile(
+        &self,
+        display_name: Option<&str>,
+        about: Option<&str>,
+    ) -> Result<MessageId, ClientError> {
+        let profile = ProfileRow {
+            display_name: display_name.map(str::to_owned),
+            about: about.map(str::to_owned),
+        };
+        let content = crate::messaging::encode_profile(&profile, self.now()).map_err(too_long)?;
+        self.send_content(&content)
+    }
+
+    /// Admin: sets the group's name for every member (message-content: Group
+    /// settings travel encrypted). Members ignore settings from non-admin
+    /// devices, so other devices get [`ClientError::NotAdmin`].
+    pub fn set_group_settings(&self, name: Option<&str>) -> Result<MessageId, ClientError> {
+        if !self.account()?.is_admin {
+            return Err(ClientError::NotAdmin);
+        }
+        let content =
+            crate::messaging::encode_group_settings(name, self.now()).map_err(too_long)?;
+        self.send_content(&content)
+    }
+
+    fn send_content(&self, content: &[u8]) -> Result<MessageId, ClientError> {
+        let account = self.account()?;
+        if self.shared.store.group()?.is_none() {
+            return Err(ClientError::NoGroup);
+        }
+        let mut msg_id = [0u8; 16];
+        getrandom::fill(&mut msg_id)
+            .map_err(|e| ClientError::Mls(MlsError::new("randomness", e)))?;
+        let user = UserId::new(account.username, account.server_id).to_string();
+        let id = self.shared.store.insert_outgoing(&OutgoingMessage {
+            msg_id,
+            sender_user: &user,
+            sender_device: account.device_id,
+            content,
+            created_at: self.now(),
+        })?;
+        if let Some(running) = self.running.lock().as_ref() {
+            // A full queue means the engine is busy and flushes anyway.
+            let _ = running.commands.try_send(Command::Outbox);
+        }
+        Ok(id)
+    }
+
+    /// The newest `limit` chat messages, sent and received, oldest first:
+    /// by `server_seq`, then own messages still sending or failed.
+    pub fn history(&self, limit: usize) -> Result<Vec<Message>, ClientError> {
+        Ok(self
+            .shared
+            .store
+            .history(limit)?
+            .iter()
+            .filter_map(crate::messaging::to_message)
+            .collect())
+    }
+
+    /// One chat message by id.
+    pub fn message(&self, id: MessageId) -> Result<Option<Message>, ClientError> {
+        Ok(self
+            .shared
+            .store
+            .message(id)?
+            .as_ref()
+            .and_then(crate::messaging::to_message))
+    }
+
+    /// `user`'s profile, as their devices last set it.
+    pub fn profile(&self, user: &UserId) -> Result<Profile, ClientError> {
+        let row = self
+            .shared
+            .store
+            .profile(&user.to_string())?
+            .unwrap_or_default();
+        Ok(Profile {
+            display_name: row.display_name,
+            about: row.about,
+        })
+    }
+
+    /// How to show `user` (message-content: User-owned profiles): the display
+    /// name with the username alongside, "Ali (alice)", or the username
+    /// alone when no display name is set.
+    pub fn display_name(&self, user: &UserId) -> Result<String, ClientError> {
+        Ok(match self.profile(user)?.display_name {
+            Some(name) if !name.is_empty() => format!("{name} ({})", user.username),
+            _ => user.username.clone(),
+        })
+    }
+
+    /// The group's settings, as an admin device last set them.
+    pub fn group_settings(&self) -> Result<GroupSettings, ClientError> {
+        Ok(GroupSettings {
+            name: self.shared.store.group_name()?,
+        })
+    }
+
     // --- Group state ---
 
     /// The group's member devices, as this device sees them.
@@ -794,6 +911,12 @@ impl Client {
             Ok(crate::mls::group::load(store.mls(), &row.group_id)?)
         })?;
         Ok(group.map(|g| g.epoch().as_u64()))
+    }
+}
+
+fn too_long(error: ContentError) -> ClientError {
+    match error {
+        ContentError::TooLong => ClientError::TooLong,
     }
 }
 

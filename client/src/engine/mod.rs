@@ -33,6 +33,7 @@
 //! checked with [`crate::mls::verify`] first.
 
 mod jobs;
+mod outbox;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
@@ -52,7 +53,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::client::ClientError;
 use crate::clock::Clock;
-use crate::events::{ConnectionState, DeviceId, Event, EventSender, UserId};
+use crate::events::{ConnectionState, DeviceId, Event, EventSender, MessageId, UserId};
 use crate::identity::DeviceKeys;
 use crate::keystore::KeyStore;
 use crate::mls::verify::{self, LeafProblem};
@@ -86,6 +87,8 @@ pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 pub(crate) enum Command {
     /// Queue a job.
     Job(Job),
+    /// An own message was stored: send it when possible.
+    Outbox,
 }
 
 /// What every part of the client shares.
@@ -165,6 +168,9 @@ pub(crate) struct Engine {
     /// The held envelopes are being processed (so one taken from the front
     /// is not held again behind the rest).
     draining: bool,
+    /// Own application messages sent on the current link and waiting for
+    /// their result, by msg_id.
+    apps_in_flight: BTreeMap<[u8; 16], MessageId>,
     /// The epoch the Pi said the group is at (from `STALE_EPOCH`).
     server_epoch: u64,
     quiet_since: Instant,
@@ -219,6 +225,7 @@ impl Engine {
             inflight: None,
             deferred: VecDeque::new(),
             draining: false,
+            apps_in_flight: BTreeMap::new(),
             server_epoch: 0,
             quiet_since: Instant::now(),
             last_rotation_check: None,
@@ -315,6 +322,9 @@ impl Engine {
                         if let Err(error) = self.on_frame(frame).await {
                             self.on_error(error);
                         }
+                        if let Err(error) = self.flush_outbox().await {
+                            self.on_error(error);
+                        }
                     }
                     Ok(None) => self.drop_link("the server closed the stream"),
                     Err(status) => {
@@ -324,6 +334,11 @@ impl Engine {
                 },
                 command = self.commands.recv() => match command {
                     Some(Command::Job(job)) => self.push_job(job),
+                    Some(Command::Outbox) => {
+                        if let Err(error) = self.flush_outbox().await {
+                            self.on_error(error);
+                        }
+                    }
                     None => break,
                 },
                 _ = tick.tick() => {
@@ -367,6 +382,9 @@ impl Engine {
                 tracing::info!("connected");
                 self.emit(Event::Connection(ConnectionState::Connected));
                 if let Err(error) = self.resend_inflight().await {
+                    self.on_error(error);
+                }
+                if let Err(error) = self.flush_outbox().await {
                     self.on_error(error);
                 }
             }
@@ -421,8 +439,10 @@ impl Engine {
         tracing::info!(why, "disconnected; reconnecting");
         *self.shared.session.lock() = None;
         // Held envelopes were not acked (acks are cumulative and stop before
-        // the first held one), so the Pi delivers them again.
+        // the first held one), so the Pi delivers them again; own messages
+        // in flight are sent again with the same bytes.
         self.deferred.clear();
+        self.apps_in_flight.clear();
         if let Some(inflight) = self.inflight.as_mut() {
             inflight.sent = false;
         }
@@ -491,7 +511,7 @@ impl Engine {
             }
         }
         self.timed_checks()?;
-        Ok(())
+        self.flush_outbox().await
     }
 
     /// Own-leaf rotation, last-resort refresh (decision #4, design D6) and
@@ -656,6 +676,10 @@ impl Engine {
             self.merge_own().await?;
         }
         if held || waiting {
+            tracing::debug!(
+                server_seq = envelope.server_seq,
+                "holding an envelope while the own commit waits"
+            );
             self.deferred.push_back(envelope);
             return Ok(());
         }
@@ -887,24 +911,35 @@ impl Engine {
         self.ack(&envelope.group_id, seq).await
     }
 
-    /// An application message: decrypt and store it before the ack. Decoding
-    /// the content and telling the UI is task group 6 (messaging).
+    /// An application message: decrypt and store it before the ack, then
+    /// tell the UI (client-runtime: Local message store; Events in order).
     async fn on_application(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
         let seq = envelope.server_seq;
         let Some(group) = self.group.as_mut() else {
             return self.ack(&envelope.group_id, seq).await;
         };
+        let admin = mls_group::admin_user_id(group.extensions());
         let store = Arc::clone(&self.shared.store);
         let now = self.shared.clock.now();
-        let result = store.transaction(|| -> Result<(), EngineError> {
-            crate::messaging::receive_application(&store, group, &envelope, now)?;
+        let result = store.transaction(|| -> Result<_, EngineError> {
+            let received = crate::messaging::receive_application(
+                &store,
+                group,
+                &envelope,
+                admin.as_deref(),
+                now,
+            )?;
             store.set_processed_seq(seq)?;
-            Ok(())
+            Ok(received)
         });
-        if let Err(error) = result {
-            self.reload_group()?;
-            return Err(error);
-        }
+        let received = match result {
+            Ok(received) => received,
+            Err(error) => {
+                self.reload_group()?;
+                return Err(error);
+            }
+        };
+        self.emit_received(received);
         self.ack(&envelope.group_id, seq).await
     }
 
@@ -1171,12 +1206,14 @@ impl Engine {
     }
 
     async fn on_send_result(&mut self, result: pb::SendResult) -> Result<(), EngineError> {
+        if self.on_app_result(&result)? {
+            return Ok(());
+        }
         let ours = self
             .inflight
             .as_ref()
             .is_some_and(|f| f.row.msg_id.as_slice() == result.msg_id.as_slice());
         if !ours {
-            // Results for application messages: task group 6 (messaging).
             return Ok(());
         }
         match result.result {

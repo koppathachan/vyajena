@@ -27,11 +27,13 @@ use rusqlite::Connection;
 use crate::keystore::{KeyName, KeyStore, KeyStoreError, get_or_create};
 use crate::mls::{EncryptedStorage, MlsProvider, MlsStorageError, STORAGE_KEY_LEN};
 
+mod content_state;
 mod device_state;
 mod identity_keys;
 mod messages;
 mod migrations;
 
+pub use content_state::ProfileRow;
 pub use device_state::{AccountRow, GroupRow, OutgoingCommitRow};
 pub use identity_keys::{PinOutcome, PinnedIdentityKey};
 pub use messages::{IncomingMessage, InsertOutcome, OutgoingMessage, StoredMessage};

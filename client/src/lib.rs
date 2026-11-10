@@ -48,6 +48,6 @@ pub mod store;
 pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
-    ConnectionState, DeviceId, Event, EventStream, InviteInfo, Member, Message, MessageBody,
-    MessageId, PushPlatform, PushToken, SendStatus, UserId,
+    ConnectionState, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member, Message,
+    MessageBody, MessageId, Profile, PushPlatform, PushToken, SendStatus, UserId,
 };

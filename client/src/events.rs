@@ -143,6 +143,15 @@ pub enum Event {
         /// The group's display name, if set.
         name: Option<String>,
     },
+    /// A message arrived that this device cannot read: it does not decrypt,
+    /// or its MLS sender is not the device the Pi says sent it. Shown as a
+    /// placeholder; nothing is dropped silently.
+    Unreadable {
+        /// Who the Pi says sent it.
+        sender: Option<UserId>,
+        /// When the Pi accepted it.
+        accepted_at: Option<SystemTime>,
+    },
     /// Messages up to this time expired on the Pi before this device fetched
     /// them (message-delivery: Expiry and gap notice).
     Gap {
@@ -182,6 +191,22 @@ pub enum Event {
     },
     /// The connection state changed.
     Connection(ConnectionState),
+}
+
+/// A user's profile (message-content: User-owned profiles).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Profile {
+    /// The display name, if set.
+    pub display_name: Option<String>,
+    /// The "about" text, if set.
+    pub about: Option<String>,
+}
+
+/// The group's settings (message-content: Group settings travel encrypted).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GroupSettings {
+    /// The group's display name, if an admin device set one.
+    pub name: Option<String>,
 }
 
 /// A group member device, as the UI lists it.

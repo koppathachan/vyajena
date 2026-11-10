@@ -3,6 +3,7 @@
 
 use std::time::SystemTime;
 
+use prost::Message as _;
 use rusqlite::{OptionalExtension, Row, params};
 
 use super::{Store, StoreError};
@@ -88,6 +89,18 @@ pub struct StoredMessage {
 const COLUMNS: &str = "local_id, sender_user, sender_device, msg_id, outgoing, content, \
                        created_at, server_seq, accepted_at, status, failure, sent_epoch, ciphertext";
 
+/// The `kind` column for an encoded `Content`: `profile` and `settings`
+/// bodies change state; Text, unknown bodies and anything that does not
+/// decode are `chat`, shown in the history.
+fn kind_of(content: &[u8]) -> &'static str {
+    use crate::pb::content::Body;
+    match crate::pb::Content::decode(content).map(|c| c.body) {
+        Ok(Some(Body::Profile(_))) => "profile",
+        Ok(Some(Body::GroupSettings(_))) => "settings",
+        _ => "chat",
+    }
+}
+
 fn to_i64(value: u64) -> Result<i64, StoreError> {
     i64::try_from(value).map_err(|_| StoreError::Inconsistent(format!("{value} exceeds i64")))
 }
@@ -172,14 +185,15 @@ impl Store {
         let id = self.db.with(|conn| {
             conn.execute(
                 "INSERT INTO messages (sender_user, sender_device, msg_id, outgoing, content,
-                                       created_at, status)
-                 VALUES (?1, ?2, ?3, 1, ?4, ?5, 'sending')",
+                                       created_at, status, kind)
+                 VALUES (?1, ?2, ?3, 1, ?4, ?5, 'sending', ?6)",
                 params![
                     message.sender_user,
                     message.sender_device,
                     message.msg_id,
                     message.content,
                     unix_millis(message.created_at),
+                    kind_of(message.content),
                 ],
             )?;
             Ok::<_, StoreError>(conn.last_insert_rowid())
@@ -203,6 +217,18 @@ impl Store {
             "UPDATE messages SET sent_epoch = ?2, ciphertext = ?3
              WHERE local_id = ?1 AND status = 'sending'",
             params![id.0, epoch, ciphertext],
+        )
+    }
+
+    /// Drops the ciphertext of an own message the Pi rejected with
+    /// `STALE_EPOCH` (which leaves no dedup record), so it is encrypted again
+    /// in the new epoch with the same msg_id (client-runtime: Send status).
+    pub fn clear_sent(&self, id: MessageId) -> Result<(), StoreError> {
+        self.update_sending(
+            id,
+            "UPDATE messages SET sent_epoch = NULL, ciphertext = NULL
+             WHERE local_id = ?1 AND status = 'sending'",
+            params![id.0],
         )
     }
 
@@ -287,8 +313,8 @@ impl Store {
             let id = self.db.with(|conn| {
                 conn.execute(
                     "INSERT INTO messages (sender_user, sender_device, msg_id, outgoing, content,
-                                           created_at, server_seq, accepted_at, status)
-                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received')",
+                                           created_at, server_seq, accepted_at, status, kind)
+                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received', ?8)",
                     params![
                         message.sender_user,
                         message.sender_device,
@@ -297,6 +323,7 @@ impl Store {
                         unix_millis(message.received_at),
                         server_seq,
                         unix_millis(message.accepted_at),
+                        kind_of(message.content),
                     ],
                 )?;
                 Ok::<_, StoreError>(conn.last_insert_rowid())
@@ -321,13 +348,15 @@ impl Store {
             .pop())
     }
 
-    /// The newest `limit` messages in display order: by `server_seq`, then own
-    /// messages the Pi has not accepted, in the order they were written.
+    /// The newest `limit` chat messages (Text and bodies this version does
+    /// not know; not profiles or group settings) in display order: by
+    /// `server_seq`, then own messages the Pi has not accepted, in the order
+    /// they were written.
     pub fn history(&self, limit: usize) -> Result<Vec<StoredMessage>, StoreError> {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut newest_first = self.query(
             &format!(
-                "SELECT {COLUMNS} FROM messages
+                "SELECT {COLUMNS} FROM messages WHERE kind = 'chat'
                  ORDER BY server_seq IS NULL DESC, server_seq DESC, local_id DESC
                  LIMIT ?1"
             ),
