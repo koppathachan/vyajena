@@ -27,7 +27,7 @@
 - [x] 5.4 KeyPackages: initial upload with 0xF0A1, replenish on low notice, last-resort refresh; own-leaf rotation with jitter (decision #4)
 - [x] 5.5 Proto `Keys.GetIdentityKeys` (proto first, then `cargo run -p pbgen`), the Pi handler, and the core learning identity keys through it instead of `FetchKeyPackages` (key-directory: Identity key lookup; owner 2026-11-11)
 - [x] 5.6 Members accept an admin-committed Add whose device needs a new identity key after looking it up: re-pin and emit `IdentityKeyChanged`; reject the same from a non-admin (key-directory: Clients verify the identity chain; group-membership: Device-level membership)
-- [ ] 5.7 Pi delivers every entry below an accepted commit's `server_seq` on the committer's stream before its `Accepted`; remove the core's 200 ms settle wait and update D4 (message-delivery: Ordered delivery and catch-up)
+- [x] 5.7 Pi delivers every entry below an accepted commit's `server_seq` on the committer's stream before its `Accepted`; remove the core's 200 ms settle wait and update D4 (message-delivery: Ordered delivery and catch-up)
 
 ## 6. Messaging
 

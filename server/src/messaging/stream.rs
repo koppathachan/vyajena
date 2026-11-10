@@ -27,6 +27,7 @@ use crate::auth::Caller;
 use crate::membership::inactivity;
 use crate::pb;
 use crate::pb::client_frame::Frame as In;
+use crate::pb::envelope::Kind;
 use crate::pb::server_frame::Frame as Out;
 use crate::runtime::State;
 use crate::runtime::clock::to_timestamp;
@@ -80,13 +81,19 @@ impl Session {
 
     /// Sends every stored entry after `sent_up_to`, in order.
     async fn deliver_pending(&mut self) -> Result<(), Ended> {
+        self.deliver_below(u64::MAX).await
+    }
+
+    /// Sends every stored entry after `sent_up_to` and below `below`, in
+    /// order.
+    async fn deliver_below(&mut self, below: u64) -> Result<(), Ended> {
         loop {
             let device_id = self.caller.device_id;
             let after = self.sent_up_to;
             let server_id = self.state.config.server_id.clone();
             let batch = self
                 .store(move |conn| {
-                    log::pending(conn, &server_id, &device_id, after, DELIVERY_BATCH)
+                    log::pending(conn, &server_id, &device_id, after, below, DELIVERY_BATCH)
                 })
                 .await?;
             let full = batch.len() == DELIVERY_BATCH;
@@ -163,7 +170,9 @@ impl Session {
 
     async fn on_envelope(&mut self, envelope: pb::Envelope) -> Result<(), Ended> {
         let msg_id = envelope.msg_id.clone();
-        let outcome = match write::precheck(&envelope) {
+        let precheck = write::precheck(&envelope);
+        let is_commit = matches!(precheck, Ok(Kind::Commit));
+        let outcome = match precheck {
             Err(reason) => Outcome::Rejected {
                 reason,
                 current_epoch: 0,
@@ -201,6 +210,13 @@ impl Session {
                     "accepted an envelope"
                 );
                 super::notify(&self.state, notify);
+                // message-delivery: Ordered delivery and catch-up. The
+                // committer reads every entry sequenced before its commit
+                // (in the old epoch) before it learns the commit was
+                // accepted and merges it.
+                if is_commit {
+                    self.deliver_below(server_seq).await?;
+                }
                 pb::send_result::Result::Accepted(pb::send_result::Accepted {
                     server_seq,
                     accepted_at: Some(to_timestamp(accepted_at)),

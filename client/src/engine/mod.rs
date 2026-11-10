@@ -9,7 +9,7 @@
 //!         ServerFrame   -> envelopes in server_seq order, send results, notices
 //!         Command       -> queue a job (admin actions, revoke, ...)
 //!         tick          -> heartbeat, liveness, token renewal, rotation and
-//!                          last-resort checks, settle timer, linked devices
+//!                          last-resort checks, linked devices
 //!         quiet stream  -> run the next job (one own commit at a time)
 //!     }
 //! }
@@ -18,13 +18,14 @@
 //! **Own commits.** One at a time (OpenMLS keeps one pending commit). The
 //! envelope is stored before it is sent and resent identically after a
 //! reconnect or crash (message-delivery: Idempotent sends). While it waits
-//! for its result, incoming commits (and everything after them) wait too: a
-//! commit from someone else means ours will be `STALE_EPOCH`. On `Accepted`
-//! the commit is merged once an envelope after it arrives or a short settle
-//! time passes, so application messages the Pi sequenced just before it are
-//! still read in the old epoch. On `STALE_EPOCH` the job goes back to the
-//! front of the queue and runs again once the device has caught up to the
-//! epoch the Pi named.
+//! for its result, every incoming envelope waits too: a commit from someone
+//! else means ours will be `STALE_EPOCH`, and what comes after our commit is
+//! in the next epoch. The Pi delivers every entry below the commit's
+//! `server_seq` before `Accepted` (message-delivery: Ordered delivery and
+//! catch-up), so on `Accepted` the held envelopes below it are read in the
+//! old epoch, then the commit is merged, then the rest follow. On
+//! `STALE_EPOCH` the job goes back to the front of the queue and runs again
+//! once the device has caught up to the epoch the Pi named.
 //!
 //! **Incoming.** Strictly in `server_seq` order; each is processed and
 //! recorded (with `processed_seq`) in one store transaction and acked after
@@ -73,10 +74,6 @@ pub(crate) const TICK: Duration = Duration::from_millis(100);
 /// catch-up is processed first.
 pub(crate) const JOB_QUIET: Duration = Duration::from_millis(100);
 
-/// After `Accepted`, an own commit is merged once an envelope after it
-/// arrives or after this long, whichever is first.
-pub(crate) const COMMIT_SETTLE: Duration = Duration::from_millis(200);
-
 /// How often a device retries adding a device it linked that has not
 /// uploaded KeyPackages yet.
 pub(crate) const PENDING_LINK_POLL: Duration = Duration::from_secs(1);
@@ -119,8 +116,9 @@ struct InFlight {
     job: Job,
     /// Whether it went out on the current link.
     sent: bool,
-    /// `Accepted` arrived: its `server_seq` and when to merge at the latest.
-    accepted: Option<(u64, Instant)>,
+    /// `Accepted` arrived with this `server_seq`; merged once the held
+    /// envelopes below it are read.
+    accepted: Option<u64>,
 }
 
 /// Why the engine loop stopped processing a frame or job.
@@ -164,6 +162,9 @@ pub(crate) struct Engine {
     inflight: Option<InFlight>,
     /// Incoming envelopes held while an own commit waits for its result.
     deferred: VecDeque<pb::Envelope>,
+    /// The held envelopes are being processed (so one taken from the front
+    /// is not held again behind the rest).
+    draining: bool,
     /// The epoch the Pi said the group is at (from `STALE_EPOCH`).
     server_epoch: u64,
     quiet_since: Instant,
@@ -217,6 +218,7 @@ impl Engine {
             jobs: VecDeque::new(),
             inflight: None,
             deferred: VecDeque::new(),
+            draining: false,
             server_epoch: 0,
             quiet_since: Instant::now(),
             last_rotation_check: None,
@@ -418,6 +420,9 @@ impl Engine {
         }
         tracing::info!(why, "disconnected; reconnecting");
         *self.shared.session.lock() = None;
+        // Held envelopes were not acked (acks are cumulative and stop before
+        // the first held one), so the Pi delivers them again.
+        self.deferred.clear();
         if let Some(inflight) = self.inflight.as_mut() {
             inflight.sent = false;
         }
@@ -445,10 +450,10 @@ impl Engine {
 
     /// Heartbeats, liveness, token renewal and the timed checks.
     async fn on_tick(&mut self) -> Result<(), EngineError> {
-        if let Some((_, deadline)) = self.inflight.as_ref().and_then(|f| f.accepted)
-            && Instant::now() >= deadline
+        // Held envelopes left by a step that failed.
+        if !self.deferred.is_empty() && self.inflight.as_ref().is_none_or(|f| f.accepted.is_some())
         {
-            self.merge_own().await?;
+            self.process_deferred().await?;
         }
         let Some(link) = self.link.as_ref() else {
             return Ok(());
@@ -629,10 +634,10 @@ impl Engine {
 
     async fn on_envelope(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
         let kind = Kind::try_from(envelope.kind).unwrap_or(Kind::Unspecified);
+        let waiting = self.inflight.as_ref().is_some_and(|f| f.accepted.is_none());
+        let held = !self.deferred.is_empty() && !self.draining;
         if kind == Kind::Welcome {
-            if !self.deferred.is_empty()
-                || self.inflight.as_ref().is_some_and(|f| f.accepted.is_none())
-            {
+            if held || waiting {
                 self.deferred.push_back(envelope);
                 return Ok(());
             }
@@ -645,13 +650,12 @@ impl Engine {
         if envelope.server_seq <= row.processed_seq {
             return self.ack(&envelope.group_id, envelope.server_seq).await;
         }
-        if let Some((accepted_seq, _)) = self.inflight.as_ref().and_then(|f| f.accepted)
+        if let Some(accepted_seq) = self.inflight.as_ref().and_then(|f| f.accepted)
             && envelope.server_seq > accepted_seq
         {
             self.merge_own().await?;
         }
-        let waiting = self.inflight.as_ref().is_some_and(|f| f.accepted.is_none());
-        if !self.deferred.is_empty() || (waiting && kind == Kind::Commit) {
+        if held || waiting {
             self.deferred.push_back(envelope);
             return Ok(());
         }
@@ -672,13 +676,22 @@ impl Engine {
 
     /// Envelopes held while an own commit waited, in order.
     async fn process_deferred(&mut self) -> Result<(), EngineError> {
+        if self.draining {
+            return Ok(());
+        }
+        self.draining = true;
+        let mut result = Ok(());
         while self.inflight.as_ref().is_none_or(|f| f.accepted.is_some()) {
             let Some(envelope) = self.deferred.pop_front() else {
                 break;
             };
-            Box::pin(self.on_envelope(envelope)).await?;
+            result = Box::pin(self.on_envelope(envelope)).await;
+            if result.is_err() {
+                break;
+            }
         }
-        Ok(())
+        self.draining = false;
+        result
     }
 
     fn reload_group(&mut self) -> Result<(), EngineError> {
@@ -1168,14 +1181,15 @@ impl Engine {
         }
         match result.result {
             Some(pb::send_result::Result::Accepted(accepted)) => {
+                // Everything below the commit was delivered before this
+                // result: read what is held below it in the old epoch (the
+                // first envelope after it merges), then merge.
                 if let Some(inflight) = self.inflight.as_mut() {
-                    inflight.accepted = Some((accepted.server_seq, Instant::now() + COMMIT_SETTLE));
+                    inflight.accepted = Some(accepted.server_seq);
                 }
-                if !self.deferred.is_empty() {
-                    self.merge_own().await?;
-                    self.process_deferred().await?;
-                }
-                Ok(())
+                self.process_deferred().await?;
+                self.merge_own().await?;
+                self.process_deferred().await
             }
             Some(pb::send_result::Result::Rejected(rejected)) => {
                 self.clear_pending()?;

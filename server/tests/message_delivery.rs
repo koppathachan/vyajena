@@ -681,6 +681,62 @@ async fn catch_up_across_an_epoch_change_then_live_traffic() {
     assert!(m1 < c && c < m2 && m2 < m3);
 }
 
+// spec: message-delivery/ordered-delivery-and-catch-up
+#[tokio::test]
+async fn committer_reads_messages_before_its_commit_before_accepted() {
+    let mut w = world().await;
+    // Bob's message M and Alice's commit C go out at the same moment, round
+    // after round. When M is sequenced first, Alice's stream task is busy
+    // with C while M's wake waits, so without the ordering `Accepted` for C
+    // would come before M.
+    let mut m_first = 0;
+    for round in 0..20 {
+        let epoch = w.laptop.epoch();
+        let m = envelope(Kind::Application, epoch, w.phone.message(b"M"));
+        let m_id = m.msg_id.clone();
+        let c = commit_envelope(epoch, w.laptop.self_update(), None);
+        let c_id = c.msg_id.clone();
+        w.phone_stream.send_envelope(m).await;
+        w.laptop_stream.send_envelope(c).await;
+
+        let bob = w.phone_stream.result().await;
+        assert_eq!(bob.msg_id, m_id);
+        let m_seq = match bob.result {
+            Some(pb::send_result::Result::Accepted(accepted)) => Some(accepted.server_seq),
+            Some(pb::send_result::Result::Rejected(rejected)) => {
+                assert_eq!(reason(&rejected), pb::RejectionReason::StaleEpoch);
+                None
+            }
+            None => panic!("round {round}: empty result"),
+        };
+        if let Some(m_seq) = m_seq {
+            // Alice's stream: M first, read in the old epoch...
+            let got = w.laptop_stream.envelope().await;
+            assert_eq!(got.server_seq, m_seq, "round {round}");
+            assert_eq!(w.laptop.read_message(&got.ciphertext), b"M");
+            m_first += 1;
+        }
+        // ...then `Accepted` for C, and only now does she merge it.
+        let result = match w.laptop_stream.next().await {
+            Out::SendResult(result) => result,
+            other => panic!("round {round}: expected Accepted for C, got {other:?}"),
+        };
+        assert_eq!(result.msg_id, c_id);
+        let Some(pb::send_result::Result::Accepted(accepted)) = result.result else {
+            panic!("round {round}: expected Accepted, got {result:?}");
+        };
+        assert!(m_seq.is_none_or(|m| m < accepted.server_seq));
+        w.laptop.confirm();
+        w.laptop_stream.ack(accepted.server_seq).await;
+        receive(&mut w.phone_stream, &mut w.phone).await;
+        if m_seq.is_some() {
+            receive(&mut w.admin_stream, &mut w.admin).await;
+        }
+        receive(&mut w.admin_stream, &mut w.admin).await;
+    }
+    assert!(m_first > 0, "M was never sequenced before C");
+}
+
 // spec: message-delivery/acknowledgement
 #[tokio::test]
 async fn ack_deletes_entries_up_to_it_and_reconnect_starts_after() {

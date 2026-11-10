@@ -221,11 +221,13 @@ sequenceDiagram
   participant P as Pi
   E->>S: stage commit + store envelope (one transaction)
   E->>P: COMMIT (msg_id m)
-  Note over E: incoming COMMITs (and all after them) wait
+  Note over E: every incoming envelope is held
   alt Accepted(seq S)
+    P-->>E: envelopes for this device with seq < S
     P-->>E: SendResult Accepted S
-    Note over E: envelopes with seq < S still read in the old epoch
-    E->>S: merge on the first envelope after S or 200 ms later
+    E->>S: held envelopes below S, read in the old epoch
+    E->>S: merge the own commit
+    E->>S: held envelopes after S, in the new epoch
   else STALE_EPOCH(current e)
     P-->>E: SendResult STALE_EPOCH e
     E->>S: clear pending commit + stored envelope
@@ -247,14 +249,20 @@ sequenceDiagram
 - **Own commits, one at a time.** The envelope is stored (`outgoing_commit`)
   in the same transaction that stages the commit, and resent byte for byte
   after a reconnect or a crash, so the Pi's dedup answers with the original
-  result. While it waits, incoming commits and everything after them are
-  held: a commit from someone else means ours is stale.
-- **Merging after `Accepted`.** The Pi can send `SendResult` before
-  application messages it sequenced just before the commit; with
-  `max_past_epochs = 0` merging at once would make them unreadable. So the
-  engine merges when the first envelope after the commit's `server_seq`
-  arrives or 200 ms after `Accepted`. This narrows the race but cannot close
-  it; see Open Questions.
+  result. While it waits, every incoming envelope is held: a commit from
+  someone else means ours is stale, and anything after our commit is in the
+  next epoch (after a reconnect the catch-up can bring those before the
+  dedup `Accepted`). Held envelopes are dropped on a disconnect; they were
+  not acked, so the Pi delivers them again.
+- **Merging after `Accepted`** (task 5.7, owner 2026-11-11). On the
+  committer's own stream the Pi delivers every entry for that device below
+  the commit's `server_seq` before it sends `Accepted`, also for the dedup
+  answer to a resent commit (message-delivery: Ordered delivery and
+  catch-up). So on `Accepted` the engine reads the held envelopes below the
+  commit in the old epoch, merges at once, and then reads the rest; with
+  `max_past_epochs = 0` nothing sequenced before the commit is lost. The
+  former 200 ms settle wait is gone. The Pi orders only commits this way;
+  an application message's `Accepted` merges nothing.
 - **`STALE_EPOCH`** puts the job back at the front of the queue; it runs again
   once the device reached the epoch the Pi named and re-checks whether it is
   still needed.

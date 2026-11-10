@@ -180,15 +180,17 @@ pub(crate) fn collect_garbage(conn: &Connection) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// Up to `limit` entries of `device_id` after `after`, in `server_seq` order,
-/// as the envelopes the device receives (message-delivery: Ordered delivery
-/// and catch-up). A commit's Welcome goes out as a `WELCOME` envelope at the
-/// commit's `server_seq` with the epoch the commit creates.
+/// Up to `limit` entries of `device_id` after `after` and below `below`, in
+/// `server_seq` order, as the envelopes the device receives
+/// (message-delivery: Ordered delivery and catch-up). A commit's Welcome goes
+/// out as a `WELCOME` envelope at the commit's `server_seq` with the epoch the
+/// commit creates.
 pub(crate) fn pending(
     conn: &Connection,
     server_id: &str,
     device_id: &DeviceId,
     after: u64,
+    below: u64,
     limit: usize,
 ) -> Result<Vec<(u64, pb::Envelope)>, StoreError> {
     let Some((group_id, _)) = group_row(conn)? else {
@@ -200,14 +202,15 @@ pub(crate) fn pending(
          FROM deliveries d
          JOIN envelopes e ON e.server_seq = d.server_seq
          LEFT JOIN devices s ON s.device_id = e.sender_device_id
-         WHERE d.device_id = ?1 AND d.server_seq > ?2
+         WHERE d.device_id = ?1 AND d.server_seq > ?2 AND d.server_seq < ?4
          ORDER BY d.server_seq LIMIT ?3",
     )?;
     let rows = stmt.query_map(
         params![
             device_id.as_slice(),
             i64_of(after),
-            i64::try_from(limit).unwrap_or(i64::MAX)
+            i64::try_from(limit).unwrap_or(i64::MAX),
+            i64_of(below)
         ],
         |row| {
             Ok((
