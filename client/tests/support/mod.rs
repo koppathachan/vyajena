@@ -1,7 +1,10 @@
 //! Shared test helpers. Each test file uses a different subset.
 #![allow(dead_code)]
 
+pub mod device;
 pub mod mls;
+pub mod pi;
+pub mod relay;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -10,6 +13,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use client::ManualClock;
 use client::keystore::{KeyStore, MemoryKeyStore};
 use client::store::Store;
+
+/// Logs to the test output when `RUST_LOG` is set (e.g. `client=debug`).
+pub fn init_logging() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        if std::env::var_os("RUST_LOG").is_some() {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .with_test_writer()
+                .try_init();
+        }
+    });
+}
 
 /// Turns a failure into a test panic naming what failed.
 pub trait Check<T> {

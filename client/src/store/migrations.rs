@@ -8,7 +8,10 @@ use super::StoreError;
 
 /// The migrations, in order. Migration `n` (1-based) moves the schema from
 /// version `n - 1` to `n`.
-const MIGRATIONS: &[&str] = &[include_str!("migrations/0001_local_store.sql")];
+const MIGRATIONS: &[&str] = &[
+    include_str!("migrations/0001_local_store.sql"),
+    include_str!("migrations/0002_device_state.sql"),
+];
 
 /// The schema version this library writes.
 pub const SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

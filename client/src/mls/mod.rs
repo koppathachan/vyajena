@@ -1,12 +1,15 @@
-//! OpenMLS on the device: the encrypted storage provider (design D3) and,
-//! from task group 5, the group itself (create, add, process, encrypt,
-//! rotate).
+//! OpenMLS on the device: the encrypted storage provider (design D3), the
+//! group's configuration ([`group`]) and the checks OpenMLS does not do
+//! ([`verify`]). The engine ([`crate::engine`]) drives the group itself.
 
+pub mod group;
 mod storage;
+pub mod verify;
 
 use openmls_rust_crypto::RustCrypto;
 use openmls_traits::OpenMlsProvider;
 
+pub use group::{CIPHERSUITE, MlsError};
 pub use storage::{EncryptedStorage, MlsStorageError, STORAGE_KEY_LEN};
 
 /// The OpenMLS provider of one device: RustCrypto for crypto and randomness,

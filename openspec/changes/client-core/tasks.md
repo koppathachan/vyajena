@@ -16,15 +16,15 @@
 
 ## 4. Identity, devices and networking
 
-- [ ] 4.1 Identity key, device auth and MLS keys, certificates; register from an invite payload; link request and approval; revoke; push token placeholder
-- [ ] 4.2 Pinned TLS to the relay address, challenge auth with the TLS exporter, token renewal, one `Connect` stream with heartbeats and reconnect with backoff (client-runtime: Connection lifecycle)
+- [x] 4.1 Identity key, device auth and MLS keys, certificates; register from an invite payload; link request and approval; revoke; push token placeholder
+- [x] 4.2 Pinned TLS to the relay address, challenge auth with the TLS exporter, token renewal, one `Connect` stream with heartbeats and reconnect with backoff (client-runtime: Connection lifecycle)
 
 ## 5. MLS and membership
 
-- [ ] 5.1 Admin: create the group (0xF0A1, Pi as external sender), add a user (fetch KeyPackages, commit with Welcome), remove a user, invites
-- [ ] 5.2 Process commits and Welcomes: certificate and leaf-key checks, client-side commit authority, identity pinning with key-changed events (key-directory: Clients verify the identity chain)
-- [ ] 5.3 Automatic re-add on `RejoinNotice`; admin commits pending Pi Removes
-- [ ] 5.4 KeyPackages: initial upload with 0xF0A1, replenish on low notice, last-resort refresh; own-leaf rotation with jitter (decision #4)
+- [x] 5.1 Admin: create the group (0xF0A1, Pi as external sender), add a user (fetch KeyPackages, commit with Welcome), remove a user, invites
+- [x] 5.2 Process commits and Welcomes: certificate and leaf-key checks, client-side commit authority, identity pinning with key-changed events (key-directory: Clients verify the identity chain)
+- [x] 5.3 Automatic re-add on `RejoinNotice`; admin commits pending Pi Removes
+- [x] 5.4 KeyPackages: initial upload with 0xF0A1, replenish on low notice, last-resort refresh; own-leaf rotation with jitter (decision #4)
 
 ## 6. Messaging
 

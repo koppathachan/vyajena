@@ -6,6 +6,8 @@
 //! - messages, with the plaintext of own messages and their send status
 //!   ([`Store::insert_outgoing`] and friends);
 //! - pinned identity keys ([`Store::pin_identity_key`]);
+//! - this device's account, group bookkeeping, KeyPackage records and the own
+//!   commit in flight ([`Store::account`] and friends);
 //! - the OpenMLS group state, sealed under the storage key that lives in the
 //!   key store ([`Store::mls`], design D3). Messages are not encrypted.
 //!
@@ -25,10 +27,12 @@ use rusqlite::Connection;
 use crate::keystore::{KeyName, KeyStore, KeyStoreError, get_or_create};
 use crate::mls::{EncryptedStorage, MlsProvider, MlsStorageError, STORAGE_KEY_LEN};
 
+mod device_state;
 mod identity_keys;
 mod messages;
 mod migrations;
 
+pub use device_state::{AccountRow, GroupRow, OutgoingCommitRow};
 pub use identity_keys::{PinOutcome, PinnedIdentityKey};
 pub use messages::{IncomingMessage, InsertOutcome, OutgoingMessage, StoredMessage};
 pub use migrations::SCHEMA_VERSION;

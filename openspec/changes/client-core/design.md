@@ -47,6 +47,15 @@ client/
   tests/             end-to-end tests against the real server
 ```
 
+Clarification from task groups 4 and 5: one private module, `src/engine/`,
+sits between the feature folders. It is the single task that owns the
+connection, the `Connect` stream and the `MlsGroup`, so everything that
+touches them happens in one order (D4, D5). The feature folders hold the
+steps it runs (`identity/` keys and payloads, `net/` TLS and auth, `mls/`
+config and checks, `membership/` commit building, `keys/` KeyPackages and
+rotation timing); `messaging/` holds only the minimal receive step task group
+6 builds on.
+
 ### D2. API: one async Rust API plus an event stream
 
 `Client` exposes async methods (`register`, `link_request`, `approve_link`,
@@ -203,6 +212,58 @@ sequenceDiagram
 Receiving is strictly in `server_seq` order; the core never acks before the
 message is stored (`client-runtime: Local message store`).
 
+Clarifications from task groups 4 and 5 (the engine, `src/engine/`):
+
+```mermaid
+sequenceDiagram
+  participant E as engine
+  participant S as SQLite
+  participant P as Pi
+  E->>S: stage commit + store envelope (one transaction)
+  E->>P: COMMIT (msg_id m)
+  Note over E: incoming COMMITs (and all after them) wait
+  alt Accepted(seq S)
+    P-->>E: SendResult Accepted S
+    Note over E: envelopes with seq < S still read in the old epoch
+    E->>S: merge on the first envelope after S or 200 ms later
+  else STALE_EPOCH(current e)
+    P-->>E: SendResult STALE_EPOCH e
+    E->>S: clear pending commit + stored envelope
+    E->>E: process the held commits, then prepare the job again
+  end
+```
+
+- **Connection.** `Client::start` runs the engine: pinned TLS to the relay
+  address from the invite (TLS 1.3, ALPN `h2`, SNI fixed to `vyajena2-pi`; the
+  verifier checks only the SPKI SHA-256 pin), `GetChallenge` and
+  `Authenticate` over the TLS exporter, then `Connect` with `Hello`. Reconnect
+  backoff starts at 250 ms and doubles to 30 s with up to 50% jitter, reset
+  on success. A heartbeat goes out when nothing was sent for 25 s; a stream
+  silent for 90 s is dropped. The token is renewed on the same connection
+  five minutes before it expires, timed on the client's clock from when it
+  was issued (a device clock ahead of the Pi's would otherwise renew on every
+  tick). A pin mismatch emits `ServerIdentityError` and stops connecting
+  until `start` is called again.
+- **Own commits, one at a time.** The envelope is stored (`outgoing_commit`)
+  in the same transaction that stages the commit, and resent byte for byte
+  after a reconnect or a crash, so the Pi's dedup answers with the original
+  result. While it waits, incoming commits and everything after them are
+  held: a commit from someone else means ours is stale.
+- **Merging after `Accepted`.** The Pi can send `SendResult` before
+  application messages it sequenced just before the commit; with
+  `max_past_epochs = 0` merging at once would make them unreadable. So the
+  engine merges when the first envelope after the commit's `server_seq`
+  arrives or 200 ms after `Accepted`. This narrows the race but cannot close
+  it; see Open Questions.
+- **`STALE_EPOCH`** puts the job back at the front of the queue; it runs again
+  once the device reached the epoch the Pi named and re-checks whether it is
+  still needed.
+- **Incoming** envelopes are processed in `server_seq` order, each in one
+  store transaction that also records `processed_seq` (`group_state`), and
+  acked after it commits; a redelivery at or below `processed_seq` is acked
+  and skipped. Jobs run only when the stream has been quiet for 100 ms, so a
+  catch-up burst is processed first.
+
 ### D5. Membership on the device
 
 - Every new or changed leaf: verify the device certificate against the user's
@@ -220,12 +281,67 @@ message is stored (`client-runtime: Local message store`).
 - Group creation sets the `0xF0A1` admin extension and lists the Pi as external
   sender; every KeyPackage declares `0xF0A1` in its capabilities.
 
+Clarifications from task groups 4 and 5:
+
+- **Learning identity keys.** The only RPC that returns a user's identity key
+  is `Keys.FetchKeyPackages`. A device that meets a user for the first time in
+  a Welcome or in someone else's commit fetches it for one device of that
+  user (the device in the leaf), which consumes one of that device's
+  KeyPackages; replenishment tops it up. The key is pinned on first sight, as
+  for the admin's own fetch. The proto has no cheaper way; see Open
+  Questions.
+- **Leaf checks** (`client::mls::verify`): every added leaf's certificate
+  verifies against the pinned key, names a user of this Pi and certifies the
+  leaf's signature key; a member's path leaf or Update keeps exactly its
+  certificate and key; then `protocol::group_membership::check_commit_authority`,
+  with the admin read from the `0xF0A1` extension and the Pi's position in the
+  external senders. A Welcome is joined only if every member's leaf passes
+  and the group context names the admin and lists the Pi.
+- **A refused commit** cannot be skipped (later traffic is in the new epoch),
+  so the device records it as stalled (`group_state.stalled`), acks it, emits
+  `CommitRefused` and ignores the group until a Welcome re-adds it. If the
+  failure was a certificate that does not verify against the pinned key, the
+  device fetches the user's current key; a different one is stored as
+  pending and raises `IdentityKeyChanged`.
+- **Adding** (admin `add_user`, re-add, linked devices) pins or compares the
+  fetched identity key first: a changed key raises `IdentityKeyChanged` and
+  fails with `ClientError::IdentityKeyChanged` until `accept_identity_key`.
+- **Linking.** The link request is an encoded `DeviceCertificate` holding only
+  the device id and the two public keys; the approval is an `InvitePayload`
+  with the relay address, pin and user id and no invite code, so the new
+  device knows where to connect (no new message type). The identity device
+  records the new device in `pending_links` and, about once a second while
+  connected, fetches its KeyPackage and commits the Add as soon as one exists
+  (an own-device Add, allowed by commit authority). Revoking a device also
+  commits the Remove of its leaf.
+- **Re-add race.** On a `RejoinNotice` the device notes the returning device's
+  current leaf (its encryption key, or none). When the job runs, a different
+  leaf means someone else re-added it, and the job does nothing. Otherwise it
+  commits the Add of a KeyPackage fetched for that device only, plus a Remove
+  of the old leaf by value unless a pending Pi Remove already covers it.
+- **Pi Removes.** Admin devices commit pending Pi Removes as soon as one
+  arrives and on the first quiet moment after connecting; every other commit
+  includes them by reference anyway.
+- **KeyPackages** list `0xF0A1` and `LastResort` in their leaf capabilities
+  (one capability set for all leaves); the last-resort one carries the
+  `LastResort` extension so OpenMLS keeps its key after a join. Signup and
+  linking upload 20 one-time plus one last-resort; a low notice tops up to
+  20; every upload carries a new last-resort KeyPackage, and the private key
+  of one two refreshes old is deleted.
+
 ### D6. Rotation (decision #4)
 
 A daily check plus one on each connect: if the device's leaf is older than 7
 days, commit an update of its own leaf after a random delay of up to an hour; if
 the last-resort KeyPackage is older than 7 days, upload a new one. The 7-day age
 is a `protocol` constant.
+
+Clarification from task 5.4: the check runs on the first quiet moment after
+each connect and then whenever a day has passed on the client's clock. A due
+leaf is rotated (an own commit with a forced update path, which also commits
+pending Pi Removes) at a random moment within the next hour; the leaf's age
+counts from group creation, joining, or the last own commit with an update
+path (`group_state.own_leaf_updated_at`).
 
 ### D7. Time is injectable
 
@@ -258,7 +374,28 @@ None. No deployed clients.
 
 ## Open Questions
 
-None.
+For the owner (found while building task groups 4 and 5; the code follows the
+specs as written):
+
+1. **Members refusing a reset user.** group-membership requires a client to
+   reject a commit whose added leaf does not verify against the user's pinned
+   key. After the admin resets Bob (Removing a user: "members see a changed
+   identity key"), the admin accepts Bob's new key and adds him, but every
+   other member still has the old key pinned and so refuses the admin's
+   commit and stalls until re-added. The core does what the spec says
+   (refuse, warn with `IdentityKeyChanged`). Alternatives: members accept an
+   admin-committed Add with a new key and only warn, or the Q&A verification
+   change defines how members accept it first.
+2. **Identity keys cost a KeyPackage.** A member meeting a user for the first
+   time has to call `Keys.FetchKeyPackages` to learn their identity key, which
+   uses up one KeyPackage of that user's device (D5). A small proto addition
+   (e.g. fetching identity keys only) would avoid it.
+3. **The committer's merge race.** The Pi may send an own commit's
+   `SendResult` before application messages it sequenced just before it; the
+   engine waits up to 200 ms (D4) but a slower one would be unreadable under
+   `max_past_epochs = 0`. Closing it needs the Pi to deliver every pending
+   entry below a commit's `server_seq` before the `SendResult` (a Pi and
+   message-delivery change).
 
 Resolved by the owner (2026-11-10): OpenMLS group state is stored in SQLite
 encrypted under a storage key kept in the key store (option A; see D3).

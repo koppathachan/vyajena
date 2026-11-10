@@ -23,6 +23,27 @@ pub struct UserId {
     pub server_id: String,
 }
 
+impl UserId {
+    /// `<username>@<server_id>`.
+    pub fn new(username: impl Into<String>, server_id: impl Into<String>) -> Self {
+        Self {
+            username: username.into(),
+            server_id: server_id.into(),
+        }
+    }
+
+    pub(crate) fn to_pb(&self) -> crate::pb::UserId {
+        crate::pb::UserId {
+            username: self.username.clone(),
+            server_id: self.server_id.clone(),
+        }
+    }
+
+    pub(crate) fn from_pb(user: &crate::pb::UserId) -> Self {
+        Self::new(user.username.clone(), user.server_id.clone())
+    }
+}
+
 impl fmt::Display for UserId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}@{}", self.username, self.server_id)
@@ -144,10 +165,64 @@ pub enum Event {
         user: UserId,
     },
     /// The Pi presented a TLS key that does not match the pin (client-runtime:
-    /// Connection lifecycle).
+    /// Connection lifecycle). The core stops connecting until
+    /// [`crate::Client::start`] is called again.
     ServerIdentityError,
+    /// This device joined the group from a Welcome for the first time.
+    JoinedGroup,
+    /// The group's member devices changed (a commit was merged).
+    MembersChanged,
+    /// This device refused a commit or Welcome the Pi delivered: a leaf's
+    /// certificate, its key or the commit-authority rule did not check out
+    /// (group-membership: Device-level membership; Commit authority). It
+    /// cannot follow the group until it is re-added.
+    CommitRefused {
+        /// Why, for display.
+        reason: String,
+    },
     /// The connection state changed.
     Connection(ConnectionState),
+}
+
+/// A group member device, as the UI lists it.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Member {
+    /// The device's user.
+    pub user: UserId,
+    /// The device.
+    pub device: DeviceId,
+}
+
+/// An invite the admin created (device-identity: Invites).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InviteInfo {
+    /// The single-use code.
+    pub code: String,
+    /// The user id it creates.
+    pub user: UserId,
+    /// When it expires unless used.
+    pub expires_at: SystemTime,
+    /// The invite payload to show as a QR code or text: relay address, TLS
+    /// pin, code and user id. Empty in [`crate::Client::list_invites`].
+    pub payload: Vec<u8>,
+}
+
+/// Where a push token comes from (device-identity: Push token registration).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushPlatform {
+    /// Firebase Cloud Messaging.
+    Fcm,
+    /// Apple Push Notification service.
+    Apns,
+}
+
+/// A push token as the platform SDK hands it over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushToken {
+    /// The platform.
+    pub platform: PushPlatform,
+    /// The token.
+    pub token: String,
 }
 
 /// The one ordered event stream of a [`crate::Client`].
@@ -170,12 +245,10 @@ impl EventStream {
 
 /// The sending half, kept by the client.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // emits from task group 4 on
 pub(crate) struct EventSender {
     tx: mpsc::UnboundedSender<Event>,
 }
 
-#[allow(dead_code)] // emits from task group 4 on
 impl EventSender {
     /// Emits `event`. Emitting after the UI dropped the stream is not an
     /// error: there is nobody left to tell.
