@@ -374,28 +374,23 @@ None. No deployed clients.
 
 ## Open Questions
 
-For the owner (found while building task groups 4 and 5; the code follows the
-specs as written):
+None open. Resolved by the owner (2026-11-11), from questions found while
+building task groups 4 and 5 (tasks 5.5–5.7):
 
-1. **Members refusing a reset user.** group-membership requires a client to
-   reject a commit whose added leaf does not verify against the user's pinned
-   key. After the admin resets Bob (Removing a user: "members see a changed
-   identity key"), the admin accepts Bob's new key and adds him, but every
-   other member still has the old key pinned and so refuses the admin's
-   commit and stalls until re-added. The core does what the spec says
-   (refuse, warn with `IdentityKeyChanged`). Alternatives: members accept an
-   admin-committed Add with a new key and only warn, or the Q&A verification
-   change defines how members accept it first.
-2. **Identity keys cost a KeyPackage.** A member meeting a user for the first
-   time has to call `Keys.FetchKeyPackages` to learn their identity key, which
-   uses up one KeyPackage of that user's device (D5). A small proto addition
-   (e.g. fetching identity keys only) would avoid it.
-3. **The committer's merge race.** The Pi may send an own commit's
-   `SendResult` before application messages it sequenced just before it; the
-   engine waits up to 200 ms (D4) but a slower one would be unreadable under
-   `max_past_epochs = 0`. Closing it needs the Pi to deliver every pending
-   entry below a commit's `server_seq` before the `SendResult` (a Pi and
-   message-delivery change).
+1. **Members refusing a reset user.** After the admin resets Bob, other members
+   still had his old key pinned and refused the admin's re-add, stalling. Now a
+   member that sees an admin commit add a device with a changed key looks the
+   key up on the Pi, accepts the commit, re-pins and warns (key-directory:
+   Clients verify the identity chain). The admin already decides who joins, so
+   this adds no new trust; members do nothing. A non-admin commit with a changed
+   key is still rejected.
+2. **Identity keys cost a KeyPackage.** New RPC `Keys.GetIdentityKeys` returns
+   identity keys only, consuming nothing (key-directory: Identity key lookup).
+   The Pi still vouches for each key, as with `FetchKeyPackages`.
+3. **The committer's merge race.** The Pi now delivers, on the committer's own
+   stream, every entry below the commit's `server_seq` before its `Accepted`
+   (message-delivery: Ordered delivery and catch-up). The core's 200 ms settle
+   wait goes away.
 
 Resolved by the owner (2026-11-10): OpenMLS group state is stored in SQLite
 encrypted under a storage key kept in the key store (option A; see D3).

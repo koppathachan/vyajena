@@ -15,3 +15,22 @@ SHALL be retried after the device catches up.
 - **WHEN** Alice's and Bob's devices both commit a rotation for the same epoch
 - **THEN** the Pi accepts one, the other gets `STALE_EPOCH`, catches up and
   retries its rotation in the new epoch
+
+## MODIFIED Requirements
+
+### Requirement: Device-level membership
+Every MLS group member SHALL be a device, whose credential is an MLS basic
+credential containing its serialized device certificate. A user SHALL be a member
+of the group when at least one of their devices is.
+
+#### Scenario: Member verifies a new device
+- **WHEN** a client processes an Add proposal
+- **THEN** it verifies the device certificate in the new leaf against that user's
+  identity key (pinned, or newly looked up as key-directory: Clients verify the
+  identity chain allows), checks that the certificate's MLS signature key equals
+  the leaf's signature key, and rejects the commit if either check fails
+
+#### Scenario: Valid certificate on the wrong key
+- **WHEN** a leaf carries a genuine certificate for Alice's phone but a different
+  signature key
+- **THEN** clients reject the commit
