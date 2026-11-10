@@ -364,9 +364,39 @@ Clarifications from task groups 4 and 5:
   transaction that merges the commit, and `IdentityKeyChanged` is emitted
   after it. The member does nothing: the admin already decides who joins, so
   this adds no new trust. Any other failure, the same key again, or a commit
-  from a non-admin stalls as above. A Welcome that names a reset user whose
-  old key this device has pinned is handled the same way, whoever signed it
-  (owner 2026-11-11; task 6.4).
+  from a non-admin stalls as above.
+- **A Welcome naming a reset user** (task 6.4, owner 2026-11-11). A device
+  re-added from a Welcome (back from holiday) may still pin a user's old key
+  while the Welcome's tree holds that user's new device. When
+  `verify::check_welcome` fails with `Unverified(user)`
+  (`verify::welcome_key_lookup`), the device looks the user's key up with
+  `Keys.GetIdentityKeys` **whoever signed the Welcome** (the committer of a
+  re-add may be the user's own device, not the admin): the Pi already vouches
+  for every key a device first sees in a Welcome. A different key runs the
+  check again (once per user); if it passes, the device re-pins the key in
+  the transaction that joins, then emits `Rejoined` (or `JoinedGroup`),
+  `IdentityKeyChanged` and `MembersChanged`. The same key again or any other
+  failure refuses the Welcome as before (`CommitRefused`, a changed key kept
+  pending).
+
+```mermaid
+sequenceDiagram
+  participant A as Alice's laptop
+  participant P as Pi
+  P->>A: WELCOME (tree: admin, Alice, Bob's new phone)
+  A->>A: check_welcome: Bob's leaf Unverified (old key pinned)
+  A->>P: Keys.GetIdentityKeys([bob@pi])
+  P-->>A: Bob's new key
+  A->>A: check_welcome again with it: passes
+  A->>A: one transaction: re-pin Bob, join, processed_seq
+  A-->>A: events Rejoined, IdentityKeyChanged(bob), MembersChanged
+  A->>P: Ack
+```
+- **A message typed while removed** (task 6.4, owner 2026-11-11). It is
+  stored as sending like any other. The Pi answers `STALE_EPOCH` while the
+  device is out of the group, so the outbox waits; after the Welcome it is
+  encrypted in the new epoch and sent with the same `msg_id`, and goes to
+  accepted (client-runtime: Send status). Nothing fails it.
 - **Adding** (admin `add_user`, re-add, linked devices) pins or compares the
   fetched identity key first: a changed key raises `IdentityKeyChanged` and
   fails with `ClientError::IdentityKeyChanged` until `accept_identity_key`.
@@ -421,6 +451,19 @@ linking, group creation, adding Bob, chatting, epoch races, catch-up, inactivity
 and automatic re-add, rotation, key-changed warnings. The dropped
 "unknown content body decodes as unset" test lands here.
 
+Clarification from task 7.1: the harness grew with the tests of task groups
+3 to 6 and needed nothing more. `client/tests/support/` holds `pi.rs` (the
+real server in-process on a temp database and keys, its own `ManualClock`,
+restart on the same port, `sweep`, raw queries), `relay.rs` (a TCP relay in
+front of it that tests cut to drop the network), `device.rs` (a `Client`
+with a `MemoryKeyStore`, a temp data directory, its own `ManualClock`, an
+event log to wait on, crash-and-restart, and helpers for the admin, invited
+users and group members) and `mls.rs` (bare OpenMLS members for the pure
+commit checks). The Pi's and each device's clocks move independently, so
+token renewal, rotation, inactivity and expiry run without waiting; only
+the heartbeat test waits its 25 s in real time (the core times heartbeats
+on the monotonic clock).
+
 ## Risks / Trade-offs
 
 - [OpenMLS persistent storage may not fit (crate availability, schema, or how
@@ -456,14 +499,97 @@ building task groups 4 and 5 (tasks 5.5–5.7):
    (message-delivery: Ordered delivery and catch-up). The core's 200 ms settle
    wait goes away.
 
-From session C (task group 6), resolved by the owner (2026-11-11), task 6.4:
-
-4. **Welcome naming a reset user.** A device re-added from a Welcome that still
-   pins a reset user's old key looks the key up like a member does for a
-   commit, whoever signed the Welcome, then joins, re-pins and warns. The Pi
-   already vouches for every key a device first sees in a Welcome.
-5. **Message typed while removed.** It stays sending and goes out after the
-   re-add with the same `msg_id` (client-runtime: Send status).
+Session C's two questions (a Welcome naming a reset user; a message typed
+while removed) were answered by the owner on 2026-11-11 and are now D5
+decisions (task 6.4).
 
 Resolved by the owner (2026-11-10): OpenMLS group state is stored in SQLite
 encrypted under a storage key kept in the key store (option A; see D3).
+
+## Appendix: requirement coverage (task 7.2)
+
+Every requirement in the main specs plus this change's deltas (`client-runtime`
+new; own-leaf rotation, last-resort refresh and identity key lookup added;
+device-level membership, clients verify the identity chain and ordered
+delivery modified). Tests are tagged `// spec: <capability>/<slug>` in the
+files named (`c/` = `client/tests/`, `s/` = `server/tests/`, `p/` =
+`protocol/tests/`). **Client** = only the device enforces it; **Pi** = only
+the Pi does (no client side to test); **Both** = each has a part, and each
+part has a test. Count: 58 requirements; 12 client, 10 Pi, 35 both, 1 CI.
+
+| Requirement | Who | Tests |
+|---|---|---|
+| client-runtime/key-storage | Client | c/key_storage.rs, c/mls_storage.rs, c/local_store.rs, c/devices.rs, c/client.rs |
+| client-runtime/local-message-store | Client | c/local_store.rs, c/messaging.rs, c/mls_storage.rs, c/group_membership.rs |
+| client-runtime/connection-lifecycle | Client | c/connection.rs, c/messaging.rs |
+| client-runtime/send-status | Client | c/messaging.rs, c/inactivity.rs (typed while removed), c/local_store.rs |
+| client-runtime/events-in-order | Client | c/messaging.rs (incl. gap notice), c/inactivity.rs, c/client.rs |
+| message-content/inner-content-format | Client | c/messaging.rs (incl. the dropped "unknown body decodes as unset" test) |
+| message-content/text-only | Client | c/messaging.rs |
+| message-content/group-settings-travel-encrypted | Client | c/messaging.rs |
+| message-content/user-owned-profiles | Client | c/messaging.rs |
+| key-directory/clients-verify-the-identity-chain (modified) | Client | c/commit_checks.rs, c/identity_keys.rs, c/inactivity.rs (Welcome after a reset), c/local_store.rs |
+| key-directory/last-resort-keypackage-refresh (new) | Client | c/rotation_and_key_packages.rs, p/key_directory.rs |
+| group-membership/own-leaf-rotation (new) | Client | c/rotation_and_key_packages.rs, c/messaging.rs, c/client.rs, p/group_membership.rs |
+| key-directory/identity-key-lookup (new) | Both | c/identity_keys.rs, s/identity_key_lookup.rs |
+| group-membership/device-level-membership (modified) | Both | c/commit_checks.rs, c/group_membership.rs, c/identity_keys.rs, s/group_membership.rs |
+| message-delivery/ordered-delivery-and-catch-up (modified) | Both | c/messaging.rs, s/message_delivery.rs |
+| device-identity/federation-ready-identifiers | Both (device computes its own id) | c/devices.rs, c/client.rs, s/signup.rs, p/device_identity.rs |
+| device-identity/user-identity-key-and-device-certificates | Both | c/devices.rs, s/signup.rs, p/device_identity.rs |
+| device-identity/invites | Both | c/devices.rs, s/invites.rs |
+| device-identity/admin-owned-usernames | Both (id from the invite) | c/devices.rs, s/signup.rs |
+| device-identity/signup-with-an-invite | Both | c/devices.rs, s/signup.rs |
+| device-identity/bootstrap-admin | Both (admin registers from it) | c/group_membership.rs, s/bootstrap_admin.rs, s/signup.rs, s/running_locally.rs |
+| device-identity/admin-awareness | Both | c/group_membership.rs, s/devices.rs |
+| device-identity/device-linking | Both | c/devices.rs, c/inactivity.rs, s/devices.rs |
+| device-identity/device-revocation | Both | c/devices.rs, s/devices.rs, s/messaging_stream.rs |
+| device-identity/push-token-registration | Both | c/devices.rs, s/devices.rs |
+| group-membership/group-creation | Both | c/group_membership.rs, s/group_membership.rs, p/group_membership.rs |
+| group-membership/commit-authority | Both | c/commit_checks.rs, c/group_membership.rs, c/messaging.rs, s/group_membership.rs, p/group_membership.rs |
+| group-membership/removing-a-user | Both | c/group_membership.rs, c/identity_keys.rs, s/group_membership.rs, s/message_delivery.rs |
+| group-membership/inactive-devices-are-kept-out | Both | c/inactivity.rs, c/messaging.rs, s/inactivity.rs, s/message_delivery.rs |
+| group-membership/automatic-re-add | Both | c/inactivity.rs, c/messaging.rs, s/inactivity.rs |
+| key-directory/keypackage-upload | Both | c/rotation_and_key_packages.rs, s/key_packages.rs |
+| key-directory/keypackage-fetch | Both (re-add fetches one device) | c/inactivity.rs, s/key_packages.rs |
+| key-directory/replenishment-signal | Both | c/rotation_and_key_packages.rs, s/inactivity.rs |
+| message-delivery/envelope | Both | c/messaging.rs, s/message_delivery.rs |
+| message-delivery/welcome-travels-with-its-commit | Both | c/group_membership.rs, c/size_limits.rs, s/message_delivery.rs |
+| message-delivery/accepted-means-durable | Both ("sending" until `Accepted`) | c/messaging.rs, s/message_delivery.rs |
+| message-delivery/idempotent-sends | Both | c/messaging.rs, c/group_membership.rs, s/message_delivery.rs |
+| message-delivery/strict-epoch-rule | Both | c/messaging.rs, c/rotation_and_key_packages.rs, s/message_delivery.rs |
+| message-delivery/per-device-queues | Both (sender's other device) | c/messaging.rs, s/message_delivery.rs |
+| message-delivery/acknowledgement | Both | c/messaging.rs, s/message_delivery.rs |
+| message-delivery/expiry-and-gap-notice | Both (notice reaches the UI) | c/messaging.rs, s/message_delivery.rs |
+| wire-transport/grpc-over-http-2-and-pinned-tls-on-tcp-443 | Both | c/connection.rs, s/pinned_tls.rs |
+| wire-transport/session-authentication | Both | c/connection.rs, s/session_authentication.rs, s/messaging_stream.rs, p/wire_transport.rs |
+| wire-transport/single-persistent-messaging-stream | Both | c/connection.rs, s/messaging_stream.rs |
+| wire-transport/heartbeats | Both (25 s sending is the core's) | c/connection.rs, s/messaging_stream.rs |
+| wire-transport/size-limits | Both | c/messaging.rs (application), c/size_limits.rs (commit), s/messaging_stream.rs, s/server_info.rs, p/wire_transport.rs |
+| wire-transport/protocol-version-negotiation | Both (`Hello` states the version) | c/connection.rs, s/messaging_stream.rs, s/server_info.rs |
+| group-membership/pi-validates-handshakes-without-group-secrets | Pi | s/group_membership.rs |
+| group-membership/membership-state-on-the-pi | Pi | s/group_membership.rs |
+| message-delivery/framing-matches-the-envelope | Pi | s/message_delivery.rs |
+| message-delivery/commit-log | Pi | s/message_delivery.rs |
+| message-delivery/content-free-wake-pings | Pi | s/wake_pings.rs |
+| pi-runtime/configuration | Pi | s/configuration.rs |
+| pi-runtime/first-start | Pi | s/first_start.rs, s/running_locally.rs |
+| pi-runtime/durable-storage | Pi | s/durable_storage.rs, s/message_delivery.rs |
+| pi-runtime/push-provider-interface | Pi | s/push_provider.rs |
+| pi-runtime/running-locally | Pi | s/running_locally.rs, s/clock.rs |
+| wire-transport/protobuf-contract-is-the-source-of-truth | CI | `buf lint` + `buf breaking` in CI; committed `pb.rs` from `cargo run -p pbgen` |
+
+Not exercised end to end, and why:
+
+- **Commit over the cap.** A real commit over 262,144 bytes needs hundreds
+  of devices, so `c/size_limits.rs` checks `membership::commit_envelope`,
+  the step every own commit goes through (task 7.2 moved the check there
+  from the engine).
+- **A Pi without protocol version 1.** The test Pi always speaks it, so the
+  core's refusal at signup and linking (`checked_server_info`) is not run;
+  every connection test shows the `Hello` names a version the Pi accepts.
+- **The real OS keychain.** `c/key_storage.rs` `os_keychain_keeps_named_secrets`
+  is `#[ignore]` (a rebuilt binary prompts on macOS; D3); the rest use the
+  memory store.
+- **"Pi crashes before writing"** (accepted-means-durable) is the Pi's;
+  `s/message_delivery.rs` covers it, the core's half is "sending until
+  `Accepted`, resent on reconnect".

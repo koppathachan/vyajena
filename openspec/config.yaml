@@ -3,7 +3,7 @@ schema: spec-driven
 context: |
   vyajena2: end-to-end encrypted, text-only chat for one admin-run group (admin and
   owner: Akhil). Flutter UI (view only, never opens a connection) -> Rust core on
-  each device (OpenMLS RFC 9420, networking, SQLite, keys in Keystore/Keychain, via
+  each device (OpenMLS RFC 9420, networking, SQLite, keys in the OS key store, via
   flutter_rust_bridge) -> dumb GCP TCP relay (rathole) -> Rust Pi server (tokio +
   tonic, SQLite WAL). gRPC over HTTP/2 with pinned TLS on port 443.
 
@@ -24,7 +24,10 @@ context: |
   - OpenMLS skips credential checks: verify each leaf's device certificate against
     the user's pinned identity key, and that its MLS key equals the leaf key.
   - Accepted means durable. Nothing is dropped silently.
-  - Keys live only in the OS key store; no other encryption at rest.
+  - Identity, auth and MLS signature keys live only in the OS key store
+    (desktop: the OS keychain; a 0600 key file only on explicit opt-in where
+    there is none). OpenMLS group state is in SQLite only sealed under a
+    storage key from the key store; messages are not encrypted at rest.
   - User ids are <username>@<server_id>; the admin chooses the username.
   - Limits, timings and signing context strings are defined once, in protocol/,
     which both the Pi and the core use.

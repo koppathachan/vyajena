@@ -973,26 +973,52 @@ impl Engine {
             }
         };
         let needed = verify::users_in_welcome(staged.members());
-        let pinned = self.resolve_users(needed.into_keys()).await?;
-        let checked = verify::check_welcome(
-            staged.members(),
-            staged.group_context().extensions(),
-            &self.account.server_id,
-            &self.pi,
-            &|user| pinned.get(user).cloned(),
-        );
-        if let Err(problem) = checked {
-            self.note_key_change(&problem).await;
-            tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
-            self.emit(Event::CommitRefused {
-                reason: problem.to_string(),
-            });
-            return self.ack(&envelope.group_id, seq).await;
+        let mut pinned = self.resolve_users(needed.into_keys()).await?;
+        // key-directory: Clients verify the identity chain. A leaf that does
+        // not verify against its user's pinned key (a user reset while this
+        // device was away) is checked again with the key the Pi has now,
+        // whoever signed the Welcome; the Pi vouches for every key a device
+        // first sees in a Welcome anyway (owner 2026-11-11, task 6.4).
+        let mut repinned: Vec<(UserId, Vec<u8>)> = Vec::new();
+        loop {
+            let checked = verify::check_welcome(
+                staged.members(),
+                staged.group_context().extensions(),
+                &self.account.server_id,
+                &self.pi,
+                &|user| pinned.get(user).cloned(),
+            );
+            let Err(problem) = checked else {
+                break;
+            };
+            let user = verify::welcome_key_lookup(&problem)
+                .filter(|user| !repinned.iter().any(|(done, _)| done == user));
+            let new_key = match user {
+                Some(user) => self
+                    .changed_identity_key(&user)
+                    .await
+                    .map(|key| (user, key)),
+                None => None,
+            };
+            let Some((user, key)) = new_key else {
+                self.note_key_change(&problem).await;
+                tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
+                self.emit(Event::CommitRefused {
+                    reason: problem.to_string(),
+                });
+                return self.ack(&envelope.group_id, seq).await;
+            };
+            tracing::info!(user = %user, "a Welcome uses a new identity key; checking it");
+            pinned.insert(user.clone(), key.clone());
+            repinned.push((user, key));
         }
         let rejoined = self.store().group()?.is_some();
         let now = self.now();
         let store = Arc::clone(&self.shared.store);
         let joined = store.transaction(|| -> Result<MlsGroup, EngineError> {
+            for (user, key) in &repinned {
+                store.repin_identity_key(&user.to_string(), key, now)?;
+            }
             let group = staged
                 .into_group(store.mls())
                 .map_err(|e| MlsError::new("joining from a Welcome", e))?;
@@ -1020,6 +1046,9 @@ impl Engine {
         } else {
             Event::JoinedGroup
         });
+        for (user, _) in repinned {
+            self.emit(Event::IdentityKeyChanged { user });
+        }
         self.emit(Event::MembersChanged);
         self.ack(&envelope.group_id, seq).await
     }
@@ -1133,33 +1162,28 @@ impl Engine {
             job.fail(ClientError::NoGroup);
             return Ok(());
         };
-        let envelope = pb::Envelope {
-            msg_id: random_msg_id()?.to_vec(),
-            group_id: group.group_id().as_slice().to_vec(),
-            epoch: staged.epoch,
-            kind: Kind::Commit as i32,
-            ciphertext: staged.commit,
-            welcome: staged.welcome.map(|welcome| pb::WelcomeBundle {
-                welcome,
-                recipients,
-            }),
-            ..Default::default()
+        let msg_id = random_msg_id()?;
+        let epoch = staged.epoch;
+        let encoded = match crate::membership::commit_envelope(
+            msg_id,
+            group.group_id().as_slice(),
+            staged,
+            recipients,
+        ) {
+            Ok(encoded) => encoded,
+            Err(error) => {
+                self.clear_pending()?;
+                job.fail(error);
+                return Ok(());
+            }
         };
-        let encoded = envelope.encode_to_vec();
-        if encoded.len() > protocol::wire_transport::MAX_HANDSHAKE_ENVELOPE_BYTES {
-            self.clear_pending()?;
-            job.fail(ClientError::TooLarge);
-            return Ok(());
-        }
-        let mut msg_id = [0u8; 16];
-        msg_id.copy_from_slice(&envelope.msg_id);
         let row = OutgoingCommitRow {
             msg_id,
             envelope: encoded,
             purpose: job.purpose(),
         };
         self.store().set_outgoing_commit(&row)?;
-        tracing::info!(epoch = envelope.epoch, purpose = %row.purpose, "sending a commit");
+        tracing::info!(epoch, purpose = %row.purpose, "sending a commit");
         self.inflight = Some(InFlight {
             row,
             job,

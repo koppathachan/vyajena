@@ -169,3 +169,41 @@ async fn a_registered_device_refuses_a_server_with_another_key() {
     );
     assert!(!pi.is_connected(&admin.device_id()));
 }
+
+// spec: wire-transport/heartbeats
+// spec: wire-transport/protocol-version-negotiation
+// spec: client-runtime/connection-lifecycle
+#[tokio::test(flavor = "multi_thread")]
+async fn heartbeats_keep_an_idle_stream_open() {
+    let pi = TestPi::start().await;
+    // The Pi accepted the stream, so the first frame named a protocol
+    // version it supports.
+    let mut admin = device::admin(&pi).await;
+    let id = admin.device_id();
+    assert!(pi.is_connected(&id));
+
+    // 80 s pass on the Pi's clock with the stream idle, then the core's
+    // heartbeat (sent after 25 s of real idle time) arrives. 20 s later the
+    // stream has been open 100 s, more than the Pi's 90 s idle limit, but
+    // silent for only 20 s: the Pi keeps it.
+    pi.clock.advance(Duration::from_secs(80));
+    tokio::time::sleep(protocol::wire_transport::HEARTBEAT_INTERVAL + Duration::from_secs(2)).await;
+    pi.clock.advance(Duration::from_secs(20));
+    assert!(
+        !admin
+            .sees_within_quiet(|e| matches!(e, Event::Connection(ConnectionState::Connecting)))
+            .await,
+        "{:?}",
+        admin.events()
+    );
+    // The Pi checks idle streams every second.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(pi.is_connected(&id));
+    assert!(
+        !admin
+            .sees_within_quiet(|e| matches!(e, Event::Connection(ConnectionState::Connecting)))
+            .await,
+        "{:?}",
+        admin.events()
+    );
+}

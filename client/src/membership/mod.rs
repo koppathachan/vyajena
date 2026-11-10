@@ -151,6 +151,36 @@ pub fn has_pending_pi_removes(group: &MlsGroup, pi: Option<u32>) -> bool {
     })
 }
 
+/// The encoded `COMMIT` envelope for `staged`, its Welcome (if any) in a
+/// bundle for `recipients`. `ClientError::TooLarge` if the envelope, Welcome
+/// included, is over the handshake cap (wire-transport: Size limits; the
+/// client refuses to send it).
+pub fn commit_envelope(
+    msg_id: [u8; 16],
+    group_id: &[u8],
+    staged: StagedOwnCommit,
+    recipients: Vec<pb::DeviceRef>,
+) -> Result<Vec<u8>, crate::ClientError> {
+    use prost::Message as _;
+    let envelope = pb::Envelope {
+        msg_id: msg_id.to_vec(),
+        group_id: group_id.to_vec(),
+        epoch: staged.epoch,
+        kind: pb::envelope::Kind::Commit as i32,
+        ciphertext: staged.commit,
+        welcome: staged.welcome.map(|welcome| pb::WelcomeBundle {
+            welcome,
+            recipients,
+        }),
+        ..Default::default()
+    };
+    let encoded = envelope.encode_to_vec();
+    if encoded.len() > protocol::wire_transport::MAX_HANDSHAKE_ENVELOPE_BYTES {
+        return Err(crate::ClientError::TooLarge);
+    }
+    Ok(encoded)
+}
+
 /// The `DeviceRef` of a device.
 pub fn device_ref(user: &UserId, device: &DeviceId) -> pb::DeviceRef {
     pb::DeviceRef {

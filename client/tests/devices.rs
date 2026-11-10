@@ -13,6 +13,7 @@ use support::pi::{ADMIN, TestPi};
 
 // spec: device-identity/signup-with-an-invite
 // spec: device-identity/user-identity-key-and-device-certificates
+// spec: device-identity/admin-owned-usernames
 #[tokio::test(flavor = "multi_thread")]
 async fn a_first_device_signs_up_with_an_invite() {
     let pi = TestPi::start().await;
@@ -135,6 +136,32 @@ async fn a_new_device_is_linked_and_added_by_the_identity_device() {
         laptop.client.approve_link(&request).await,
         Err(ClientError::NotIdentityDevice)
     ));
+}
+
+// spec: device-identity/federation-ready-identifiers
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_computes_its_own_device_id_without_the_pi() {
+    use sha2::Digest as _;
+
+    // No Pi at all: the new device creates its keys and names itself. The
+    // link request carries the id, and decoding it checks that the id is
+    // derived from the auth key.
+    let laptop = Device::new().await;
+    let request = laptop.client.link_request().await.check("link request");
+    let request = payload::LinkRequest::decode(&request).check("decode");
+    let digest = sha2::Sha256::digest(request.auth_public_key);
+    assert_eq!(request.device_id().as_slice(), &digest[..16]);
+    // The auth key is the one in the key store.
+    let auth = laptop
+        .keys
+        .get(KeyName::DeviceAuthKey)
+        .check("get")
+        .check("auth key");
+    let public =
+        ed25519_dalek::SigningKey::from_bytes(auth.as_slice().try_into().check("32-byte seed"))
+            .verifying_key()
+            .to_bytes();
+    assert_eq!(request.auth_public_key, public);
 }
 
 // spec: device-identity/device-revocation

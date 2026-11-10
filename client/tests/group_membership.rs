@@ -10,6 +10,7 @@ use support::pi::{ADMIN, TestPi};
 
 // spec: group-membership/group-creation
 // spec: device-identity/admin-awareness
+// spec: device-identity/bootstrap-admin
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_creates_the_group_with_the_pi_as_external_sender() {
     let pi = TestPi::start().await;
@@ -40,6 +41,7 @@ async fn the_admin_creates_the_group_with_the_pi_as_external_sender() {
 
 // spec: group-membership/commit-authority
 // spec: group-membership/device-level-membership
+// spec: message-delivery/welcome-travels-with-its-commit
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_adds_a_user_and_every_member_follows() {
     let pi = TestPi::start().await;
@@ -64,6 +66,20 @@ async fn the_admin_adds_a_user_and_every_member_follows() {
             .sees_within_quiet(|e| matches!(e, Event::CommitRefused { .. }))
             .await
     );
+    // The admin's core sent each Welcome inside the COMMIT that made it:
+    // the Pi recorded every add commit with its Welcome bundle, and only
+    // commits (no client envelope of another kind) carry one.
+    let admin_id = admin.device_id();
+    let (commits, with_welcome): (i64, i64) = pi
+        .query(move |db| {
+            db.query_row(
+                "SELECT count(*), count(welcome_sha256) FROM dedup WHERE sender_device_id = ?1",
+                [admin_id.as_slice()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+        })
+        .await;
+    assert_eq!((commits, with_welcome), (2, 2), "two adds, two Welcomes");
 }
 
 // spec: group-membership/removing-a-user

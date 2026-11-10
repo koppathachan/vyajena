@@ -29,6 +29,11 @@ protocol/               rules the Pi and core share (limits, timings, signing la
 server/                 the Pi server: one folder per feature in src/, src/pb.rs
                         (generated server stubs), tests/ with tests/support/pb.rs
                         (generated client stubs); example config server/local.toml
+client/                 the device core (library): one folder per feature in src/
+                        (keystore, store, identity, net, mls, membership, keys,
+                        messaging; engine/ owns the connection and the group),
+                        src/pb.rs (generated client stubs), tests/ end to end
+                        against the real server (tests/support/)
 pbgen/                  regenerates the committed pb.rs files from proto/
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)

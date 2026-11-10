@@ -13,8 +13,9 @@ each device — the relay and the server see only ciphertext.
 Four components:
 
 - **Flutter UI** — draws screens only; never opens a connection.
-- **Rust core** — OpenMLS, networking, local SQLite, keys in Keystore/Keychain.
-  Linked through `flutter_rust_bridge`.
+- **Rust core** — OpenMLS, networking, local SQLite, keys in the OS key store
+  (Keystore/Keychain on phones, the OS keychain on desktop). Linked through
+  `flutter_rust_bridge`.
 - **GCP relay** — dumb TCP passthrough so no port opens at home.
 - **Pi server** — routes, orders and queues ciphertext; dispatches wake pings.
 
@@ -80,7 +81,10 @@ Project context, invariants and conventions live in
 ## Status
 
 MVP, in progress. The `vyajena.v1` wire contract and the shared `protocol`
-crate are in place (OpenSpec change `core-wire-protocol`), and the Pi server
-runs locally (`pi-server-core`). Next, in order: the Rust core library, a
-terminal client, relay and Pi deployment, then the Flutter app with real push.
-See the open decisions in the architecture doc.
+crate are in place (OpenSpec change `core-wire-protocol`), the Pi server runs
+locally (`pi-server-core`), and the device core (`client/`, `client-core`) is
+a Rust library that signs up, links devices, runs the MLS group and sends and
+receives text, tested end to end against the real server. Next, in order: a
+terminal client, question-and-answer verification (`qa-verification`), relay
+and Pi deployment, then the Flutter app with real push. See the open decisions
+in the architecture doc.

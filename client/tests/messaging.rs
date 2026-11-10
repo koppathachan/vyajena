@@ -153,6 +153,7 @@ async fn text_messages_reach_everyone_in_order() {
 }
 
 // spec: message-content/text-only
+// spec: wire-transport/size-limits
 #[tokio::test(flavor = "multi_thread")]
 async fn a_very_long_paste_is_refused_and_the_longest_allowed_text_is_accepted() {
     let pi = TestPi::start().await;
@@ -361,6 +362,7 @@ async fn a_message_sent_across_a_commit_is_resent_in_the_new_epoch() {
 
 // spec: client-runtime/local-message-store
 // spec: message-delivery/idempotent-sends
+// spec: message-delivery/accepted-means-durable
 #[tokio::test(flavor = "multi_thread")]
 async fn an_own_message_survives_a_crash_before_accepted() {
     let pi = TestPi::start().await;
@@ -674,4 +676,107 @@ async fn a_member_commits_pending_pi_removes_before_sending() {
     admin.client.start().await.check("start admin");
     wait_text(&mut admin, "still here").await;
     admin.wait_members(&[member(&admin), member(&alice)]).await;
+}
+
+// spec: message-delivery/expiry-and-gap-notice
+// spec: client-runtime/events-in-order
+#[tokio::test(flavor = "multi_thread")]
+async fn a_gap_notice_reaches_the_ui_before_newer_messages() {
+    let pi = TestPi::start().await;
+    let (mut admin, _alice, mut bob) = chat(&pi).await;
+    go_offline(&pi, &bob).await;
+
+    let id = admin.client.send_text("too old").check("send");
+    wait_accepted(&mut admin, id).await;
+    // Bob's entry is 8 days old by the time the Pi sweeps (as for a device
+    // that stays connected but never acknowledges): the Pi deletes it and
+    // owes Bob a gap notice. Bob was seen recently, so he is not inactive.
+    let eight_days = i64::try_from((8 * DAY).as_millis()).check("millis");
+    pi.query(move |db| {
+        db.execute(
+            "UPDATE envelopes SET accepted_at = accepted_at - ?1 WHERE kind = 1",
+            [eight_days],
+        )
+    })
+    .await;
+    pi.sweep().await;
+    let expired_at: i64 = pi
+        .query(|db| {
+            db.query_row(
+                "SELECT gap_expired_at FROM cursors WHERE gap_expired_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+        })
+        .await;
+
+    bob.client.start().await.check("start bob");
+    let gap = bob
+        .wait_event("the gap notice", |e| matches!(e, Event::Gap { .. }))
+        .await;
+    let Event::Gap { newest_expired_at } = gap else {
+        unreachable!()
+    };
+    let millis = newest_expired_at
+        .duration_since(std::time::UNIX_EPOCH)
+        .check("after the epoch")
+        .as_millis();
+    assert_eq!(i64::try_from(millis).check("millis"), expired_at);
+
+    let id = admin.client.send_text("new").check("send");
+    wait_accepted(&mut admin, id).await;
+    wait_text(&mut bob, "new").await;
+    let events = bob.events();
+    let gap = events
+        .iter()
+        .position(|e| matches!(e, Event::Gap { .. }))
+        .check("gap");
+    let message = events.iter().position(|e| is_text(e, "new")).check("new");
+    assert!(gap < message, "{events:?}");
+    assert!(!texts(&bob).contains(&"too old".to_owned()));
+}
+
+// spec: message-delivery/per-device-queues
+#[tokio::test(flavor = "multi_thread")]
+async fn an_own_message_reaches_the_senders_other_device() {
+    let pi = TestPi::start().await;
+    let (_admin, mut phone, mut bob) = chat(&pi).await;
+    // Alice links a tablet; her phone adds it.
+    let mut tablet = Device::new().await;
+    let request = tablet.client.link_request().await.check("link request");
+    let approval = phone.client.approve_link(&request).await.check("approve");
+    tablet
+        .client
+        .complete_link(&approval)
+        .await
+        .check("complete");
+    tablet.client.start().await.check("start tablet");
+    tablet
+        .wait_event("the tablet joined", |e| matches!(e, Event::JoinedGroup))
+        .await;
+    let epoch = phone.epoch().check("epoch");
+    tablet.wait_epoch(epoch).await;
+    bob.wait_epoch(epoch).await;
+
+    let id = phone.client.send_text("from my phone").check("send");
+    wait_accepted(&mut phone, id).await;
+    // The tablet receives it like every other member device: from Alice's
+    // phone, not as its own.
+    let on_tablet = wait_text(&mut tablet, "from my phone").await;
+    assert_eq!(on_tablet.sender, user("alice"));
+    assert_eq!(on_tablet.sender_device, phone.device_id());
+    assert!(!on_tablet.outgoing);
+    assert_eq!(on_tablet.status, None);
+    let on_bob = wait_text(&mut bob, "from my phone").await;
+    assert_eq!(on_bob.sender_device, phone.device_id());
+    // The phone shows its own copy once, as sent.
+    let own: Vec<_> = phone
+        .client
+        .history(100)
+        .check("history")
+        .into_iter()
+        .filter(|m| m.body == MessageBody::Text("from my phone".into()))
+        .collect();
+    assert_eq!(own.len(), 1);
+    assert!(own[0].outgoing);
 }

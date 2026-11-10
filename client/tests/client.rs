@@ -104,6 +104,7 @@ async fn the_client_reads_time_from_its_clock() {
 }
 
 // spec: client-runtime/events-in-order
+// spec: device-identity/federation-ready-identifiers
 #[test]
 fn user_ids_print_as_username_at_server() {
     let alice = UserId {

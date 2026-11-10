@@ -62,7 +62,7 @@ flowchart LR
 ```
 
 - **Flutter UI:** draws screens only; never opens a connection.
-- **Rust core:** OpenMLS, networking, local SQLite, keys in Keystore/Keychain. Linked through `flutter_rust_bridge`.
+- **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
 - **Pi server:** routes, orders and queues ciphertext; dispatches wake pings.
 
@@ -100,7 +100,7 @@ flowchart TB
 - **Commit rule:** admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the Pi's inactivity Removes. The Pi and every client check the same rule.
 - **Group metadata:** the admin's user id is in the group context, which the Pi can read (it enforces it anyway). Group name and settings travel only as encrypted `GroupSettings` messages, from admin devices.
 - **Names:** the admin picks each username at invite time; it is the local part of `user@<server>` and users cannot change it. Display name and "about" travel as an encrypted `Profile`, set only by that user's devices.
-- **Residual risk:** the Pi could hand out a fake identity key and KeyPackage the first time a client sees a user (keys are pinned on first sight) and read new messages. Only fingerprint verification stops this (open decision).
+- **Residual risk:** the Pi could hand out a fake identity key and KeyPackage the first time a client sees a user (keys are pinned on first sight) and read new messages. Only question-and-answer verification (decision #2, its own `qa-verification` change) stops this; until then the core pins keys and warns when one changes.
 - **Residual risk:** the Pi cannot check membership tags, confirmation tags or encrypted path secrets. A dishonest member with a valid leaf can get a commit sequenced that honest clients reject, which stalls the group. Any MLS delivery service has this gap; there is no recovery flow yet.
 
 ## Server (Pi)
@@ -185,7 +185,7 @@ sequenceDiagram
 
 ## Storage, keys and hardening
 
-There is no encryption at rest; keys live in the OS key store and every machine is hardened by access control.
+Messages are not encrypted at rest; keys live in the OS key store and every machine is hardened by access control. The one exception is OpenMLS group state, sealed under a storage key from the key store (client-core).
 
 **App**
 
@@ -193,6 +193,12 @@ There is no encryption at rest; keys live in the OS key store and every machine 
 - Ed25519 device key and MLS private keys in Android Keystore / iOS Keychain, never in the DB.
 - Android: `allowBackup=false` (no Google Drive copy). iOS: DB excluded from iCloud backup, `NSFileProtectionComplete`.
 - Accepted risk: a rooted or jailbroken phone can read messages.
+
+**Desktop (terminal client; client-core)**
+
+- The identity, device auth and MLS signature keys, and the storage key, live in the OS keychain: macOS Keychain, Linux Secret Service, Windows Credential Manager.
+- Only on a machine without a keychain, and only after the user explicitly opts in, they live in one key file with mode `0600`; without the opt-in the core refuses to create keys and says how to opt in.
+- OpenMLS group state (epoch secrets, leaf keys, secret tree) is stored in SQLite with every value sealed (XChaCha20-Poly1305) under the storage key, so a copied database shows messages but cannot decrypt new group traffic. Messages are plain SQLite, as on phones.
 
 **Pi**
 
@@ -219,7 +225,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 | --- | --- |
 | `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / low-KeyPackage notices, heartbeats |
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
-| `Keys` | `UploadKeyPackages`, `FetchKeyPackages` (one user, optionally only some devices) |
+| `Keys` | `UploadKeyPackages`, `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing) |
 | `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.
@@ -243,9 +249,9 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 ## Open decisions
 
 - [x] Multi-device in the MVP? **Yes** (core-wire-protocol): each device is an MLS member with a certificate signed by the user identity key; the first device holds that key and links the others; recovery is admin-driven.
-- [ ] Fingerprint verification in the MVP?
+- [x] Fingerprint verification in the MVP? **Replaced** (client-core): question-and-answer verification over a PAKE (CPace): both users type the answer to a question the asker picks, and the answer never leaves either device. It comes in its own `qa-verification` change after the terminal client; the core already pins identity keys and warns when one changes.
 - [ ] Desktop clients in the MVP, or mobile only?
-- [ ] Key rotation for idle groups: every 7 days (proposed)?
+- [x] Key rotation for idle groups? **Every 7 days, with jitter** (client-core): each device commits an update of its own leaf once it is 7 days old and replaces its last-resort KeyPackage once that is 7 days old, checking on connect and daily, with a random delay of up to an hour.
 - [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
 - [ ] Relay on the shared VM or its own VM?
 - [x] Build order? **Decided** (pi-server-core): 1. Pi server, 2. Rust core library, 3. terminal client (the first point where two people can chat locally), 4. relay and Pi deployment, 5. Flutter app with real push (FCM/APNs).

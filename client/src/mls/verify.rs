@@ -341,6 +341,19 @@ pub fn key_lookup_allowed(
     Some(UserId::new(username, server_id))
 }
 
+/// key-directory: Clients verify the identity chain. When [`check_welcome`]
+/// refused a Welcome because a member's certificate does not verify against
+/// its user's pinned key, the user whose identity key the device looks up
+/// again, whoever signed the Welcome. The Welcome is then joined only if the
+/// Pi returns a new key that makes the check pass.
+pub fn welcome_key_lookup(problem: &LeafProblem) -> Option<UserId> {
+    let LeafProblem::Unverified(user) = problem else {
+        return None;
+    };
+    let (username, server_id) = user.split_once('@')?;
+    Some(UserId::new(username, server_id))
+}
+
 /// Checks a Welcome's group before joining it: every member's leaf, the admin
 /// extension, and the Pi as external sender.
 pub fn check_welcome(
