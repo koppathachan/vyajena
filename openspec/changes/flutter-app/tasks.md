@@ -1,14 +1,14 @@
 ## 1. Spikes
 
-- [ ] 1.1 Spike (git-ignored `spikes/`): an Android Keystore `KeyStore` from Rust on the emulator (a `keyring`-compatible Android store, else JNI sealing under a Keystore AES key) that survives an app restart; record the result under D4 and delete the spike
-- [ ] 1.2 Spike: `keyring` Apple-native store on the iOS Simulator (persistence, accessibility class); record under D4 and delete
-- [ ] 1.3 Spike: a one-function `flutter_rust_bridge` 2.12 crate with a tokio runtime and a `StreamSink`, built into a Flutter app on both simulators from the workspace; record under D2 and delete
+- [x] 1.1 Spike (git-ignored `spikes/`): an Android Keystore `KeyStore` from Rust on the emulator (a `keyring`-compatible Android store, else JNI sealing under a Keystore AES key) that survives an app restart; record the result under D4 and delete the spike
+- [x] 1.2 Spike: `keyring` Apple-native store on the iOS Simulator (persistence, accessibility class); record under D4 and delete
+- [x] 1.3 Spike: a one-function `flutter_rust_bridge` 2.12 crate with a tokio runtime and a `StreamSink`, built into a Flutter app on both simulators from the workspace; record under D2 and delete
 
 ## 2. Bridge
 
-- [ ] 2.1 `bridge/` crate in the workspace: plain types and functions forwarding to `client::Client`, one event `StreamSink`, text forms of invites, link requests and approvals (D2, D5)
-- [ ] 2.2 Generate and commit the Dart and Rust bindings; add the codegen command to `CLAUDE.md`
-- [ ] 2.3 `bridge/tests/` against a real in-process Pi: register, send, events in order, text codecs
+- [x] 2.1 `bridge/` crate in the workspace: plain types and functions forwarding to `client::Client`, one event `StreamSink`, text forms of invites, link requests and approvals (D2, D5)
+- [x] 2.2 Generate and commit the Dart and Rust bindings; add the codegen command to `CLAUDE.md`
+- [x] 2.3 `bridge/tests/` against a real in-process Pi: register, send, events in order, text codecs
 
 ## 3. Phone key stores
 

@@ -1,0 +1,82 @@
+//! What a failing bridge call throws in Dart.
+
+/// Why a call failed, for the app to choose what to show. The core's
+/// [`client::ClientError`] mapped one to one where the app cares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreErrorKind {
+    /// The key store failed or there is none.
+    KeyStore,
+    /// The local database failed.
+    Storage,
+    /// The Pi presented a TLS key that does not match the invite's pin
+    /// (app-ui: Join from an invite, "server identity error").
+    ServerIdentity,
+    /// The Pi could not be reached, or answered something unexpected.
+    Network,
+    /// The Pi refused the call (for example a used or expired invite, or an
+    /// admin call from a non-admin device).
+    Refused,
+    /// Text that is not an invite, link request or link approval, or one of
+    /// the wrong kind.
+    InvalidPayload,
+    /// This device has no account yet.
+    NotRegistered,
+    /// This device already has an account.
+    AlreadyRegistered,
+    /// Not started or not connected right now.
+    Offline,
+    /// Only the admin's devices may do this.
+    NotAdmin,
+    /// This device does not hold the user identity key.
+    NotIdentityDevice,
+    /// `complete_link` without `link_request` first.
+    NoLinkRequest,
+    /// The Pi is not the one the invite or approval names.
+    ServerMismatch,
+    /// This device is not in the group.
+    NoGroup,
+    /// The group already exists.
+    AlreadyInGroup,
+    /// This device stopped following the group until it is re-added.
+    Stalled,
+    /// A user's identity key changed; accept it first.
+    IdentityKeyChanged,
+    /// A certificate or KeyPackage did not check out.
+    Certificate,
+    /// The Pi knows no such user.
+    UnknownUser,
+    /// The user has no KeyPackages yet.
+    NoKeyPackages,
+    /// The commit would be larger than the Pi accepts.
+    TooLarge,
+    /// The text is longer than a message may be (app-ui: Composer limit).
+    TooLong,
+    /// The Pi rejected the commit.
+    Rejected,
+    /// Not possible yet; the core retries.
+    NotYet,
+    /// The one event stream was already taken.
+    EventsTaken,
+    /// Anything else (an internal failure of the core).
+    Internal,
+}
+
+/// A failed call: its kind and the core's message for display. The message
+/// never holds message text or keys.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
+pub struct CoreError {
+    /// What failed.
+    pub kind: CoreErrorKind,
+    /// The core's description.
+    pub message: String,
+}
+
+impl CoreError {
+    pub(crate) fn new(kind: CoreErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+}

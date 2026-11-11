@@ -1,0 +1,292 @@
+//! [`Core`]: the app's one handle on the device core (flutter-app design D2).
+//!
+//! Every method forwards to [`client::Client`]; see its docs for what each
+//! does. Methods are async in Dart: frb runs them on its tokio runtime (the
+//! one runtime per app process, spike 1.3) or its thread pool.
+
+use client::keystore::{KeyStoreConfig, open_key_store};
+use client::{Client, ClientConfig, EventStream, MessageId};
+use tokio::sync::Mutex;
+
+use super::error::{CoreError, CoreErrorKind};
+use super::text;
+use super::types::{ChatMessage, CoreEvent, InviteInfo, MemberDevice, ProfileInfo, UserRef};
+use crate::frb_generated::StreamSink;
+use crate::map;
+
+/// The key store profile of the app: one user per app install.
+pub const KEY_STORE_PROFILE: &str = "app";
+
+/// The device core: one per app process (D2), held by Dart's `CoreService`.
+#[flutter_rust_bridge::frb(opaque)]
+pub struct Core {
+    client: Client,
+    events: Mutex<Option<EventStream>>,
+}
+
+impl std::fmt::Debug for Core {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Core").finish_non_exhaustive()
+    }
+}
+
+fn forward<T>(result: Result<T, client::ClientError>) -> Result<T, CoreError> {
+    result.map_err(map::error)
+}
+
+/// Whether `text` fits in one message (app-ui: Composer limit): encoded, it
+/// is within the core's `MAX_CONTENT_BYTES`.
+#[flutter_rust_bridge::frb(sync)]
+pub fn text_fits(text: String) -> bool {
+    client::messaging::encode_text(&text, std::time::SystemTime::now()).is_ok()
+}
+
+impl Core {
+    /// Opens the core: the database in `data_dir` (the app's private
+    /// storage) and the keys in the OS key store.
+    pub async fn open(data_dir: String) -> Result<Core, CoreError> {
+        let key_store = tokio::task::spawn_blocking(|| {
+            open_key_store(&KeyStoreConfig {
+                profile: KEY_STORE_PROFILE.to_owned(),
+                key_file: None,
+            })
+        })
+        .await
+        .map_err(|e| CoreError::new(CoreErrorKind::Internal, e.to_string()))?
+        .map_err(|e| map::error(e.into()))?;
+        Self::open_with(ClientConfig::new(data_dir, key_store)).await
+    }
+
+    /// Opens the core with `config` (tests: a memory key store and a manual
+    /// clock). Not exposed to Dart.
+    #[flutter_rust_bridge::frb(ignore)]
+    pub async fn open_with(config: ClientConfig) -> Result<Core, CoreError> {
+        let mut client = forward(Client::open(config).await)?;
+        let events = client.take_events();
+        Ok(Core {
+            client,
+            events: Mutex::new(events),
+        })
+    }
+
+    /// The one ordered event stream (client-runtime: Events in order). Only
+    /// the first call gets it; later calls fail with
+    /// [`CoreErrorKind::EventsTaken`].
+    pub async fn events(&self, sink: StreamSink<CoreEvent>) -> Result<(), CoreError> {
+        let mut stream = self.take_stream().await?;
+        tokio::spawn(async move {
+            while let Some(event) = stream.next().await {
+                if sink.add(map::event(event)).is_err() {
+                    break;
+                }
+            }
+        });
+        Ok(())
+    }
+
+    /// The next event, for Rust callers (the bridge tests); Dart uses
+    /// [`Core::events`]. `None` once the stream was taken by `events` or the
+    /// core is gone.
+    #[flutter_rust_bridge::frb(ignore)]
+    pub async fn next_event(&self) -> Option<CoreEvent> {
+        let mut events = self.events.lock().await;
+        events.as_mut()?.next().await.map(map::event)
+    }
+
+    async fn take_stream(&self) -> Result<EventStream, CoreError> {
+        self.events
+            .lock()
+            .await
+            .take()
+            .ok_or_else(|| CoreError::new(CoreErrorKind::EventsTaken, "the event stream is taken"))
+    }
+
+    // --- Account ---
+
+    /// This device's user, once registered or linked.
+    pub fn user_id(&self) -> Result<Option<UserRef>, CoreError> {
+        Ok(forward(self.client.user_id())?.as_ref().map(map::user))
+    }
+
+    /// This device's id (hex), once registered or linked.
+    pub fn device_id(&self) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.device_id())?.map(|d| map::hex(&d)))
+    }
+
+    /// Whether this device's user is the admin.
+    pub fn is_admin(&self) -> Result<bool, CoreError> {
+        forward(self.client.is_admin())
+    }
+
+    /// Signs up this device from an invite text (app-ui: Join from an
+    /// invite). Call [`Core::start`] next.
+    pub async fn register(&self, invite_text: String) -> Result<UserRef, CoreError> {
+        let invite = text::invite_bytes(&invite_text)?;
+        Ok(map::user(&forward(self.client.register(&invite).await)?))
+    }
+
+    /// New device, step 1: the link request text to show (app-ui: Link a
+    /// device).
+    pub async fn link_request(&self) -> Result<String, CoreError> {
+        Ok(text::link_request_text(&forward(
+            self.client.link_request().await,
+        )?))
+    }
+
+    /// Identity device: approves a link request text and returns the
+    /// approval text to show back.
+    pub async fn approve_link(&self, request_text: String) -> Result<String, CoreError> {
+        let request = text::link_request_bytes(&request_text)?;
+        Ok(text::link_approval_text(&forward(
+            self.client.approve_link(&request).await,
+        )?))
+    }
+
+    /// New device, step 2: completes linking with the approval text. Call
+    /// [`Core::start`] next.
+    pub async fn complete_link(&self, approval_text: String) -> Result<UserRef, CoreError> {
+        let approval = text::link_approval_bytes(&approval_text)?;
+        Ok(map::user(&forward(
+            self.client.complete_link(&approval).await,
+        )?))
+    }
+
+    // --- Running (app-ui: Foreground and background) ---
+
+    /// Starts (or restarts) the engine: connect, catch up, stay connected.
+    pub async fn start(&self) -> Result<(), CoreError> {
+        forward(self.client.start().await)
+    }
+
+    /// Stops the engine and closes the connection.
+    pub fn stop(&self) {
+        self.client.stop();
+    }
+
+    /// Whether the core is connected right now.
+    pub fn is_connected(&self) -> bool {
+        self.client.is_connected()
+    }
+
+    // --- Admin (app-ui: Admin screens) ---
+
+    /// Admin: creates the group.
+    pub async fn create_group(&self) -> Result<(), CoreError> {
+        forward(self.client.create_group().await)
+    }
+
+    /// Admin: adds all devices of `user` to the group.
+    pub async fn add_user(&self, user: UserRef) -> Result<(), CoreError> {
+        forward(self.client.add_user(&map::user_id(&user)).await)
+    }
+
+    /// Admin: removes `user` from the group and the Pi.
+    pub async fn remove_user(&self, user: UserRef) -> Result<(), CoreError> {
+        forward(self.client.remove_user(&map::user_id(&user)).await)
+    }
+
+    /// Admin: a new invite for `username`, with its text to share.
+    pub async fn create_invite(&self, username: String) -> Result<InviteInfo, CoreError> {
+        Ok(map::invite(forward(
+            self.client.create_invite(&username).await,
+        )?))
+    }
+
+    /// Admin: the unused invites (without text).
+    pub async fn list_invites(&self) -> Result<Vec<InviteInfo>, CoreError> {
+        Ok(forward(self.client.list_invites().await)?
+            .into_iter()
+            .map(map::invite)
+            .collect())
+    }
+
+    /// Admin: revokes an unused invite by its code.
+    pub async fn revoke_invite(&self, code: String) -> Result<(), CoreError> {
+        forward(self.client.revoke_invite(&code).await)
+    }
+
+    /// Admin: sets the group's name for every member.
+    pub fn set_group_name(&self, name: Option<String>) -> Result<i64, CoreError> {
+        Ok(forward(self.client.set_group_settings(name.as_deref()))?.0)
+    }
+
+    // --- Own devices and keys ---
+
+    /// Revokes another device of this user (hex id).
+    pub async fn revoke_device(&self, device: String) -> Result<(), CoreError> {
+        let device = map::device_id(&device)?;
+        forward(self.client.revoke_device(&device).await)
+    }
+
+    /// The admin accepted `user`'s changed identity key (app-ui: Notices in
+    /// the chat). `false` if no new key is pending.
+    pub fn accept_identity_key(&self, user: UserRef) -> Result<bool, CoreError> {
+        forward(self.client.accept_identity_key(&map::user_id(&user)))
+    }
+
+    // --- Messaging (app-ui: Chat screen, Profile and members) ---
+
+    /// Sends a text message; returns its local id. Its status arrives as
+    /// [`CoreEvent::SendStatus`].
+    pub fn send_text(&self, text: String) -> Result<i64, CoreError> {
+        Ok(forward(self.client.send_text(&text))?.0)
+    }
+
+    /// Sets this user's display name and "about" text for every member.
+    pub fn set_profile(
+        &self,
+        display_name: Option<String>,
+        about: Option<String>,
+    ) -> Result<i64, CoreError> {
+        Ok(forward(
+            self.client
+                .set_profile(display_name.as_deref(), about.as_deref()),
+        )?
+        .0)
+    }
+
+    /// The newest `limit` messages, oldest first.
+    pub fn history(&self, limit: u32) -> Result<Vec<ChatMessage>, CoreError> {
+        Ok(forward(self.client.history(limit as usize))?
+            .into_iter()
+            .map(map::message)
+            .collect())
+    }
+
+    /// One message by local id.
+    pub fn message(&self, id: i64) -> Result<Option<ChatMessage>, CoreError> {
+        Ok(forward(self.client.message(MessageId(id)))?.map(map::message))
+    }
+
+    /// `user`'s profile.
+    pub fn profile(&self, user: UserRef) -> Result<ProfileInfo, CoreError> {
+        let profile = forward(self.client.profile(&map::user_id(&user)))?;
+        Ok(ProfileInfo {
+            display_name: profile.display_name,
+            about: profile.about,
+        })
+    }
+
+    /// How to show `user`: "Ali (alice)", or the username alone.
+    pub fn display_name(&self, user: UserRef) -> Result<String, CoreError> {
+        forward(self.client.display_name(&map::user_id(&user)))
+    }
+
+    /// The group's name, as an admin device last set it.
+    pub fn group_name(&self) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.group_settings())?.name)
+    }
+
+    /// The group's member devices.
+    pub fn members(&self) -> Result<Vec<MemberDevice>, CoreError> {
+        Ok(forward(self.client.members())?
+            .iter()
+            .map(map::member)
+            .collect())
+    }
+
+    /// The group's epoch on this device, once in the group.
+    pub fn epoch(&self) -> Result<Option<u64>, CoreError> {
+        forward(self.client.epoch())
+    }
+}

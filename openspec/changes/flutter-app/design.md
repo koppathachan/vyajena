@@ -50,6 +50,80 @@ Folders follow features, as on the Pi and in the core. Tests stay out of `lib/`
 - `forbid(unsafe_code)` in `bridge/src/api/`; the generated FFI file is the
   isolated exception the config allows.
 
+**Spike 1.3 result (2026-11-11): works on both.** A one-function frb 2.12.0
+crate in a mini workspace laid out like this repo (`Cargo.toml` workspace,
+`bridge/`, `app/`) ran on the iOS Simulator (iPhone 16, iOS 26.5 runtime) and
+the Android emulator (API 35, arm64): an `async fn` with a `StreamSink<String>`
+spawned a tokio task whose timer ticks reached Dart in order, and the stream
+closed when the sink was dropped.
+
+- Runtime: frb's default handler runs every non-`sync` function on its own
+  tokio multi-thread runtime (`Runtime::new()`, all drivers), so `tokio::spawn`,
+  timers and sockets work inside bridge functions. That is the one runtime per
+  process (D2); the bridge creates none of its own.
+- Setup: `flutter create --platforms ios,android` then
+  `flutter_rust_bridge_codegen integrate --rust-crate-name bridge
+  --rust-crate-dir ../bridge`; `flutter_rust_bridge.yaml` holds
+  `rust_input: crate::api`, `rust_root: ../bridge/`, `dart_output:
+  lib/src/rust`. It adds `app/rust_builder/` (a Flutter FFI plugin wrapping
+  cargokit, which runs `cargo build` on `../../../bridge` from Xcode and
+  Gradle). Edition 2024 works for the generated Rust.
+- Fixes the generated scaffolding needs (Flutter 3.44.4, Xcode 27.2, Gradle
+  9.1, AGP 9.0.1, Kotlin 2.3.20, NDK 28.2):
+  - iOS deployment target 15.0 everywhere (Xcode 27.2 refuses 13.0):
+    `ios/Podfile` `platform :ios, '15.0'` plus a `post_install` that sets
+    `IPHONEOS_DEPLOYMENT_TARGET` on every pod, the Runner project, and
+    `rust_builder/ios/bridge.podspec` (generated as 11.0).
+  - `rust_builder/cargokit/gradle/plugin.gradle` calls `project.exec`, which
+    Gradle 9 removed: inject `ExecOperations` (`@Inject abstract
+    ExecOperations getExecOperations()`) and call `execOperations.exec`.
+  - `rust_builder/android/build.gradle`: `compileSdkVersion 36` (androidx
+    needs at least 34), `minSdkVersion 24` (Flutter's default).
+  - Delete `rust_builder/{linux,macos,windows}` and their pubspec entries
+    (iOS and Android only).
+- Xcode 27.2's `lipo -verify_arch` takes one architecture, so
+  `flutter build ios --simulator` (arm64 + x86_64) fails in Flutter's own
+  `debug_unpack_ios`, even for a plain Flutter app. `flutter run -d <simulator>`
+  builds the active architecture only and works; use it (and
+  `flutter test integration_test -d <simulator>`) locally.
+- Dart's `print`/`debugPrint` reaches the console only under `flutter run`;
+  an app relaunched with `simctl launch` logs nothing visible, so restart
+  checks read the screen or `adb logcat`.
+
+**As built (tasks 2.1–2.3).**
+
+- `bridge/src/api/core.rs`: one frb opaque `Core` wrapping `client::Client`
+  (Dart: `Core.open(dataDir:)`, then methods named after the core's). The key
+  store comes from `client::keystore::open_key_store` with profile `app`, so
+  the phone stores of tasks 3.1–3.2 plug in there without a bridge change.
+  `Core::events(sink)` hands the core's one `EventStream` to a tokio task that
+  forwards every event to the `StreamSink` in order (a second call fails with
+  `EventsTaken`). `open_with(ClientConfig)` and `next_event()` are
+  `#[frb(ignore)]`: Rust-only, for `bridge/tests` (a `StreamSink` needs a Dart
+  port).
+- Plain types in `api/types.rs`: times as Unix milliseconds, device ids as hex,
+  message ids as the core's `i64`. Errors are one `CoreError { kind, message }`
+  that Dart throws; `kind` keeps apart what the app shows differently
+  (`ServerIdentity` vs `Network`, `InvalidPayload`, `TooLong`, `Refused` for
+  gRPC refusals, ...). Non-exhaustive core enums map their unknown variants to
+  `CoreEvent::Other`, `ChatBody::Unsupported` and `Disconnected`.
+- Rust enums with fields (`CoreEvent`, `SendState`, `ChatBody`) become Dart
+  `sealed` classes, which frb 2.12 builds with `freezed`: the app depends on
+  `freezed_annotation`, with `freezed` and `build_runner` as dev
+  dependencies, and the generated `types.freezed.dart` is committed with the
+  other bindings. Screens `switch` over them exhaustively.
+- `flutter_rust_bridge.yaml` sets `web: false` (no `frb_generated.web.dart`).
+  `src/frb_generated.rs` is included with `#[rustfmt::skip]` and clippy
+  allows, like `pb.rs`; `api/` has `#![forbid(unsafe_code)]`.
+- The real `app/` with this bridge (client, OpenMLS, SQLite) builds from the
+  workspace with `flutter build apk --debug` (cargokit builds `bridge` for
+  arm64, x86 and x86_64 Android) and launches on the API 35 emulator.
+- Tests: `bridge/tests/support` includes `client/tests/support/{pi,relay}.rs`
+  by `#[path]`, so the in-process Pi has one copy.
+- The `client` crate does not build for iOS yet: `keyring`'s default `v1`
+  feature enables `apple-native-keyring-store/keychain`, which refuses iOS
+  without `protected` (task 3.1 adds it). Android builds.
+
 ```mermaid
 flowchart LR
   ui["Flutter screens"] --> svc["CoreService (Dart)"]
@@ -77,11 +151,60 @@ never cross into Dart (invariant). Candidates, settled by spikes 1.1 and 1.2:
   JNI from Rust: an Android Keystore AES-GCM key that seals the secrets, kept in
   the app's private files. Passing keys through a Dart plugin is not an option.
 
+**Spike results (2026-11-11): both work from Rust, keys never in Dart.** A
+bridge function got or created a 32-byte secret in the phone store and
+returned only "created/existing" and a SHA-256 fingerprint; after the app was
+killed and relaunched it reported "existing" with the same fingerprint.
+
+- `keyring` 4.2's `Entry` (its `v1` default API, what `OsKeychain` uses)
+  refuses iOS and Android (`NoDefaultStore`): it sets a default store only on
+  macOS, Windows and Linux. The phone stores therefore use `keyring-core` 1.0
+  and the store crates directly: `store.build(service, user, modifiers)`
+  returns a `keyring_core::Entry` with `get_secret`, `set_secret` and
+  `delete_credential` (`NoEntry` for missing), the same shape as today.
+- **iOS (spike 1.2): `apple-native-keyring-store` 1.0.2 with feature
+  `protected`** (the data-protection keychain; the crate refuses to build on
+  iOS without it). `protected::Store::new()`, then `build("vyajena2",
+  "<profile>/<key>", {"access-policy": "WhenUnlockedThisDeviceOnly"})`. The
+  stored item reads back `kSecAttrAccessible = aku`
+  (`WhenUnlockedThisDeviceOnly`) and not synchronizable. It persisted across an
+  app restart on the iOS 26.5 Simulator; no entitlement was needed (default
+  app access group). Note: `keyring`'s own `v1` feature turns on
+  `apple-native-keyring-store/keychain` for every Apple target, so the core
+  must enable `protected` on iOS or `client` does not build there.
+- **Android (spike 1.1): `android-native-keyring-store` 1.0.0 works**, so no
+  JNI of our own. It keeps each secret in an app-private SharedPreferences file
+  (`shared_prefs/keyring-default.xml`), AES-GCM-sealed under a non-exportable
+  Android Keystore AES key (12-byte IV + ciphertext + tag, base64); the prefs
+  hold ciphertext only. It persisted across a force-stop and relaunch on the
+  API 35 emulator.
+  - It needs the `ndk-context` crate initialised with the app's Context
+    before the first store call. The crate exports the JNI function
+    `Java_io_crates_keyring_Keyring_00024Companion_initializeNdkContext` from
+    whatever `cdylib` links it (here `libbridge.so`), so the app adds a Kotlin
+    class `io.crates.keyring.Keyring` whose companion does
+    `System.loadLibrary("bridge")` and declares `external fun
+    initializeNdkContext(context: Context)`, and `MainActivity.onCreate`
+    calls it with `applicationContext` before `super.onCreate`. Dart's
+    `DynamicLibrary.open` then gets the same loaded library, so the context is
+    there for every bridge call. This Kotlin is platform glue only; no key
+    crosses it.
+  - The store logs entry names (never secrets) at debug level through
+    frb's `android_logger`; release builds log at info.
+
 ### D5. Invites and links by text
 
 Invites, link requests and approvals move as text (copy, paste, share sheet). The
 core already encodes them as bytes; the bridge adds a text form (base64url with a
 short prefix). QR codes come later.
+
+As built: `vyajena-invite:`, `vyajena-link:` and `vyajena-approval:`, each
+followed by base64url without padding (`bridge/src/api/text.rs`). Text
+without a prefix is accepted too, because the Pi prints its bootstrap invite
+bare and the admin pastes that on their first device; text with another
+kind's prefix is refused naming what it is ("this is a link approval, not an
+invite"). `parse_invite` (sync) returns the user and relay address to show
+before joining.
 
 ### D6. Local testing
 

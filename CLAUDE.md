@@ -34,6 +34,12 @@ client/                 the device core (library): one folder per feature in src
                         messaging; engine/ owns the connection and the group),
                         src/pb.rs (generated client stubs), tests/ end to end
                         against the real server (tests/support/)
+bridge/                 flutter_rust_bridge glue around client::Client (no logic):
+                        src/api/ (what Dart sees), src/frb_generated.rs (generated),
+                        tests/ against the real server (reuses client/tests/support)
+app/                    the Flutter app, iOS + Android only; lib/src/rust/ (generated
+                        Dart bindings), rust_builder/ (cargokit: builds bridge/ from
+                        Xcode and Gradle)
 pbgen/                  regenerates the committed pb.rs files from proto/
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)
@@ -67,6 +73,19 @@ cargo run -p pbgen
 It writes `server/src/pb.rs` (messages + server stubs),
 `server/tests/support/pb.rs` (messages + client stubs) and `client/src/pb.rs`
 (messages + client stubs, the device core). Never edit those files by hand.
+
+After changing anything in `bridge/src/api/`, regenerate the committed
+Flutter bindings with this one command, run in `app/`, and commit the result
+with the change (CI never runs it):
+
+```
+cd app && flutter_rust_bridge_codegen generate
+```
+
+It reads `app/flutter_rust_bridge.yaml` and writes `bridge/src/frb_generated.rs`
+and `app/lib/src/rust/` (including `*.freezed.dart`, through build_runner).
+It needs `flutter_rust_bridge_codegen` 2.12.0, the same version as the
+`flutter_rust_bridge` dependency on both sides. Never edit those files by hand.
 
 ## Working with other sessions
 
