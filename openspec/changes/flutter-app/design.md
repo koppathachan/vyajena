@@ -450,6 +450,84 @@ As built:
   device has no KeyPackage until its first upload, so the Pi sends it after that
   upload (D11). Spec reworded to match (tracker, 2026-11-12).
 
+### D13. Tests and local run (tasks 6.1–6.3)
+
+**Notices outlive the chat screen (6.1).** C kept notices in a `ChatModel`
+owned by the chat screen, so a notice that came while the chat was not on
+screen (the "waiting" screen, or the catch-up events the core emits right
+after it starts, before the chat's first frame) was lost. Now one
+`ChatModel` lives as long as the app: `VyajenaApp` makes it before the core
+opens, so it hears every event. Each notice is anchored after the newest
+message *in event order* (`Message` events, own sends), not after whatever the
+history holds when it is drawn. To know the newest message before the first
+event, the model reads the history in a `CoreService.addBeforeStart` hook,
+which runs before the engine starts, while no event can arrive.
+
+```mermaid
+sequenceDiagram
+  participant App as VyajenaApp
+  participant M as ChatModel (app-level)
+  participant S as CoreService
+  participant C as Rust core
+  App->>M: create, listen to events
+  App->>S: open()
+  S->>M: before start: read history (newest = "before")
+  S->>C: start
+  C-->>M: RemovedForInactivity, Rejoined, Message "welcome back"
+  Note over M: notices anchored after "before", in order
+  App->>App: GroupGate → ChatScreen(chat: M) draws them
+```
+
+**"UI goes through the core" (6.1)** is `test/app/goes_through_core_test.dart`:
+every `import`/`export` under `app/lib/` is from this package, `dart:async`,
+`collection`, `convert`, `math`, `typed_data`, or `package:flutter/`
+`foundation`, `material`, `services` (the `vyajena/platform` MethodChannel and
+the clipboard), `widgets`; `dart:ffi`, `flutter_rust_bridge` and
+`freezed_annotation` only in the generated `lib/src/rust/`. No socket, HTTP or
+file class is named in `lib/`; `pubspec.yaml` depends on `flutter`, `bridge`,
+`flutter_rust_bridge` and `freezed_annotation` only; only `core/` and
+`main.dart` reach the bindings. The one debug log line moved from
+`RustCoreService` into `CoreService.handleEvent` (so the fake logs it too);
+"Nothing logged" captures `debugPrint` while "hi", a profile, a group name and
+an own message pass, and finds the kinds but none of the texts.
+
+**Integration test (6.2).** `app/integration_test/run.sh <device id>`:
+
+```mermaid
+sequenceDiagram
+  participant R as run.sh (Mac)
+  participant P as temp Pi (target/debug/server, temp folder)
+  participant A as admin device (bridge/tests/app_peer.rs)
+  participant B as the app on the simulator (Bob)
+  R->>P: start on a free port (never server/local.toml)
+  R->>A: bootstrap payload from the Pi log
+  A->>P: register akhil, CreateGroup, CreateInvite(bob)
+  A-->>R: invite.txt
+  R->>B: adb reverse (Android); flutter test --dart-define=VYAJENA_INVITE
+  B->>P: Register, UploadKeyPackages
+  P-->>A: JoinNotice
+  A->>P: COMMIT (Add) + Welcome — nobody taps anything
+  P-->>B: WELCOME → chat
+  Note over B: engine stopped: "hi" ⏳; started: ✓
+  B->>P: "hi"
+  P-->>A: "hi"
+  A->>P: "hey"
+  P-->>B: "hey"
+```
+
+- The admin is the host side because the app can hand nothing back to the
+  Mac on Android, while the Mac can pass the invite in with
+  `--dart-define`. The peer runs the bridge's own `Core` (memory keys, the
+  system clock: the Pi binary uses real time, unlike the test Pi). It is an
+  `#[ignore]` test in `bridge/tests/`, so `cargo test` skips it.
+- ⏳ is made visible on purpose: the test stops the engine, sends, sees ⏳,
+  starts it and waits for ✓ (on localhost the Pi accepts faster than a frame).
+- The app's data folder is emptied first; the key store keeps its keys
+  (Keychain items survive uninstall), which the core's get-or-create reuses
+  for the new Pi.
+- `adb` comes from `PATH` or `$ANDROID_HOME/platform-tools`
+  (`~/Library/Android/sdk` by default).
+
 ## Risks / Trade-offs
 
 - [Android Keystore from Rust may need JNI] → spike 1.1 first; JNI glue lives
@@ -472,3 +550,27 @@ None open. Resolved by the owner (2026-11-11): the invariant rewording above;
 iOS and Android only (#3), real push with deployment, Q&A verification right
 after this change; the terminal client stays in the build order, after
 deployment. The seed colour is a muted slate constant the owner can change (D8).
+
+## Appendix: test coverage
+
+Every requirement of both deltas and the tests that name it
+(`// spec: <capability>/<title-slug>`). Widget tests (`app/test/`) run on the
+fake core; bridge tests (`bridge/tests/`) on a real in-process Pi; the
+integration test (`app/integration_test/`, with `bridge/tests/app_peer.rs` as
+the admin) runs the real app on the iOS Simulator and the Android emulator
+against a temp Pi binary.
+
+| Requirement | Scenarios | Tests |
+| --- | --- | --- |
+| app-ui: UI goes through the core | No socket in Dart; Nothing logged | `test/app/goes_through_core_test.dart` (6: imports, no socket/HTTP/file class, pubspec, only `core/` reaches the bindings, no other log call, Nothing logged) |
+| app-ui: Join from an invite | Bob joins; Waiting to be added; Wrong pin; Bad invite text | `test/onboarding/join_test.dart` (5), `bridge/tests/join.rs` (4), `integration_test/chat_test.dart` |
+| app-ui: Chat screen | Alice and Bob chat; Sent across a commit; Unknown body | `test/chat/chat_test.dart` (7), `bridge/tests/chat.rs` (1), `integration_test/chat_test.dart` + `bridge/tests/app_peer.rs` (⏳ → ✓, "hey" received) |
+| app-ui: Composer limit | Very long paste | `test/chat/composer_test.dart` (2), `bridge/tests/chat.rs` (1) |
+| app-ui: Notices in the chat | Back from holiday; Key changed | `test/chat/notices_test.dart` (8, three of them for notices that come while the chat is not on screen) |
+| app-ui: Admin screens | Admin invites Bob; Bob has no admin screens | `test/admin/admin_test.dart` (7), `bridge/tests/chat.rs` (1) |
+| app-ui: Profile and members | Alice renames herself | `test/profile/profile_test.dart` (2), `test/members/members_test.dart` (1), `bridge/tests/chat.rs` (1) |
+| app-ui: Link a device | Alice links her tablet | `test/devices/link_test.dart` (4), `bridge/tests/text_forms.rs` (1) |
+| app-ui: Light Material 3 look | Dark mode | `test/app/look_test.dart` (3) |
+| app-ui: Foreground and background | Back to the app | `test/app/foreground_test.dart` (6); the integration test stops and starts the engine |
+| app-ui: Data on the phone | Android backup | `test/app/data_on_the_phone_test.dart` (5); the phone key stores in `client/tests/key_storage.rs` (client-runtime: Key storage) and by hand on both devices (D4) |
+| group-membership: Automatic add of new users | Bob joins while the admin is online; Admin offline when Bob joins; Reset user joins again; Two admin devices race | `server/tests/automatic_add.rs` (5), `client/tests/automatic_add.rs` (4), end to end in `integration_test/chat_test.dart` + `bridge/tests/app_peer.rs` (no `add_user` call) |

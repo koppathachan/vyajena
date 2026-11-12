@@ -4,6 +4,13 @@
 // with the notices the core emitted, each kept after the message that was
 // last when it came. Nothing here is written anywhere: the core keeps the
 // only copy of the messages.
+//
+// One ChatModel lives as long as the app (VyajenaApp makes it before the
+// core opens), not the chat screen: notices the core emits while the chat
+// is not on screen (on the "waiting" screen, or before the chat's first
+// frame) are still shown, in order, once it is. It reads the history before
+// the engine first starts, so a notice is placed after the message that was
+// really last when it came.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -90,7 +97,11 @@ class _Anchored {
 
 /// The chat's messages and notices, kept up to date from the core.
 class ChatModel extends ChangeNotifier {
-  ChatModel(this.core) : names = UserNames(core);
+  /// Follows [core]'s events from now on; make it before the core opens.
+  ChatModel(this.core) : names = UserNames(core) {
+    _subscription = core.events.listen(_onEvent);
+    core.addBeforeStart(_prime);
+  }
 
   final CoreService core;
   final UserNames names;
@@ -98,7 +109,12 @@ class ChatModel extends ChangeNotifier {
   List<ChatMessage> _messages = const [];
   final List<_Anchored> _notices = [];
   String? _groupName;
-  StreamSubscription<CoreEvent>? _subscription;
+  late final StreamSubscription<CoreEvent> _subscription;
+
+  /// The newest message as events and sends came, which a new notice
+  /// follows; null: none yet.
+  int? _lastId;
+  bool _primed = false;
   bool _loading = false;
   bool _again = false;
   bool _disposed = false;
@@ -130,17 +146,29 @@ class ChatModel extends ChangeNotifier {
     return out;
   }
 
-  /// Loads the history and follows the core's events.
-  Future<void> start() async {
-    _subscription = core.events.listen(_onEvent);
-    _groupName = await core.groupName();
-    await _reload();
+  /// Reads the group name and the history once, before the engine first
+  /// starts (or when the chat opens, if that comes first).
+  Future<void> _prime() async {
+    if (_primed) return;
+    _primed = true;
+    try {
+      _groupName = await core.groupName();
+      await _reload();
+      _lastId ??= _messages.isEmpty ? null : _messages.last.id;
+    } on Object {
+      // Not readable yet (the core failed to open): try again next time.
+      _primed = false;
+    }
   }
+
+  /// Makes sure the history is loaded; the chat screen calls it on open.
+  Future<void> ensureLoaded() => _prime();
 
   @override
   void dispose() {
     _disposed = true;
-    _subscription?.cancel();
+    core.removeBeforeStart(_prime);
+    _subscription.cancel();
     super.dispose();
   }
 
@@ -174,15 +202,16 @@ class ChatModel extends ChangeNotifier {
   }
 
   void _notice(Notice notice) {
-    _notices.add(
-      _Anchored(notice, _messages.isEmpty ? null : _messages.last.id),
-    );
+    _notices.add(_Anchored(notice, _lastId));
     _changed();
   }
 
   void _onEvent(CoreEvent event) {
     switch (event) {
-      case CoreEvent_Message() || CoreEvent_SendStatus():
+      case CoreEvent_Message(:final message):
+        _lastId = message.id;
+        _reload();
+      case CoreEvent_SendStatus():
         _reload();
       case CoreEvent_ProfileChanged(:final user):
         names.forget(user);
@@ -233,7 +262,7 @@ class ChatModel extends ChangeNotifier {
   /// Sends [text]; returns once the core stored it (it shows ⏳ until the
   /// Pi accepts it).
   Future<void> send(String text) async {
-    await core.sendText(text);
+    _lastId = await core.sendText(text);
     await _reload();
   }
 

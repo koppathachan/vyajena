@@ -1,4 +1,4 @@
-# Contract and build checks (core-wire-protocol task 3.1; wire-transport:
+# Contract, build and app checks (core-wire-protocol task 3.1; wire-transport:
 # Protobuf contract is the source of truth).
 name: ci
 
@@ -68,3 +68,31 @@ jobs:
 
       - name: cargo test
         run: cargo test --workspace --locked
+
+  # flutter-app task 7.1. Widget tests only (app/test/, over a fake core, no
+  # Rust); integration_test/ needs a simulator and runs locally. Generated
+  # bindings are committed and never produced here. Not run yet: nothing has
+  # been pushed.
+  flutter:
+    name: flutter analyze and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.x
+          cache: true
+
+      - name: flutter pub get
+        run: flutter pub get
+
+      - name: flutter analyze
+        run: flutter analyze
+
+      - name: flutter test
+        run: flutter test

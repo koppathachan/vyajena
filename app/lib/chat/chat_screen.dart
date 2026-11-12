@@ -12,9 +12,17 @@ import 'notice_tile.dart';
 
 /// The group's chat.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.core, required this.admin});
+  const ChatScreen({
+    super.key,
+    required this.core,
+    required this.chat,
+    required this.admin,
+  });
 
   final CoreService core;
+
+  /// The app-level chat model (it outlives this screen).
+  final ChatModel chat;
 
   /// Whether this device's user is the admin.
   final bool admin;
@@ -24,18 +32,12 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  late final ChatModel _model = ChatModel(widget.core);
+  ChatModel get _model => widget.chat;
 
   @override
   void initState() {
     super.initState();
-    _model.start();
-  }
-
-  @override
-  void dispose() {
-    _model.dispose();
-    super.dispose();
+    _model.ensureLoaded();
   }
 
   String _name(Object user) => _model.names.of(user as UserRef);

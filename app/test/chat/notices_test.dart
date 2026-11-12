@@ -102,4 +102,82 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('Back from holiday, when the core catches up before the chat '
+      'is on screen: the notices still come in order', (tester) async {
+    final core = FakeCoreService(storedUser: bob)
+      ..messages = [
+        const ChatMessage(
+          id: 1,
+          sender: akhil,
+          senderDevice: 'cd34',
+          outgoing: false,
+          body: ChatBody.text(text: 'before'),
+          acceptedAtMs: 1,
+        ),
+      ];
+    // The core emits its catch-up events as soon as it starts, before the
+    // chat screen has drawn its first frame.
+    core.onStart = () {
+      core.emit(CoreEvent.removedForInactivity(missedSinceMs: missedSince));
+      core.emit(const CoreEvent.rejoined());
+      core.receive(akhil, 'welcome back');
+    };
+    await openApp(tester, core);
+
+    final removed = find.textContaining('were not kept');
+    final rejoined = find.text('This phone is back in the group.');
+    expect(removed, findsOneWidget);
+    expect(rejoined, findsOneWidget);
+    expect(above(tester, find.text('before'), removed), isTrue);
+    expect(above(tester, removed, rejoined), isTrue);
+    expect(above(tester, rejoined, find.text('welcome back')), isTrue);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('a key-changed warning that comes while the chat is closed is '
+      'shown once the chat opens', (tester) async {
+    // Bob waits to be added: the chat is not on screen.
+    final core = FakeCoreService(storedUser: bob)
+      ..epochValue = null
+      ..displayNames = {'alice@pi': 'Ali (alice)'};
+    await openApp(tester, core);
+    expect(find.textContaining("Waiting for the admin's device"), findsOne);
+
+    core.emit(const CoreEvent.identityKeyChanged(user: alice));
+    await settle(tester);
+    core.epochValue = BigInt.one;
+    core.emit(const CoreEvent.joinedGroup());
+    await settle(tester);
+
+    expect(find.textContaining("Ali (alice)'s key changed"), findsOneWidget);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('notices stay in the chat after leaving and reopening it', (
+    tester,
+  ) async {
+    final core = FakeCoreService(storedUser: bob);
+    await openApp(tester, core);
+    core.receive(akhil, 'first');
+    core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince));
+    await settle(tester);
+
+    // Members is on top of the chat while a notice comes.
+    await menu(tester, 'Members');
+    core.emit(const CoreEvent.identityKeyChanged(user: alice));
+    core.receive(akhil, 'second');
+    await settle(tester);
+    await tester.pageBack();
+    await settle(tester);
+
+    final gap = find.textContaining('expired before this phone fetched them');
+    final key = find.textContaining("alice's key changed");
+    expect(gap, findsOneWidget);
+    expect(key, findsOneWidget);
+    expect(above(tester, find.text('first'), gap), isTrue);
+    expect(above(tester, gap, key), isTrue);
+    expect(above(tester, key, find.text('second')), isTrue);
+  });
 }

@@ -1,6 +1,6 @@
 # Chat App MVP — Architecture Decisions
 
-Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol) · @Akhil Sasidharan
+Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app) · @Akhil Sasidharan
 
 ## Scope
 
@@ -14,7 +14,8 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 - Invite-only signup
 - Store-and-forward through the Pi server
 - One delivery status: accepted by the server (⏳ sending → ✓ accepted)
-- Push notifications as content-free wake pings (FCM, APNs)
+- Push notifications as content-free wake pings (FCM, APNs), built with the relay and Pi deployment
+- iOS and Android apps first; desktop later (decision #3)
 - Material 3 UI, `ColorScheme.fromSeed` with a muted seed and the `neutral` variant
 
 **Out**
@@ -27,12 +28,16 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 
 ## Architecture
 
-Four components; plaintext exists only inside the Rust core on each device.
+Four components. Keys never leave the Rust core on each device. Decrypted text
+reaches the Flutter UI only to be shown: Dart never stores, logs or sends it
+(owner-approved wording, 2026-11-11: a UI that shows messages cannot keep the
+old "plaintext never leaves the core" literally). The relay and the Pi see
+ciphertext only.
 
 ```mermaid
 flowchart LR
   subgraph device["Member device — plaintext lives only here"]
-    ui["Flutter UI<br/>screens only, no network"]
+    ui["Flutter UI<br/>screens only, no network<br/>shows text, never stores or logs it"]
     core["Rust core<br/>OpenMLS · networking"]
     db[("SQLite<br/>messages, incl. own sent plaintext")]
     ks[("Keystore / Keychain<br/>device key · MLS keys")]
@@ -61,7 +66,7 @@ flowchart LR
   push -.->|"wake"| core
 ```
 
-- **Flutter UI:** draws screens only; never opens a connection.
+- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy.
 - **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
 - **Pi server:** routes, orders and queues ciphertext; dispatches wake pings.
@@ -112,9 +117,10 @@ The Pi is the single authority for routing, ordering and membership, and never f
 - **Auth:** each device holds an Ed25519 auth key and signs a server challenge, bound to the TLS connection, for a session token of at most 1 hour.
 - **Key directory:** stores and hands out each device's MLS KeyPackages with its certificate.
 - **Membership:** tracks the group's public state with OpenMLS `PublicGroup`, checks every Commit, and as an MLS external sender proposes the removal of inactive devices.
+- **New users join on their own (flutter-app, owner 2026-11-12):** the admin inviting a user is the consent, so nobody taps "add". Once a new user's device uploads its first KeyPackages, the Pi sends a `JoinNotice` to the admin's connected devices, and again on every admin connect until that device is a member. The first admin device fetches that device's KeyPackage, checks its certificate (pinning the user's key on first sight) and commits the Add with its Welcome; a race loser gets `STALE_EPOCH` and does nothing. A changed identity key waits for the admin to accept it, and the accept is the add.
 - **Ordering:** checks the epoch on every envelope, gives each accepted one the next `server_seq` for the group, and appends Commits and Proposals to the commit log.
 - **Queues:** per-device store-and-forward queue of application ciphertext.
-- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute.
+- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute. Real FCM / APNs come with the relay and Pi deployment (owner, 2026-11-11); until then the app registers the core's placeholder token.
 
 **What it stores:** users and their identity public keys, devices with their certificates, KeyPackages, invite codes, push tokens, session token hashes, the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
 
@@ -190,8 +196,8 @@ Messages are not encrypted at rest; keys live in the OS key store and every mach
 **App**
 
 - Plain SQLite for messages, relying on Android FBE / iOS Data Protection.
-- Ed25519 device key and MLS private keys in Android Keystore / iOS Keychain, never in the DB.
-- Android: `allowBackup=false` (no Google Drive copy). iOS: DB excluded from iCloud backup, `NSFileProtectionComplete`.
+- Ed25519 device key and MLS private keys in Android Keystore / iOS Keychain, never in the DB and never in Dart. iOS: the data-protection keychain, `WhenUnlockedThisDeviceOnly`, not synced. Android: each secret sealed under a non-exportable Keystore AES key in app-private preferences (flutter-app D4).
+- Android: the core's folder in `noBackupFilesDir`, `allowBackup=false`, and no cloud backup or device transfer. iOS: the folder in Application Support, excluded from iCloud backup, `NSFileProtectionComplete`.
 - Accepted risk: a rooted or jailbroken phone can read messages.
 
 **Desktop (terminal client; client-core)**
@@ -223,16 +229,16 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 
 | Service | RPCs |
 | --- | --- |
-| `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / low-KeyPackage notices, heartbeats |
+| `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage notices (`JoinNotice`: a new user's device waits for the admin's device to add it), heartbeats |
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
-| `Keys` | `UploadKeyPackages`, `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing) |
+| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing) |
 | `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.
 
 - **Welcome inside its commit:** clients never send `welcome` envelopes. A Welcome rides inside the commit that creates it; the Pi accepts or rejects both together, then sends each new device a `welcome` envelope itself.
 - Server ids are `user@<server>` from day one, so federation can be added later. A device id is the first 16 bytes of SHA-256 of its auth public key.
-- Every message passes through the Rust core; Flutter never opens a connection.
+- Every message passes through the Rust core; Flutter never opens a connection (checked by an import scan of `app/lib/`).
 
 ## Future
 
@@ -249,9 +255,9 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 ## Open decisions
 
 - [x] Multi-device in the MVP? **Yes** (core-wire-protocol): each device is an MLS member with a certificate signed by the user identity key; the first device holds that key and links the others; recovery is admin-driven.
-- [x] Fingerprint verification in the MVP? **Replaced** (client-core): question-and-answer verification over a PAKE (CPace): both users type the answer to a question the asker picks, and the answer never leaves either device. It comes in its own `qa-verification` change after the terminal client; the core already pins identity keys and warns when one changes.
-- [ ] Desktop clients in the MVP, or mobile only?
+- [x] Fingerprint verification in the MVP? **Replaced** (client-core): question-and-answer verification over a PAKE (CPace): both users type the answer to a question the asker picks, and the answer never leaves either device. It comes in its own `qa-verification` change right after the Flutter app (owner, 2026-11-11); the core already pins identity keys and warns when one changes.
+- [x] Desktop clients in the MVP, or mobile only? **Mobile now, desktop later** (owner, 2026-11-11; flutter-app): the Flutter app targets iOS and Android only; desktop builds come in a later change.
 - [x] Key rotation for idle groups? **Every 7 days, with jitter** (client-core): each device commits an update of its own leaf once it is 7 days old and replaces its last-resort KeyPackage once that is 7 days old, checking on connect and daily, with a random delay of up to an hour.
 - [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
 - [ ] Relay on the shared VM or its own VM?
-- [x] Build order? **Decided** (pi-server-core): 1. Pi server, 2. Rust core library, 3. terminal client (the first point where two people can chat locally), 4. relay and Pi deployment, 5. Flutter app with real push (FCM/APNs).
+- [x] Build order? **Changed** (owner, 2026-11-11; flutter-app): 1. Pi server ✅, 2. Rust core library ✅, 3. Flutter app (iOS and Android; the first point where two people can chat locally, on two simulators), 4. question-and-answer verification (`qa-verification`), 5. relay and Pi deployment with real push (FCM/APNs), 6. the terminal client. (Was, pi-server-core: Pi, core, terminal client, deployment, then the app with push.)

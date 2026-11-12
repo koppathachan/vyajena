@@ -2,13 +2,11 @@
 // in lib/ besides main.dart that touches the bridge's Core.
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../src/rust/api/core.dart' as rust;
 import '../src/rust/api/text.dart' as rust_text;
 import 'core_service.dart';
-import 'event_label.dart';
 
 /// The platform channel that hands Dart the core's data folder (app-ui:
 /// Data on the phone): iOS Application Support/core (no iCloud backup,
@@ -32,12 +30,7 @@ class RustCoreService extends CoreService {
     if (dataDir == null) throw StateError('no data folder from the platform');
     final core = await rust.Core.open(dataDir: dataDir);
     _core = core;
-    _subscription = core.events().listen((event) {
-      // Names the event only, never its text (app-ui: UI goes through the
-      // core).
-      if (kDebugMode) debugPrint('core event: ${eventLabel(event)}');
-      handleEvent(event);
-    });
+    _subscription = core.events().listen(handleEvent);
   }
 
   @override

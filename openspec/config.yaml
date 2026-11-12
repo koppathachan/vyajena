@@ -13,8 +13,9 @@ context: |
   the architecture doc and belong to the owner.
 
   Invariants (changed only by an owner-approved change):
-  - Plaintext, decrypted content and keys never leave the Rust core and are never
-    logged. The relay and the Pi see ciphertext only.
+  - Keys never leave the Rust core. Decrypted text reaches Dart only to be
+    shown; Dart never stores, logs or sends it. Nothing logs content. The relay
+    and the Pi see ciphertext only.
   - The Pi is the authority for routing, ordering and membership, never history.
     Group settings and profiles travel only inside encrypted messages.
   - Strict epoch rule; OpenMLS max_past_epochs = 0.

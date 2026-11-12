@@ -36,12 +36,12 @@
 
 ## 6. Tests and local run
 
-- [ ] 6.1 Widget tests tagged `// spec: app-ui/<title-slug>` for every app-ui scenario, plus the import scan for "UI goes through the core"
-- [ ] 6.2 `integration_test/`: the app on the iOS Simulator and on the Android emulator chats with a second member driven through the core, against a temp Pi (D6, D7)
-- [ ] 6.3 README: run the app locally (simulator, emulator with `adb reverse`), never consuming the owner's invite in tests
+- [x] 6.1 Widget tests tagged `// spec: app-ui/<title-slug>` for every app-ui scenario, plus the import scan for "UI goes through the core"
+- [x] 6.2 `integration_test/`: the app on the iOS Simulator and on the Android emulator chats with a second member driven through the core, against a temp Pi (D6, D7)
+- [x] 6.3 README: run the app locally (simulator, emulator with `adb reverse`), never consuming the owner's invite in tests
 
 ## 7. CI, docs and validation
 
-- [ ] 7.1 CI: `flutter analyze` and `flutter test` (no codegen)
-- [ ] 7.2 `docs/architecture-decisions.md`: build order #7 (terminal client after deployment), #3 mobile now and desktop later, push with deployment, the invariant wording, Q&A after the app; the invariant in `openspec/config.yaml`; `CLAUDE.md` layout and commands; README status
-- [ ] 7.3 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, `buf lint`, `flutter analyze` clean; `openspec validate flutter-app --strict` passes
+- [x] 7.1 CI: `flutter analyze` and `flutter test` (no codegen)
+- [x] 7.2 `docs/architecture-decisions.md`: build order #7 (terminal client after deployment), #3 mobile now and desktop later, push with deployment, the invariant wording, Q&A after the app; the invariant in `openspec/config.yaml`; `CLAUDE.md` layout and commands; README status
+- [x] 7.3 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, `buf lint`, `flutter analyze` clean; `openspec validate flutter-app --strict` passes

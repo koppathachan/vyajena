@@ -43,9 +43,21 @@ pub struct Device {
 impl Device {
     /// A fresh device.
     pub async fn new() -> Self {
+        Self::open(true).await
+    }
+
+    /// A fresh device on the system clock, for a real Pi binary (the app's
+    /// integration test peer, `tests/app_peer.rs`).
+    pub async fn on_system_clock() -> Self {
+        Self::open(false).await
+    }
+
+    async fn open(manual_clock: bool) -> Self {
         let dir = tempfile::tempdir().check("temp dir");
-        let config = ClientConfig::new(dir.path(), Arc::new(MemoryKeyStore::new()))
-            .with_clock(Arc::new(ManualClock::new(start_time())));
+        let mut config = ClientConfig::new(dir.path(), Arc::new(MemoryKeyStore::new()));
+        if manual_clock {
+            config = config.with_clock(Arc::new(ManualClock::new(start_time())));
+        }
         let core = Arc::new(Core::open_with(config).await.check("open core"));
         let log = Arc::new(Log::default());
         let (reader, sink) = (Arc::clone(&core), Arc::clone(&log));
@@ -71,7 +83,17 @@ impl Device {
     /// Waits for the next event (after those already matched) for which `f`
     /// holds, and returns it.
     pub async fn wait_event(&mut self, what: &str, f: impl Fn(&CoreEvent) -> bool) -> CoreEvent {
-        let deadline = tokio::time::Instant::now() + WAIT;
+        self.wait_event_for(what, WAIT, f).await
+    }
+
+    /// [`Device::wait_event`] with its own time limit.
+    pub async fn wait_event_for(
+        &mut self,
+        what: &str,
+        limit: Duration,
+        f: impl Fn(&CoreEvent) -> bool,
+    ) -> CoreEvent {
+        let deadline = tokio::time::Instant::now() + limit;
         loop {
             let notified = self.log.changed.notified();
             {
@@ -103,7 +125,12 @@ impl Device {
 
     /// Waits until `f` holds for this device's core.
     pub async fn wait_until(&self, what: &str, f: impl Fn(&Core) -> bool) {
-        let deadline = tokio::time::Instant::now() + WAIT;
+        self.wait_until_for(what, WAIT, f).await;
+    }
+
+    /// [`Device::wait_until`] with its own time limit.
+    pub async fn wait_until_for(&self, what: &str, limit: Duration, f: impl Fn(&Core) -> bool) {
+        let deadline = tokio::time::Instant::now() + limit;
         while !f(&self.core) {
             if tokio::time::Instant::now() >= deadline {
                 panic!("timed out waiting for {what}; events: {:?}", self.events());

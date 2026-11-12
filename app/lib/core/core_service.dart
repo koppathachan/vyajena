@@ -5,12 +5,15 @@
 // real one; widget tests use a fake (test/support/fake_core_service.dart).
 //
 // Decrypted text passes through here only to be shown: nothing in this
-// class writes it to a file or a log.
+// class writes it to a file or a log. The app's one debug log line is
+// here, in [CoreService.handleEvent], and names the event's kind only
+// (app-ui: UI goes through the core, "Nothing logged").
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
 import '../src/rust/api/types.dart';
+import 'event_label.dart';
 
 export '../src/rust/api/error.dart' show CoreError, CoreErrorKind;
 export '../src/rust/api/types.dart';
@@ -41,6 +44,7 @@ abstract class CoreService {
   final ValueNotifier<UserRef?> _user = ValueNotifier(null);
   final StreamController<CoreEvent> _events =
       StreamController<CoreEvent>.broadcast();
+  final List<Future<void> Function()> _beforeStart = [];
   Object? _openError;
   bool _running = false;
 
@@ -83,10 +87,22 @@ abstract class CoreService {
   /// Does nothing until this device has a user.
   Future<void> start() async {
     if (_user.value == null) return;
+    for (final hook in List.of(_beforeStart)) {
+      await hook();
+    }
     _connection.value = ConnectionStatus.connecting;
     _running = true;
     await startCore();
   }
+
+  /// Runs [hook] before the engine starts, each time it starts: while the
+  /// engine is stopped no message or notice can arrive, so the app-level
+  /// chat model reads the history there before the first event.
+  void addBeforeStart(Future<void> Function() hook) => _beforeStart.add(hook);
+
+  /// Undoes [addBeforeStart].
+  void removeBeforeStart(Future<void> Function() hook) =>
+      _beforeStart.remove(hook);
 
   /// Stops the engine and closes the connection.
   Future<void> stop() async {
@@ -104,9 +120,12 @@ abstract class CoreService {
     await start();
   }
 
-  /// Passes one core event on, keeping [connection] up to date.
+  /// Passes one core event on, keeping [connection] up to date. The debug
+  /// log names the event only, never its text (app-ui: UI goes through the
+  /// core).
   @protected
   void handleEvent(CoreEvent event) {
+    if (kDebugMode) debugPrint('core event: ${eventLabel(event)}');
     if (event case CoreEvent_Connection(:final status)) {
       _connection.value = status;
     }

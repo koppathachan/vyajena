@@ -36,10 +36,15 @@ client/                 the device core (library): one folder per feature in src
                         against the real server (tests/support/)
 bridge/                 flutter_rust_bridge glue around client::Client (no logic):
                         src/api/ (what Dart sees), src/frb_generated.rs (generated),
-                        tests/ against the real server (reuses client/tests/support)
-app/                    the Flutter app, iOS + Android only; lib/src/rust/ (generated
-                        Dart bindings), rust_builder/ (cargokit: builds bridge/ from
-                        Xcode and Gradle)
+                        tests/ against the real server (reuses client/tests/support);
+                        tests/app_peer.rs is the host side of the app's integration
+                        test (ignored by cargo test)
+app/                    the Flutter app, iOS + Android only: lib/<feature>/ screens,
+                        lib/core/ (CoreService, the one door to the bridge),
+                        lib/src/rust/ (generated Dart bindings), rust_builder/
+                        (cargokit: builds bridge/ from Xcode and Gradle); test/
+                        widget tests on a fake core (test/support/), integration_test/
+                        the real app on a simulator (run.sh starts a temp Pi)
 pbgen/                  regenerates the committed pb.rs files from proto/
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)
@@ -56,7 +61,15 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 openspec validate <change> --strict
 cargo run -p server -- --config server/local.toml   # local Pi on 127.0.0.1:8443
+cd app && flutter analyze
+cd app && flutter test                       # widget tests (what CI runs)
+app/integration_test/run.sh <device id>      # the app on a simulator/emulator
 ```
+
+Dart tests live in `app/test/` and `app/integration_test/`, never in `lib/`,
+tagged `// spec: <capability>/<title-slug>` like the Rust ones. `run.sh`
+starts its own temp Pi and the admin's device on the host; README "Run the
+app locally" covers simulators, `adb reverse` and the Xcode 27.2 caveat.
 
 The local server prints its one-time bootstrap invite only on first start, and
 its data lives in the git-ignored `server/.pi-local/` (README: "Run the server

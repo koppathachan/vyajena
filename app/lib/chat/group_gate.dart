@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import '../admin/create_group_screen.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
+import 'chat_model.dart';
 import 'chat_screen.dart';
 
 /// What this device waits for before the chat.
@@ -18,9 +19,12 @@ const waitingText =
 
 /// Create the group, wait to be added, or chat.
 class GroupGate extends StatefulWidget {
-  const GroupGate({super.key, required this.core});
+  const GroupGate({super.key, required this.core, required this.chat});
 
   final CoreService core;
+
+  /// The app-level chat model.
+  final ChatModel chat;
 
   @override
   State<GroupGate> createState() => _GroupGateState();
@@ -67,7 +71,9 @@ class _GroupGateState extends State<GroupGate> {
     if (admin == null || inGroup == null) {
       return Scaffold(appBar: shellAppBar(widget.core));
     }
-    if (inGroup) return ChatScreen(core: widget.core, admin: admin);
+    if (inGroup) {
+      return ChatScreen(core: widget.core, chat: widget.chat, admin: admin);
+    }
     if (admin) return CreateGroupScreen(core: widget.core, onCreated: _check);
     return Scaffold(
       appBar: shellAppBar(widget.core),

@@ -55,7 +55,19 @@ class FakeCoreService extends CoreService {
   /// The arguments of the last calls that take one, by call name.
   final Map<String, Object?> args = {};
 
+  /// Runs inside [startCore], as the real core emits catch-up events right
+  /// after it starts (before any screen has drawn).
+  void Function()? onStart;
+
   int _nextId = 1;
+
+  /// A new local id, after every id in [messages].
+  int _newId() {
+    for (final m in messages) {
+      if (m.id >= _nextId) _nextId = m.id + 1;
+    }
+    return _nextId++;
+  }
 
   /// Pushes [event] as if the core emitted it.
   void emit(CoreEvent event) => handleEvent(event);
@@ -71,7 +83,7 @@ class FakeCoreService extends CoreService {
   /// as the core would.
   ChatMessage receive(UserRef sender, String text) {
     final message = ChatMessage(
-      id: _nextId++,
+      id: _newId(),
       sender: sender,
       senderDevice: 'cd34',
       outgoing: false,
@@ -112,7 +124,10 @@ class FakeCoreService extends CoreService {
   }
 
   @override
-  Future<void> startCore() async => calls.add('start');
+  Future<void> startCore() async {
+    calls.add('start');
+    onStart?.call();
+  }
 
   @override
   Future<void> stopCore() async => calls.add('stop');
@@ -187,7 +202,7 @@ class FakeCoreService extends CoreService {
   Future<int> sendText(String text) async {
     _call('sendText', text);
     sent.add(text);
-    final id = _nextId++;
+    final id = _newId();
     messages.add(
       ChatMessage(
         id: id,

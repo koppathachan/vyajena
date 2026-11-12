@@ -1,0 +1,192 @@
+// app-ui: UI goes through the core. The Dart code under lib/ opens no
+// connection (only the Rust core does, over the bridge), and its debug log
+// names events, never their text.
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:vyajena/core/core_service.dart';
+
+import '../support/app.dart';
+import '../support/fake_core_service.dart';
+
+/// Every Dart file under lib/, generated bindings included.
+List<File> libFiles() =>
+    Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith('.dart'))
+        .toList()
+      ..sort((a, b) => a.path.compareTo(b.path));
+
+/// The URIs a file imports or exports.
+Iterable<String> directives(File file) => RegExp(
+  r"""^\s*(?:import|export)\s+['"]([^'"]+)['"]""",
+  multiLine: true,
+).allMatches(file.readAsStringSync()).map((m) => m.group(1)!);
+
+/// Whether [file] is the generated bridge binding (lib/src/rust/).
+bool generated(File file) =>
+    file.path.replaceAll(r'\', '/').startsWith('lib/src/rust/');
+
+/// The Dart core libraries lib/ may use: none of them does I/O.
+const allowedDart = {
+  'dart:async',
+  'dart:collection',
+  'dart:convert',
+  'dart:math',
+  'dart:typed_data',
+};
+
+/// Packages lib/ may import. `flutter/services.dart` is there for the
+/// `vyajena/platform` MethodChannel (data folder, share sheet) and the
+/// clipboard; it has no socket or HTTP client.
+const allowedFlutter = {
+  'package:flutter/foundation.dart',
+  'package:flutter/material.dart',
+  'package:flutter/services.dart',
+  'package:flutter/widgets.dart',
+};
+
+/// What only the generated bindings may import: FFI to the Rust core.
+const bindingOnly = {
+  'dart:ffi',
+  'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart',
+  'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart',
+  'package:freezed_annotation/freezed_annotation.dart',
+};
+
+void main() {
+  // spec: app-ui/ui-goes-through-the-core
+  test('No socket in Dart: lib/ imports no dart:io, no HTTP client and no '
+      'network package', () {
+    final bad = <String>[];
+    for (final file in libFiles()) {
+      for (final uri in directives(file)) {
+        final ok = switch (uri) {
+          _ when !uri.contains(':') => true, // a file of this package
+          _ when uri.startsWith('package:vyajena/') => true,
+          _ when allowedDart.contains(uri) => true,
+          _ when allowedFlutter.contains(uri) => true,
+          _ when bindingOnly.contains(uri) => generated(file),
+          _ => false,
+        };
+        if (!ok) bad.add('${file.path}: $uri');
+      }
+    }
+    expect(bad, isEmpty, reason: 'imports that could reach the network');
+  });
+
+  // spec: app-ui/ui-goes-through-the-core
+  test('No socket in Dart: no socket, HTTP or file API is named in lib/', () {
+    final api = RegExp(
+      r'\b(Socket|RawSocket|ServerSocket|SecureSocket|RawDatagramSocket|'
+      r'WebSocket|HttpClient|HttpServer|File|RandomAccessFile|Process)\b',
+    );
+    final bad = [
+      for (final file in libFiles())
+        for (final m in api.allMatches(file.readAsStringSync()))
+          '${file.path}: ${m.group(0)}',
+    ];
+    expect(bad, isEmpty);
+  });
+
+  // spec: app-ui/ui-goes-through-the-core
+  test('the app depends on no network package', () {
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final section = RegExp(
+      r'^dependencies:\n((?:[ #].*\n|\n)*)',
+      multiLine: true,
+    ).firstMatch(pubspec)!.group(1)!;
+    final names = RegExp(
+      r'^  ([a-z_]+):',
+      multiLine: true,
+    ).allMatches(section).map((m) => m.group(1)!).toSet();
+    expect(names, {
+      'flutter',
+      'bridge',
+      'flutter_rust_bridge',
+      'freezed_annotation',
+    });
+  });
+
+  // spec: app-ui/ui-goes-through-the-core
+  test('every Pi call goes through a bridge function: only the core '
+      'service and main.dart reach the bindings', () {
+    final bad = <String>[];
+    for (final file in libFiles()) {
+      if (generated(file)) continue;
+      final path = file.path.replaceAll(r'\', '/');
+      for (final uri in directives(file)) {
+        if (!uri.contains('src/rust/')) continue;
+        final ok = switch (path) {
+          'lib/main.dart' => uri == 'src/rust/frb_generated.dart',
+          'lib/core/rust_core_service.dart' => true,
+          // The plain types and errors, re-exported to the screens.
+          'lib/core/core_service.dart' =>
+            uri.endsWith('api/types.dart') || uri.endsWith('api/error.dart'),
+          _ => false,
+        };
+        if (!ok) bad.add('$path: $uri');
+      }
+    }
+    expect(bad, isEmpty);
+  });
+
+  // spec: app-ui/ui-goes-through-the-core
+  test('nothing in lib/ prints or logs but the core service\'s one event '
+      'line', () {
+    final call = RegExp(r'\b(print|debugPrint|log|debugPrintStack)\(');
+    final bad = [
+      for (final file in libFiles())
+        for (final m in call.allMatches(file.readAsStringSync()))
+          if (file.path.replaceAll(r'\', '/') != 'lib/core/core_service.dart')
+            '${file.path}: ${m.group(0)}',
+    ];
+    expect(bad, isEmpty);
+  });
+
+  // spec: app-ui/ui-goes-through-the-core
+  testWidgets('Nothing logged: Alice receives "hi" and the debug log names '
+      'the kind of event but not "hi"', (tester) async {
+    final log = <String>[];
+    final saved = debugPrint;
+    debugPrint = (message, {wrapWidth}) => log.add(message ?? '');
+
+    final core = await openApp(tester, FakeCoreService(storedUser: alice));
+    core.receive(bob, 'hi');
+    core.emit(
+      const CoreEvent.profileChanged(
+        user: bob,
+        displayName: 'Zed',
+        about: 'secret about',
+      ),
+    );
+    core.emit(const CoreEvent.groupSettingsChanged(name: 'Hidden group'));
+    await settle(tester);
+    await tester.enterText(find.byKey(const Key('composer')), 'yo there');
+    await tap(tester, find.byTooltip('Send'));
+    core.setStatus(core.messages.last.id, const SendState.accepted());
+    await settle(tester);
+
+    // Flutter checks debugPrint is restored before the test ends.
+    debugPrint = saved;
+
+    expect(find.text('hi'), findsOneWidget);
+    expect(log, contains(startsWith('core event: message')));
+    expect(log, contains(startsWith('core event: send-status')));
+    for (final secret in [
+      'hi',
+      'Zed',
+      'secret about',
+      'Hidden group',
+      'yo there',
+    ]) {
+      expect(
+        log.where((line) => line.contains(secret)),
+        isEmpty,
+        reason: '"$secret" was logged',
+      );
+    }
+  });
+}
