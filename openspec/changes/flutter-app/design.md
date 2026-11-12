@@ -434,7 +434,7 @@ As built:
   `receive` / `setStatus` that change the history and emit as the core
   would. Reads (history, members, names) are no longer recorded in `calls`.
 
-### D10. Spec fixes during the build
+### Spec fixes during the build
 
 - app-ui "Nothing logged" said the log names the event's `server_seq`; the
   bridge's `ChatMessage` carries only the local id, and the scenario is about
