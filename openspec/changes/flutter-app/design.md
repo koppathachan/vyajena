@@ -354,6 +354,13 @@ method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
   hold them (D4). Widget tests read these settings from the project files
   (`test/app/data_on_the_phone_test.dart`).
 
+### D10. Spec fixes during the build
+
+- app-ui "Nothing logged" said the log names the event's `server_seq`; the
+  bridge's `ChatMessage` carries only the local id, and the scenario is about
+  content, so it now says the log names the kind of event (tracker,
+  2026-11-12, from session B).
+
 ## Risks / Trade-offs
 
 - [Android Keystore from Rust may need JNI] → spike 1.1 first; JNI glue lives

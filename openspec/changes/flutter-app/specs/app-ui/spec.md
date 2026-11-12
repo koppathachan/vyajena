@@ -14,7 +14,7 @@ the only copy of messages in its SQLite store.
 
 #### Scenario: Nothing logged
 - **WHEN** Alice receives "hi" and the app writes its debug log
-- **THEN** the log names the event and its `server_seq` but not "hi"
+- **THEN** the log names the kind of event but not "hi"
 
 ### Requirement: Join from an invite
 The app SHALL let a new user join by pasting the invite text the admin shared,
