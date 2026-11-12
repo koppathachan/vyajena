@@ -24,7 +24,9 @@ against a local Pi.
   dark from the system. The July neon design handoff is not used.
 - Push stays the core's placeholder token; no FCM or APNs.
 - CI also runs `flutter analyze` and `flutter test` (no codegen in CI).
-- No `.proto` changes.
+- **Proto:** `proto/vyajena/v1/messaging.proto` gains a `JoinNotice` server frame
+  (non-breaking): the Pi tells the admin's devices a new user's device needs
+  adding, and the admin's device adds it automatically (owner, 2026-11-12).
 
 **Open decisions:**
 
@@ -50,8 +52,9 @@ against a local Pi.
 
 ### Modified Capabilities
 
-None. The phone key stores implement the existing client-runtime: Key storage
-requirement.
+- `group-membership`: adds automatic add of new users (owner, 2026-11-12: the
+  admin inviting a user is the consent; no tap to add). The phone key stores
+  implement the existing client-runtime: Key storage requirement.
 
 ## Impact
 

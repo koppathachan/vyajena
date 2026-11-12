@@ -20,6 +20,12 @@
 - [x] 4.1 `flutter create` iOS + Android only in `app/`; feature folders; `CoreService` and its fake; the theme (app-ui: Light Material 3 look)
 - [x] 4.2 Private storage, Android `allowBackup="false"`, iOS backup exclusion and `NSFileProtectionComplete` (app-ui: Data on the phone); lifecycle and connection indicator (app-ui: Foreground and background)
 
+## 4b. Automatic add of new users (owner, 2026-11-12)
+
+- [ ] 4.3 Proto first: `JoinNotice { group_id, device }` as a new `ServerFrame` field in `messaging.proto` (non-breaking, `buf lint` / `buf breaking` clean); `cargo run -p pbgen`; commit the regenerated `pb.rs` files
+- [ ] 4.4 Pi: send `JoinNotice` to connected admin devices on registration and on each admin connect until the device is a member; `server/tests/` for the requirement's Pi side (group-membership: Automatic add of new users)
+- [ ] 4.5 Core: admin devices add on `JoinNotice` with no user action (KeyPackage for that device, first-sight pin, changed key waits for accept, race loser does nothing); bridge/app see it as the existing `JoinedGroup` / `MembersChanged` events; `client/tests/` for every scenario
+
 ## 5. Screens
 
 - [ ] 5.1 Join from an invite, with the server identity error (app-ui: Join from an invite)

@@ -27,6 +27,11 @@ SHALL be shown as a server identity error, not as a network error.
 - **THEN** he sees `bob@pi` on `127.0.0.1:8443` first, the core registers his
   phone with `Devices.Register`, and he lands in the chat
 
+#### Scenario: Waiting to be added
+- **WHEN** Bob has registered but the admin's device has not added him yet
+- **THEN** his app says it is waiting for the admin's device, and shows the chat
+  once the core emits `JoinedGroup`
+
 #### Scenario: Wrong pin
 - **WHEN** the Pi at the invite's address presents a different TLS key
 - **THEN** the app shows a server identity error and does not join

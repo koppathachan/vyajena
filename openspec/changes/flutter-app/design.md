@@ -361,6 +361,12 @@ method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
   content, so it now says the log names the kind of event (tracker,
   2026-11-12, from session B).
 
+- Session C found that a registered user is not in the group until the admin
+  commits an Add, and nothing told the admin's device. The owner chose automatic
+  add (2026-11-12): new `JoinNotice` frame and group-membership: Automatic add of
+  new users (tasks 4.3–4.5). It follows the RejoinNotice pattern; a changed
+  identity key still needs the admin's accept, as key-directory already says.
+
 ## Risks / Trade-offs
 
 - [Android Keystore from Rust may need JNI] → spike 1.1 first; JNI glue lives
