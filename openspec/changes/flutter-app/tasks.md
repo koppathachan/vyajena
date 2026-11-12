@@ -22,17 +22,17 @@
 
 ## 4b. Automatic add of new users (owner, 2026-11-12)
 
-- [ ] 4.3 Proto first: `JoinNotice { group_id, device }` as a new `ServerFrame` field in `messaging.proto` (non-breaking, `buf lint` / `buf breaking` clean); `cargo run -p pbgen`; commit the regenerated `pb.rs` files
-- [ ] 4.4 Pi: send `JoinNotice` to connected admin devices on registration and on each admin connect until the device is a member; `server/tests/` for the requirement's Pi side (group-membership: Automatic add of new users)
-- [ ] 4.5 Core: admin devices add on `JoinNotice` with no user action (KeyPackage for that device, first-sight pin, changed key waits for accept, race loser does nothing); bridge/app see it as the existing `JoinedGroup` / `MembersChanged` events; `client/tests/` for every scenario
+- [x] 4.3 Proto first: `JoinNotice { group_id, device }` as a new `ServerFrame` field in `messaging.proto` (non-breaking, `buf lint` / `buf breaking` clean); `cargo run -p pbgen`; commit the regenerated `pb.rs` files
+- [x] 4.4 Pi: send `JoinNotice` to connected admin devices on registration and on each admin connect until the device is a member; `server/tests/` for the requirement's Pi side (group-membership: Automatic add of new users)
+- [x] 4.5 Core: admin devices add on `JoinNotice` with no user action (KeyPackage for that device, first-sight pin, changed key waits for accept, race loser does nothing); bridge/app see it as the existing `JoinedGroup` / `MembersChanged` events; `client/tests/` for every scenario
 
 ## 5. Screens
 
-- [ ] 5.1 Join from an invite, with the server identity error (app-ui: Join from an invite)
-- [ ] 5.2 Chat with send status, composer limit, placeholders and notices (app-ui: Chat screen, Composer limit, Notices in the chat)
-- [ ] 5.3 Profile and members (app-ui: Profile and members)
-- [ ] 5.4 Admin screens: create group, invites, remove user, group name (app-ui: Admin screens)
-- [ ] 5.5 Link a device by text (app-ui: Link a device)
+- [x] 5.1 Join from an invite, with the server identity error (app-ui: Join from an invite)
+- [x] 5.2 Chat with send status, composer limit, placeholders and notices (app-ui: Chat screen, Composer limit, Notices in the chat)
+- [x] 5.3 Profile and members (app-ui: Profile and members)
+- [x] 5.4 Admin screens: create group, invites, remove user, group name (app-ui: Admin screens)
+- [x] 5.5 Link a device by text (app-ui: Link a device)
 
 ## 6. Tests and local run
 

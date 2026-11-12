@@ -63,6 +63,7 @@ message ServerFrame {
     RejoinNotice rejoin_notice = 6;
     // The Pi's reply to a client `Heartbeat`.
     Heartbeat heartbeat = 7;
+    JoinNotice join_notice = 8;
   }
 }
 
@@ -258,5 +259,22 @@ message RemovedNotice {
 message RejoinNotice {
   bytes group_id = 1;
   // The returning device.
+  DeviceRef device = 2;
+}
+
+// group-membership: Automatic add of new users. Sent to the admin's connected
+// member devices for each non-revoked device that has never been a group
+// member and whose user has no member device: once the device has uploaded its
+// KeyPackages after `Devices.Register`, and again each time an admin device
+// connects, until the device is a member. The first admin device to receive
+// it, with no user action, fetches a KeyPackage for that device only
+// (`FetchKeyPackagesRequest.device_ids`), verifies its certificate (pinning the
+// user's identity key on first sight; a changed key waits for the admin to
+// accept it), and commits its Add with the Welcome in the same `COMMIT`
+// envelope. A device that loses the race gets `REJECTION_REASON_STALE_EPOCH`,
+// sees the device is already a member and does nothing more.
+message JoinNotice {
+  bytes group_id = 1;
+  // The device to add.
   DeviceRef device = 2;
 }

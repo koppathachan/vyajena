@@ -230,7 +230,8 @@ pub async fn admin_with_group(pi: &TestPi) -> Device {
     admin
 }
 
-/// A new user invited by the admin, registered and started (not added).
+/// A new user invited by the admin, registered and started; the admin's
+/// device adds it on its own (group-membership: Automatic add of new users).
 pub async fn invited(admin: &Device, username: &str) -> Device {
     let invite = admin
         .client
@@ -249,15 +250,33 @@ pub async fn invited(admin: &Device, username: &str) -> Device {
     device
 }
 
-/// A new user invited, registered, started and added to the group by the
-/// admin; waits until the device joined.
+/// A new user invited by the admin, then registered and started while the
+/// admin's device is stopped, so nobody adds it yet; `admin.client.start()`
+/// adds it (group-membership: Automatic add of new users).
+pub async fn invited_while_admin_away(admin: &Device, username: &str) -> Device {
+    let invite = admin
+        .client
+        .create_invite(username)
+        .await
+        .check("create invite");
+    admin.client.stop();
+    let mut device = Device::new().await;
+    let id = device
+        .client
+        .register(&invite.payload)
+        .await
+        .check("register");
+    assert_eq!(id, user(username));
+    device.client.start().await.check("start");
+    device.wait_connected().await;
+    device
+}
+
+/// A new user invited, registered and started; the admin's device adds it
+/// on its own (group-membership: Automatic add of new users). Waits until the
+/// device joined.
 pub async fn member_of_group(admin: &Device, username: &str) -> Device {
     let mut device = invited(admin, username).await;
-    admin
-        .client
-        .add_user(&user(username))
-        .await
-        .check("add user");
     device
         .wait_event("joined the group", |e| matches!(e, Event::JoinedGroup))
         .await;

@@ -1,11 +1,15 @@
-// The app shell: theme, lifecycle and the connection indicator around the
-// screens, which come with the feature folders (flutter-app design D1:
-// onboarding, chat, members, profile, devices, admin; tasks 5.1-5.5).
+// The app shell: theme, lifecycle, the named routes (flutter-app design D3)
+// and the first screen, which follows the core's state: join or link when
+// this device has no user yet, the group (create, wait or chat) once it has.
 import 'package:flutter/material.dart';
 
+import '../chat/group_gate.dart';
 import '../core/core_service.dart';
-import 'connection_indicator.dart';
+import '../onboarding/onboarding_screen.dart';
+import 'errors.dart';
 import 'lifecycle.dart';
+import 'routes.dart';
+import 'shell_app_bar.dart';
 import 'theme.dart';
 
 /// The app, over [core].
@@ -23,6 +27,7 @@ class VyajenaApp extends StatelessWidget {
       darkTheme: darkTheme,
       themeMode: themeMode,
       home: HomeScreen(core: core),
+      routes: appRoutes(core),
     ),
   );
 }
@@ -34,37 +39,28 @@ class HomeScreen extends StatelessWidget {
   final CoreService core;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Vyajena'),
-      actions: [ConnectionIndicator(core: core)],
-    ),
-    body: ValueListenableBuilder<CoreState>(
-      valueListenable: core.state,
-      builder: (context, state, _) => switch (state) {
-        CoreState.opening => const Center(child: CircularProgressIndicator()),
-        CoreState.failed => Center(
+  Widget build(BuildContext context) => ValueListenableBuilder<CoreState>(
+    valueListenable: core.state,
+    builder: (context, state, _) => switch (state) {
+      CoreState.opening => Scaffold(
+        appBar: shellAppBar(core),
+        body: const Center(child: CircularProgressIndicator()),
+      ),
+      CoreState.failed => Scaffold(
+        appBar: shellAppBar(core),
+        body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Text(
-              'The app could not open its data: ${_describe(core.openError)}',
+              'The app could not open its data: '
+              '${core.openError == null ? '' : errorText(core.openError!)}',
               textAlign: TextAlign.center,
             ),
           ),
         ),
-        CoreState.unregistered => const Center(child: Text('Not joined yet')),
-        CoreState.ready => ValueListenableBuilder<UserRef?>(
-          valueListenable: core.user,
-          builder: (context, user, _) => Center(
-            child: Text(
-              user == null ? '' : '${user.username}@${user.serverId}',
-            ),
-          ),
-        ),
-      },
-    ),
+      ),
+      CoreState.unregistered => OnboardingScreen(core: core),
+      CoreState.ready => GroupGate(core: core),
+    },
   );
-
-  static String _describe(Object? error) =>
-      error is CoreError ? error.message : '$error';
 }

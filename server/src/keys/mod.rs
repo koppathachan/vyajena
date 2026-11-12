@@ -14,7 +14,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
 
 use crate::auth::caller;
-use crate::membership::{CIPHERSUITE, certificate};
+use crate::membership::{CIPHERSUITE, certificate, joins};
 use crate::pb;
 use crate::pb::keys_server::{Keys, KeysServer};
 use crate::runtime::clock::unix_millis;
@@ -155,7 +155,10 @@ impl Keys for KeysService {
         }
         let now = self.state.clock.now();
         let count = request.key_packages.len();
-        self.state
+        let admin = self.state.config.admin_username.clone();
+        let server_id = self.state.config.server_id.clone();
+        let announce = self
+            .state
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
@@ -179,11 +182,19 @@ impl Keys for KeysService {
                     &request.last_resort_key_package,
                     now,
                 )?;
+                // group-membership: Automatic add of new users.
+                let announce = joins::after_upload(&tx, &caller.device_id, &admin, &server_id)?;
                 tx.commit()?;
-                Ok(Ok(()))
+                Ok(Ok(announce))
             })
             .await??;
         tracing::debug!(one_time = count, "stored KeyPackages");
+        if !announce.is_empty() {
+            tracing::info!("a new device waits to be added; telling the admin's devices");
+        }
+        for (helper, notice) in announce {
+            self.state.hub.send_frame(&helper, notice);
+        }
         Ok(Response::new(pb::UploadKeyPackagesResponse {}))
     }
 

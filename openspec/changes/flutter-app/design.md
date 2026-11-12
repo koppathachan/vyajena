@@ -354,6 +354,86 @@ method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
   hold them (D4). Widget tests read these settings from the project files
   (`test/app/data_on_the_phone_test.dart`).
 
+### D11. Automatic add of new users (tasks 4.3–4.5)
+
+```mermaid
+sequenceDiagram
+  participant B as Bob's phone
+  participant P as Pi
+  participant A as Admin's phone
+  B->>P: Devices.Register, then Keys.UploadKeyPackages
+  P-->>A: JoinNotice {group_id, Bob's phone} (if connected)
+  Note over A: on every connect too, until Bob's phone is a member
+  A->>P: Keys.FetchKeyPackages(bob, [Bob's phone])
+  Note over A: verify certificate, pin bob's key on first sight
+  A->>P: COMMIT (Add) + Welcome
+  P-->>B: WELCOME
+  Note over B: JoinedGroup; the app leaves "waiting"
+```
+
+As built:
+
+- Proto: `ServerFrame.join_notice = 8`, `JoinNotice { group_id, device }`
+  (`buf breaking` clean).
+- **When "on registration" fires:** the signup registers, then uploads
+  KeyPackages in the same `register` call. A notice sent at
+  `Devices.Register` would reach the admin before there is a KeyPackage to
+  fetch, so the Pi sends it after the device's KeyPackage upload
+  (`keys/mod.rs`), and only for devices that have KeyPackages. The admin's
+  connect-time notices (`messaging/stream.rs`) follow the same rule.
+- **"Never been a group member"** is a new column `devices.was_member`
+  (migration 0004, back-filled from `mls_members` and `inactive_devices`),
+  set whenever the member list is rebuilt after a commit. A device waits
+  (`membership/joins.rs`) when it is not revoked, was never a member, its
+  user is not removed and has no non-revoked member device, and it has
+  KeyPackages. So a linked device of a member, an inactive device (RejoinNotice
+  path) and a removed user are never announced; a reset user's new phone is.
+- Recipients: the admin's member devices that are not revoked or inactive
+  and have an open stream.
+- Core (`engine/mod.rs`, `engine/jobs.rs`): `JoinNotice` on an admin device
+  queues `Job::AddNew { user, device }` (idempotent per device; recovered
+  after a crash as `add_new|…`). It fetches a KeyPackage for that device
+  only, checks it through `checked_key_packages` (first-sight pin, or
+  `IdentityKeyChanged` with the warning event and no add), and commits the
+  Add with the Welcome. On `STALE_EPOCH` the job is prepared again after
+  catching up, finds the leaf and does nothing.
+- A changed key: `Client::accept_identity_key` on an admin device queues
+  `AddUser` for that user, so accepting is the one tap the admin makes (no
+  separate "add" button). If the engine is stopped, the next connect's
+  notice adds the device instead.
+- Tests that relied on a registered user staying out until `add_user` now
+  stop the admin's device while that user signs up
+  (`client/tests/support::device::invited_while_admin_away`);
+  `member_of_group` waits for the automatic add. The server test `Stream`
+  keeps `JoinNotice` frames apart, so frame-sequence tests are unchanged.
+
+### D12. Screens (tasks 5.1–5.5)
+
+- Routes (D3): `lib/app/routes.dart`, named routes for members, profile,
+  linking (both sides) and the four admin screens. `HomeScreen` follows the
+  core's state: `unregistered` → `onboarding/` (join, or push "link this
+  device"); `ready` → `chat/group_gate.dart`, which shows the admin's
+  "Create the group" on first start, "Waiting for the admin's device…" on
+  a new member's device until `JoinedGroup`, else the chat.
+- Chat (`chat/chat_model.dart`): messages are always re-read from the core's
+  `history` (newest 500) on `Message` and `SendStatus`, so the list keeps
+  the core's `server_seq` order even when an own message is accepted after a
+  received one. Notices (gap, removed with its time, rejoined, key changed,
+  unreadable, commit refused, server identity) live only in the open chat,
+  each placed after the message that was last when it arrived. One
+  key-changed warning per user until it is accepted (the core warns each
+  time it meets the key); only admin devices get "Accept new key".
+- Names: `displayName` per sender, cached until `ProfileChanged`. Composer:
+  `textFits` before `sendText`; the text stays on refusal.
+- Share: no share package. The `vyajena/platform` channel gained `share`
+  (iOS `UIActivityViewController`, Android `ACTION_SEND` chooser), used only
+  for invite, link request and approval texts (`app/platform.dart`,
+  `app/text_box.dart`).
+- The fake core (`test/support/fake_core_service.dart`) gained failure
+  hooks per call (`fails`), display names, profiles, `epochValue`, and
+  `receive` / `setStatus` that change the history and emit as the core
+  would. Reads (history, members, names) are no longer recorded in `calls`.
+
 ### D10. Spec fixes during the build
 
 - app-ui "Nothing logged" said the log names the event's `server_seq`; the

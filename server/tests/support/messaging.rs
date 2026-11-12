@@ -62,6 +62,10 @@ pub struct Stream {
     tx: mpsc::Sender<pb::ClientFrame>,
     rx: tonic::Streaming<pb::ServerFrame>,
     stash: VecDeque<Out>,
+    /// `JoinNotice` frames, kept apart so tests about other frames see the
+    /// same sequence as before automatic add (read with
+    /// [`Stream::join_notice`]).
+    joins: VecDeque<pb::JoinNotice>,
 }
 
 impl Stream {
@@ -84,6 +88,7 @@ impl Stream {
             tx,
             rx,
             stash: VecDeque::new(),
+            joins: VecDeque::new(),
         })
     }
 
@@ -97,6 +102,69 @@ impl Stream {
         Self::open_with(conn, device.token(), Some(hello))
             .await
             .check("Connect")
+    }
+
+    /// The next message from the server within `wait`, with `JoinNotice`
+    /// frames set aside.
+    async fn recv(
+        &mut self,
+        wait: Duration,
+    ) -> Result<Result<Option<pb::ServerFrame>, tonic::Status>, tokio::time::error::Elapsed> {
+        let deadline = tokio::time::Instant::now() + wait;
+        loop {
+            let message = tokio::time::timeout_at(deadline, self.rx.message()).await?;
+            match message {
+                Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::JoinNotice(notice)),
+                })) => self.joins.push_back(notice),
+                other => return Ok(other),
+            }
+        }
+    }
+
+    /// The next `JoinNotice` (group-membership: Automatic add of new users);
+    /// other frames before it are kept for [`Stream::next`].
+    pub async fn join_notice(&mut self) -> pb::JoinNotice {
+        let mut skipped = VecDeque::new();
+        let found = loop {
+            if let Some(notice) = self.joins.pop_front() {
+                break notice;
+            }
+            match tokio::time::timeout(WAIT, self.rx.message()).await {
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::JoinNotice(notice)),
+                }))) => break notice,
+                Ok(Ok(Some(pb::ServerFrame { frame: Some(frame) }))) => skipped.push_back(frame),
+                other => panic!("expected a JoinNotice, got {other:?}"),
+            }
+        };
+        self.stash.extend(skipped);
+        found
+    }
+
+    /// Drops the `JoinNotice` frames received so far.
+    pub fn forget_join_notices(&mut self) {
+        self.joins.clear();
+    }
+
+    /// Asserts no `JoinNotice` arrives for a short while (other frames are
+    /// kept for [`Stream::next`]).
+    pub async fn assert_no_join_notice(&mut self) {
+        assert!(
+            self.joins.is_empty(),
+            "unexpected notices: {:?}",
+            self.joins
+        );
+        let deadline = tokio::time::Instant::now() + QUIET;
+        while let Ok(message) = tokio::time::timeout_at(deadline, self.rx.message()).await {
+            match message {
+                Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::JoinNotice(notice)),
+                })) => panic!("expected no JoinNotice, got {notice:?}"),
+                Ok(Some(pb::ServerFrame { frame: Some(frame) })) => self.stash.push_back(frame),
+                other => panic!("the stream ended: {other:?}"),
+            }
+        }
     }
 
     /// Sends a frame.
@@ -128,7 +196,7 @@ impl Stream {
         self.send(In::Heartbeat(pb::Heartbeat {})).await;
         let mut skipped = VecDeque::new();
         loop {
-            let frame = match tokio::time::timeout(WAIT, self.rx.message()).await {
+            let frame = match self.recv(WAIT).await {
                 Ok(Ok(Some(pb::ServerFrame { frame: Some(frame) }))) => frame,
                 other => panic!("expected a heartbeat, got {other:?}"),
             };
@@ -145,7 +213,7 @@ impl Stream {
         if let Some(frame) = self.stash.pop_front() {
             return Ok(Some(frame));
         }
-        match tokio::time::timeout(WAIT, self.rx.message()).await {
+        match self.recv(WAIT).await {
             Ok(Ok(Some(frame))) => Ok(frame.frame),
             Ok(Ok(None)) => Ok(None),
             Ok(Err(status)) => Err(status),
@@ -176,7 +244,7 @@ impl Stream {
         let found = loop {
             let frame = match self.stash.pop_front() {
                 Some(frame) => frame,
-                None => match tokio::time::timeout(WAIT, self.rx.message()).await {
+                None => match self.recv(WAIT).await {
                     Ok(Ok(Some(pb::ServerFrame { frame: Some(frame) }))) => frame,
                     other => panic!("expected a SendResult, got {other:?}"),
                 },
@@ -218,7 +286,7 @@ impl Stream {
     /// Asserts no frame arrives for a short while.
     pub async fn assert_quiet(&mut self) {
         assert!(self.stash.is_empty(), "unexpected frames: {:?}", self.stash);
-        if let Ok(frame) = tokio::time::timeout(QUIET, self.rx.message()).await {
+        if let Ok(frame) = self.recv(QUIET).await {
             panic!("expected no frame, got {frame:?}");
         }
     }
@@ -227,7 +295,7 @@ impl Stream {
     /// end). Frames before the end are discarded.
     pub async fn ended(&mut self) -> Result<(), tonic::Status> {
         loop {
-            match tokio::time::timeout(WAIT, self.rx.message()).await {
+            match self.recv(WAIT).await {
                 Ok(Ok(Some(_))) => continue,
                 Ok(Ok(None)) => return Ok(()),
                 Ok(Err(status)) => return Err(status),
@@ -259,6 +327,7 @@ pub async fn receive(stream: &mut Stream, device: &mut TestDevice) -> pb::Envelo
 pub struct World {
     pub pi: TestPi,
     pub conn: Conn,
+    pub admin_user: TestUser,
     pub admin: TestDevice,
     pub admin_stream: Stream,
     pub alice: TestUser,
@@ -362,7 +431,7 @@ pub async fn world() -> World {
 /// Builds the [`World`] on `pi`.
 pub async fn world_on(pi: TestPi) -> World {
     let conn = pi.connect().await;
-    let (_, mut admin) = bootstrap_admin(&pi, &conn).await;
+    let (admin_user, mut admin) = bootstrap_admin(&pi, &conn).await;
     let pi_sender = pi_external_sender(&conn).await;
     let request = admin.create_group(GROUP_ID, &pi_sender, "akhil@pi");
     conn.admin()
@@ -394,9 +463,14 @@ pub async fn world_on(pi: TestPi) -> World {
     .await;
     laptop_stream.sync().await;
     phone_stream.sync().await;
+    // The admin's stream heard about the laptop and the phone before they
+    // were added (group-membership: Automatic add of new users).
+    admin_stream.sync().await;
+    admin_stream.forget_join_notices();
     World {
         pi,
         conn,
+        admin_user,
         admin,
         admin_stream,
         alice,

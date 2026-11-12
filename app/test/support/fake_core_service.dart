@@ -15,7 +15,8 @@ class FakeCoreService extends CoreService {
   /// The user [register] and [completeLink] return.
   UserRef newUser = const UserRef(username: 'bob', serverId: 'pi');
 
-  /// Every core call, by name, in order.
+  /// Every core call that acts, by name, in order (reads such as history,
+  /// members or names are not recorded).
   final List<String> calls = [];
 
   /// What [history] returns.
@@ -36,10 +37,72 @@ class FakeCoreService extends CoreService {
   /// The limit [textFits] applies, in UTF-16 code units.
   int maxTextLength = 1000;
 
+  /// What [epoch] returns: null while this device is not in the group.
+  BigInt? epochValue = BigInt.one;
+
+  /// What [displayName] returns, by `user@server`; else the username.
+  Map<String, String> displayNames = {};
+
+  /// What [profile] returns, by `user@server`.
+  Map<String, ProfileInfo> profiles = {};
+
+  /// Errors a call throws, by call name (as in [calls]).
+  Map<String, Object> fails = {};
+
+  /// The texts [sendText] stored, in order.
+  final List<String> sent = [];
+
+  /// The arguments of the last calls that take one, by call name.
+  final Map<String, Object?> args = {};
+
   int _nextId = 1;
 
   /// Pushes [event] as if the core emitted it.
   void emit(CoreEvent event) => handleEvent(event);
+
+  void _call(String name, [Object? arg]) {
+    calls.add(name);
+    args[name] = arg;
+    final error = fails[name];
+    if (error != null) throw error;
+  }
+
+  /// A received message from [sender], appended to [messages] and emitted
+  /// as the core would.
+  ChatMessage receive(UserRef sender, String text) {
+    final message = ChatMessage(
+      id: _nextId++,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      body: ChatBody.text(text: text),
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  /// Sets the status of own message [id] and emits it as the core would.
+  void setStatus(int id, SendState status) {
+    messages = [
+      for (final m in messages)
+        if (m.id == id)
+          ChatMessage(
+            id: m.id,
+            sender: m.sender,
+            senderDevice: m.senderDevice,
+            outgoing: m.outgoing,
+            body: m.body,
+            sentAtMs: m.sentAtMs,
+            acceptedAtMs: status is SendState_Accepted ? 2 : m.acceptedAtMs,
+            status: status,
+          )
+        else
+          m,
+    ];
+    emit(CoreEvent.sendStatus(id: id, status: status));
+  }
 
   @override
   Future<void> openCore() async {
@@ -77,7 +140,7 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<UserRef> register(String inviteText) async {
-    calls.add('register');
+    _call('register', inviteText);
     storedUser = newUser;
     await becameUser(newUser);
     return newUser;
@@ -85,13 +148,13 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<String> linkRequest() async {
-    calls.add('linkRequest');
+    _call('linkRequest');
     return 'vyajena-link:request';
   }
 
   @override
   Future<UserRef> completeLink(String approvalText) async {
-    calls.add('completeLink');
+    _call('completeLink', approvalText);
     storedUser = newUser;
     await becameUser(newUser);
     return newUser;
@@ -99,7 +162,7 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<String> approveLink(String requestText) async {
-    calls.add('approveLink');
+    _call('approveLink', requestText);
     return 'vyajena-approval:approval';
   }
 
@@ -108,7 +171,6 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<List<ChatMessage>> history(int limit) async {
-    calls.add('history');
     final start = messages.length > limit ? messages.length - limit : 0;
     return messages.sublist(start);
   }
@@ -123,19 +185,43 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<int> sendText(String text) async {
-    calls.add('sendText');
-    return _nextId++;
+    _call('sendText', text);
+    sent.add(text);
+    final id = _nextId++;
+    messages.add(
+      ChatMessage(
+        id: id,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        body: ChatBody.text(text: text),
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
   }
 
-  @override
-  Future<String> displayName(UserRef user) async => user.username;
+  static String _key(UserRef user) => '${user.username}@${user.serverId}';
 
   @override
-  Future<ProfileInfo> profile(UserRef user) async => const ProfileInfo();
+  Future<String> displayName(UserRef user) async =>
+      displayNames[_key(user)] ?? user.username;
+
+  @override
+  Future<ProfileInfo> profile(UserRef user) async =>
+      profiles[_key(user)] ?? const ProfileInfo();
 
   @override
   Future<int> setProfile({String? displayName, String? about}) async {
-    calls.add('setProfile');
+    _call('setProfile', (displayName: displayName, about: about));
+    final user = storedUser;
+    if (user != null) {
+      profiles[_key(user)] = ProfileInfo(
+        displayName: displayName,
+        about: about,
+      );
+    }
     return _nextId++;
   }
 
@@ -146,17 +232,20 @@ class FakeCoreService extends CoreService {
   Future<String?> groupName() async => group;
 
   @override
-  Future<BigInt?> epoch() async => BigInt.one;
+  Future<BigInt?> epoch() async => epochValue;
 
   @override
   Future<bool> isAdmin() async => admin;
 
   @override
-  Future<void> createGroup() async => calls.add('createGroup');
+  Future<void> createGroup() async {
+    _call('createGroup');
+    epochValue = BigInt.zero;
+  }
 
   @override
   Future<InviteInfo> createInvite(String username) async {
-    calls.add('createInvite');
+    _call('createInvite', username);
     return InviteInfo(
       code: 'code-$username',
       user: UserRef(username: username, serverId: 'pi'),
@@ -169,24 +258,36 @@ class FakeCoreService extends CoreService {
   Future<List<InviteInfo>> listInvites() async => invites;
 
   @override
-  Future<void> revokeInvite(String code) async => calls.add('revokeInvite');
+  Future<void> revokeInvite(String code) async {
+    _call('revokeInvite', code);
+    invites = [
+      for (final i in invites)
+        if (i.code != code) i,
+    ];
+  }
 
   @override
   Future<void> addUser(UserRef user) async => calls.add('addUser');
 
   @override
-  Future<void> removeUser(UserRef user) async => calls.add('removeUser');
+  Future<void> removeUser(UserRef user) async {
+    _call('removeUser', user);
+    memberDevices = [
+      for (final d in memberDevices)
+        if (_key(d.user) != _key(user)) d,
+    ];
+  }
 
   @override
   Future<int> setGroupName(String? name) async {
-    calls.add('setGroupName');
+    _call('setGroupName', name);
     group = name;
     return _nextId++;
   }
 
   @override
   Future<bool> acceptIdentityKey(UserRef user) async {
-    calls.add('acceptIdentityKey');
+    _call('acceptIdentityKey', user);
     return true;
   }
 }

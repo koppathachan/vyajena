@@ -1860,7 +1860,7 @@ pub mod client_frame {
 /// A frame from the Pi to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -1883,6 +1883,8 @@ pub mod server_frame {
         /// The Pi's reply to a client `Heartbeat`.
         #[prost(message, tag = "7")]
         Heartbeat(super::Heartbeat),
+        #[prost(message, tag = "8")]
+        JoinNotice(super::JoinNotice),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2142,6 +2144,25 @@ pub struct RejoinNotice {
     #[prost(bytes = "vec", tag = "1")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
     /// The returning device.
+    #[prost(message, optional, tag = "2")]
+    pub device: ::core::option::Option<DeviceRef>,
+}
+/// group-membership: Automatic add of new users. Sent to the admin's connected
+/// member devices for each non-revoked device that has never been a group
+/// member and whose user has no member device: once the device has uploaded its
+/// KeyPackages after `Devices.Register`, and again each time an admin device
+/// connects, until the device is a member. The first admin device to receive
+/// it, with no user action, fetches a KeyPackage for that device only
+/// (`FetchKeyPackagesRequest.device_ids`), verifies its certificate (pinning the
+/// user's identity key on first sight; a changed key waits for the admin to
+/// accept it), and commits its Add with the Welcome in the same `COMMIT`
+/// envelope. A device that loses the race gets `REJECTION_REASON_STALE_EPOCH`,
+/// sees the device is already a member and does nothing more.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct JoinNotice {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    /// The device to add.
     #[prost(message, optional, tag = "2")]
     pub device: ::core::option::Option<DeviceRef>,
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use client::Event;
 use support::Check;
-use support::device::{self, Device, user};
+use support::device::{self, Device};
 use support::pi::TestPi;
 
 const WEEK: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -104,7 +104,8 @@ async fn one_time_count(pi: &TestPi, device: [u8; 16]) -> i64 {
 async fn a_week_old_last_resort_key_package_is_replaced() {
     let pi = TestPi::start().await;
     let admin = device::admin_with_group(&pi).await;
-    let bob = device::invited(&admin, "bob").await;
+    // Bob signs up while the admin's device is away, so nobody adds him yet.
+    let bob = device::invited_while_admin_away(&admin, "bob").await;
     let id = bob.device_id();
     let first = last_resort(&pi, id).await;
     assert_eq!(one_time_count(&pi, id).await, 20);
@@ -130,7 +131,9 @@ async fn a_week_old_last_resort_key_package_is_replaced() {
     })
     .await;
     let mut bob = bob;
-    admin.client.add_user(&user("bob")).await.check("add bob");
+    // The admin's device comes back and adds him (group-membership:
+    // Automatic add of new users).
+    admin.client.start().await.check("start admin");
     bob.wait_event("joined with the last-resort KeyPackage", |e| {
         matches!(e, Event::JoinedGroup)
     })
@@ -142,7 +145,7 @@ async fn a_week_old_last_resort_key_package_is_replaced() {
 async fn a_low_key_packages_notice_makes_the_device_upload_more() {
     let pi = TestPi::start().await;
     let admin = device::admin_with_group(&pi).await;
-    let mut bob = device::invited(&admin, "bob").await;
+    let mut bob = device::invited_while_admin_away(&admin, "bob").await;
     let id = bob.device_id();
     // Leave Bob five one-time KeyPackages; the admin's fetch takes one more.
     pi.query(move |conn| {
@@ -155,7 +158,7 @@ async fn a_low_key_packages_notice_makes_the_device_upload_more() {
     })
     .await;
     assert_eq!(one_time_count(&pi, id).await, 5);
-    admin.client.add_user(&user("bob")).await.check("add bob");
+    admin.client.start().await.check("start admin");
     bob.wait_event("joined", |e| matches!(e, Event::JoinedGroup))
         .await;
     let deadline = tokio::time::Instant::now() + support::device::WAIT;

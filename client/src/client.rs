@@ -746,7 +746,9 @@ impl Client {
 
     /// The user accepted `user`'s new identity key in the UI (after an
     /// [`Event::IdentityKeyChanged`]): it becomes the pinned key and adding
-    /// their devices works again. Returns `false` if no new key is pending.
+    /// their devices works again. On admin devices this also adds the user's
+    /// devices that wait for it (group-membership: Automatic add of new
+    /// users). Returns `false` if no new key is pending.
     pub fn accept_identity_key(&self, user: &UserId) -> Result<bool, ClientError> {
         let id = user.to_string();
         let Some(pinned) = self.shared.store.pinned_identity_key(&id)? else {
@@ -755,10 +757,22 @@ impl Client {
         let Some(pending) = pinned.pending else {
             return Ok(false);
         };
-        Ok(self
+        let accepted = self
             .shared
             .store
-            .accept_identity_key(&id, &pending, self.now())?)
+            .accept_identity_key(&id, &pending, self.now())?;
+        if accepted
+            && self.account()?.is_admin
+            && let Some(running) = self.running.lock().as_ref()
+        {
+            // If the queue is full the next JoinNotice (at the next connect)
+            // adds them instead.
+            let _ = running.commands.try_send(Command::Job(Job::AddUser {
+                user: user.clone(),
+                reply: None,
+            }));
+        }
+        Ok(accepted)
     }
 
     // --- Messaging (message-content; client-runtime: Send status) ---

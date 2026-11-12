@@ -24,7 +24,7 @@ use super::hub::Event;
 use super::log;
 use super::write::{self, Context, Outcome};
 use crate::auth::Caller;
-use crate::membership::inactivity;
+use crate::membership::{inactivity, joins};
 use crate::pb;
 use crate::pb::client_frame::Frame as In;
 use crate::pb::envelope::Kind;
@@ -324,6 +324,14 @@ fn connect_info(
             .iter()
             .any(|(id, _)| *id == device_id)
         {
+            // group-membership: Automatic add of new users. An admin member
+            // device hears about every device still waiting for its first
+            // add.
+            if caller.username == admin {
+                for (waiting, user) in joins::waiting(conn)? {
+                    frames.push(joins::notice(&group_id, &waiting, &user, server_id));
+                }
+            }
             // This device can re-add devices that came back while nobody
             // able to re-add them was online.
             for (waiting, user) in inactivity::waiting(conn)? {

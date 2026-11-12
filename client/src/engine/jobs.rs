@@ -46,6 +46,9 @@ pub(crate) enum Job {
         device: DeviceId,
         seen: Option<Vec<u8>>,
     },
+    /// group-membership: Automatic add of new users. Admin: add a new user's
+    /// device the Pi announced with a `JoinNotice`.
+    AddNew { user: UserId, device: DeviceId },
     /// device-identity: Device linking. Add a device this device linked,
     /// once it has uploaded KeyPackages.
     AddLinked { device: DeviceId },
@@ -100,6 +103,7 @@ impl Job {
         matches!(
             self,
             Job::Readd { .. }
+                | Job::AddNew { .. }
                 | Job::AddLinked { .. }
                 | Job::CommitPiRemoves
                 | Job::Rotate
@@ -109,7 +113,8 @@ impl Job {
 
     pub(crate) fn same_as(&self, other: &Job) -> bool {
         match (self, other) {
-            (Job::Readd { device: a, .. }, Job::Readd { device: b, .. }) => a == b,
+            (Job::Readd { device: a, .. }, Job::Readd { device: b, .. })
+            | (Job::AddNew { device: a, .. }, Job::AddNew { device: b, .. }) => a == b,
             (Job::AddLinked { device: a }, Job::AddLinked { device: b }) => a == b,
             (Job::CommitPiRemoves, Job::CommitPiRemoves)
             | (Job::Rotate, Job::Rotate)
@@ -130,6 +135,7 @@ impl Job {
                 hex(device),
                 seen.as_deref().map(hex).unwrap_or_default()
             ),
+            Job::AddNew { user, device } => format!("add_new|{user}|{}", hex(device)),
             Job::AddLinked { device } => format!("add_linked|{}", hex(device)),
             Job::CommitPiRemoves => "pi_removes".into(),
             Job::Rotate => "rotate".into(),
@@ -156,6 +162,10 @@ impl Job {
                     device,
                     seen: (!seen.is_empty()).then(|| unhex(seen)).flatten(),
                 }),
+                _ => None,
+            },
+            ["add_new", user, device] => match (parse_user(user), parse_device(device)) {
+                (Some(user), Some(device)) => Some(Job::AddNew { user, device }),
                 _ => None,
             },
             ["add_linked", device] => parse_device(device).map(|device| Job::AddLinked { device }),
@@ -448,6 +458,36 @@ impl Engine {
                     adds: vec![key_package],
                     removes,
                     force_path: false,
+                })?;
+                Ok(Prepared::Commit(staged, vec![recipient]))
+            }
+            Job::AddNew { user, device } => {
+                self.require_admin()?;
+                self.usable_group()?;
+                let group = self.group.as_ref().ok_or(ClientError::NoGroup)?;
+                if leaf_of(group, device).is_some() {
+                    // Another admin device added it first (it lost the race
+                    // with STALE_EPOCH and caught up), or it is in already.
+                    tracing::info!("the new device is already a member; nothing to add");
+                    return Ok(Prepared::Nothing);
+                }
+                let Some(response) = self.fetch(user, &[*device]).await? else {
+                    return Ok(Prepared::Nothing);
+                };
+                // Pins the user's identity key on first sight; a changed key
+                // fails with IdentityKeyChanged (after the warning event) and
+                // the add waits for the admin to accept it.
+                let checked = self.checked_key_packages(user, &response)?;
+                let wanted = device.to_vec();
+                let Some((key_package, recipient)) = checked
+                    .into_iter()
+                    .find(|(_, recipient)| recipient.device_id == wanted)
+                else {
+                    return Ok(Prepared::Nothing);
+                };
+                let staged = self.stage(CommitPlan {
+                    adds: vec![key_package],
+                    ..Default::default()
                 })?;
                 Ok(Prepared::Commit(staged, vec![recipient]))
             }

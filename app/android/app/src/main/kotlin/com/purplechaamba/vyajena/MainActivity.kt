@@ -1,5 +1,6 @@
 package com.purplechaamba.vyajena
 
+import android.content.Intent
 import android.os.Bundle
 import io.crates.keyring.Keyring
 import io.flutter.embedding.android.FlutterActivity
@@ -19,12 +20,30 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vyajena/platform")
             .setMethodCallHandler { call, result ->
-                if (call.method == "dataDir") {
-                    result.success(coreDataDir().path)
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "dataDir" -> result.success(coreDataDir().path)
+                    "share" -> {
+                        val text = call.argument<String>("text")
+                        if (text == null) {
+                            result.error("share", "no text", null)
+                        } else {
+                            share(text)
+                            result.success(null)
+                        }
+                    }
+                    else -> result.notImplemented()
                 }
             }
+    }
+
+    // The system share sheet for an invite, link request or link approval
+    // the user chose to share (flutter-app design D5). Never message text.
+    private fun share(text: String) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        startActivity(Intent.createChooser(send, null))
     }
 
     // The folder the Rust core keeps its database in (app-ui: Data on the

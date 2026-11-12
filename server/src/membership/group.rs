@@ -375,6 +375,13 @@ impl GroupState {
                 .ok_or_else(|| StoreError::Inconsistent("member leaf without a device".into()))?;
             insert.execute(params![member.index.u32(), device_id.as_slice()])?;
         }
+        // group-membership: Automatic add of new users: a member is never
+        // announced again.
+        tx.execute(
+            "UPDATE devices SET was_member = 1
+             WHERE was_member = 0 AND device_id IN (SELECT device_id FROM mls_members)",
+            [],
+        )?;
         Ok(())
     }
 

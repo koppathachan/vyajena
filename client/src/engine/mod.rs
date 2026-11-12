@@ -617,6 +617,10 @@ impl Engine {
                 self.on_rejoin_notice(notice);
                 Ok(())
             }
+            Some(In::JoinNotice(notice)) => {
+                self.on_join_notice(notice);
+                Ok(())
+            }
             Some(In::Heartbeat(_)) | None => Ok(()),
         }
     }
@@ -649,6 +653,35 @@ impl Engine {
             user,
             device: device_id,
             seen,
+        });
+    }
+
+    /// group-membership: Automatic add of new users. On admin devices: a new
+    /// user's device waits for its first add; add it with no user action.
+    fn on_join_notice(&mut self, notice: pb::JoinNotice) {
+        if !self.account.is_admin {
+            return;
+        }
+        let Some(device) = notice.device else {
+            return;
+        };
+        let Some(user) = device.user_id.as_ref().map(UserId::from_pb) else {
+            return;
+        };
+        let Ok(device_id) = DeviceId::try_from(device.device_id.as_slice()) else {
+            return;
+        };
+        if self
+            .group
+            .as_ref()
+            .is_some_and(|g| crate::mls::verify::leaf_of(g, &device_id).is_some())
+        {
+            return;
+        }
+        tracing::info!(user = %user, "join notice; adding the new device");
+        self.push_job(Job::AddNew {
+            user,
+            device: device_id,
         });
     }
 

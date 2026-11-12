@@ -16,16 +16,44 @@ import UIKit
       name: CoreDataDir.channel,
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
     channel.setMethodCallHandler { call, result in
-      guard call.method == "dataDir" else {
+      switch call.method {
+      case "dataDir":
+        do {
+          result(try CoreDataDir.prepare().path)
+        } catch {
+          result(FlutterError(code: "dataDir", message: error.localizedDescription, details: nil))
+        }
+      case "share":
+        guard let args = call.arguments as? [String: Any], let text = args["text"] as? String
+        else {
+          result(FlutterError(code: "share", message: "no text", details: nil))
+          return
+        }
+        ShareSheet.present(text)
+        result(nil)
+      default:
         result(FlutterMethodNotImplemented)
-        return
-      }
-      do {
-        result(try CoreDataDir.prepare().path)
-      } catch {
-        result(FlutterError(code: "dataDir", message: error.localizedDescription, details: nil))
       }
     }
+  }
+}
+
+/// The system share sheet for an invite, link request or link approval the
+/// user chose to share (flutter-app design D5). Never message text.
+enum ShareSheet {
+  static func present(_ text: String) {
+    let root = UIApplication.shared.connectedScenes
+      .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+      .first?.rootViewController
+    guard let root else { return }
+    var top = root
+    while let presented = top.presentedViewController { top = presented }
+    let sheet = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+    // iPad shows the sheet as a popover, which needs an anchor.
+    sheet.popoverPresentationController?.sourceView = top.view
+    sheet.popoverPresentationController?.sourceRect = CGRect(
+      x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+    top.present(sheet, animated: true)
   }
 }
 
