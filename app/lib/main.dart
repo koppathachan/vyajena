@@ -1,10 +1,14 @@
-// The app's entry point. Screens, CoreService and the theme come with
-// flutter-app tasks 4-5; this only loads the Rust bridge.
+// The app's entry point: load the Rust bridge, open the core, show the app.
 import 'package:flutter/material.dart';
 
+import 'app/app.dart';
+import 'core/rust_core_service.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
-  runApp(const MaterialApp(home: Scaffold()));
+  final core = RustCoreService();
+  runApp(VyajenaApp(core: core));
+  await core.open();
 }

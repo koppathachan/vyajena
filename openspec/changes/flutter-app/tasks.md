@@ -12,13 +12,13 @@
 
 ## 3. Phone key stores
 
-- [ ] 3.1 iOS Keychain `KeyStore` (client-runtime: Key storage)
-- [ ] 3.2 Android Keystore `KeyStore` (client-runtime: Key storage)
+- [x] 3.1 iOS Keychain `KeyStore` (client-runtime: Key storage)
+- [x] 3.2 Android Keystore `KeyStore` (client-runtime: Key storage)
 
 ## 4. App skeleton
 
-- [ ] 4.1 `flutter create` iOS + Android only in `app/`; feature folders; `CoreService` and its fake; the theme (app-ui: Light Material 3 look)
-- [ ] 4.2 Private storage, Android `allowBackup="false"`, iOS backup exclusion and `NSFileProtectionComplete` (app-ui: Data on the phone); lifecycle and connection indicator (app-ui: Foreground and background)
+- [x] 4.1 `flutter create` iOS + Android only in `app/`; feature folders; `CoreService` and its fake; the theme (app-ui: Light Material 3 look)
+- [x] 4.2 Private storage, Android `allowBackup="false"`, iOS backup exclusion and `NSFileProtectionComplete` (app-ui: Data on the phone); lifecycle and connection indicator (app-ui: Foreground and background)
 
 ## 5. Screens
 

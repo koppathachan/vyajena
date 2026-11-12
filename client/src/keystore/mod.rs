@@ -8,10 +8,11 @@
 //!   Keychain, Linux Secret Service, Windows Credential Manager).
 //! - [`FileKeyStore`]: one key file with mode 0600, only with an explicit
 //!   opt-in ([`KeyFileOptIn`]) on a machine without a keychain.
+//! - [`PhoneKeyStore`]: the iOS Keychain or the Android Keystore through
+//!   `keyring-core` (flutter-app design D4), chosen on those targets.
 //! - [`MemoryKeyStore`]: in memory, for tests.
 //!
-//! Android Keystore and iOS Keychain implement the same trait later. The core
-//! never writes these secrets anywhere else: not to SQLite, logs or other
+//! The core never writes these secrets anywhere else: not to SQLite, logs or other
 //! files. [`open_key_store`] picks the store and refuses when there is no
 //! keychain and no opt-in.
 //!
@@ -28,10 +29,12 @@ use zeroize::Zeroizing;
 mod file;
 mod memory;
 mod os;
+mod phone;
 
 pub use file::{FileKeyStore, KEY_FILE_MODE, KeyFileOptIn};
 pub use memory::MemoryKeyStore;
 pub use os::{KEYCHAIN_SERVICE, OsKeychain};
+pub use phone::{ANDROID_STORE_NAME, IOS_ACCESS_POLICY, PhoneKeyStore};
 
 /// A secret read from a key store; zeroed when dropped.
 pub type Secret = Zeroizing<Vec<u8>>;
@@ -83,8 +86,12 @@ impl fmt::Display for KeyName {
 /// Which kind of store holds the keys, for the UI to show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyStoreKind {
-    /// The OS keychain.
+    /// The OS keychain (desktop).
     OsKeychain,
+    /// The iOS Keychain (data protection keychain, this device only).
+    IosKeychain,
+    /// The Android Keystore (secrets sealed under a Keystore key).
+    AndroidKeystore,
     /// The opt-in 0600 key file.
     File,
     /// In memory (tests).
@@ -163,11 +170,17 @@ pub struct KeyStoreConfig {
     pub key_file: Option<KeyFileOptIn>,
 }
 
-/// Opens the key store for `config`: the OS keychain when it is available,
-/// otherwise the opted-in key file, otherwise
-/// [`KeyStoreError::NoKeychain`].
+/// Opens the key store for `config`: the OS keychain when it is available
+/// (on iOS the iOS Keychain, on Android the Android Keystore), otherwise the
+/// opted-in key file, otherwise [`KeyStoreError::NoKeychain`].
 pub fn open_key_store(config: &KeyStoreConfig) -> Result<Arc<dyn KeyStore>, KeyStoreError> {
-    choose_key_store(OsKeychain::probe(&config.profile), config.key_file.as_ref())
+    #[cfg(target_os = "ios")]
+    let keychain = PhoneKeyStore::ios_keychain(&config.profile);
+    #[cfg(target_os = "android")]
+    let keychain = PhoneKeyStore::android_keystore(&config.profile);
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let keychain = OsKeychain::probe(&config.profile);
+    choose_key_store(keychain, config.key_file.as_ref())
 }
 
 /// The selection rule of [`open_key_store`], with the keychain probe result

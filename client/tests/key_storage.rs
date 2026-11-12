@@ -6,9 +6,11 @@ mod support;
 use std::sync::Arc;
 
 use client::keystore::{
-    FileKeyStore, KEY_FILE_MODE, KeyFileOptIn, KeyName, KeyStore, KeyStoreError, KeyStoreKind,
-    MemoryKeyStore, OsKeychain, choose_key_store, get_or_create,
+    FileKeyStore, IOS_ACCESS_POLICY, KEY_FILE_MODE, KEYCHAIN_SERVICE, KeyFileOptIn, KeyName,
+    KeyStore, KeyStoreError, KeyStoreKind, MemoryKeyStore, OsKeychain, PhoneKeyStore,
+    choose_key_store, get_or_create,
 };
+use keyring_core::api::CredentialStoreApi;
 use support::Check;
 
 fn no_keychain() -> Result<MemoryKeyStore, KeyStoreError> {
@@ -259,4 +261,99 @@ fn os_keychain_keeps_named_secrets() {
     }
     let store: Arc<dyn KeyStore> = Arc::new(again);
     assert!(store.get(KeyName::StorageKey).check("get").is_none());
+}
+
+// The phone stores (flutter-app D4) share PhoneKeyStore's entry naming and
+// error mapping; here keyring-core's mock store stands in for the iOS
+// Keychain and the Android Keystore, which run only on a phone (the real
+// stores were checked on the iOS Simulator and the Android emulator,
+// design D4).
+
+fn mock_store() -> Arc<keyring_core::mock::Store> {
+    keyring_core::mock::Store::new().check("mock store")
+}
+
+// spec: client-runtime/key-storage
+#[test]
+fn phone_store_keeps_named_secrets() {
+    for kind in [KeyStoreKind::IosKeychain, KeyStoreKind::AndroidKeystore] {
+        let store = PhoneKeyStore::with_store(mock_store(), kind, "app", &[])
+            .probe()
+            .check("probe");
+        assert_eq!(store.kind(), kind);
+        assert_eq!(store.profile(), "app");
+        roundtrip(&store);
+    }
+}
+
+// spec: client-runtime/key-storage
+#[test]
+fn phone_store_entries_are_named_by_service_profile_and_key() {
+    let mock = mock_store();
+    let store = PhoneKeyStore::with_store(mock.clone(), KeyStoreKind::IosKeychain, "app", &[]);
+    store.set(KeyName::DeviceAuthKey, b"auth").check("set");
+    // The same entry, seen from the native store: service "vyajena2",
+    // user "<profile>/<key name>".
+    let entry = mock
+        .build(KEYCHAIN_SERVICE, "app/device-auth-key", None)
+        .check("build");
+    assert_eq!(entry.get_secret().check("native get"), b"auth");
+
+    // A restart (a new handle on the same native store) reads the same keys.
+    let again = PhoneKeyStore::with_store(mock.clone(), KeyStoreKind::IosKeychain, "app", &[]);
+    assert_eq!(
+        again
+            .get(KeyName::DeviceAuthKey)
+            .check("get")
+            .check("auth")
+            .as_slice(),
+        b"auth"
+    );
+    // Another profile on the same phone does not share them.
+    let other = PhoneKeyStore::with_store(mock, KeyStoreKind::IosKeychain, "other", &[]);
+    assert!(other.get(KeyName::DeviceAuthKey).check("get").is_none());
+}
+
+// spec: client-runtime/key-storage
+#[test]
+fn phone_store_that_does_not_answer_is_no_keychain() {
+    // The mock refuses entry modifiers, like a store that cannot build the
+    // entries the core asks for: the probe reports no keychain, and without
+    // an opt-in the core refuses to create keys.
+    let refused = PhoneKeyStore::with_store(
+        mock_store(),
+        KeyStoreKind::IosKeychain,
+        "app",
+        &[("access-policy", IOS_ACCESS_POLICY)],
+    )
+    .probe();
+    let error = refused.as_ref().err().check("probe must fail");
+    assert!(
+        matches!(error, KeyStoreError::NoKeychain { .. }),
+        "{error:?}"
+    );
+    let chosen = choose_key_store(refused, None);
+    assert!(
+        matches!(chosen, Err(KeyStoreError::NoKeychain { .. })),
+        "{chosen:?}"
+    );
+}
+
+// spec: client-runtime/key-storage
+#[test]
+fn phone_store_failure_is_a_keychain_error() {
+    let mock = mock_store();
+    let store = PhoneKeyStore::with_store(mock.clone(), KeyStoreKind::AndroidKeystore, "app", &[]);
+    store.set(KeyName::StorageKey, &[9u8; 32]).check("set");
+    let entry = mock
+        .build(KEYCHAIN_SERVICE, "app/storage-key", None)
+        .check("build");
+    let cred: &keyring_core::mock::Cred = entry.as_any().downcast_ref().check("mock cred");
+    cred.set_error(keyring_core::Error::NoStorageAccess(
+        "the keychain is locked".into(),
+    ));
+    let error = store.get(KeyName::StorageKey).err().check("get must fail");
+    assert!(matches!(error, KeyStoreError::Keychain(_)), "{error:?}");
+    // The error is gone after one call and the key is still there.
+    assert!(store.get(KeyName::StorageKey).check("get").is_some());
 }

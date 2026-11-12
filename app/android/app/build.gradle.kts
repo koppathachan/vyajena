@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.vyajena2.vyajena"
+    namespace = "com.purplechaamba.vyajena"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,8 +15,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.vyajena2.vyajena"
+        // The owner's app id (purplechaamba.com), flutter-app design D1.
+        applicationId = "com.purplechaamba.vyajena"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

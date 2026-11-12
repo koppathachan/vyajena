@@ -39,6 +39,37 @@ bridge/                 Rust crate in the workspace: wraps client::Client
 Folders follow features, as on the Pi and in the core. Tests stay out of `lib/`
 (Dart's own convention matches the owner's rule).
 
+**App id (owner, 2026-11-12): `com.purplechaamba.vyajena`** (the owner owns
+purplechaamba.com), replacing session A's `dev.vyajena2.vyajena`: the Android
+`namespace`, `applicationId` and the Kotlin package of `MainActivity`; the iOS
+`PRODUCT_BUNDLE_IDENTIFIER` (and `.RunnerTests`). The Dart package stays
+`vyajena`. The owner also kept `freezed` as session A set it up (D2).
+
+**As built (task 4.1).**
+
+- `lib/core/core_service.dart`: `CoreService`, an abstract class with the
+  shared state (`state`, `connection`, `user` as `ValueListenable`s; one
+  broadcast `events` stream in the core's order) and one method per core
+  call, including the sync `parseInvite` and `textFits`, so widget tests
+  never load Rust. It re-exports the bridge's plain types and `CoreError`;
+  screens import only it. `lib/core/rust_core_service.dart` is the real one
+  (the only file besides `main.dart` that touches the bridge's `Core`);
+  `lib/core/event_label.dart` names an event for debug logs without its
+  text.
+- The fake is test support, so it lives in
+  `test/support/fake_core_service.dart`, not `lib/core/`: tests stay out of
+  `lib/`. Tests push events with `emit` and read the calls made.
+- `lib/app/`: the shell (`VyajenaApp`, `HomeScreen`), the theme (D8), the
+  lifecycle (D9) and the connection indicator. `HomeScreen` shows only the
+  core's state (opening, failed, not joined, `user@server`) until the
+  feature folders `onboarding`, `chat`, `members`, `profile`, `devices`,
+  `admin` arrive with their screens (tasks 5.1–5.5); empty folders are not
+  committed.
+- `cupertino_icons` was removed (an icon font; the look uses Material icons
+  only), and the main Android manifest gained the `INTERNET` permission that
+  `flutter create` puts only in the debug and profile manifests: the core
+  needs it in release builds.
+
 ### D2. Bridge
 
 - `bridge` holds no logic: each function forwards to `client::Client`, mapping
@@ -192,6 +223,58 @@ killed and relaunched it reported "existing" with the same fingerprint.
   - The store logs entry names (never secrets) at debug level through
     frb's `android_logger`; release builds log at info.
 
+**As built (tasks 3.1, 3.2).**
+
+- `client/src/keystore/phone.rs`: `PhoneKeyStore`, one `keyring-core`
+  entry per key (service `vyajena2`, user `<profile>/<key name>`, as on
+  desktop), with the entry naming, the "no entry" mapping and an
+  availability probe shared by both phones. `ios_keychain` builds it on
+  `apple-native-keyring-store::protected::Store` with modifier
+  `access-policy = WhenUnlockedThisDeviceOnly`; `android_keystore` on
+  `android-native-keyring-store::Store` named `vyajena2` (prefs file
+  `keyring-vyajena2`). `open_key_store` picks it on `target_os = "ios"` /
+  `"android"`, `OsKeychain` elsewhere; the selection rule
+  (`choose_key_store`) is unchanged. `KeyStoreKind` gained `IosKeychain`
+  and `AndroidKeystore`.
+- The store crates are target dependencies of `client` (iOS with
+  `protected`, which also makes `keyring`'s `keychain` feature build there);
+  `keyring-core` is a plain dependency, so host tests drive `PhoneKeyStore`
+  with `keyring_core::mock::Store` (`client/tests/key_storage.rs`: round
+  trip, entry names, profiles apart, a store that does not answer is
+  `NoKeychain`, store failures are `Keychain` errors).
+- Android: without the `ndk-context` init the native store panics; the
+  constructor catches that and reports `NoKeychain` naming the missing
+  `MainActivity` call. `MainActivity.onCreate` calls
+  `io.crates.keyring.Keyring.initializeNdkContext(applicationContext)`
+  before `super.onCreate` (`android/app/src/main/kotlin/io/crates/keyring/Keyring.kt`).
+
+**How the real stores were checked (2026-11-12).** Each phone ran the real
+app (`com.purplechaamba.vyajena`, debug) against its own temporary Pi
+(`target/debug/server` with a config in a temp folder, never
+`server/local.toml`), through a throwaway entry point that registered from
+the Pi's bootstrap invite (deleted, never committed). Then the app was killed
+and started again from the launcher with the normal `main.dart` path, which
+opens the core, loads the device keys from the key store and starts: the
+screen showed `alice@pi` and the indicator Connected, so the Pi accepted a
+login signed with the device auth key read back from the phone store.
+
+- iOS Simulator (iPhone 16, iOS 26.5): registered, killed (`flutter run`
+  stopped), relaunched with `simctl launch`: `alice@pi`, Connected. The
+  simulator's keychain database held four items in access group
+  `FAKETEAMID.com.purplechaamba.vyajena` with `pdmn = aku`
+  (`WhenUnlockedThisDeviceOnly`) and `sync = 0`. The data folder
+  `Application Support/core` carried the backup-exclusion attribute
+  (`com.apple.metadata:com_apple_backup_excludeItem`). The Simulator has no
+  data protection, so `NSFileProtectionComplete` is checked in code only
+  (D10).
+- Android emulator (API 35, arm64, `adb reverse` to the Pi's port):
+  registered, `am force-stop`, relaunched with `am start`: `alice@pi`,
+  Connected. `shared_prefs/keyring-vyajena2.xml` held four entries
+  `app/<key name>` with base64 ciphertext only; the database was in
+  `no_backup/core`; `dumpsys package` showed no `ALLOW_BACKUP` flag.
+- The app was uninstalled from the emulator afterwards; both devices and
+  both Pis were shut down.
+
 ### D5. Invites and links by text
 
 Invites, link requests and approvals move as text (copy, paste, share sheet). The
@@ -232,11 +315,44 @@ Material 3, `ColorScheme.fromSeed(seedColor: <muted slate>, dynamicSchemeVariant
 DynamicSchemeVariant.neutral)`, `ThemeMode.system`, stock widgets, system font.
 The seed is one constant the owner can change.
 
+As built: `seedColor = Color(0xFF5E6B78)` in `lib/app/theme.dart`, with
+`lightTheme`, `darkTheme` and `themeMode`.
+
 ### D9. Lifecycle
 
 `AppLifecycleListener`: on resume, the core reconnects and catches up (it already
 reconnects with backoff); the app shows a small connected / connecting indicator.
 Background execution and wake-on-push wait for real push.
+
+As built (task 4.2): `CoreLifecycle` (`lib/app/lifecycle.dart`) stops the
+engine on `onPause` (the app is in the background) and starts it again on
+`onResume`, so the core reconnects at once instead of waiting out its
+backoff, and catches up in order; a short `inactive` (a notification shade,
+a call banner) changes nothing. `CoreService.open` starts the core when the
+device has a user. The indicator in the app bar shows Connected, Connecting…
+or Offline from `CoreEvent.connection`.
+
+### D10. Data on the phone
+
+As built (task 4.2). The core's data folder comes from the platform over one
+method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
+
+- **iOS** (`AppDelegate.swift`): `Application Support/core`, marked
+  `isExcludedFromBackup`, with `NSFileProtectionComplete` on the folder and
+  on every file already in it at each start; files the core creates later
+  inherit the folder's class. No data-protection entitlement, so no
+  provisioning change. Consequence: about ten seconds after the phone locks
+  the database cannot be opened; the engine is stopped in the background
+  anyway (D9), and a received message that could not be stored is not
+  acked, so the Pi redelivers it.
+- **Android** (`MainActivity.kt`): `noBackupFilesDir/core`, which Android
+  never backs up, plus `allowBackup="false"`, `fullBackupContent="false"`
+  and `dataExtractionRules` excluding every domain from cloud backup and
+  device-to-device transfer (Android 12+ ignores `allowBackup` for
+  transfers).
+- Keys are not in these folders: the iOS Keychain and the Android Keystore
+  hold them (D4). Widget tests read these settings from the project files
+  (`test/app/data_on_the_phone_test.dart`).
 
 ## Risks / Trade-offs
 
