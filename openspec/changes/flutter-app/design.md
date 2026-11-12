@@ -446,6 +446,9 @@ As built:
   add (2026-11-12): new `JoinNotice` frame and group-membership: Automatic add of
   new users (tasks 4.3–4.5). It follows the RejoinNotice pattern; a changed
   identity key still needs the admin's accept, as key-directory already says.
+- The requirement said the Pi sends `JoinNotice` when the device registers; a
+  device has no KeyPackage until its first upload, so the Pi sends it after that
+  upload (D11). Spec reworded to match (tracker, 2026-11-12).
 
 ## Risks / Trade-offs
 

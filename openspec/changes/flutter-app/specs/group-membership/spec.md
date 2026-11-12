@@ -3,8 +3,9 @@
 ### Requirement: Automatic add of new users
 The Pi SHALL send a `JoinNotice` to the admin's connected devices for each
 non-revoked device that has never been a group member and whose user has no
-member device: when that device registers, and again each time an admin device
-connects, until the device is a member. The first admin device to receive it
+member device: once that device has uploaded its first KeyPackages after
+registering, and again each time an admin device connects, until the device is a
+member. The first admin device to receive it
 SHALL, without user action, fetch a KeyPackage for that device only, verify its
 certificate (pinning the user's identity key on first sight), and commit its Add
 with the Welcome in the same `COMMIT` envelope. A changed identity key SHALL
