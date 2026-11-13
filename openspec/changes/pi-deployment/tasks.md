@@ -16,6 +16,7 @@
 - [x] 3.1 First deploy to `192.168.1.8`; `check.sh` passes (including pending-reboot and address-clash reports); record the `systemd-analyze security` score and threshold in D3
 - [x] 3.2 The iOS Simulator and the Android emulator (no `adb reverse`) join with invites naming `192.168.1.8:8443` and chat; record in design.md
 - [x] 3.3 Upgrade with a new build keeps the pin and users; `--rollback` works; `backup.sh` produces a valid snapshot; record in design.md
+- [x] 3.4 IPv6 exposure test from outside the home network (mobile data): the Pi's global addresses refuse 22 and 8443; recorded in D8 (owner's side session, 2026-11-14)
 
 ## 4. Docs and validation
 

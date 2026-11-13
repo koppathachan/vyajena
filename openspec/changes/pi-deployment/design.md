@@ -217,6 +217,24 @@ streams, Ctrl-C) and `durable_storage.rs` (close after queued jobs).
   2 users, both keys, folders 0700 and files 0600 under
   `~/vyajena-pi-backups/<UTC time>/`; the service kept running.
 
+### D8. IPv6 exposure test from outside (owner, 2026-11-14)
+
+`check.sh` probes the Pi's global IPv6 addresses from the Mac, which is inside
+the home prefix, so it cannot show what the internet sees. The owner's side
+session wrote an outside test, kept **outside the repo** at
+`~/code/pi-ipv6-check.sh` because it names the Pi's global addresses:
+
+- Run it with the Mac on a phone hotspot with mobile data, never home Wi-Fi (it
+  refuses when the Mac has a home-prefix address). It checks IPv6 internet
+  works, then probes the Pi's eth0 and wlan0 global addresses on TCP 22 and
+  8443. Exit 0 = not reachable, 1 = exposed, 2 = cannot test.
+- **Result 2026-11-14:** not reachable; both addresses, both ports closed or
+  filtered; the home prefix unchanged.
+- **Caveat:** the Pi's nftables (`inet vyajena`, policy drop) was already in place,
+  so this proves the Pi blocks outside IPv6; whether the router also blocks it is
+  untested, and testing that would mean turning the Pi's firewall off (not done).
+- Rerun it after every firewall change, and in the relay change.
+
 ## Risks / Trade-offs
 
 - [Port 8443 open on the home LAN] → only the home subnet; TLS pinned; removed by

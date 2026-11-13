@@ -30,7 +30,8 @@ kept so the owner can roll back.
 ### Requirement: Sandboxed service
 The server SHALL run as the `vyajena` system user, which has no login shell,
 under systemd with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
-`PrivateTmp`, no capabilities, and write access only to `/var/lib/vyajena`. Its
+`PrivateTmp`, no capabilities, and write access only to `/var/lib/vyajena` and
+its own private `/tmp`. Its
 database and private keys SHALL have mode 0600. systemd SHALL restart it if it
 crashes. The Pi enforces this.
 
@@ -39,7 +40,8 @@ crashes. The Pi enforces this.
 - **THEN** systemd starts it again within seconds, with the same pin
 
 #### Scenario: No writes outside its folder
-- **WHEN** the server tries to write anywhere other than `/var/lib/vyajena`
+- **WHEN** the server tries to write anywhere other than `/var/lib/vyajena` or
+  its private `/tmp`
 - **THEN** the write fails
 
 ### Requirement: Host hardening
