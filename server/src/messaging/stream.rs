@@ -17,7 +17,7 @@ use std::time::Duration;
 use protocol::device_identity::DeviceId;
 use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
 use protocol::wire_transport::{PROTOCOL_VERSION, STREAM_IDLE_TIMEOUT};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tonic::{Status, Streaming};
 
 use super::hub::Event;
@@ -381,6 +381,7 @@ pub(crate) async fn run(
     let mut tick = tokio::time::interval(IDLE_CHECK_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_frame = session.state.clock.now();
+    let mut stopping = session.state.hub.stopping();
 
     // wire-transport: Protocol version negotiation.
     let hello = loop {
@@ -393,6 +394,10 @@ pub(crate) async fn run(
                 }
             }
             () = session.out.closed() => return,
+            () = stopped(&mut stopping) => {
+                session.fail(stopping_status()).await;
+                return;
+            }
         }
     };
     match hello {
@@ -431,6 +436,7 @@ pub(crate) async fn run(
         &mut inbound,
         &mut events,
         &mut tick,
+        &mut stopping,
         last_frame,
     )
     .await;
@@ -451,6 +457,7 @@ async fn serve(
     inbound: &mut Streaming<pb::ClientFrame>,
     events: &mut mpsc::UnboundedReceiver<Event>,
     tick: &mut tokio::time::Interval,
+    stopping: &mut watch::Receiver<bool>,
     mut last_frame: std::time::SystemTime,
 ) -> Result<(), Ended> {
     session.on_connect().await?;
@@ -476,6 +483,19 @@ async fn serve(
                 }
             }
             () = session.out.closed() => return Ok(()),
+            // Polled only between frames: a frame in progress (an envelope
+            // being accepted) finishes first (pi-runtime: Graceful stop).
+            () = stopped(stopping) => return Err(session.fail(stopping_status()).await),
         }
     }
+}
+
+/// Completes once the server is stopping.
+async fn stopped(stopping: &mut watch::Receiver<bool>) {
+    // An error means the hub is gone, which also means stopping.
+    let _ = stopping.wait_for(|stop| *stop).await;
+}
+
+fn stopping_status() -> Status {
+    Status::unavailable("the server is stopping; reconnect later")
 }

@@ -1,4 +1,9 @@
-//! The Pi server binary: `server --config <file.toml>`.
+//! The Pi server binary:
+//!
+//! - `server --config <file.toml>` runs the server until `SIGTERM` or Ctrl-C.
+//! - `server backup --config <file.toml> --to <file>` writes a consistent
+//!   snapshot of the server's database to a new file (mode 0600) while the
+//!   server keeps running (pi-deployment: Backup to the Mac).
 
 #![forbid(unsafe_code)]
 
@@ -7,6 +12,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use server::runtime::{Config, Pi, SystemClock};
+use server::store::backup;
 use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
@@ -17,10 +23,24 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let config_path = config_path_from_args()?;
+    let command = command_from_args()?;
     // Config errors stop us here, before any key, database or port is touched
     // (pi-runtime: Configuration).
-    let config = Config::load(&config_path)?;
+    let config = Config::load(command.config())?;
+    let config = match command {
+        Command::Serve { .. } => config,
+        Command::Backup { to, .. } => {
+            let snapshot = backup::snapshot(&config.database_path, &to)
+                .with_context(|| format!("backing up to {}", to.display()))?;
+            tracing::info!(
+                path = %snapshot.path.display(),
+                bytes = snapshot.bytes,
+                schema_version = snapshot.schema_version,
+                "database snapshot written"
+            );
+            return Ok(());
+        }
+    };
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -33,23 +53,60 @@ fn main() -> Result<()> {
         })
 }
 
-fn config_path_from_args() -> Result<PathBuf> {
-    let mut args = std::env::args_os().skip(1);
-    let mut path = None;
-    while let Some(arg) = args.next() {
-        match arg.to_str() {
-            Some("--config") => match args.next() {
-                Some(value) => path = Some(PathBuf::from(value)),
-                None => bail!("--config needs a file path"),
-            },
-            Some("--help" | "-h") => {
-                println!("usage: server --config <file.toml>");
-                std::process::exit(0);
-            }
-            _ => bail!("unknown argument {arg:?}; usage: server --config <file.toml>"),
+const USAGE: &str =
+    "usage: server --config <file.toml>\n       server backup --config <file.toml> --to <file>";
+
+/// What the binary was asked to do.
+enum Command {
+    /// Run the server.
+    Serve { config: PathBuf },
+    /// Write a database snapshot to `to`.
+    Backup { config: PathBuf, to: PathBuf },
+}
+
+impl Command {
+    fn config(&self) -> &std::path::Path {
+        match self {
+            Self::Serve { config } | Self::Backup { config, .. } => config,
         }
     }
-    path.context("missing --config <file.toml>")
+}
+
+fn command_from_args() -> Result<Command> {
+    let mut args = std::env::args_os().skip(1).peekable();
+    let backup = args.peek().and_then(|a| a.to_str()) == Some("backup");
+    if backup {
+        args.next();
+    }
+    let mut config = None;
+    let mut to = None;
+    while let Some(arg) = args.next() {
+        match arg.to_str() {
+            Some("--config") => config = Some(path_after(&mut args, "--config")?),
+            Some("--to") if backup => to = Some(path_after(&mut args, "--to")?),
+            Some("--help" | "-h") => {
+                println!("{USAGE}");
+                std::process::exit(0);
+            }
+            _ => bail!("unknown argument {arg:?}\n{USAGE}"),
+        }
+    }
+    let config = config.context("missing --config <file.toml>")?;
+    Ok(if backup {
+        Command::Backup {
+            config,
+            to: to.context("missing --to <file>")?,
+        }
+    } else {
+        Command::Serve { config }
+    })
+}
+
+fn path_after(args: &mut impl Iterator<Item = std::ffi::OsString>, flag: &str) -> Result<PathBuf> {
+    match args.next() {
+        Some(value) => Ok(PathBuf::from(value)),
+        None => bail!("{flag} needs a file path"),
+    }
 }
 
 async fn shutdown_signal() {

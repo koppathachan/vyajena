@@ -6,6 +6,8 @@
 //! is the only writer, which also gives design D4 its single writer: jobs run
 //! one at a time, in the order they were sent, and a job that commits a
 //! transaction has made it durable when its result comes back.
+//! [`Store::close`] closes the database after the jobs sent before it
+//! (pi-runtime: Graceful stop).
 
 use std::fs::OpenOptions;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -16,6 +18,7 @@ use std::thread;
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
+pub mod backup;
 mod migrations;
 pub mod records;
 
@@ -69,11 +72,19 @@ impl From<StoreError> for tonic::Status {
 
 type Job = Box<dyn FnOnce(&mut Connection) + Send>;
 
+/// What the database thread is sent.
+enum Message {
+    /// Run this job.
+    Job(Job),
+    /// Close the database and stop; report how the close went.
+    Close(oneshot::Sender<Result<(), StoreError>>),
+}
+
 /// A handle to the database thread. Cheap to clone; the thread stops when the
-/// last handle is dropped.
+/// last handle is dropped or at [`Store::close`].
 #[derive(Clone, Debug)]
 pub struct Store {
-    jobs: std_mpsc::Sender<Job>,
+    jobs: std_mpsc::Sender<Message>,
 }
 
 impl Store {
@@ -81,7 +92,7 @@ impl Store {
     /// and starts the database thread.
     pub fn open(path: &Path) -> Result<Self, StoreError> {
         create_private(path)?;
-        let (jobs, queue) = std_mpsc::channel::<Job>();
+        let (jobs, queue) = std_mpsc::channel::<Message>();
         let (ready_tx, ready_rx) = std_mpsc::sync_channel(1);
         let path = path.to_path_buf();
         thread::Builder::new()
@@ -97,8 +108,16 @@ impl Store {
                         return;
                     }
                 };
-                while let Ok(job) = queue.recv() {
-                    job(&mut conn);
+                while let Ok(message) = queue.recv() {
+                    match message {
+                        Message::Job(job) => job(&mut conn),
+                        Message::Close(done) => {
+                            // Checkpoints the WAL into the database file.
+                            let closed = conn.close().map_err(|(_, error)| error.into());
+                            let _ = done.send(closed);
+                            return;
+                        }
+                    }
                 }
             })
             .map_err(|source| StoreError::Io {
@@ -118,9 +137,19 @@ impl Store {
     {
         let (tx, rx) = oneshot::channel();
         self.jobs
-            .send(Box::new(move |conn| {
+            .send(Message::Job(Box::new(move |conn| {
                 let _ = tx.send(job(conn));
-            }))
+            })))
+            .map_err(|_| StoreError::Closed)?;
+        rx.await.map_err(|_| StoreError::Closed)?
+    }
+
+    /// Closes the database once the jobs sent before have run. Later calls
+    /// on any handle fail with [`StoreError::Closed`].
+    pub async fn close(&self) -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+        self.jobs
+            .send(Message::Close(tx))
             .map_err(|_| StoreError::Closed)?;
         rx.await.map_err(|_| StoreError::Closed)?
     }

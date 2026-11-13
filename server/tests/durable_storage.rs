@@ -187,3 +187,39 @@ async fn jobs_run_one_at_a_time_in_order() {
         .await;
     assert_eq!(distinct.ok(), Some(50));
 }
+
+// spec: pi-runtime/graceful-stop
+#[tokio::test]
+async fn close_runs_queued_jobs_then_closes_the_database() {
+    let tmp = temp();
+    let path = tmp.path().join("pi.sqlite");
+    let store = open(&path);
+    // Queued before the close, so it commits before the database closes.
+    let write = {
+        let store = store.clone();
+        tokio::spawn(async move {
+            store
+                .call(|conn| {
+                    conn.execute_batch("CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (7);")?;
+                    Ok(())
+                })
+                .await
+        })
+    };
+    tokio::task::yield_now().await;
+    let closed = store.close().await;
+    assert!(closed.is_ok(), "{closed:?}");
+    assert!(matches!(write.await, Ok(Ok(()))));
+    // Closed for every handle, and SQLite removed the WAL at the clean close.
+    assert!(matches!(
+        store.call(|_| Ok(())).await,
+        Err(StoreError::Closed)
+    ));
+    assert!(!tmp.path().join("pi.sqlite-wal").exists());
+
+    let store = open(&path);
+    let value = store
+        .call(|conn| Ok(conn.query_row("SELECT x FROM t", [], |row| row.get::<_, i64>(0))?))
+        .await;
+    assert!(matches!(value, Ok(7)), "{value:?}");
+}

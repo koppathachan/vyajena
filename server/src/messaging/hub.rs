@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
 use protocol::device_identity::DeviceId;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tonic::Status;
 
 use crate::pb;
@@ -38,6 +38,8 @@ pub struct Hub {
     streams: Mutex<HashMap<DeviceId, Registered>>,
     next_id: AtomicU64,
     pings: PingLimiter,
+    /// Set once when the server stops (pi-runtime: Graceful stop).
+    stopping: watch::Sender<bool>,
 }
 
 impl std::fmt::Debug for Hub {
@@ -130,6 +132,18 @@ impl Hub {
             }
         }
         offline
+    }
+
+    /// Ends every open stream, and every stream that opens from now on, with
+    /// `UNAVAILABLE` once its current frame is handled, so a stop never waits
+    /// on a device's open stream (pi-runtime: Graceful stop).
+    pub fn stop(&self) {
+        self.stopping.send_replace(true);
+    }
+
+    /// Watches for [`Hub::stop`].
+    pub(crate) fn stopping(&self) -> watch::Receiver<bool> {
+        self.stopping.subscribe()
     }
 
     /// The wake ping rate limiter.

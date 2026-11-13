@@ -194,7 +194,10 @@ impl Pi {
         &self.bootstrap
     }
 
-    /// Serves gRPC over TLS until `shutdown` completes.
+    /// Serves gRPC over TLS until `shutdown` completes, then stops cleanly
+    /// (pi-runtime: Graceful stop): no new connections, open `Connect`
+    /// streams end with `UNAVAILABLE` once the frame in progress is handled,
+    /// requests in progress finish, and the database is closed.
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), StartError> {
         let tls = tls::server_config(&self.state.keys)?;
         let incoming = ReceiverStream::new(tls::accept_loop(self.listener, tls));
@@ -205,6 +208,11 @@ impl Pi {
             self.state.clock.clone(),
         );
         let background = crate::messaging::background(&self.state);
+        let hub = self.state.hub.clone();
+        let shutdown = async move {
+            shutdown.await;
+            hub.stop();
+        };
         let served = tonic::transport::Server::builder()
             .layer(auth)
             .add_routes(routes(&self.state))
@@ -212,6 +220,10 @@ impl Pi {
             .await;
         for task in background {
             task.abort();
+        }
+        // Every request has finished; jobs still queued run before the close.
+        if let Err(error) = self.state.store.close().await {
+            tracing::warn!(%error, "closing the database");
         }
         served?;
         Ok(())

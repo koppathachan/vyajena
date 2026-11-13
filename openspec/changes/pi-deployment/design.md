@@ -48,6 +48,20 @@ older than trixie's (2.41), so the binary runs on the Pi. SQLite is bundled; no
 system libraries beyond glibc. A cross toolchain (`cross`, `cargo-zigbuild`) is
 the fallback if the container route fails (spike 1.1).
 
+**Spike 1.1 result (2026-11-13): PASS.** `rust:1.96-bookworm` (the Mac's Rust
+1.96.0) as `linux/arm64` in Docker Desktop 29.3 builds `cargo build --release
+--locked -p server` in about 70 s from cold, with the repo mounted, the target
+dir in `target/linux-arm64/` and the cargo registry in a named volume. The
+result is an `aarch64` PIE ELF of 11.7 MB that needs glibc 2.34 at most (the
+Pi has 2.41). Copied to a temp folder on the Pi and started on
+`127.0.0.1:18443`, it created its keys (0600) and database (0600), applied the
+four migrations, logged the pin and the bootstrap invite, listened, and exited
+0 on `SIGTERM`; the folder was removed. One caveat: the very first build after
+Docker Desktop started died with "error waiting for container: unexpected
+EOF" (the VM was still settling); the rerun with `-j 4` passed. `build.sh`
+therefore waits for `docker info` and builds with `-j 4` (8 GB VM). The fallback
+toolchains were not needed.
+
 ### D3. Paths, user and unit
 
 | What | Where | Owner, mode |
@@ -64,6 +78,23 @@ the fallback if the container route fails (spike 1.1).
 AF_UNIX`, `SystemCallFilter=@system-service`, `Restart=on-failure`,
 `RestartSec=2`, `KillSignal=SIGTERM`, `TimeoutStopSec=15`. The check reads
 `systemd-analyze security vyajena` and fails above an agreed exposure score.
+
+As built, the unit adds the rest of systemd's sandbox that the server does not
+need: `PrivateUsers`, `PrivateIPC`, `ProtectKernel*`, `ProtectClock`,
+`ProtectHostname`, `ProtectControlGroups`, `ProtectProc=invisible`,
+`ProcSubset=pid`, `RestrictNamespaces`, `RestrictRealtime`,
+`RestrictSUIDSGID`, `LockPersonality`, `MemoryDenyWriteExecute`,
+`SystemCallFilter=~@privileged @resources`, `SystemCallArchitectures=native`,
+`DevicePolicy=closed`, and, for the home-LAN phase, `IPAddressAllow=localhost
+192.168.1.0/24` with `IPAddressDeny=any` (the relay change drops the subnet).
+
+"No writes outside its folder" (pi-deployment: Sandboxed service) is read with
+`PrivateTmp=yes`, which the same requirement asks for: the service's own
+`/tmp` and `/var/tmp` are private, empty at start and thrown away at stop, so
+SQLite can still use temp files; nothing else on the Pi sees them. `check.sh`
+probes writes as the service user inside the running service's namespaces
+(`nsenter`) to `/`, `/etc`, `/usr/local/bin`, `/var/lib`, `/var/log`, `/home`
+and `/root` (all must fail) and to `/var/lib/vyajena` (must work).
 
 ### D4. Home-LAN phase
 
@@ -110,12 +141,34 @@ installed, then copies the snapshot and the key folder to
 `~/vyajena-pi-backups/<UTC time>/` on the Mac with mode 0700/0600. Never into the
 repo.
 
+As built: `vyajena-server backup --config <file> --to <path>` (the config names
+the database). It runs as the `vyajena` user (`runuser`), writes the snapshot
+with mode 0600 and never over an existing file, copies every page in one
+`sqlite3_backup_step(-1)` (one read transaction, so one consistent state while
+the service commits), runs `PRAGMA integrity_check` on the copy and switches it
+to `journal_mode=DELETE` so it is one self-contained file. `backup.sh` streams
+the snapshot and `keys/` as a tar over SSH, removes the snapshot on the Pi, and
+checks the copy on the Mac with the `sqlite3` tool macOS ships.
+
 ### D7. Tests
 
 - `server/tests/`: graceful stop on `SIGTERM` (spawn the binary, send `SIGTERM`
   mid-send, exit 0, message stored or resent), the backup subcommand (snapshot
   opens, has the rows).
 - `deploy/pi/` scripts: `shellcheck` clean.
+
+Graceful stop, as built (task 1.2): `main.rs` already stopped on `SIGTERM`, but
+the first test showed the process never exited while a device had a `Connect`
+stream open: tonic's graceful shutdown waits for every open stream, and a
+stream only ends when its device leaves. Now the shutdown signal also calls
+`Hub::stop`, which ends every open stream, and every stream that opens after,
+with `UNAVAILABLE` ("the server is stopping"); a stream checks it only between
+frames, so an envelope being accepted is committed and answered first. Devices
+already reconnect with backoff on any stream end. After the last request,
+`Store::close` closes the database on its thread once the jobs queued before it
+have run (SQLite checkpoints and removes the WAL). Tests:
+`server/tests/graceful_stop.rs` (the binary, `SIGTERM` mid-send and with open
+streams, Ctrl-C) and `durable_storage.rs` (close after queued jobs).
 - On the real Pi: `check.sh` passes; a manual run from the Mac's iOS Simulator
   and the Android emulator (no `adb reverse`) joins and chats; an upgrade keeps
   the pin and users.
