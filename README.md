@@ -118,6 +118,49 @@ app/integration_test/run.sh <device id>          # the real app on a simulator
 as Bob: join, added automatically, "hi" ⏳ → ✓, "hey" received. It stops the
 Pi and removes the folder when done.
 
+## Run on the Pi
+
+The real Pi (Raspberry Pi 4, Debian 13, `vyajan@192.168.1.8`) runs the server
+as `vyajena.service`. Home-LAN phase: phones on the home Wi-Fi and the Mac's
+simulators dial `192.168.1.8:8443`; nothing outside home gets in. Needs Docker
+Desktop on the Mac (`build.sh` starts it) and the Pi login with passwordless
+sudo. `PI=user@host` overrides the target for every script.
+
+```
+build     deploy/pi/build.sh        arm64 release build in a container
+                                    -> target/pi/vyajena-server
+deploy    deploy/pi/deploy.sh       build, harden the host, install, restart
+          deploy/pi/deploy.sh --no-build   install the last build as is
+          deploy/pi/deploy.sh --rollback   back to the previous binary
+check     deploy/pi/check.sh        hardening check; FAIL <name> per problem
+backup    deploy/pi/backup.sh       DB snapshot + keys -> ~/vyajena-pi-backups/<UTC time>/
+logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -f
+```
+
+- **Bootstrap invite:** the first deploy prints it (log line `bootstrap admin
+  invite created`, field `payload`), once. Lost it?
+  `ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -o cat | grep "bootstrap admin"`.
+  It creates the admin `akhil@pi` and is valid for 7 days.
+- **TLS pin:** every deploy prints `tls_spki_sha256`; it never changes, since
+  upgrades keep `/var/lib/vyajena` (database and keys).
+- **Hardening** (`harden.sh`, run by every deploy, idempotent): the `vyajena`
+  system user, SSH keys only and no root login, nftables (SSH and 8443 from
+  `192.168.1.0/24` only, inbound IPv6 dropped), unattended security updates
+  without automatic reboots, mDNS off, and the static address. SSH, firewall
+  and address changes arm an automatic undo for 2 minutes and keep it only
+  after a new SSH connection from the Mac gets in.
+- **Static address:** `192.168.1.8` is set on the Pi's `eth0` (NetworkManager),
+  not reserved on the router. If the router hands it to another device,
+  `check.sh` warns (`address-clash`); reserve `192.168.1.8` for MAC
+  `88:a2:9e:f3:2c:55` on the router, or shrink its DHCP pool.
+- **Pending reboot:** updates install by themselves but never reboot;
+  `check.sh` warns `reboot-required`. Reboot when convenient:
+  `ssh vyajan@192.168.1.8 sudo reboot`.
+- **Backups** hold the server's private keys: they stay out of the repo, in
+  owner-only folders.
+- **Apps:** paste an invite naming `192.168.1.8:8443`; the Android emulator
+  needs no `adb reverse` (it reaches the LAN through the Mac).
+
 ## Development
 
 This project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
@@ -144,9 +187,10 @@ receives text, tested end to end against the real server. The Flutter app
 (`app/`, `bridge/`, change `flutter-app`) runs on the iOS Simulator and the
 Android emulator against a local Pi: join from an invite, automatic add of
 invited users, chat with send status and notices, profiles, members, linking
-a device by text, and the admin screens. Push is a placeholder until
-deployment.
+a device by text, and the admin screens. The server runs on the real Pi on
+the home network (`deploy/pi/`, change `pi-deployment`). Push is a
+placeholder until the relay change.
 
-Next, in order: question-and-answer verification (`qa-verification`), relay
-and Pi deployment with real push (FCM / APNs), then the terminal client.
+Next, in order: question-and-answer verification (`qa-verification`), the
+GCP relay with real push (FCM / APNs), then the terminal client.
 Desktop builds come later. See the open decisions in the architecture doc.

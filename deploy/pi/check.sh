@@ -10,8 +10,9 @@ PI="${PI:-vyajan@192.168.1.8}"
 readonly PI
 readonly HOST="${PI#*@}"
 # The highest `systemd-analyze security` exposure accepted for vyajena.service
-# (design D3: set from the first real run on systemd 257).
-readonly MAX_EXPOSURE="2.0"
+# (design D3: the first real run on systemd 257 scored 1.0; what is left is
+# the network access the server needs).
+readonly MAX_EXPOSURE="1.5"
 
 # --- run on the Pi as root (sent with declare -f) ----------------------------
 
@@ -57,7 +58,7 @@ remote_checks() {
   done
   local exposure
   exposure="$(systemd-analyze security vyajena.service --no-pager 2>/dev/null |
-    awk '/Overall exposure level/ {print $(NF-1)}')"
+    sed -n 's/.*Overall exposure level for [^:]*: \([0-9.]*\).*/\1/p')"
   if [ -n "$exposure" ] && awk -v e="$exposure" -v m="$max_exposure" 'BEGIN {exit !(e <= m)}'; then
     ok "sandbox exposure $exposure (max $max_exposure)"
   else

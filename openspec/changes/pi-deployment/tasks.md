@@ -13,11 +13,11 @@
 
 ## 3. On the Pi
 
-- [ ] 3.1 First deploy to `192.168.1.8`; `check.sh` passes (including pending-reboot and address-clash reports); record the `systemd-analyze security` score and threshold in D3
-- [ ] 3.2 The iOS Simulator and the Android emulator (no `adb reverse`) join with invites naming `192.168.1.8:8443` and chat; record in design.md
-- [ ] 3.3 Upgrade with a new build keeps the pin and users; `--rollback` works; `backup.sh` produces a valid snapshot; record in design.md
+- [x] 3.1 First deploy to `192.168.1.8`; `check.sh` passes (including pending-reboot and address-clash reports); record the `systemd-analyze security` score and threshold in D3
+- [x] 3.2 The iOS Simulator and the Android emulator (no `adb reverse`) join with invites naming `192.168.1.8:8443` and chat; record in design.md
+- [x] 3.3 Upgrade with a new build keeps the pin and users; `--rollback` works; `backup.sh` produces a valid snapshot; record in design.md
 
 ## 4. Docs and validation
 
-- [ ] 4.1 README "Run on the Pi" (build, deploy, check, backup, bootstrap invite from the journal, the static address); `CLAUDE.md` layout and commands; architecture doc: the home-LAN phase and what the relay change undoes
-- [ ] 4.2 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, `buf lint`, `shellcheck deploy/pi/*.sh` clean; `openspec validate pi-deployment --strict` passes
+- [x] 4.1 README "Run on the Pi" (build, deploy, check, backup, bootstrap invite from the journal, the static address); `CLAUDE.md` layout and commands; architecture doc: the home-LAN phase and what the relay change undoes
+- [x] 4.2 `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --check`, `buf lint`, `shellcheck deploy/pi/*.sh` clean; `openspec validate pi-deployment --strict` passes

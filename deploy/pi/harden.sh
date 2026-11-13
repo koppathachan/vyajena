@@ -50,8 +50,8 @@ base() {
   # Security updates install unattended; never an automatic reboot (owner,
   # 2026-11-13): check.sh reports a pending reboot instead.
   if ! dpkg-query -W -f '${Status}' unattended-upgrades 2>/dev/null | grep -q "ok installed"; then
-    apt-get update -q
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -q unattended-upgrades
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unattended-upgrades >/dev/null
   fi
   cat >/etc/apt/apt.conf.d/20auto-upgrades <<'CONF'
 APT::Periodic::Update-Package-Lists "1";

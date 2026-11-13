@@ -88,6 +88,14 @@ need: `PrivateUsers`, `PrivateIPC`, `ProtectKernel*`, `ProtectClock`,
 `DevicePolicy=closed`, and, for the home-LAN phase, `IPAddressAllow=localhost
 192.168.1.0/24` with `IPAddressDeny=any` (the relay change drops the subnet).
 
+**Exposure score (task 3.1, 2026-11-13):** `systemd-analyze security
+vyajena` on the Pi (systemd 257) gives **1.0 OK**. The remaining items are
+what a network server needs: it runs in the host's root directory, may open
+`AF_INET`/`AF_INET6`/`AF_UNIX` sockets, uses the host network, has the
+default `char-rtc:r` device entry, and allows a non-localhost subnet. The
+check's threshold is **1.5**: any sandbox setting lost pushes the score past
+it.
+
 "No writes outside its folder" (pi-deployment: Sandboxed service) is read with
 `PrivateTmp=yes`, which the same requirement asks for: the service's own
 `/tmp` and `/var/tmp` are private, empty at start and thrown away at stop, so
@@ -172,6 +180,42 @@ streams, Ctrl-C) and `durable_storage.rs` (close after queued jobs).
 - On the real Pi: `check.sh` passes; a manual run from the Mac's iOS Simulator
   and the Android emulator (no `adb reverse`) joins and chats; an upgrade keeps
   the pin and users.
+
+### Results on the Pi (2026-11-13)
+
+- **3.1 First deploy** (`deploy.sh --no-build` with the 1.1-era build, then
+  `check.sh`): `harden.sh base` created `vyajena`, masked avahi (it listened
+  on UDP 5353), installed unattended-upgrades. The sshd, firewall and address
+  steps each armed their 2-minute undo, a new SSH connection from the Mac got
+  in, and each was committed; NetworkManager wrote the static `192.168.1.8/24`
+  (gateway and DNS `192.168.1.1`) back to netplan. The service started, made
+  its keys and database and printed the pin and the bootstrap invite.
+  `check.sh`: 0 failed, 0 warnings; exposure **1.0** (threshold 1.5, D3).
+  Failure paths, checked by hand: with `PermitRootLogin prohibit-password` in
+  the drop-in (sshd not reloaded) the check printed `FAIL ssh root-login`; a
+  fake `/run/reboot-required` gave `WARN reboot-required`; `arping -D` against
+  the router's address (taken) exits 1, which is what `WARN address-clash`
+  keys on. From the Mac, `root@192.168.1.8` is refused and 22/8443 on both
+  global IPv6 addresses time out.
+- **3.2 Simulator and emulator:** the iOS Simulator (iPhone 16, iOS 26.5)
+  joined with the bootstrap invite (preview `akhil@pi on 192.168.1.8:8443`),
+  created the group and invited `bob`; the Android emulator (`vyajena_test`,
+  no `adb reverse`: the emulator's NAT reaches the LAN through the Mac, so the
+  Pi sees `192.168.1.10`) joined with that invite, the admin's phone added it
+  on its own, and messages went both ways with ✓. The journal shows ids and
+  events only, no message text.
+- **3.3 Upgrade, rollback, crash, backup:** the "new build" was the same
+  release build with its symbols stripped (different bytes, same code; the
+  container build is reproducible, so a rebuild gives the same hash and
+  `deploy.sh` keeps the old `.prev`). Deployed with both apps connected: the
+  old process stopped in about 0.1 s (`Deactivated successfully`, the
+  graceful stop), the pin stayed `a6e7d380…`, the unstripped binary became
+  `.prev`, and both apps reconnected and chatted without re-joining.
+  `--rollback` swapped the binaries back (pin unchanged). `kill -9` of the
+  main process: systemd restarted it within 2 s with the same pin.
+  `backup.sh` with both apps connected: snapshot of 196 KB, integrity ok,
+  2 users, both keys, folders 0700 and files 0600 under
+  `~/vyajena-pi-backups/<UTC time>/`; the service kept running.
 
 ## Risks / Trade-offs
 

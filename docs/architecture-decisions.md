@@ -189,6 +189,30 @@ sequenceDiagram
 - **Latency:** India → US relay → Pi in India costs about 0.5 s per send. Accepted for the MVP.
 - **Free tier limits to watch:** 1 GB/month outbound data, and a possible external IPv4 charge (about $3.65/month, check the bill).
 
+### Home-LAN phase (now, until the relay change)
+
+The Pi runs vyajena2 now (change `pi-deployment`), before the relay exists, so
+phones and the Mac's simulators on the home Wi-Fi reach it directly.
+
+```mermaid
+flowchart LR
+  dev["Phones, iOS Simulator, Android emulator<br/>(home Wi-Fi / the Mac)"] -->|"TLS, 192.168.1.8:8443"| pi["Pi: vyajena.service"]
+  mac["Mac"] -->|"SSH :22"| pi
+  out["Outside home, global IPv6"] -.->|"dropped by nftables"| pi
+```
+
+- The server listens on `0.0.0.0:8443`; invites name `192.168.1.8:8443`, a
+  static address set on the Pi's `eth0` (no router reservation yet).
+- nftables drops inbound except replies, SSH and 8443 from the home IPv4
+  subnet, and link-local IPv6 control traffic; the ISP's global IPv6 addresses
+  expose nothing.
+- **What the relay change undoes:** `listen_address` becomes
+  `127.0.0.1:8443` behind the rathole tunnel, the 8443 rule and the
+  service's `IPAddressAllow` for the subnet go, and nftables drops all
+  inbound again (SSH from home stays). Devices that joined in this phase
+  store `192.168.1.8:8443`, so the relay change must migrate their stored
+  address or they re-join.
+
 ## Storage, keys and hardening
 
 Messages are not encrypted at rest; keys live in the OS key store and every machine is hardened by access control. The one exception is OpenMLS group state, sealed under a storage key from the key store (client-core).
@@ -209,10 +233,17 @@ Messages are not encrypted at rest; keys live in the OS key store and every mach
 **Pi**
 
 - SSH with keys only, no password or root login.
-- nftables drops all inbound; the Pi only makes the outbound tunnel.
-- Server runs as its own system user; DB file mode `600`.
-- systemd sandboxing: `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`.
-- Unattended security updates; nothing else running on the Pi.
+- nftables drops all inbound; the Pi only makes the outbound tunnel. (Home-LAN
+  phase: SSH and 8443 from the home subnet only, see Connectivity.)
+- Server runs as its own system user `vyajena` (no login shell); database and
+  keys in `/var/lib/vyajena`, mode `700`, files `600`.
+- systemd sandboxing: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
+  `PrivateTmp`, no capabilities, a system call filter; writable only
+  `/var/lib/vyajena`. It stops cleanly on `SIGTERM`.
+- Unattended security updates, never an automatic reboot (the hardening check
+  reports a pending one); nothing but SSH and the server listens (mDNS off).
+- Built on the Mac in an arm64 container; no toolchain on the Pi. Deploy,
+  check and backup are one command each (`deploy/pi/`).
 
 **Relay**
 
