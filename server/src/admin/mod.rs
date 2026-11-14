@@ -130,7 +130,10 @@ impl Admin for AdminService {
             })
             .await?;
         match outcome {
-            invites::RevokeOutcome::Revoked => Ok(Response::new(pb::RevokeInviteResponse {})),
+            invites::RevokeOutcome::Revoked(username) => {
+                tracing::info!(username = %username, "revoked an invite");
+                Ok(Response::new(pb::RevokeInviteResponse {}))
+            }
             invites::RevokeOutcome::NotFound => Err(Status::not_found("no invite with this code")),
             invites::RevokeOutcome::AlreadyUsed => {
                 Err(Status::failed_precondition("the invite was already used"))

@@ -736,8 +736,9 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
             .get_self(authed(device.token(), pb::GetSelfRequest {}))
             .await;
         assert_eq!(session.err().map(|s| s.code()), Some(Code::Unauthenticated));
+        // A valid signature from a revoked device: PERMISSION_DENIED.
         let auth = device.try_authenticate_with(&conn, &conn.exporter).await;
-        assert_eq!(auth.err().map(|s| s.code()), Some(Code::Unauthenticated));
+        assert_eq!(auth.err().map(|s| s.code()), Some(Code::PermissionDenied));
     }
     let mut closed = vec![
         revocations.try_recv().check("revocation 1"),
@@ -829,7 +830,7 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
     assert_eq!(fetched.identity_public_key, new_bob.identity_public_key());
     assert_eq!(fetched.devices.len(), 1, "only the new phone");
     let old = old_phone.try_authenticate_with(&conn, &conn.exporter).await;
-    assert_eq!(old.err().map(|s| s.code()), Some(Code::Unauthenticated));
+    assert_eq!(old.err().map(|s| s.code()), Some(Code::PermissionDenied));
 
     // The admin adds the new phone back into the group.
     let key_packages: Vec<_> = fetched.devices.into_iter().map(|d| d.key_package).collect();

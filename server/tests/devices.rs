@@ -124,7 +124,7 @@ async fn lost_phone_is_revoked_from_the_tablet() {
         Some(Code::Unauthenticated)
     );
     let auth = phone.try_authenticate_with(&conn, &conn.exporter).await;
-    assert_eq!(auth.err().map(|s| s.code()), Some(Code::Unauthenticated));
+    assert_eq!(auth.err().map(|s| s.code()), Some(Code::PermissionDenied));
     // The messaging service is told, to close its open stream.
     assert_eq!(revocations.try_recv().ok(), Some(phone.device_id));
     // The tablet is unaffected.

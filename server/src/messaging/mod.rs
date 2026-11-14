@@ -116,7 +116,7 @@ pub fn background(state: &State) -> Vec<JoinHandle<()>> {
     let mut revoked = state.revocations.subscribe();
     let revoker = state.clone();
     tasks.push(tokio::spawn(async move {
-        let closed = || Status::unauthenticated("this device was revoked");
+        let closed = || Status::permission_denied("this device was revoked");
         loop {
             match revoked.recv().await {
                 Ok(device_id) => revoker.hub.close(&device_id, closed()),

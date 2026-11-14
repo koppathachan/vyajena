@@ -193,6 +193,57 @@ async fn unregistered_device_is_unauthenticated() {
 
 // spec: wire-transport/session-authentication
 #[tokio::test]
+async fn revoked_device_with_a_valid_signature_is_permission_denied() {
+    let pi = TestPi::start().await;
+    let conn = pi.connect().await;
+    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let (alice, tablet) = support::invite_user(&conn, &admin, "alice").await;
+    let phone = support::link_device(&conn, &alice, &tablet).await;
+    revoke(&conn, &tablet, &phone).await;
+
+    let result = phone.try_authenticate_with(&conn, &conn.exporter).await;
+    assert_eq!(result.err().map(|s| s.code()), Some(Code::PermissionDenied));
+}
+
+// spec: wire-transport/session-authentication
+#[tokio::test]
+async fn bad_signature_for_a_revoked_device_is_unauthenticated() {
+    let pi = TestPi::start().await;
+    let conn = pi.connect().await;
+    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let (alice, tablet) = support::invite_user(&conn, &admin, "alice").await;
+    let phone = support::link_device(&conn, &alice, &tablet).await;
+    revoke(&conn, &tablet, &phone).await;
+
+    // Signed over a wrong exporter value: the signature does not check out,
+    // so the answer must not reveal that the phone is revoked.
+    let wrong = phone.try_authenticate_with(&conn, &[0u8; 32]).await;
+    assert_eq!(wrong.err().map(|s| s.code()), Some(Code::Unauthenticated));
+    // Someone else's key signing for the revoked phone's device id.
+    let mut impostor = support::clients::TestUser::new("alice").new_device();
+    impostor.device_id = phone.device_id;
+    let forged = impostor.try_authenticate_with(&conn, &conn.exporter).await;
+    assert_eq!(forged.err().map(|s| s.code()), Some(Code::Unauthenticated));
+}
+
+async fn revoke(
+    conn: &support::harness::Conn,
+    by: &support::clients::TestDevice,
+    target: &support::clients::TestDevice,
+) {
+    conn.devices()
+        .revoke_device(authed(
+            by.token(),
+            pb::RevokeDeviceRequest {
+                device_id: target.device_id.to_vec(),
+            },
+        ))
+        .await
+        .check("RevokeDevice");
+}
+
+// spec: wire-transport/session-authentication
+#[tokio::test]
 async fn missing_or_malformed_token_is_unauthenticated() {
     let pi = TestPi::start().await;
     let conn = pi.connect().await;

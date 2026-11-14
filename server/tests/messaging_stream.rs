@@ -227,7 +227,7 @@ async fn revoked_devices_open_stream_closes() {
         .check("RevokeDevice");
     assert_eq!(
         tablet_stream.ended().await.err().map(|s| s.code()),
-        Some(Code::Unauthenticated)
+        Some(Code::PermissionDenied)
     );
     tablet.token = None;
 
@@ -244,6 +244,6 @@ async fn revoked_devices_open_stream_closes() {
         .check("RemoveUser");
     assert_eq!(
         w.phone_stream.ended().await.err().map(|s| s.code()),
-        Some(Code::Unauthenticated)
+        Some(Code::PermissionDenied)
     );
 }

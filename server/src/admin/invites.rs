@@ -116,10 +116,10 @@ pub fn list_unused(tx: &Transaction<'_>, now: SystemTime) -> Result<Vec<Invite>,
 }
 
 /// What [`revoke`] found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RevokeOutcome {
-    /// The invite is now revoked (or already was).
-    Revoked,
+    /// The invite for this username is now revoked (or already was).
+    Revoked(String),
     /// No invite has that code.
     NotFound,
     /// The invite was already used; it cannot be revoked.
@@ -132,22 +132,22 @@ pub fn revoke(
     code: &str,
     now: SystemTime,
 ) -> Result<RevokeOutcome, StoreError> {
-    let used: Option<Option<i64>> = tx
+    let used: Option<(Option<i64>, String)> = tx
         .query_row(
-            "SELECT used_at FROM invites WHERE code = ?1",
+            "SELECT used_at, username FROM invites WHERE code = ?1",
             params![code],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
     match used {
         None => Ok(RevokeOutcome::NotFound),
-        Some(Some(_)) => Ok(RevokeOutcome::AlreadyUsed),
-        Some(None) => {
+        Some((Some(_), _)) => Ok(RevokeOutcome::AlreadyUsed),
+        Some((None, username)) => {
             tx.execute(
                 "UPDATE invites SET revoked_at = coalesce(revoked_at, ?2) WHERE code = ?1",
                 params![code, unix_millis(now)],
             )?;
-            Ok(RevokeOutcome::Revoked)
+            Ok(RevokeOutcome::Revoked(username))
         }
     }
 }

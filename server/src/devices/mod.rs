@@ -33,6 +33,16 @@ pub struct DevicesService {
 }
 
 /// Stores a new device from a verified certificate.
+/// What `Authenticate` found inside its store call.
+enum Authenticated {
+    /// A session token and its expiry.
+    Issued((String, SystemTime)),
+    /// A valid signature from a revoked device (`PERMISSION_DENIED`).
+    Revoked,
+    /// Unknown, used or expired nonce, unknown device or bad signature.
+    Rejected,
+}
+
 fn insert_device(
     tx: &Transaction<'_>,
     cert: &certificate::VerifiedCertificate,
@@ -191,16 +201,16 @@ impl Devices for DevicesService {
                     .optional()?;
                 tx.commit()?;
                 let Some(expires_at) = expires_at else {
-                    return Ok(None);
+                    return Ok(Authenticated::Rejected);
                 };
                 if now > from_unix_millis(expires_at) {
-                    return Ok(None);
+                    return Ok(Authenticated::Rejected);
                 }
                 let Some(row) = records::device(conn, &device.device_id)? else {
-                    return Ok(None);
+                    return Ok(Authenticated::Rejected);
                 };
-                if row.revoked || row.username != user.username || user.server_id != server_id {
-                    return Ok(None);
+                if row.username != user.username || user.server_id != server_id {
+                    return Ok(Authenticated::Rejected);
                 }
                 if verify_auth_signature(
                     &row.auth_public_key,
@@ -210,19 +220,30 @@ impl Devices for DevicesService {
                 )
                 .is_err()
                 {
-                    return Ok(None);
+                    return Ok(Authenticated::Rejected);
+                }
+                // Only after the signature checks out, so no one without the
+                // device's auth key learns whether it is revoked.
+                if row.revoked {
+                    return Ok(Authenticated::Revoked);
                 }
                 let tx = conn.transaction()?;
                 let issued = auth::issue_session(&tx, &row.device_id, now)?;
                 tx.commit()?;
-                Ok(Some(issued))
+                Ok(Authenticated::Issued(issued))
             })
             .await?;
-        let (session_token, expires_at) = issued.ok_or_else(|| {
-            Status::unauthenticated(
-                "the challenge is unknown, used or expired, or the signature is wrong",
-            )
-        })?;
+        let (session_token, expires_at) = match issued {
+            Authenticated::Issued(issued) => issued,
+            Authenticated::Revoked => {
+                return Err(Status::permission_denied("this device was revoked"));
+            }
+            Authenticated::Rejected => {
+                return Err(Status::unauthenticated(
+                    "the challenge is unknown, used or expired, or the signature is wrong",
+                ));
+            }
+        };
         Ok(Response::new(pb::AuthenticateResponse {
             session_token,
             expires_at: Some(to_timestamp(expires_at)),
