@@ -32,7 +32,6 @@ pub struct DevicesService {
     state: State,
 }
 
-/// Stores a new device from a verified certificate.
 /// What `Authenticate` found inside its store call.
 enum Authenticated {
     /// A session token and its expiry.
@@ -43,6 +42,7 @@ enum Authenticated {
     Rejected,
 }
 
+/// Stores a new device from a verified certificate.
 fn insert_device(
     tx: &Transaction<'_>,
     cert: &certificate::VerifiedCertificate,
