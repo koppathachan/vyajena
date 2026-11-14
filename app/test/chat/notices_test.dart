@@ -113,6 +113,7 @@ void main() {
           sender: akhil,
           senderDevice: 'cd34',
           outgoing: false,
+          ownUser: false,
           body: ChatBody.text(text: 'before'),
           acceptedAtMs: 1,
         ),

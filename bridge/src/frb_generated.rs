@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -995337283;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1544131696;
 
 // Section: executor
 
@@ -1094,6 +1094,57 @@ fn wire__crate__api__core__Core_profile_impl(
         },
     )
 }
+fn wire__crate__api__core__Core_reconnect_now_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_reconnect_now",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = Result::<_, ()>::Ok({
+                        crate::api::core::Core::reconnect_now(&*api_that_guard);
+                    })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__core__Core_register_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1814,6 +1865,7 @@ impl SseDecode for crate::api::types::ChatMessage {
         let mut var_sender = <crate::api::types::UserRef>::sse_decode(deserializer);
         let mut var_senderDevice = <String>::sse_decode(deserializer);
         let mut var_outgoing = <bool>::sse_decode(deserializer);
+        let mut var_ownUser = <bool>::sse_decode(deserializer);
         let mut var_body = <crate::api::types::ChatBody>::sse_decode(deserializer);
         let mut var_sentAtMs = <Option<i64>>::sse_decode(deserializer);
         let mut var_acceptedAtMs = <Option<i64>>::sse_decode(deserializer);
@@ -1823,6 +1875,7 @@ impl SseDecode for crate::api::types::ChatMessage {
             sender: var_sender,
             sender_device: var_senderDevice,
             outgoing: var_outgoing,
+            own_user: var_ownUser,
             body: var_body,
             sent_at_ms: var_sentAtMs,
             accepted_at_ms: var_acceptedAtMs,
@@ -1923,7 +1976,13 @@ impl SseDecode for crate::api::types::CoreEvent {
             }
             3 => {
                 let mut var_name = <Option<String>>::sse_decode(deserializer);
-                return crate::api::types::CoreEvent::GroupSettingsChanged { name: var_name };
+                let mut var_previous = <Option<String>>::sse_decode(deserializer);
+                let mut var_by = <crate::api::types::UserRef>::sse_decode(deserializer);
+                return crate::api::types::CoreEvent::GroupSettingsChanged {
+                    name: var_name,
+                    previous: var_previous,
+                    by: var_by,
+                };
             }
             4 => {
                 let mut var_sender = <Option<crate::api::types::UserRef>>::sse_decode(deserializer);
@@ -1956,21 +2015,36 @@ impl SseDecode for crate::api::types::CoreEvent {
                 return crate::api::types::CoreEvent::ServerIdentityError;
             }
             10 => {
-                return crate::api::types::CoreEvent::JoinedGroup;
+                return crate::api::types::CoreEvent::Removed;
             }
             11 => {
-                return crate::api::types::CoreEvent::MembersChanged;
+                return crate::api::types::CoreEvent::JoinedGroup;
             }
             12 => {
+                let mut var_added =
+                    <Vec<crate::api::types::MemberDevice>>::sse_decode(deserializer);
+                let mut var_removed =
+                    <Vec<crate::api::types::MemberDevice>>::sse_decode(deserializer);
+                let mut var_by = <Option<crate::api::types::UserRef>>::sse_decode(deserializer);
+                let mut var_automatic =
+                    <Vec<crate::api::types::MemberDevice>>::sse_decode(deserializer);
+                return crate::api::types::CoreEvent::MembersChanged {
+                    added: var_added,
+                    removed: var_removed,
+                    by: var_by,
+                    automatic: var_automatic,
+                };
+            }
+            13 => {
                 let mut var_reason = <String>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::CommitRefused { reason: var_reason };
             }
-            13 => {
+            14 => {
                 let mut var_status =
                     <crate::api::types::ConnectionStatus>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::Connection { status: var_status };
             }
-            14 => {
+            15 => {
                 return crate::api::types::CoreEvent::Other;
             }
             _ => {
@@ -2258,17 +2332,18 @@ fn pde_ffi_dispatcher_primary_impl(
         18 => wire__crate__api__core__Core_message_impl(port, ptr, rust_vec_len, data_len),
         19 => wire__crate__api__core__Core_open_impl(port, ptr, rust_vec_len, data_len),
         20 => wire__crate__api__core__Core_profile_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__core__Core_set_group_name_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__core__Core_reconnect_now_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__core__Core_set_group_name_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2281,8 +2356,8 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        31 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2334,6 +2409,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::ChatMessage {
             self.sender.into_into_dart().into_dart(),
             self.sender_device.into_into_dart().into_dart(),
             self.outgoing.into_into_dart().into_dart(),
+            self.own_user.into_into_dart().into_dart(),
             self.body.into_into_dart().into_dart(),
             self.sent_at_ms.into_into_dart().into_dart(),
             self.accepted_at_ms.into_into_dart().into_dart(),
@@ -2462,9 +2538,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::CoreEvent {
                 about.into_into_dart().into_dart(),
             ]
             .into_dart(),
-            crate::api::types::CoreEvent::GroupSettingsChanged { name } => {
-                [3.into_dart(), name.into_into_dart().into_dart()].into_dart()
-            }
+            crate::api::types::CoreEvent::GroupSettingsChanged { name, previous, by } => [
+                3.into_dart(),
+                name.into_into_dart().into_dart(),
+                previous.into_into_dart().into_dart(),
+                by.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::types::CoreEvent::Unreadable {
                 sender,
                 accepted_at_ms,
@@ -2489,15 +2569,28 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::CoreEvent {
                 [8.into_dart(), user.into_into_dart().into_dart()].into_dart()
             }
             crate::api::types::CoreEvent::ServerIdentityError => [9.into_dart()].into_dart(),
-            crate::api::types::CoreEvent::JoinedGroup => [10.into_dart()].into_dart(),
-            crate::api::types::CoreEvent::MembersChanged => [11.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::Removed => [10.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::JoinedGroup => [11.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::MembersChanged {
+                added,
+                removed,
+                by,
+                automatic,
+            } => [
+                12.into_dart(),
+                added.into_into_dart().into_dart(),
+                removed.into_into_dart().into_dart(),
+                by.into_into_dart().into_dart(),
+                automatic.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
             crate::api::types::CoreEvent::CommitRefused { reason } => {
-                [12.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+                [13.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             crate::api::types::CoreEvent::Connection { status } => {
-                [13.into_dart(), status.into_into_dart().into_dart()].into_dart()
+                [14.into_dart(), status.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::CoreEvent::Other => [14.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::Other => [15.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -2709,6 +2802,7 @@ impl SseEncode for crate::api::types::ChatMessage {
         <crate::api::types::UserRef>::sse_encode(self.sender, serializer);
         <String>::sse_encode(self.sender_device, serializer);
         <bool>::sse_encode(self.outgoing, serializer);
+        <bool>::sse_encode(self.own_user, serializer);
         <crate::api::types::ChatBody>::sse_encode(self.body, serializer);
         <Option<i64>>::sse_encode(self.sent_at_ms, serializer);
         <Option<i64>>::sse_encode(self.accepted_at_ms, serializer);
@@ -2804,9 +2898,11 @@ impl SseEncode for crate::api::types::CoreEvent {
                 <Option<String>>::sse_encode(display_name, serializer);
                 <Option<String>>::sse_encode(about, serializer);
             }
-            crate::api::types::CoreEvent::GroupSettingsChanged { name } => {
+            crate::api::types::CoreEvent::GroupSettingsChanged { name, previous, by } => {
                 <i32>::sse_encode(3, serializer);
                 <Option<String>>::sse_encode(name, serializer);
+                <Option<String>>::sse_encode(previous, serializer);
+                <crate::api::types::UserRef>::sse_encode(by, serializer);
             }
             crate::api::types::CoreEvent::Unreadable {
                 sender,
@@ -2836,22 +2932,34 @@ impl SseEncode for crate::api::types::CoreEvent {
             crate::api::types::CoreEvent::ServerIdentityError => {
                 <i32>::sse_encode(9, serializer);
             }
-            crate::api::types::CoreEvent::JoinedGroup => {
+            crate::api::types::CoreEvent::Removed => {
                 <i32>::sse_encode(10, serializer);
             }
-            crate::api::types::CoreEvent::MembersChanged => {
+            crate::api::types::CoreEvent::JoinedGroup => {
                 <i32>::sse_encode(11, serializer);
             }
-            crate::api::types::CoreEvent::CommitRefused { reason } => {
+            crate::api::types::CoreEvent::MembersChanged {
+                added,
+                removed,
+                by,
+                automatic,
+            } => {
                 <i32>::sse_encode(12, serializer);
+                <Vec<crate::api::types::MemberDevice>>::sse_encode(added, serializer);
+                <Vec<crate::api::types::MemberDevice>>::sse_encode(removed, serializer);
+                <Option<crate::api::types::UserRef>>::sse_encode(by, serializer);
+                <Vec<crate::api::types::MemberDevice>>::sse_encode(automatic, serializer);
+            }
+            crate::api::types::CoreEvent::CommitRefused { reason } => {
+                <i32>::sse_encode(13, serializer);
                 <String>::sse_encode(reason, serializer);
             }
             crate::api::types::CoreEvent::Connection { status } => {
-                <i32>::sse_encode(13, serializer);
+                <i32>::sse_encode(14, serializer);
                 <crate::api::types::ConnectionStatus>::sse_encode(status, serializer);
             }
             crate::api::types::CoreEvent::Other => {
-                <i32>::sse_encode(14, serializer);
+                <i32>::sse_encode(15, serializer);
             }
             _ => {
                 unimplemented!("");

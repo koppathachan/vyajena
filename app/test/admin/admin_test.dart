@@ -121,7 +121,7 @@ void main() {
     expect(core.args['setGroupName'], 'Family');
 
     // The settings reach the members encrypted; the chat's title follows.
-    core.emit(const CoreEvent.groupSettingsChanged(name: 'Family'));
+    core.emit(const CoreEvent.groupSettingsChanged(name: 'Family', by: akhil));
     await settle(tester);
     expect(find.text('Family'), findsOneWidget);
   });

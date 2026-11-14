@@ -36,8 +36,12 @@ class ChatMessage {
   /// The sending device, hex.
   final String senderDevice;
 
-  /// Whether this device sent it.
+  /// Whether this device sent it (only these show ⏳/✓).
   final bool outgoing;
+
+  /// Whether this device's user sent it, from any of their devices: shown
+  /// right-aligned with no sender label (app-ui: Chat screen).
+  final bool ownUser;
 
   /// The body.
   final ChatBody body;
@@ -56,6 +60,7 @@ class ChatMessage {
     required this.sender,
     required this.senderDevice,
     required this.outgoing,
+    required this.ownUser,
     required this.body,
     this.sentAtMs,
     this.acceptedAtMs,
@@ -68,6 +73,7 @@ class ChatMessage {
       sender.hashCode ^
       senderDevice.hashCode ^
       outgoing.hashCode ^
+      ownUser.hashCode ^
       body.hashCode ^
       sentAtMs.hashCode ^
       acceptedAtMs.hashCode ^
@@ -82,6 +88,7 @@ class ChatMessage {
           sender == other.sender &&
           senderDevice == other.senderDevice &&
           outgoing == other.outgoing &&
+          ownUser == other.ownUser &&
           body == other.body &&
           sentAtMs == other.sentAtMs &&
           acceptedAtMs == other.acceptedAtMs &&
@@ -119,7 +126,8 @@ sealed class CoreEvent with _$CoreEvent {
     required SendState status,
   }) = CoreEvent_SendStatus;
 
-  /// A user changed their profile.
+  /// A user's stored profile changed: a new value, or dropped after
+  /// `IdentityKeyChanged` (both unset). An equal re-send emits nothing.
   const factory CoreEvent.profileChanged({
     /// The user.
     required UserRef user,
@@ -131,10 +139,18 @@ sealed class CoreEvent with _$CoreEvent {
     String? about,
   }) = CoreEvent_ProfileChanged;
 
-  /// The admin changed the group settings.
+  /// The admin changed the group settings; emitted only when the name
+  /// changes.
   const factory CoreEvent.groupSettingsChanged({
     /// The group's name, if set.
     String? name,
+
+    /// The name stored before; unset on this device's first sync, when
+    /// no rename notice is shown (app-ui: Notices in the chat).
+    String? previous,
+
+    /// The user whose admin device renamed it.
+    required UserRef by,
   }) = CoreEvent_GroupSettingsChanged;
 
   /// A message arrived that this device cannot read.
@@ -171,11 +187,29 @@ sealed class CoreEvent with _$CoreEvent {
   /// The Pi's TLS key does not match the pin; the core stopped connecting.
   const factory CoreEvent.serverIdentityError() = CoreEvent_ServerIdentityError;
 
+  /// This device was removed from the group (revoked); the core stopped
+  /// connecting and history stays readable.
+  const factory CoreEvent.removed() = CoreEvent_Removed;
+
   /// This device joined the group from a Welcome.
   const factory CoreEvent.joinedGroup() = CoreEvent_JoinedGroup;
 
-  /// The group's member devices changed.
-  const factory CoreEvent.membersChanged() = CoreEvent_MembersChanged;
+  /// The group's member devices changed. Empty lists when this device
+  /// created or joined the group (no notices for its own join).
+  const factory CoreEvent.membersChanged({
+    /// Devices added.
+    required List<MemberDevice> added,
+
+    /// Devices removed.
+    required List<MemberDevice> removed,
+
+    /// The committer's user; unset when this device joined.
+    UserRef? by,
+
+    /// Those of `added` and `removed` that changed automatically
+    /// (inactivity Removes and re-adds): no notice for them.
+    required List<MemberDevice> automatic,
+  }) = CoreEvent_MembersChanged;
 
   /// This device refused a commit and cannot follow the group until
   /// re-added.

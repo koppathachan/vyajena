@@ -163,6 +163,13 @@ impl Core {
         self.client.stop();
     }
 
+    /// The network is back (a connectivity change): connect now instead of
+    /// waiting out the backoff; does nothing while connected or after
+    /// `Removed` (app-ui: Foreground and background).
+    pub fn reconnect_now(&self) {
+        self.client.reconnect_now();
+    }
+
     /// Whether the core is connected right now.
     pub fn is_connected(&self) -> bool {
         self.client.is_connected()

@@ -87,6 +87,11 @@ abstract class Core implements RustOpaqueInterface {
   /// `user`'s profile.
   Future<ProfileInfo> profile({required UserRef user});
 
+  /// The network is back (a connectivity change): connect now instead of
+  /// waiting out the backoff; does nothing while connected or after
+  /// `Removed` (app-ui: Foreground and background).
+  Future<void> reconnectNow();
+
   /// Signs up this device from an invite text (app-ui: Join from an
   /// invite). Call [`Core::start`] next.
   Future<UserRef> register({required String inviteText});

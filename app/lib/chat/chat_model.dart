@@ -250,6 +250,7 @@ class ChatModel extends ChangeNotifier {
         _notice(const ServerIdentityNotice());
       case CoreEvent_JoinedGroup() ||
           CoreEvent_MembersChanged() ||
+          CoreEvent_Removed() ||
           CoreEvent_Connection() ||
           CoreEvent_Other():
         break;

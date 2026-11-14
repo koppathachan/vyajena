@@ -162,7 +162,9 @@ void main() {
         about: 'secret about',
       ),
     );
-    core.emit(const CoreEvent.groupSettingsChanged(name: 'Hidden group'));
+    core.emit(
+      const CoreEvent.groupSettingsChanged(name: 'Hidden group', by: akhil),
+    );
     await settle(tester);
     await tester.enterText(find.byKey(const Key('composer')), 'yo there');
     await tap(tester, find.byTooltip('Send'));

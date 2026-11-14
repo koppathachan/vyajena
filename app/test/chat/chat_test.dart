@@ -134,6 +134,7 @@ void main() {
           sender: bob,
           senderDevice: 'cd34',
           outgoing: false,
+          ownUser: false,
           body: ChatBody.text(text: 'earlier'),
           acceptedAtMs: 1,
         ),
@@ -152,6 +153,7 @@ void main() {
       sender: bob,
       senderDevice: 'cd34',
       outgoing: false,
+      ownUser: false,
       body: const ChatBody.unsupported(),
       acceptedAtMs: 1,
     );

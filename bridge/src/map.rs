@@ -62,6 +62,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
         sender: user(&message.sender),
         sender_device: hex(&message.sender_device),
         outgoing: message.outgoing,
+        own_user: message.own_user,
         body: match message.body {
             MessageBody::Text(text) => ChatBody::Text { text },
             _ => ChatBody::Unsupported,
@@ -106,7 +107,11 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             display_name,
             about,
         },
-        Event::GroupSettingsChanged { name } => CoreEvent::GroupSettingsChanged { name },
+        Event::GroupSettingsChanged { name, previous, by } => CoreEvent::GroupSettingsChanged {
+            name,
+            previous,
+            by: user(&by),
+        },
         Event::Unreadable {
             sender,
             accepted_at,
@@ -123,8 +128,19 @@ pub(crate) fn event(event: Event) -> CoreEvent {
         Event::Rejoined => CoreEvent::Rejoined,
         Event::IdentityKeyChanged { user: u } => CoreEvent::IdentityKeyChanged { user: user(&u) },
         Event::ServerIdentityError => CoreEvent::ServerIdentityError,
+        Event::Removed => CoreEvent::Removed,
         Event::JoinedGroup => CoreEvent::JoinedGroup,
-        Event::MembersChanged => CoreEvent::MembersChanged,
+        Event::MembersChanged {
+            added,
+            removed,
+            by,
+            automatic,
+        } => CoreEvent::MembersChanged {
+            added: added.iter().map(member).collect(),
+            removed: removed.iter().map(member).collect(),
+            by: by.as_ref().map(user),
+            automatic: automatic.iter().map(member).collect(),
+        },
         Event::CommitRefused { reason } => CoreEvent::CommitRefused { reason },
         Event::Connection(state) => CoreEvent::Connection {
             status: match state {

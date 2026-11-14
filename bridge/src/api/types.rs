@@ -47,8 +47,11 @@ pub struct ChatMessage {
     pub sender: UserRef,
     /// The sending device, hex.
     pub sender_device: String,
-    /// Whether this device sent it.
+    /// Whether this device sent it (only these show ⏳/✓).
     pub outgoing: bool,
+    /// Whether this device's user sent it, from any of their devices: shown
+    /// right-aligned with no sender label (app-ui: Chat screen).
+    pub own_user: bool,
     /// The body.
     pub body: ChatBody,
     /// The sender's clock when sent.
@@ -86,7 +89,8 @@ pub enum CoreEvent {
         /// Its new status.
         status: SendState,
     },
-    /// A user changed their profile.
+    /// A user's stored profile changed: a new value, or dropped after
+    /// `IdentityKeyChanged` (both unset). An equal re-send emits nothing.
     ProfileChanged {
         /// The user.
         user: UserRef,
@@ -95,10 +99,16 @@ pub enum CoreEvent {
         /// The "about" text, if set.
         about: Option<String>,
     },
-    /// The admin changed the group settings.
+    /// The admin changed the group settings; emitted only when the name
+    /// changes.
     GroupSettingsChanged {
         /// The group's name, if set.
         name: Option<String>,
+        /// The name stored before; unset on this device's first sync, when
+        /// no rename notice is shown (app-ui: Notices in the chat).
+        previous: Option<String>,
+        /// The user whose admin device renamed it.
+        by: UserRef,
     },
     /// A message arrived that this device cannot read.
     Unreadable {
@@ -127,10 +137,24 @@ pub enum CoreEvent {
     },
     /// The Pi's TLS key does not match the pin; the core stopped connecting.
     ServerIdentityError,
+    /// This device was removed from the group (revoked); the core stopped
+    /// connecting and history stays readable.
+    Removed,
     /// This device joined the group from a Welcome.
     JoinedGroup,
-    /// The group's member devices changed.
-    MembersChanged,
+    /// The group's member devices changed. Empty lists when this device
+    /// created or joined the group (no notices for its own join).
+    MembersChanged {
+        /// Devices added.
+        added: Vec<MemberDevice>,
+        /// Devices removed.
+        removed: Vec<MemberDevice>,
+        /// The committer's user; unset when this device joined.
+        by: Option<UserRef>,
+        /// Those of `added` and `removed` that changed automatically
+        /// (inactivity Removes and re-adds): no notice for them.
+        automatic: Vec<MemberDevice>,
+    },
     /// This device refused a commit and cannot follow the group until
     /// re-added.
     CommitRefused {

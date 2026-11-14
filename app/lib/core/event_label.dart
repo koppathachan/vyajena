@@ -21,6 +21,7 @@ String eventLabel(CoreEvent event) => switch (event) {
   CoreEvent_IdentityKeyChanged(:final user) =>
     'identity-key-changed ${user.username}@${user.serverId}',
   CoreEvent_ServerIdentityError() => 'server-identity-error',
+  CoreEvent_Removed() => 'removed',
   CoreEvent_JoinedGroup() => 'joined-group',
   CoreEvent_MembersChanged() => 'members-changed',
   CoreEvent_CommitRefused() => 'commit-refused',

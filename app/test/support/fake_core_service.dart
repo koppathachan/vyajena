@@ -87,6 +87,7 @@ class FakeCoreService extends CoreService {
       sender: sender,
       senderDevice: 'cd34',
       outgoing: false,
+      ownUser: false,
       body: ChatBody.text(text: text),
       acceptedAtMs: 1,
     );
@@ -105,6 +106,7 @@ class FakeCoreService extends CoreService {
             sender: m.sender,
             senderDevice: m.senderDevice,
             outgoing: m.outgoing,
+            ownUser: m.ownUser,
             body: m.body,
             sentAtMs: m.sentAtMs,
             acceptedAtMs: status is SendState_Accepted ? 2 : m.acceptedAtMs,
@@ -209,6 +211,7 @@ class FakeCoreService extends CoreService {
         sender: storedUser ?? newUser,
         senderDevice: 'ab12',
         outgoing: true,
+        ownUser: true,
         body: ChatBody.text(text: text),
         sentAtMs: 1,
         status: const SendState.sending(),
