@@ -207,3 +207,126 @@ async fn heartbeats_keep_an_idle_stream_open() {
         admin.events()
     );
 }
+
+// spec: client-runtime/connection-lifecycle
+#[tokio::test(flavor = "multi_thread")]
+async fn a_removed_device_is_told_once_and_stops_connecting() {
+    let pi = TestPi::start().await;
+    let admin = device::admin_with_group(&pi).await;
+    let mut bob = device::member_of_group(&admin, "bob").await;
+    let sent = bob.client.send_text("before the removal").check("send");
+    bob.wait_event("accepted", |e| {
+        matches!(e, Event::SendStatus { id, status: client::SendStatus::Accepted } if *id == sent)
+    })
+    .await;
+
+    // The Pi closes Bob's open stream with PERMISSION_DENIED.
+    admin
+        .client
+        .remove_user(&user("bob"))
+        .await
+        .check("remove bob");
+    bob.wait_event("removed", |e| matches!(e, Event::Removed))
+        .await;
+    bob.wait_event("disconnected", |e| {
+        matches!(e, Event::Connection(ConnectionState::Disconnected))
+    })
+    .await;
+    // No retry: no new connecting state, no second Removed.
+    assert!(
+        !bob.sees_within_quiet(|e| matches!(
+            e,
+            Event::Connection(ConnectionState::Connecting | ConnectionState::Connected)
+                | Event::Removed
+        ))
+        .await,
+        "{:?}",
+        bob.events()
+    );
+    assert!(!bob.client.is_connected());
+    assert!(!pi.is_connected(&bob.device_id()));
+    // reconnect_now does not undo it.
+    bob.client.reconnect_now();
+    assert!(
+        !bob.sees_within_quiet(|e| matches!(e, Event::Connection(ConnectionState::Connecting)))
+            .await
+    );
+    // History stays readable.
+    let history = bob.client.history(10).check("history");
+    assert!(history.iter().any(|m| m.id == sent), "{history:?}");
+}
+
+// spec: client-runtime/connection-lifecycle
+#[tokio::test(flavor = "multi_thread")]
+async fn a_revoked_device_is_told_by_authenticate() {
+    let pi = TestPi::start().await;
+    let admin = device::admin_with_group(&pi).await;
+    let mut bob = device::member_of_group(&admin, "bob").await;
+    bob.client.stop();
+    admin
+        .client
+        .remove_user(&user("bob"))
+        .await
+        .check("remove bob");
+
+    // Back online: Devices.Authenticate answers PERMISSION_DENIED.
+    bob.client.start().await.check("start bob");
+    bob.wait_event("removed", |e| matches!(e, Event::Removed))
+        .await;
+    assert!(
+        !bob.sees_within_quiet(|e| matches!(
+            e,
+            Event::Connection(ConnectionState::Connecting | ConnectionState::Connected)
+                | Event::Removed
+        ))
+        .await,
+        "{:?}",
+        bob.events()
+    );
+    assert!(!pi.is_connected(&bob.device_id()));
+}
+
+// spec: client-runtime/connection-lifecycle
+#[tokio::test(flavor = "multi_thread")]
+async fn reconnect_now_skips_the_backoff_wait() {
+    let pi = TestPi::start().await;
+    let admin = device::admin_with_group(&pi).await;
+    let mut alice = device::member_of_group(&admin, "alice").await;
+
+    // While connected it does nothing.
+    alice.client.reconnect_now();
+    assert!(
+        !alice
+            .sees_within_quiet(|e| matches!(e, Event::Connection(ConnectionState::Connecting)))
+            .await
+    );
+    assert!(alice.client.is_connected());
+
+    // The network goes away. After the drop and four failed attempts the
+    // next wait is at least 4 seconds (backoff 0.25, 0.5, 1, 2, then 4).
+    pi.relay.cut();
+    for what in [
+        "the drop",
+        "attempt 1",
+        "attempt 2",
+        "attempt 3",
+        "attempt 4",
+    ] {
+        alice
+            .wait_event(what, |e| {
+                matches!(e, Event::Connection(ConnectionState::Connecting))
+            })
+            .await;
+    }
+    // Let attempt 4 fail (the relay refuses at once).
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    pi.relay.restore();
+    let asked = std::time::Instant::now();
+    alice.client.reconnect_now();
+    alice.wait_connected().await;
+    assert!(
+        asked.elapsed() < std::time::Duration::from_secs(3),
+        "connected after {:?}",
+        asked.elapsed()
+    );
+}

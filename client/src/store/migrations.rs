@@ -12,6 +12,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_local_store.sql"),
     include_str!("migrations/0002_device_state.sql"),
     include_str!("migrations/0003_messaging.sql"),
+    include_str!("migrations/0004_inactive_devices.sql"),
 ];
 
 /// The schema version this library writes.

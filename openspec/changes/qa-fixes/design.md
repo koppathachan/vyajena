@@ -21,7 +21,8 @@ history for new devices, profile-change notices.
 ### D1. Own-user messages (run 1, F4)
 
 `ChatMessage` gets `own_user: bool` (the sender is this device's user), next to
-`outgoing` (this device sent it). Own-user messages are right-aligned, sized to
+`outgoing` (this device sent it). The core sets it (`client::Message`), the
+bridge maps it. Own-user messages are right-aligned, sized to
 their text and have no sender label; only `outgoing` ones show ⏳/✓, inline at
 the end of the bubble.
 
@@ -86,6 +87,12 @@ replayed nonce, so the core retries forever.
 Admin removal and a user revoking their own lost device both revoke, so the
 text names the device, not the reason.
 
+Implementation (part A): the core also treats `PERMISSION_DENIED` from a
+token renewal on the open connection as removed. `Removed` is emitted once per
+`start()`; a later `start()` (an app restart) authenticates again and emits it
+again, so the app learns it on every launch. `reconnect_now` does nothing once
+removed.
+
 ### D5. Chat notices (F6)
 
 - `GroupSettingsChanged` gains `by: UserId`. The app shows "akhil renamed the
@@ -102,6 +109,27 @@ text names the device, not the reason.
 | inactivity Remove (Pi proposal) or re-add of the same device id | none |
 
 A device that has just joined shows no notices for the commit that added it.
+
+Implementation (part A), the shapes the app gets:
+
+- `MembersChanged { added, removed, by, automatic }`: `added` and `removed`
+  list every device the commit changed; `automatic` lists those of them that
+  changed on their own (a Remove the Pi proposed for inactivity, and the
+  re-add of such a device id, also a Remove + Add of the same id in one
+  commit). The UI shows no notice for a device in `automatic`. For a Welcome
+  (this device joined or rejoined) all lists are empty and `by` is `None`; for
+  creating the group they are empty with `by` the admin.
+- To know a re-add, each device records the device ids the Pi's Removes took
+  out (client migration `0004_inactive_devices.sql`) and drops the row when
+  the id is added again. A device that joined after the inactivity Remove has
+  no row, so it would show the re-add as "bob added a device"; acceptable for
+  a rare case.
+- `GroupSettingsChanged { name, previous, by }` and `ProfileChanged` are
+  emitted only when the stored value changes, so re-sends (D2) emit nothing.
+  `previous` is the name stored before: `None` means a first sync (the device
+  just joined), when the app shows no rename notice.
+- `IdentityKeyChanged` is followed by `ProfileChanged` with both fields unset
+  when a stored profile was dropped (D3), so the app reloads that name.
 
 ### D6. Reconnect when the network returns (F5)
 

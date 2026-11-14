@@ -594,6 +594,17 @@ impl Client {
         }
     }
 
+    /// The network is back (the app saw a connectivity change): if the engine
+    /// is waiting out a backoff delay, it connects at once. Does nothing while
+    /// connected, before [`Client::start`] or after [`Event::Removed`] /
+    /// [`Event::ServerIdentityError`] (client-runtime: Connection lifecycle).
+    pub fn reconnect_now(&self) {
+        if let Some(running) = self.running.lock().as_ref() {
+            // A full queue means the engine is busy and not waiting.
+            let _ = running.commands.try_send(Command::ReconnectNow);
+        }
+    }
+
     /// Whether the client has an authenticated connection right now.
     pub fn is_connected(&self) -> bool {
         self.shared.session.lock().is_some()
@@ -841,23 +852,31 @@ impl Client {
     /// The newest `limit` chat messages, sent and received, oldest first:
     /// by `server_seq`, then own messages still sending or failed.
     pub fn history(&self, limit: usize) -> Result<Vec<Message>, ClientError> {
+        let own = self.own_user()?;
         Ok(self
             .shared
             .store
             .history(limit)?
             .iter()
-            .filter_map(crate::messaging::to_message)
+            .filter_map(|stored| crate::messaging::to_message(stored, &own))
             .collect())
     }
 
     /// One chat message by id.
     pub fn message(&self, id: MessageId) -> Result<Option<Message>, ClientError> {
+        let own = self.own_user()?;
         Ok(self
             .shared
             .store
             .message(id)?
             .as_ref()
-            .and_then(crate::messaging::to_message))
+            .and_then(|stored| crate::messaging::to_message(stored, &own)))
+    }
+
+    /// This device's user, or one that matches no sender before it is
+    /// registered (then there are no messages anyway).
+    fn own_user(&self) -> Result<UserId, ClientError> {
+        Ok(self.user_id()?.unwrap_or_else(|| UserId::new("", "")))
     }
 
     /// `user`'s profile, as their devices last set it.

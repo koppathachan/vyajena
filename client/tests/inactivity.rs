@@ -387,3 +387,65 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
         bob.events()
     );
 }
+
+// spec: client-runtime/events-in-order
+// spec: group-membership/automatic-re-add
+#[tokio::test(flavor = "multi_thread")]
+async fn inactivity_removes_and_re_adds_are_marked_automatic() {
+    let pi = TestPi::start().await;
+    let mut admin = device::admin_with_group(&pi).await;
+    let mut alice = device::member_of_group(&admin, "alice").await;
+    let mut bob = device::member_of_group(&admin, "bob").await;
+    let everyone = [member(&admin), member(&alice), member(&bob)];
+    for device in [&admin, &alice, &bob] {
+        device.wait_members(&everyone).await;
+    }
+    let bob_member = member(&bob);
+    go_offline(&pi, &bob).await;
+    // Skip the events so far.
+    let _ = admin.sees_within_quiet(|_| false).await;
+    let seen = (admin.events().len(), alice.events().len());
+
+    advance_pi(&pi, TEN_DAYS, &mut [&mut admin, &mut alice]).await;
+    pi.sweep().await;
+    let without_bob = [member(&admin), member(&alice)];
+    admin.wait_members(&without_bob).await;
+    alice.wait_members(&without_bob).await;
+
+    bob.client.start().await.check("start bob");
+    bob.wait_event("rejoined", |e| matches!(e, Event::Rejoined))
+        .await;
+    admin.wait_members(&everyone).await;
+    alice.wait_members(&everyone).await;
+
+    // Admin (own commits) and Alice (the admin's commits) both see the
+    // Remove and the re-add marked automatic, so the UI stays quiet.
+    for (device, from) in [(&admin, seen.0), (&alice, seen.1)] {
+        let changes: Vec<Event> = device.events()[from..]
+            .iter()
+            .filter(|e| matches!(e, Event::MembersChanged { .. }))
+            .cloned()
+            .collect();
+        assert!(!changes.is_empty());
+        for change in &changes {
+            let Event::MembersChanged {
+                added,
+                removed,
+                automatic,
+                ..
+            } = change
+            else {
+                unreachable!()
+            };
+            for changed in added.iter().chain(removed) {
+                assert!(automatic.contains(changed), "{changes:?}");
+            }
+        }
+        assert!(
+            changes.iter().any(|e| matches!(e,
+            Event::MembersChanged { removed, .. } if removed == std::slice::from_ref(&bob_member)))
+        );
+        assert!(changes.iter().any(|e| matches!(e,
+            Event::MembersChanged { added, .. } if added == std::slice::from_ref(&bob_member))));
+    }
+}

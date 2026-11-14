@@ -619,7 +619,12 @@ impl Engine {
             .set_group(group.group_id().as_slice(), self.now(), 0)?;
         tracing::info!("created the group");
         self.group = Some(group);
-        self.emit(crate::events::Event::MembersChanged);
+        self.emit(crate::events::Event::MembersChanged {
+            added: Vec::new(),
+            removed: Vec::new(),
+            by: Some(self.user()),
+            automatic: Vec::new(),
+        });
         Ok(())
     }
 

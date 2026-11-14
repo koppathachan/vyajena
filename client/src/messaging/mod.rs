@@ -150,17 +150,20 @@ pub(crate) fn parse_user(text: &str) -> Option<UserId> {
 }
 
 /// A stored chat message as the UI sees it; `None` for profile and
-/// group-settings rows, which are not shown in the history.
-pub(crate) fn to_message(stored: &StoredMessage) -> Option<Message> {
+/// group-settings rows, which are not shown in the history. `own_user` is
+/// this device's user.
+pub(crate) fn to_message(stored: &StoredMessage, own_user: &UserId) -> Option<Message> {
     let decoded = decode(&stored.content);
     let body = match decoded.body {
         Decoded::Text(text) => MessageBody::Text(text),
         Decoded::Unsupported => MessageBody::Unsupported,
         Decoded::Profile(_) | Decoded::GroupSettings { .. } => return None,
     };
+    let sender = parse_user(&stored.sender_user)?;
     Some(Message {
         id: stored.id,
-        sender: parse_user(&stored.sender_user)?,
+        own_user: stored.outgoing || sender == *own_user,
+        sender,
         sender_device: stored.sender_device,
         outgoing: stored.outgoing,
         body,
@@ -176,7 +179,7 @@ pub(crate) fn to_message(stored: &StoredMessage) -> Option<Message> {
 pub(crate) enum Received {
     /// A chat message was stored.
     Message(Message),
-    /// A user's profile changed.
+    /// A user's stored profile changed (an equal one is [`Received::Nothing`]).
     Profile {
         /// The sending user.
         user: UserId,
@@ -187,9 +190,14 @@ pub(crate) enum Received {
     GroupSettings {
         /// The group's name.
         name: Option<String>,
+        /// The name stored before.
+        previous: Option<String>,
+        /// The sending (admin) user.
+        by: UserId,
     },
-    /// Stored but nothing for the UI: a redelivery, or `GroupSettings` from
-    /// a non-admin device, which clients ignore.
+    /// Stored but nothing for the UI: a redelivery, `GroupSettings` from a
+    /// non-admin device (which clients ignore), or a profile or group name
+    /// equal to the stored one (a re-send after an add, qa-fixes D2).
     Nothing,
     /// It could not be read (it does not decrypt, or its MLS sender is not
     /// the device the Pi says sent it). Not dropped silently: the UI shows
@@ -211,6 +219,7 @@ pub(crate) fn receive_application(
     group: &mut MlsGroup,
     envelope: &pb::Envelope,
     admin: Option<&str>,
+    own_user: &UserId,
     now: SystemTime,
 ) -> Result<Received, EngineError> {
     let seq = envelope.server_seq;
@@ -278,6 +287,7 @@ pub(crate) fn receive_application(
     Ok(match decoded.body {
         Decoded::Text(text) => Received::Message(received(
             id,
+            own_user,
             sender_user,
             sender_device,
             MessageBody::Text(text),
@@ -286,6 +296,7 @@ pub(crate) fn receive_application(
         )),
         Decoded::Unsupported => Received::Message(received(
             id,
+            own_user,
             sender_user,
             sender_device,
             MessageBody::Unsupported,
@@ -295,10 +306,15 @@ pub(crate) fn receive_application(
         Decoded::Profile(profile) => {
             // message-content: User-owned profiles. Applied to the sending
             // user only.
+            let stored = store.profile(&sender_text)?;
             store.set_profile(&sender_text, &profile, now)?;
-            Received::Profile {
-                user: sender_user,
-                profile,
+            if stored.unwrap_or_default() == profile {
+                Received::Nothing
+            } else {
+                Received::Profile {
+                    user: sender_user,
+                    profile,
+                }
             }
         }
         Decoded::GroupSettings { name } => {
@@ -311,8 +327,17 @@ pub(crate) fn receive_application(
                 );
                 Received::Nothing
             } else {
+                let previous = store.group_name()?;
                 store.set_group_name(name.as_deref(), now)?;
-                Received::GroupSettings { name }
+                if previous == name {
+                    Received::Nothing
+                } else {
+                    Received::GroupSettings {
+                        name,
+                        previous,
+                        by: sender_user,
+                    }
+                }
             }
         }
     })
@@ -320,6 +345,7 @@ pub(crate) fn receive_application(
 
 fn received(
     id: MessageId,
+    own_user: &UserId,
     sender: UserId,
     sender_device: DeviceId,
     body: MessageBody,
@@ -328,6 +354,7 @@ fn received(
 ) -> Message {
     Message {
         id,
+        own_user: sender == *own_user,
         sender,
         sender_device,
         outgoing: false,

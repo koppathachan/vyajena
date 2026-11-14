@@ -28,7 +28,7 @@ use crate::mls::{MlsError, group as mls_group};
 use crate::pb;
 use crate::pb::client_frame::Frame as Out;
 use crate::pb::envelope::Kind;
-use crate::store::StoredMessage;
+use crate::store::{OutgoingMessage, StoredMessage};
 
 impl Engine {
     /// Emits what receiving an application message produced.
@@ -40,7 +40,9 @@ impl Engine {
                 display_name: profile.display_name,
                 about: profile.about,
             }),
-            Received::GroupSettings { name } => self.emit(Event::GroupSettingsChanged { name }),
+            Received::GroupSettings { name, previous, by } => {
+                self.emit(Event::GroupSettingsChanged { name, previous, by });
+            }
             Received::Unreadable {
                 sender,
                 accepted_at,
@@ -50,6 +52,45 @@ impl Engine {
             }),
             Received::Nothing => {}
         }
+    }
+
+    /// qa-fixes D2: a commit added devices, which never saw the group name or
+    /// the profiles (they travel only when they change). Admin devices queue
+    /// the current `GroupSettings` if a name is set; every device queues its
+    /// own user's `Profile` if one is set. They go out through the outbox like
+    /// any own message; receivers ignore an equal value.
+    pub(super) fn resend_state(&self) -> Result<(), EngineError> {
+        let now = self.now();
+        let mut contents = Vec::new();
+        if self.account.is_admin
+            && let Some(name) = self.store().group_name()?
+        {
+            match crate::messaging::encode_group_settings(Some(&name), now) {
+                Ok(content) => contents.push(content),
+                Err(error) => tracing::warn!(%error, "cannot re-send the group settings"),
+            }
+        }
+        if let Some(profile) = self.store().profile(&self.user().to_string())?
+            && (profile.display_name.is_some() || profile.about.is_some())
+        {
+            match crate::messaging::encode_profile(&profile, now) {
+                Ok(content) => contents.push(content),
+                Err(error) => tracing::warn!(%error, "cannot re-send the profile"),
+            }
+        }
+        let user = self.user().to_string();
+        for content in contents {
+            let msg_id = super::random_msg_id()?;
+            let id = self.store().insert_outgoing(&OutgoingMessage {
+                msg_id,
+                sender_user: &user,
+                sender_device: self.account.device_id,
+                content: &content,
+                created_at: now,
+            })?;
+            tracing::debug!(id = id.0, "queued a re-send of the group state");
+        }
+        Ok(())
     }
 
     /// Sends the stored own messages that are not in flight, oldest first.
@@ -226,16 +267,26 @@ impl Engine {
         match crate::messaging::decode(&stored.content).body {
             Decoded::Profile(profile) => {
                 let user = self.user();
+                let stored = self.store().profile(&user.to_string())?;
                 self.store().set_profile(&user.to_string(), &profile, now)?;
-                self.emit(Event::ProfileChanged {
-                    user,
-                    display_name: profile.display_name,
-                    about: profile.about,
-                });
+                if stored.unwrap_or_default() != profile {
+                    self.emit(Event::ProfileChanged {
+                        user,
+                        display_name: profile.display_name,
+                        about: profile.about,
+                    });
+                }
             }
             Decoded::GroupSettings { name } if self.account.is_admin => {
+                let previous = self.store().group_name()?;
                 self.store().set_group_name(name.as_deref(), now)?;
-                self.emit(Event::GroupSettingsChanged { name });
+                if previous != name {
+                    self.emit(Event::GroupSettingsChanged {
+                        name,
+                        previous,
+                        by: self.user(),
+                    });
+                }
             }
             _ => {}
         }

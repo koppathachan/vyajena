@@ -225,7 +225,7 @@ async fn only_admin_devices_change_the_group_settings() {
     for device in [&mut admin, &mut alice, &mut bob] {
         device
             .wait_event("the new name", |e| {
-                matches!(e, Event::GroupSettingsChanged { name } if name.as_deref() == Some("Family"))
+                matches!(e, Event::GroupSettingsChanged { name, .. } if name.as_deref() == Some("Family"))
             })
             .await;
         assert_eq!(
@@ -255,7 +255,7 @@ async fn only_admin_devices_change_the_group_settings() {
             !device
                 .events()
                 .iter()
-                .any(|e| matches!(e, Event::GroupSettingsChanged { name } if name.as_deref() == Some("Bob's club")))
+                .any(|e| matches!(e, Event::GroupSettingsChanged { name, .. } if name.as_deref() == Some("Bob's club")))
         );
         assert_eq!(
             device

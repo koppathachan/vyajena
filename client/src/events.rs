@@ -91,6 +91,9 @@ pub struct Message {
     pub sender_device: DeviceId,
     /// Whether this device sent it.
     pub outgoing: bool,
+    /// Whether this device's user sent it, from this or another of their
+    /// devices (qa-fixes D1: shown as an own message, with no sender label).
+    pub own_user: bool,
     /// The body.
     pub body: MessageBody,
     /// The sender's clock when it was sent.
@@ -128,7 +131,10 @@ pub enum Event {
         /// Its new status.
         status: SendStatus,
     },
-    /// A user changed their profile (message-content: User-owned profiles).
+    /// A user's stored profile changed (message-content: User-owned
+    /// profiles): a `Profile` with a new value, or the profile dropped after
+    /// [`Event::IdentityKeyChanged`] (both fields `None`). A `Profile` equal to
+    /// the stored one (a re-send after an add) emits nothing.
     ProfileChanged {
         /// The user whose device sent it.
         user: UserId,
@@ -138,10 +144,16 @@ pub enum Event {
         about: Option<String>,
     },
     /// The admin changed the group settings (message-content: Group settings
-    /// travel encrypted).
+    /// travel encrypted). Emitted only when the stored name changes, so a
+    /// re-send of the same name (after an add) emits nothing.
     GroupSettingsChanged {
         /// The group's display name, if set.
         name: Option<String>,
+        /// The name stored before. `None` on a device's first sync (it just
+        /// joined), when the UI shows no rename notice (qa-fixes D5).
+        previous: Option<String>,
+        /// The user whose admin device sent it.
+        by: UserId,
     },
     /// A message arrived that this device cannot read: it does not decrypt,
     /// or its MLS sender is not the device the Pi says sent it. Shown as a
@@ -177,10 +189,29 @@ pub enum Event {
     /// Connection lifecycle). The core stops connecting until
     /// [`crate::Client::start`] is called again.
     ServerIdentityError,
+    /// The Pi answered `Authenticate` or the stream with `PERMISSION_DENIED`:
+    /// this device was revoked (removed from the group by the admin, or by
+    /// another device of its user). Emitted once; the core stops connecting
+    /// and local history stays readable (client-runtime: Connection
+    /// lifecycle).
+    Removed,
     /// This device joined the group from a Welcome for the first time.
     JoinedGroup,
-    /// The group's member devices changed (a commit was merged).
-    MembersChanged,
+    /// The group's member devices changed (a commit was merged, or this
+    /// device joined or created the group, with empty lists).
+    MembersChanged {
+        /// Devices the commit added.
+        added: Vec<Member>,
+        /// Devices the commit removed.
+        removed: Vec<Member>,
+        /// The committer's user; `None` when this device joined from a
+        /// Welcome.
+        by: Option<UserId>,
+        /// The devices in `added` or `removed` that changed automatically:
+        /// removed by the Pi's inactivity Remove, or re-added after one (the
+        /// same device id). The UI shows no notice for them (qa-fixes D5).
+        automatic: Vec<Member>,
+    },
     /// This device refused a commit or Welcome the Pi delivered: a leaf's
     /// certificate, its key or the commit-authority rule did not check out
     /// (group-membership: Device-level membership; Commit authority). It

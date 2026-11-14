@@ -53,7 +53,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::client::ClientError;
 use crate::clock::Clock;
-use crate::events::{ConnectionState, DeviceId, Event, EventSender, MessageId, UserId};
+use crate::events::{ConnectionState, DeviceId, Event, EventSender, Member, MessageId, UserId};
 use crate::identity::DeviceKeys;
 use crate::keystore::KeyStore;
 use crate::mls::verify::{self, LeafProblem};
@@ -89,6 +89,9 @@ pub(crate) enum Command {
     Job(Job),
     /// An own message was stored: send it when possible.
     Outbox,
+    /// The network is back: skip the current backoff wait if disconnected
+    /// (client-runtime: Connection lifecycle, `reconnect_now`).
+    ReconnectNow,
 }
 
 /// What every part of the client shares.
@@ -159,7 +162,8 @@ pub(crate) struct Engine {
     link: Option<Link>,
     backoff: Backoff,
     next_attempt: Instant,
-    /// A pin mismatch stops connecting until the client starts again.
+    /// A pin mismatch or a revoked device stops connecting until the client
+    /// starts again.
     halted: bool,
     jobs: VecDeque<Job>,
     inflight: Option<InFlight>,
@@ -189,6 +193,38 @@ fn random_msg_id() -> Result<[u8; 16], MlsError> {
 fn parse_user_id(text: &str) -> Option<UserId> {
     let (username, server_id) = text.split_once('@')?;
     Some(UserId::new(username, server_id))
+}
+
+/// qa-fixes D5, inside the merge's transaction: devices the Pi's inactivity
+/// Removes took out are recorded; an added device recorded so (or removed and
+/// added in the same commit) is a re-add. Returns both kinds, for the UI to
+/// stay quiet about.
+fn automatic_changes(
+    store: &Store,
+    review: &verify::CommitReview,
+    now: SystemTime,
+) -> Result<Vec<Member>, StoreError> {
+    let mut automatic = Vec::new();
+    for (user, device) in &review.removed {
+        if review.pi_removed.contains(device) {
+            store.mark_inactive(device, now)?;
+            automatic.push(Member {
+                user: user.clone(),
+                device: *device,
+            });
+        }
+    }
+    for (user, device) in &review.added {
+        let was_inactive = store.take_inactive(device)?;
+        let replaced = review.removed.iter().any(|(_, removed)| removed == device);
+        if was_inactive || replaced {
+            automatic.push(Member {
+                user: user.clone(),
+                device: *device,
+            });
+        }
+    }
+    Ok(automatic)
 }
 
 fn pending_forever<T>() -> std::future::Pending<T> {
@@ -327,6 +363,9 @@ impl Engine {
                         }
                     }
                     Ok(None) => self.drop_link("the server closed the stream"),
+                    Err(status) if status.code() == tonic::Code::PermissionDenied => {
+                        self.removed();
+                    }
                     Err(status) => {
                         let why = format!("stream ended: {status}");
                         self.drop_link(&why);
@@ -339,6 +378,7 @@ impl Engine {
                             self.on_error(error);
                         }
                     }
+                    Some(Command::ReconnectNow) => self.reconnect_now(),
                     None => break,
                 },
                 _ = tick.tick() => {
@@ -393,6 +433,9 @@ impl Engine {
                 self.emit(Event::ServerIdentityError);
                 self.emit(Event::Connection(ConnectionState::Disconnected));
             }
+            Ok(Err(NetError::Rpc(status))) if status.code() == tonic::Code::PermissionDenied => {
+                self.removed();
+            }
             Ok(Err(error)) => {
                 tracing::debug!(%error, "connect failed");
                 self.next_attempt = Instant::now() + self.backoff.next_delay();
@@ -401,6 +444,35 @@ impl Engine {
                 tracing::debug!("connect timed out");
                 self.next_attempt = Instant::now() + self.backoff.next_delay();
             }
+        }
+    }
+
+    /// The Pi said this device is revoked (`PERMISSION_DENIED` from
+    /// `Authenticate` or the stream): emit [`Event::Removed`] once and stop
+    /// connecting until the client starts again. Local history stays.
+    fn removed(&mut self) {
+        if self.halted {
+            return;
+        }
+        tracing::info!("this device was revoked; not reconnecting");
+        self.halted = true;
+        self.link = None;
+        *self.shared.session.lock() = None;
+        self.deferred.clear();
+        self.apps_in_flight.clear();
+        if let Some(inflight) = self.inflight.as_mut() {
+            inflight.sent = false;
+        }
+        self.emit(Event::Removed);
+        self.emit(Event::Connection(ConnectionState::Disconnected));
+    }
+
+    /// Skips the current backoff wait if disconnected; nothing if connected,
+    /// connecting or halted.
+    fn reconnect_now(&mut self) {
+        if self.link.is_none() && !self.halted {
+            tracing::debug!("reconnecting now");
+            self.next_attempt = Instant::now();
         }
     }
 
@@ -502,6 +574,10 @@ impl Engine {
                         link.session = session;
                     }
                     tracing::debug!("renewed the session token");
+                }
+                Err(NetError::Rpc(status)) if status.code() == tonic::Code::PermissionDenied => {
+                    self.removed();
+                    return Ok(());
                 }
                 Err(error) => {
                     tracing::warn!(%error, "token renewal failed");
@@ -866,23 +942,31 @@ impl Engine {
         };
         let seq = envelope.server_seq;
         let now = self.now();
-        let merged = self.store().transaction(|| -> Result<(), EngineError> {
-            for (user, key) in &repinned {
-                self.store()
-                    .repin_identity_key(&user.to_string(), key, now)?;
+        let by = verify::member_claim(group, committer)
+            .ok()
+            .map(|claim| claim.claimed.user);
+        let merged = self
+            .store()
+            .transaction(|| -> Result<Vec<Member>, EngineError> {
+                for (user, key) in &repinned {
+                    self.store()
+                        .repin_identity_key(&user.to_string(), key, now)?;
+                }
+                group
+                    .merge_staged_commit(self.store().mls(), *staged)
+                    .map_err(|e| MlsError::new("merging a commit", e))?;
+                self.store().set_processed_seq(seq)?;
+                Ok(automatic_changes(self.store(), &review, now)?)
+            });
+        let automatic = match merged {
+            Ok(automatic) => automatic,
+            Err(error) => {
+                self.reload_group()?;
+                return Err(error);
             }
-            group
-                .merge_staged_commit(self.store().mls(), *staged)
-                .map_err(|e| MlsError::new("merging a commit", e))?;
-            self.store().set_processed_seq(seq)?;
-            Ok(())
-        });
-        if let Err(error) = merged {
-            self.reload_group()?;
-            return Err(error);
-        }
+        };
         for (user, _) in repinned {
-            self.emit(Event::IdentityKeyChanged { user });
+            self.identity_key_changed(user);
         }
         tracing::info!(
             server_seq = seq,
@@ -891,7 +975,7 @@ impl Engine {
             removed = review.removed.len(),
             "merged a commit"
         );
-        self.emit(Event::MembersChanged);
+        self.members_changed(&review, by, automatic);
         self.ack(&envelope.group_id, seq).await
     }
 
@@ -954,12 +1038,17 @@ impl Engine {
         let admin = mls_group::admin_user_id(group.extensions());
         let store = Arc::clone(&self.shared.store);
         let now = self.shared.clock.now();
+        let own_user = UserId::new(
+            self.account.username.clone(),
+            self.account.server_id.clone(),
+        );
         let result = store.transaction(|| -> Result<_, EngineError> {
             let received = crate::messaging::receive_application(
                 &store,
                 group,
                 &envelope,
                 admin.as_deref(),
+                &own_user,
                 now,
             )?;
             store.set_processed_seq(seq)?;
@@ -1080,9 +1169,15 @@ impl Engine {
             Event::JoinedGroup
         });
         for (user, _) in repinned {
-            self.emit(Event::IdentityKeyChanged { user });
+            self.identity_key_changed(user);
         }
-        self.emit(Event::MembersChanged);
+        // qa-fixes D5: no notices for the commit that added this device.
+        self.emit(Event::MembersChanged {
+            added: Vec::new(),
+            removed: Vec::new(),
+            by: None,
+            automatic: Vec::new(),
+        });
         self.ack(&envelope.group_id, seq).await
     }
 
@@ -1162,7 +1257,7 @@ impl Engine {
             self.store()
                 .pin_identity_key(&user.to_string(), &key, self.now())
         {
-            self.emit(Event::IdentityKeyChanged { user });
+            self.identity_key_changed(user);
         }
     }
 
@@ -1176,7 +1271,7 @@ impl Engine {
         {
             PinOutcome::Pinned | PinOutcome::Matches => Ok(()),
             PinOutcome::Changed => {
-                self.emit(Event::IdentityKeyChanged { user: user.clone() });
+                self.identity_key_changed(user.clone());
                 Err(ClientError::IdentityKeyChanged(user.clone()))
             }
         }
@@ -1320,8 +1415,14 @@ impl Engine {
         };
         let now = self.now();
         let store = Arc::clone(&self.shared.store);
+        let pi = self.pi.clone();
         let merged = match self.group.as_mut() {
-            Some(group) => store.transaction(|| -> Result<(), EngineError> {
+            Some(group) => store.transaction(|| -> Result<_, EngineError> {
+                let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
+                let review = group
+                    .pending_commit()
+                    .map(|staged| verify::own_commit_changes(group, staged, pi_index))
+                    .unwrap_or_default();
                 let had_path = group
                     .pending_commit()
                     .is_some_and(|c| c.update_path_leaf_node().is_some());
@@ -1332,21 +1433,76 @@ impl Engine {
                 if had_path {
                     store.set_own_leaf_updated(now)?;
                 }
-                Ok(())
+                let automatic = automatic_changes(&store, &review, now)?;
+                Ok((review, automatic))
             }),
-            None => Ok(()),
+            None => Ok((verify::CommitReview::default(), Vec::new())),
         };
-        if let Err(error) = merged {
-            self.reload_group()?;
-            inflight.job.fail(ClientError::from(error));
-            return Ok(());
-        }
+        let (review, automatic) = match merged {
+            Ok(merged) => merged,
+            Err(error) => {
+                self.reload_group()?;
+                inflight.job.fail(ClientError::from(error));
+                return Ok(());
+            }
+        };
         if let Some(group) = self.group.as_ref() {
             tracing::info!(epoch = group.epoch().as_u64(), "own commit merged");
         }
-        self.emit(Event::MembersChanged);
+        self.members_changed(&review, Some(self.user()), automatic);
         self.finish(inflight.job).await;
         Ok(())
+    }
+
+    /// Tells the UI what a merged commit changed (client-runtime: Events in
+    /// order) and, when it added devices, queues the re-sends they need
+    /// (qa-fixes D2).
+    fn members_changed(
+        &self,
+        review: &verify::CommitReview,
+        by: Option<UserId>,
+        automatic: Vec<Member>,
+    ) {
+        let members = |list: &[(UserId, DeviceId)]| -> Vec<Member> {
+            list.iter()
+                .map(|(user, device)| Member {
+                    user: user.clone(),
+                    device: *device,
+                })
+                .collect()
+        };
+        self.emit(Event::MembersChanged {
+            added: members(&review.added),
+            removed: members(&review.removed),
+            by,
+            automatic,
+        });
+        if !review.added.is_empty()
+            && let Err(error) = self.resend_state()
+        {
+            tracing::error!(%error, "cannot queue the re-sends after an add");
+        }
+    }
+
+    /// A user's identity key changed (a reset user): drop their stored
+    /// profile, so they show as the username until the new identity sets one
+    /// (message-content: User-owned profiles; qa-fixes D3), and warn the UI.
+    fn identity_key_changed(&self, user: UserId) {
+        let dropped = match self.store().delete_profile(&user.to_string()) {
+            Ok(dropped) => dropped,
+            Err(error) => {
+                tracing::error!(%error, "cannot drop a changed user's profile");
+                false
+            }
+        };
+        self.emit(Event::IdentityKeyChanged { user: user.clone() });
+        if dropped {
+            self.emit(Event::ProfileChanged {
+                user,
+                display_name: None,
+                about: None,
+            });
+        }
     }
 
     async fn run_next_job(&mut self) -> Result<(), EngineError> {

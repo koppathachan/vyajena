@@ -190,8 +190,50 @@ pub struct CommitReview {
     pub added: Vec<(UserId, DeviceId)>,
     /// Devices removed, with their users.
     pub removed: Vec<(UserId, DeviceId)>,
+    /// Devices removed by the Pi's inactivity Removes (a subset of
+    /// `removed`).
+    pub pi_removed: Vec<DeviceId>,
     /// Whether this device is removed.
     pub self_removed: bool,
+}
+
+/// What this device's own staged commit changes, before it is merged. Its
+/// leaves were checked when the commit was built, so nothing is verified.
+pub fn own_commit_changes(
+    group: &MlsGroup,
+    staged: &StagedCommit,
+    pi: Option<u32>,
+) -> CommitReview {
+    let mut review = CommitReview::default();
+    for queued in staged.queued_proposals() {
+        let from_pi = matches!(queued.sender(), Sender::External(index)
+            if pi.is_some_and(|pi| *index == SenderExtensionIndex::new(pi)));
+        match queued.proposal() {
+            Proposal::Add(add) => {
+                let leaf = add.key_package().leaf_node();
+                if let Ok(claim) =
+                    LeafClaim::read(leaf.credential(), leaf.signature_key().as_slice())
+                {
+                    review
+                        .added
+                        .push((claim.claimed.user, claim.claimed.device_id));
+                }
+            }
+            Proposal::Remove(remove) => {
+                if let Ok(claim) = member_claim(group, remove.removed()) {
+                    if from_pi {
+                        review.pi_removed.push(claim.claimed.device_id);
+                    }
+                    review
+                        .removed
+                        .push((claim.claimed.user, claim.claimed.device_id));
+                }
+            }
+            _ => {}
+        }
+    }
+    review.self_removed = staged.self_removed();
+    review
 }
 
 /// Owned form of a proposal for the rule.
@@ -254,6 +296,9 @@ pub fn review_commit(
             }
             Proposal::Remove(remove) => {
                 let claim = member_claim(group, remove.removed())?;
+                if matches!(sender, ProposalSender::Pi) {
+                    review.pi_removed.push(claim.claimed.device_id);
+                }
                 review
                     .removed
                     .push((claim.user().clone(), claim.claimed.device_id));

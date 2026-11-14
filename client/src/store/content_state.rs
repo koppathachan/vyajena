@@ -45,6 +45,40 @@ impl Store {
         Ok(())
     }
 
+    /// Drops the stored profile of `user_id` (message-content: User-owned
+    /// profiles: their identity key changed). Returns whether one was stored.
+    pub fn delete_profile(&self, user_id: &str) -> Result<bool, StoreError> {
+        let deleted = self.db.with(|conn| {
+            conn.execute("DELETE FROM profiles WHERE user_id = ?1", params![user_id])
+        })?;
+        Ok(deleted > 0)
+    }
+
+    /// Records that the Pi's inactivity Remove took `device_id` out of the
+    /// group (qa-fixes D5).
+    pub fn mark_inactive(&self, device_id: &[u8], now: SystemTime) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.execute(
+                "INSERT INTO inactive_devices (device_id, removed_at) VALUES (?1, ?2)
+                 ON CONFLICT (device_id) DO UPDATE SET removed_at = excluded.removed_at",
+                params![device_id, unix_millis(now)],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// `device_id` is in the group again: forgets its inactivity Remove and
+    /// returns whether there was one (its add is then a re-add).
+    pub fn take_inactive(&self, device_id: &[u8]) -> Result<bool, StoreError> {
+        let deleted = self.db.with(|conn| {
+            conn.execute(
+                "DELETE FROM inactive_devices WHERE device_id = ?1",
+                params![device_id],
+            )
+        })?;
+        Ok(deleted > 0)
+    }
+
     /// The profile of `user_id`, if their devices ever sent one.
     pub fn profile(&self, user_id: &str) -> Result<Option<ProfileRow>, StoreError> {
         Ok(self.db.with(|conn| {
