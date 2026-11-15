@@ -154,7 +154,9 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -f
   `check.sh` warns (`address-clash`); reserve `192.168.1.8` for MAC
   `88:a2:9e:f3:2c:55` on the router, or shrink its DHCP pool.
 - **Pending reboot:** updates install by themselves but never reboot;
-  `check.sh` warns `reboot-required`. Reboot when convenient:
+  `check.sh` warns `reboot-required`, or `kernel-reboot` when a newer kernel
+  of the running flavour is installed (Raspberry Pi kernels leave no
+  `/run/reboot-required`). Reboot when convenient:
   `ssh vyajan@192.168.1.8 sudo reboot`.
 - **Backups** hold the server's private keys: they stay out of the repo, in
   owner-only folders.
@@ -186,8 +188,10 @@ a Rust library that signs up, links devices, runs the MLS group and sends and
 receives text, tested end to end against the real server. The Flutter app
 (`app/`, `bridge/`, change `flutter-app`) runs on the iOS Simulator and the
 Android emulator against a local Pi: join from an invite, automatic add of
-invited users, chat with send status and notices, profiles, members, linking
-a device by text, and the admin screens. The server runs on the real Pi on
+invited users, chat with send status and notices (renames, members joining,
+devices added or removed, this device removed), profiles, members, linking
+a device by text, and the admin screens. It reconnects as soon as the
+phone's network comes back. The server runs on the real Pi on
 the home network (`deploy/pi/`, change `pi-deployment`). Push is a
 placeholder until the relay change.
 

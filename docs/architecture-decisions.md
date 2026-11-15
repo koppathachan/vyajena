@@ -66,7 +66,7 @@ flowchart LR
   push -.->|"wake"| core
 ```
 
-- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy.
+- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
 - **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
 - **Pi server:** routes, orders and queues ciphertext; dispatches wake pings.
@@ -103,8 +103,8 @@ flowchart TB
 - **Credentials:** OpenMLS does not check credentials, so the core verifies every new or changed leaf's certificate against the user's pinned identity key, and that the certificate's MLS key equals the leaf's signature key.
 - **Handshakes in the clear:** Commits and Proposals are MLS `PublicMessage`, so the Pi can check them with OpenMLS `PublicGroup` (signature, sender, commit rule) without any group secret. Application messages stay `PrivateMessage`.
 - **Commit rule:** admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the Pi's inactivity Removes. The Pi and every client check the same rule.
-- **Group metadata:** the admin's user id is in the group context, which the Pi can read (it enforces it anyway). Group name and settings travel only as encrypted `GroupSettings` messages, from admin devices.
-- **Names:** the admin picks each username at invite time; it is the local part of `user@<server>` and users cannot change it. Display name and "about" travel as an encrypted `Profile`, set only by that user's devices.
+- **Group metadata:** the admin's user id is in the group context, which the Pi can read (it enforces it anyway). Group name and settings travel only as encrypted `GroupSettings` messages, from admin devices. After any commit that adds devices, admin devices send the current name again and every device sends its own user's `Profile` again, so a device added later learns both; an equal value changes nothing on screen (qa-fixes).
+- **Names:** the admin picks each username at invite time; it is the local part of `user@<server>` and users cannot change it. Display name and "about" travel as an encrypted `Profile`, set only by that user's devices. When a user's identity key changes (a reset), members drop the stored profile, so the new identity shows the username until it sets one.
 - **Residual risk:** the Pi could hand out a fake identity key and KeyPackage the first time a client sees a user (keys are pinned on first sight) and read new messages. Only question-and-answer verification (decision #2, its own `qa-verification` change) stops this; until then the core pins keys and warns when one changes.
 - **Residual risk:** the Pi cannot check membership tags, confirmation tags or encrypted path secrets. A dishonest member with a valid leaf can get a commit sequenced that honest clients reject, which stalls the group. Any MLS delivery service has this gap; there is no recovery flow yet.
 
@@ -114,7 +114,7 @@ The Pi is the single authority for routing, ordering and membership, and never f
 
 - **Admin:** the admin's user id is in the Pi's config; the bootstrap invite creates that user, who creates the group with `Admin.CreateGroup` before inviting anyone.
 - **Invites:** admin creates single-use invite codes, each for a username; signup = code + user identity key + device certificate.
-- **Auth:** each device holds an Ed25519 auth key and signs a server challenge, bound to the TLS connection, for a session token of at most 1 hour.
+- **Auth:** each device holds an Ed25519 auth key and signs a server challenge, bound to the TLS connection, for a session token of at most 1 hour. A revoked device with a valid signature gets `PERMISSION_DENIED` (its open stream is closed the same way); the core then stops connecting and the app says the device was removed (qa-fixes). A bad signature stays `UNAUTHENTICATED`, so nobody learns whether a device is revoked without its key.
 - **Key directory:** stores and hands out each device's MLS KeyPackages with its certificate.
 - **Membership:** tracks the group's public state with OpenMLS `PublicGroup`, checks every Commit, and as an MLS external sender proposes the removal of inactive devices.
 - **New users join on their own (flutter-app, owner 2026-11-12):** the admin inviting a user is the consent, so nobody taps "add". Once a new user's device uploads its first KeyPackages, the Pi sends a `JoinNotice` to the admin's connected devices, and again on every admin connect until that device is a member. The first admin device fetches that device's KeyPackage, checks its certificate (pinning the user's key on first sight) and commits the Add with its Welcome; a race loser gets `STALE_EPOCH` and does nothing. A changed identity key waits for the admin to accept it, and the accept is the add.
