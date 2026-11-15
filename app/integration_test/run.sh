@@ -4,7 +4,7 @@
 #
 #   app/integration_test/run.sh <device id>      # flutter devices lists them
 #
-# 1. starts a temp Pi (target/debug/server) on a free port with its data in
+# 1. starts a temp Pi (cargo's debug/server) on a free port with its data in
 #    a temp folder: never server/local.toml, so the owner's invite is safe;
 # 2. starts the admin's device on the host (bridge/tests/app_peer.rs,
 #    driven through the core), which registers from the Pi's bootstrap
@@ -60,6 +60,9 @@ EOF
 
 echo "== building the Pi and the host peer"
 (cd "$repo" && cargo build -q -p server)
+# Cargo's target folder (CARGO_TARGET_DIR may move it out of the repo).
+target_dir="$(cd "$repo" && cargo metadata -q --format-version 1 --no-deps |
+  python3 -c 'import json, sys; print(json.load(sys.stdin)["target_directory"])')"
 peer_bin="$(cd "$repo" && cargo test -q -p bridge --test app_peer --no-run --message-format=json |
   python3 -c 'import json, sys
 for line in sys.stdin:
@@ -68,7 +71,7 @@ for line in sys.stdin:
         print(m["executable"])')"
 
 echo "== temp Pi on 127.0.0.1:$port ($work)"
-NO_COLOR=1 "$repo/target/debug/server" --config "$work/pi.toml" > "$work/pi.log" 2>&1 &
+NO_COLOR=1 "$target_dir/debug/server" --config "$work/pi.toml" > "$work/pi.log" 2>&1 &
 pi_pid=$!
 wait_for "the bootstrap invite" 30 grep -q 'bootstrap admin invite created' "$work/pi.log"
 bootstrap="$(sed -n 's/.*bootstrap admin invite created.* payload=\([A-Za-z0-9_-]*\).*/\1/p' "$work/pi.log")"
@@ -79,7 +82,7 @@ VYAJENA_PEER_BOOTSTRAP="$bootstrap" VYAJENA_PEER_DIR="$work" \
 peer_pid=$!
 wait_for "the invite for bob" 60 test -s "$work/invite.txt"
 
-if [[ -x "$adb" ]] && "$adb" devices 2>/dev/null | grep -q "^$device[[:space:]]"; then
+if [[ -x "$adb" ]] && "$adb" devices 2>/dev/null | grep -q "^${device}[[:space:]]"; then
   "$adb" -s "$device" reverse "tcp:$port" "tcp:$port"
   reversed="$port"
 fi

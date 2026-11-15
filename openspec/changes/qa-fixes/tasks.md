@@ -29,6 +29,6 @@
 
 ## 6. Verify and docs
 
-- [ ] 6.1 Integration test (`app/integration_test/run.sh`) passes on the iOS Simulator and the Android emulator
+- [x] 6.1 Integration test (`app/integration_test/run.sh`) passes on the iOS Simulator and the Android emulator
 - [ ] 6.2 QA rerun through the real Pi of F1–F6 and own messages (iOS Simulator admin, two Android emulators for Bob), recorded in `docs/qa/` with screenshots; no unused invite captured
 - [ ] 6.3 README / architecture doc where behaviour changed; `cargo test --workspace`, clippy, fmt, `buf lint`, `flutter analyze`, `flutter test`, pbgen + frb no diff; `openspec validate qa-fixes --strict`
