@@ -70,12 +70,25 @@ doc's numbered decisions; adds the release decisions below.
 None of these block private distribution (TestFlight internal testing, Play
 internal testing), which needs no review and works on the home LAN.
 
+### Owner answers so far (2026-11-15)
+
+- **Android:** the old vyajena's Play app is already on internal testing; reuse
+  it. Remove the old public repo's deployment (the `android-internal` GitHub
+  Actions workflow, its signing secrets and its keyless Google access).
+- **iOS:** no Apple Developer account yet; it has to be bought first.
+
+Reusing the Play app has consequences that need a yes (R10–R12): Play never
+lets an app change its package name, and the old app is `com.chaamba.vyajena`.
+Updates must be signed with the upload key the old app used (`~/vyajena-upload.jks`,
+which was also in GitHub secrets). Every versionCode must be higher than the
+highest the old CI uploaded (it used the run number + 100).
+
 ### Open decisions (the owner's)
 
 | # | Decision | Recommendation |
 |---|---|---|
-| R1 | Public store listing vs private distribution for one group | Private: TestFlight internal testing + Play internal testing (≤100 testers each, no review); public only after the relay, account deletion and report/block exist |
-| R2 | Apple Developer Program and Play Console accounts: who, which type, cost | The owner, as individual accounts: Apple US$99/year, Play US$25 once. An organization account (needs a D-U-N-S number for purplechaamba) only if the developer name must not be the owner's legal name or Play's 12-tester rule must be skipped |
+| R1 | Public store listing vs private distribution for one group | **Android answered:** Play internal testing on the existing app. iOS: TestFlight internal testing once the account exists (≤100 testers, no review); public only after the relay, account deletion and report/block exist |
+| R2 | Apple Developer Program and Play Console accounts: who, which type, cost | **Play answered:** the existing console. Apple: the owner buys an individual account (US$99/year); an organization account (needs a D-U-N-S number) only if the developer name must not be the owner's legal name. iOS signing, archive and upload wait for it |
 | R3 | App display name (and icon idea) | "Vyajena" on both stores and home screens, a plain monogram icon in the app's muted seed colour |
 | R4 | Who holds signing keys, where backups live | The owner alone: Android upload keystore in `~/.vyajena-release/` (outside the repo, never in CI) with its password in the macOS Keychain; one encrypted backup of keystore + password on the external drive and in the owner's password manager; Play App Signing holds the app key. iOS: Xcode-managed distribution certificate in the login keychain, exported `.p12` backed up the same way |
 | R5 | Privacy policy URL | `https://purplechaamba.com/vyajena/privacy` (owner's domain), the page's source committed in the repo |
@@ -83,6 +96,9 @@ internal testing), which needs no review and works on the home LAN.
 | R7 | Release before the relay exists? | Yes, privately (R1), to the group's own phones on the home Wi-Fi, so real-phone QA starts now; no public listing before the relay |
 | R8 | Export compliance answer | `ITSAppUsesNonExemptEncryption = YES`, then answer App Store Connect as standard algorithms under the mass-market exemption (no CCATS); exclude France from distribution or file its declaration. Owner confirms; not legal advice |
 | R9 | iPhone only or iPhone + iPad | iPhone only (`TARGETED_DEVICE_FAMILY = 1`): iPads still run it, and no iPad screenshots or iPad review are needed |
+| R10 | Android application id, to reuse the Play app | `applicationId = "com.chaamba.vyajena"` on Android only; the Kotlin `namespace` and iOS bundle id stay `com.purplechaamba.vyajena`. (Alternative: a new Play app for `com.purplechaamba.vyajena` in the same console, no fee, testers re-invited) |
+| R11 | Upload key after removing the old CI | Keep `~/vyajena-upload.jks` for the first upload, then ask Play for an upload key reset to a new key that has never been in CI, held as in R4. The old key sat in GitHub secrets |
+| R12 | Phones with the old vyajena installed | Uninstall the old app before installing vyajena2. A store update over it would leave the old app's data and keys behind, and nothing reads them |
 
 ## Capabilities
 
@@ -99,8 +115,8 @@ now, and this change does not touch them.)
 
 ## Impact
 
-- `app/android/`: `app/build.gradle.kts` (release signing from an outside file,
-  R8 rules), `app/proguard-rules.pro` (new), `AndroidManifest.xml` (label,
+- `app/android/`: `app/build.gradle.kts` (`applicationId` per R10, release
+  signing from an outside file, R8 rules), `app/proguard-rules.pro` (new), `AndroidManifest.xml` (label,
   `ACCESS_NETWORK_STATE` check), launcher icon resources.
 - `app/ios/`: `Info.plist` (display name, `ITSAppUsesNonExemptEncryption`,
   `NSLocalNetworkUsageDescription`), `Runner/PrivacyInfo.xcprivacy` (new),
@@ -112,7 +128,10 @@ now, and this change does not touch them.)
 - `docs/release.md` (new), `docs/privacy-policy.md` (new), README "Release"
   section, `docs/architecture-decisions.md` (distribution + release decisions).
 - `.gitignore`: `key.properties`, `*.jks`, `*.keystore`, `*.p12`, `*.mobileprovision`.
-- Outside the repo, done by the owner only: developer accounts, keystore,
-  certificates, App Store Connect / Play Console records, uploads.
+- Outside the repo, done by the owner only: the Apple account, keys,
+  certificates, App Store Connect / Play Console records, uploads, and removing
+  the old repo's Play deployment (workflow, `ANDROID_KEYSTORE_*` secrets, the
+  `play-internal-ci` service account's Play access and its workload identity
+  binding).
 - Runs after `qa-fixes` lands in `app/` (shared files: `AndroidManifest.xml`,
   `pubspec.yaml`, `app.dart`).

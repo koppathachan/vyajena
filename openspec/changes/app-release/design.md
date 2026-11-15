@@ -97,7 +97,10 @@ change also changes the Pi server build.
   the file is missing, Gradle throws `GradleException("release signing: <path>
   not found")`. No debug fallback. `flutter run --release` therefore needs the
   key too; local performance checks use `--profile`.
-- Play App Signing (required for new apps) keeps the app signing key at Google;
+- The Play app already exists (D16), so the upload key is the old one,
+  `~/vyajena-upload.jks`, until the owner resets it (R11). The owner moves it
+  under `~/.vyajena-release/` or points `vyajena.keyProperties` at it.
+- Play App Signing (already on for the old app) keeps the app signing key at Google;
   the owner keeps only the **upload** key. If the upload key is lost, Play support
   can reset it, and installed apps keep updating. Its public SHA-256 fingerprint goes
   in `app/store/signing.md` (public, safe to commit) for the release check.
@@ -130,8 +133,12 @@ S1 result: *not run yet.*
 `flutter.versionCode`/`versionName`, `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)`).
 One build number for both stores, always increasing. After a successful upload
 the owner tags `app-v<name>+<build>`; the release check compares against the
-highest such tag. Start: `1.0.0+1` is already in pubspec and nothing has been
-uploaded, so the first release can be `1.0.0+1`.
+highest such tag. Start: the old app's CI uploaded versionCodes from 101 up
+(run number + 100), so Play rejects `1.0.0+1`. The owner reads the highest
+versionCode in Play Console; the first vyajena2 release is `2.0.0+1000`, or
+higher if needed. The version name `2.0.0` tells testers it is the new app.
+That first tag is the baseline for the release check. Apple
+starts from the same number, so both stores share one sequence.
 
 ### D6. Shrinking keeps the JNI glue
 
@@ -282,6 +289,47 @@ a `integration_test/screenshots_test.dart` run on the **fake core** (Alice, Bob,
 sample text) on an iPhone 6.9" simulator and a phone emulator, saved under
 `app/store/screenshots/`. Never from the owner's group.
 
+### D16. Reuse the old Play app; retire its CI deployment
+
+Owner, 2026-11-15: the old vyajena (`~/code/vyajena`, mirrored publicly as
+`koppathachan/vyajena`) is already on Play internal testing, and vyajena2 reuses
+that app. Facts from the old repo (read-only):
+
+- Package `com.chaamba.vyajena` (`app/android/RELEASE.md`, workflow
+  `android-internal.yml`). Play package names never change, so vyajena2's
+  Android `applicationId` becomes `com.chaamba.vyajena` (R10). The Kotlin
+  `namespace` (`com.purplechaamba.vyajena`, where `MainActivity` lives) stays:
+  Android lets the two differ. The iOS bundle id stays `com.purplechaamba.vyajena`.
+  Nothing in the Rust core or Dart reads the application id.
+- Upload key `~/vyajena-upload.jks`, which the old workflow rebuilt from the
+  `ANDROID_KEYSTORE_*` GitHub secrets. Uploads went through workload identity
+  federation as `<play-ci-service-account>`, with no
+  stored Google key.
+- versionCode = run number + 100 (D5).
+
+Retiring the old deployment is the owner's work on GitHub, GCP and Play Console
+(task 7.0), never a session's: delete the workflow and the four
+`ANDROID_KEYSTORE_*`/`ANDROID_KEY_*` secrets in both old repos, remove the
+service account's access in Play Console › Users and permissions, and delete the
+workload identity provider (or the service account). vyajena2 uploads by hand
+(Play Console web upload), so nothing replaces them.
+
+Because the upload key lived in GitHub secrets, R11 recommends a Play upload key
+reset after the first vyajena2 upload. Play support does this. It changes only
+what the owner signs with, not what phones see.
+
+Old installs (R12): the old app's files (its database, Tor state) are in the same
+app sandbox, and vyajena2 never reads them. Testers uninstall the old app
+first, then install from the internal testing link. This is the same re-join as any
+debug-build phone (Risks).
+
+```mermaid
+flowchart LR
+  old["old repo CI<br/>android-internal.yml + secrets + WIF"] -. "removed by the owner (7.0)" .-> x["gone"]
+  mac["owner's Mac<br/>flutter build appbundle<br/>+ release-check.sh"] -->|"signed with the upload key<br/>(~/vyajena-upload.jks, later reset)"| play["Play Console<br/>com.chaamba.vyajena · internal testing"]
+  play -->|"app signing key (Google)"| phones["testers' phones<br/>(old app uninstalled first)"]
+```
+
 ## Risks / Trade-offs
 
 - [Phones that ran debug builds have a different signature (Android) or keychain
@@ -318,5 +366,8 @@ sample text) on an iPhone 6.9" simulator and a phone emulator, saved under
 
 ## Open Questions
 
-The owner's decisions R1–R9 are listed with recommendations in `proposal.md`.
-D1, D8, D11 (name), D14 and the R4 key locations wait on them; the rest does not.
+The owner's decisions R1–R12 are listed with recommendations in `proposal.md`
+(R1, R2 answered for Android, 2026-11-15). D8, D11 (name), D14, D16 (R10–R12)
+and the R4 key locations wait on them. Every iOS signing step waits on the Apple
+account (R2); the iOS build without signing (S1 with `--no-codesign`, the
+privacy manifest, plist keys) does not.
