@@ -25,12 +25,12 @@
 
 ## 5. Pi reset onto the relay (owner yes first)
 
-- [ ] 5.1 Owner: yes to deleting the group (every device re-joins)
-- [ ] 5.2 `deploy/pi/build.sh`, `deploy/pi/deploy.sh --no-build --reset` (backup first); new pin and bootstrap invite in an owner-only file
-- [ ] 5.3 `deploy/pi/check.sh` and `deploy/relay/check.sh`: 0 failed; from the Mac, TLS to `vyajarelay.purplechaamba.com:443` presents the new pin and `Devices.GetServerInfo` answers (throwaway client, not the owner's devices); record in design.md
+- [x] 5.1 Owner: yes to deleting the group (every device re-joins)
+- [x] 5.2 `deploy/pi/build.sh`, `deploy/pi/deploy.sh --no-build --reset` (backup first); new pin and bootstrap invite in an owner-only file
+- [x] 5.3 `deploy/pi/check.sh` and `deploy/relay/check.sh`: 0 failed; from the Mac, TLS to `vyajarelay.purplechaamba.com:443` presents the new pin and `Devices.GetServerInfo` answers (throwaway client, not the owner's devices); record in design.md
 
 ## 6. Docs and validation
 
-- [ ] 6.1 README (relay section, "Run on the Pi" without the LAN phase), `CLAUDE.md` layout and commands, `docs/architecture-decisions.md` (home-LAN phase ends, relay facts, open decision closed, cost and latency)
-- [ ] 6.2 `cargo test --workspace`, clippy `-D warnings`, `cargo fmt --check`, `buf lint`, shellcheck clean; `openspec validate relay --strict` passes
-- [ ] 6.3 Hand-over note `relay-handover.md` in the tracker's notes folder
+- [x] 6.1 README (relay section, "Run on the Pi" without the LAN phase), `CLAUDE.md` layout and commands, `docs/architecture-decisions.md` (home-LAN phase ends, relay facts, open decision closed, cost and latency)
+- [x] 6.2 `cargo test --workspace`, clippy `-D warnings`, `cargo fmt --check`, `buf lint`, shellcheck clean; `openspec validate relay --strict` passes
+- [x] 6.3 Hand-over note `relay-handover.md` in the tracker's notes folder

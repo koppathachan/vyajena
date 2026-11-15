@@ -298,6 +298,35 @@ The owner changed "for now lets avoid the dns" to "lets do dns now".
   static address and it has no AAAA; `deploy/pi/check.sh` compares the pin seen
   through the name with the Pi's loopback pin (so a missing record fails it).
 
+### Results: the Pi on the relay (2026-11-16, tasks 5.1–5.3)
+
+- Owner's yes to the reset. `deploy/pi/deploy.sh --no-build --reset` (typed
+  `pi`): `backup.sh` first (3 users, database ok, keys) into
+  `~/vyajena-pi-backups/`; the firewall step applied the new `nftables.conf`
+  with its 2-minute undo and was committed; the remote install deleted
+  `/var/lib/vyajena/*` and started fresh: **new TLS pin**, new bootstrap
+  invite saved to an owner-only file (`bootstrap-invite-<UTC>.txt`, 0600) and
+  not printed. The tunnel's control channel came up in about a second.
+- `deploy/pi/check.sh`: first run 3 failed, all the check's own fault:
+  systemd prints `IPAddressAllow`/`IPAddressDeny` in its own order (IPv6
+  first); the check now compares them as sets. Then **0 failed, 0 warnings**:
+  server exposure 0.9, tunnel exposure 1.0 (max 1.5), tunnel attached,
+  `192.168.1.8:8443` closed on the LAN, `vyajarelay.purplechaamba.com:443`
+  presents the Pi's loopback key. `deploy/relay/check.sh`: **0 failed, 0
+  warnings**.
+- From the Mac (a throwaway client, not the owner's devices): `openssl
+  s_client` to `vyajarelay.purplechaamba.com:443` shows the new pin;
+  `grpcurl Devices/GetServerInfo` answers `serverId "pi"`, protocol 1.
+- **Latency** (home Wi-Fi in India → us-east1 → the Pi): TCP connect to the
+  relay ≈ 0.26 s, TLS handshake through to the Pi done at ≈ 0.8–1.3 s (once
+  per connection). A send on the open stream costs one round trip over both
+  legs, ≈ 0.5 s, as the architecture doc expected.
+- Final run (task 6.2): shellcheck, `buf lint`, fmt, clippy, `openspec
+  validate --strict` clean; `cargo test --workspace` 335 passed, 2 ignored.
+  Two existing tests flaked once each under full-suite load and passed alone
+  (`graceful_stop::sigterm_with_open_streams_exits_zero_and_keeps_the_pin` 3/3,
+  `bridge text_forms::the_admin_links_a_tablet_by_text`); not touched here.
+
 ## Risks / Trade-offs
 
 - [Relay compromised] → sees TLS bytes, client IPs and timing; can drop traffic

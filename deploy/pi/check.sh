@@ -29,6 +29,8 @@ remote_checks() {
     if "$@" >/dev/null 2>&1; then ok "$name"; else fail "$name" "$why"; fi
   }
   mode_of() { stat -c '%a %U' "$1" 2>/dev/null; }
+  # Address lists compare as sets: systemd prints them in its own order.
+  words() { tr ' ' '\n' <<<"$1" | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ $//'; }
 
   # Service user: a system account with no login shell and no password.
   local entry uid shell
@@ -71,7 +73,7 @@ remote_checks() {
   exposure_of vyajena.service sandbox
   # Loopback only: devices come through the tunnel (relay design D5).
   got="$(systemctl show -p IPAddressAllow --value vyajena.service)"
-  if [ "$got" = "127.0.0.0/8 ::1/128" ]; then ok "sandbox IPAddressAllow loopback"; else fail "sandbox IPAddressAllow" "is '$got', want loopback only"; fi
+  if [ "$(words "$got")" = "$(words "127.0.0.0/8 ::1/128")" ]; then ok "sandbox IPAddressAllow loopback"; else fail "sandbox IPAddressAllow" "is '$got', want loopback only"; fi
   # No writes outside /var/lib/vyajena, tried inside the running service's
   # namespaces as its user. Its private /tmp and /var/tmp (PrivateTmp=yes)
   # are throwaway and seen by nothing else, so they are not probed.
@@ -112,6 +114,7 @@ remote_checks() {
     "IPAddressAllow=127.0.0.0/8 ::1/128 $relay_ip/32" "IPAddressDeny=0.0.0.0/0 ::/0"; do
     prop="${want%%=*}"
     got="$(systemctl show -p "$prop" --value vyajena-tunnel.service)"
+    case "$prop" in IPAddress*) got="$(words "$got")"; want="$prop=$(words "${want#*=}")" ;; esac
     if [ "$prop=$got" = "$want" ]; then ok "tunnel sandbox $prop"; else fail "tunnel sandbox $prop" "is '$got', want '${want#*=}'"; fi
   done
   exposure_of vyajena-tunnel.service "tunnel sandbox"
