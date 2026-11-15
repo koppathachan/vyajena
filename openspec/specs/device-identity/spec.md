@@ -117,11 +117,13 @@ auth key; it SHALL NOT need an invite.
 ### Requirement: Device revocation
 Any authenticated device of a user SHALL be able to revoke another device of the
 same user with `Devices.RevokeDevice`. A revoked device SHALL fail authentication
-from then on, and its open stream SHALL be closed.
+from then on with `PERMISSION_DENIED`, and its open stream SHALL be closed with
+`PERMISSION_DENIED`; the Pi enforces both.
 
 #### Scenario: Lost phone
 - **WHEN** a user revokes their lost phone from their tablet
-- **THEN** the phone's next authentication fails and its open stream closes
+- **THEN** the phone's next authentication fails with `PERMISSION_DENIED` and its
+  open stream closes with `PERMISSION_DENIED`
 
 ### Requirement: Push token registration
 A device SHALL register or replace its push token with `Devices.UpdatePushToken`,
