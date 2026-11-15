@@ -30,7 +30,7 @@ iOS signing waits for the Apple account (R2).
 ## 4. Shared app
 
 - [x] 4.1 `app.dart`: `debugShowCheckedModeBanner: false` (D7)
-- [x] 4.2 `app/store/icon/draw.swift` renders "വ" (Malayalam Sangam MN, slate seed colour on light) as master, foreground and monochrome (R3); `app/store/icons.sh` (`sips`); generated Android + iOS icons committed (D11) (app-release: Store listing and icons)
+- [x] 4.2 `app/store/icon/draw.swift` renders "വ്യ" (Malayalam Sangam MN Bold, slate seed colour on light) as master, foreground and monochrome (R3); `app/store/icons.sh` (`sips`); generated Android + iOS icons committed (D11) (app-release: Store listing and icons)
 - [x] 4.3 `app/test/release/` Dart tests on the committed files: manifest permissions and label, `Info.plist` keys and name, `PrivacyInfo.xcprivacy` present with both categories, icon sizes, every log call under `kDebugMode`; `// spec: app-release/<slug>` (Declared permissions; Encryption export declaration; Privacy manifest; Store listing and icons; Release builds log no content)
 
 ## 5. Store texts

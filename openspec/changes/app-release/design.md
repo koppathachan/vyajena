@@ -294,7 +294,7 @@ Display name from R3 in both `AndroidManifest.xml` (`android:label`) and
 `monochrome.png` (432×432 on transparent, for the adaptive and Android 13 themed
 icon). `app/store/icons.sh` uses macOS `sips` to write every `mipmap-*` and
 `AppIcon.appiconset` size, plus `mipmap-anydpi-v26/ic_launcher.xml`. Outputs are
-committed. The image (owner, R3): the Malayalam letter "വ" in the slate seed
+committed. The image (owner, R3, changed during apply from "വ"): the Malayalam syllable "വ്യ" in the slate seed
 colour on a light background. `app/store/icon/draw.swift` renders the three
 images with CoreGraphics + CoreText in a Malayalam font that ships with macOS
 (Malayalam Sangam MN), so the app itself still has no custom font. No `flutter_launcher_icons`: the "UI goes through the core" test keeps
