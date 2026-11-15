@@ -2,15 +2,17 @@
 
 ### Requirement: Relay host
 The relay SHALL run on its own Google Cloud e2-micro VM in a free-tier US region
-(`us-central1`, `us-east1` or `us-west1`) of project `purple-eccdf`, with a
+(`us-central1`, `us-east1` or `us-west1`) of project `vyajena`, with a
 standard persistent boot disk of at most 30 GB, a reserved static external IPv4
-address and no DNS name, in its own VPC. Nothing else SHALL run on that VM or in
-that VPC. The relay check enforces this.
+address, in its own VPC. Invites SHALL name it by the DNS name
+`relay.purplechaamba.com`, whose only record is an A record for that address.
+Nothing else SHALL run on that VM or in that VPC. The relay check enforces this.
 
 #### Scenario: Invites name the relay
 - **WHEN** the admin creates an invite for Bob with `Admin.CreateInvite`
-- **THEN** the invite payload names the relay's static address and port 443,
-  never a home address
+- **THEN** the invite payload names `relay.purplechaamba.com:443`, never an IP
+  or a home address, and Bob's core resolves the name and checks only the Pi's
+  pin
 
 ### Requirement: TLS ends on the Pi
 The relay SHALL forward every TCP connection on port 443 byte for byte through
@@ -106,7 +108,8 @@ built from crates.io sources with its own lock file.
 ### Requirement: Relay hardening check
 The project SHALL provide one command that checks the relay through `gcloud` and
 SSH and reports each failure by name: VM size, region and disk, service account,
-static address, firewall rules, flow logs, SSH settings, rathole's sandbox and
+static address, the DNS name's records, firewall rules, flow logs, SSH settings,
+rathole's sandbox and
 version, listeners, unattended upgrades and the volatile journal. It SHALL warn,
 without failing, when a reboot is pending or the Pi's tunnel is not attached.
 

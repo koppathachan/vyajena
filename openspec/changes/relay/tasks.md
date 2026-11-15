@@ -20,11 +20,14 @@
 - [x] 4.2 `secrets.sh`, `create.sh`, `build.sh`, `deploy.sh`; record the VM, zone and address in the hand-over note (not the repo)
 - [x] 4.3 `deploy/relay/check.sh`: 0 failed (tunnel warning expected before 5.2); record the exposure score under D8 (tunnel warnings expected until 5.2)
 
+- [ ] 4.4 Move to project `vyajena` (owner, D12): owner links billing; delete the `purple-eccdf` relay (VM, address, rules, subnet, VPC); `create.sh`, `deploy.sh`, `check.sh` in `vyajena`
+- [ ] 4.5 DNS name (owner, D13): `RELAY_HOST` rendered into invites; owner adds the A record `relay.purplechaamba.com` → the new static IPv4; `deploy/relay/check.sh` passes `dns`
+
 ## 5. Pi reset onto the relay (owner yes first)
 
 - [ ] 5.1 Owner: yes to deleting the group (every device re-joins)
 - [ ] 5.2 `deploy/pi/build.sh`, `deploy/pi/deploy.sh --no-build --reset` (backup first); new pin and bootstrap invite in an owner-only file
-- [ ] 5.3 `deploy/pi/check.sh` and `deploy/relay/check.sh`: 0 failed; from the Mac, TLS to `<relay-ip>:443` presents the new pin and `Devices.GetServerInfo` answers (throwaway client, not the owner's devices); record in design.md
+- [ ] 5.3 `deploy/pi/check.sh` and `deploy/relay/check.sh`: 0 failed; from the Mac, TLS to `relay.purplechaamba.com:443` presents the new pin and `Devices.GetServerInfo` answers (throwaway client, not the owner's devices); record in design.md
 
 ## 6. Docs and validation
 

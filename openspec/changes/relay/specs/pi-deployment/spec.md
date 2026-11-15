@@ -98,13 +98,14 @@ than the running one is installed.
 
 ### Requirement: Reachable through the relay
 The server SHALL listen on `127.0.0.1:8443` only, and its config SHALL name the
-relay's static address and port 443 as the public address, so the invites it
-creates work for any device on any network.
+relay's DNS name and port 443 (`relay.purplechaamba.com:443`) as the public
+address, so the invites it creates work for any device on any network. The Pi's
+tunnel SHALL dial the relay's static IPv4 directly, so the Pi needs no DNS.
 
 #### Scenario: Bob joins on mobile data
 - **WHEN** the admin invites Bob and Bob pastes the invite on his phone on mobile
   data
-- **THEN** the invite names `<relay-ip>:443`, Bob's phone connects through the
+- **THEN** the invite names `relay.purplechaamba.com:443`, Bob's phone connects through the
   relay with the pinned TLS key, and the admin's device adds him
 
 ### Requirement: Scripted reset

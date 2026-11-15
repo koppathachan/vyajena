@@ -10,7 +10,8 @@
   no DNS, invites use `<ip>:443`; no migration: wipe the Pi, everyone re-joins.
 - Owner's words (2026-11-15, relayed by the tracker): "I want to use only GCP
   services if possible"; "everyone re-joins as though its new… we treat it like
-  non production"; "for now lets avoid the dns".
+  non production"; "for now lets avoid the dns", then (2026-11-16) "lets do dns
+  now" (D13).
 - GCP state (after the owner logged in again, 2026-11-15): billing account
   the billing account is **closed**; billing is off on `purple-eccdf`,
   `vyajena` and `triple-reef-499411-e4`; the Compute API was never enabled (no
@@ -20,11 +21,11 @@
 
 ## Goals / Non-Goals
 
-**Goals:** devices anywhere reach the Pi through `<relay-ip>:443`; nothing
+**Goals:** devices anywhere reach the Pi through `relay.purplechaamba.com:443`; nothing
 listens at home; the relay is stateless, rebuildable and checked by one command;
 the Pi starts fresh, backed up first.
 
-**Non-Goals:** real push (next change); a DNS name or a CA certificate; HTTP/3;
+**Non-Goals:** real push (next change); a CA certificate (the pin is enough); HTTP/3;
 direct IPv6; migrating devices that joined in the home-LAN phase.
 
 ## Decisions
@@ -66,7 +67,7 @@ sequenceDiagram
 
 | Thing | Value |
 | --- | --- |
-| Project / zone | `purple-eccdf` / `us-east1-b` (free tier; closest free US region to India over Google's backbone, via Europe) |
+| Project / zone | `vyajena` (owner, 2026-11-16; was `purple-eccdf`, D12) / `us-east1-b` (free tier; closest free US region to India over Google's backbone, via Europe) |
 | VM | `vyajena-relay`, e2-micro, Debian 13 (`debian-13`), 10 GB `pd-standard`, Shielded VM |
 | Address | static external IPv4 `vyajena-relay` (Premium tier), ~$3.65/month in use |
 | VPC | own custom-mode `vyajena-relay`, subnet `10.42.0.0/28`, flow logs off |
@@ -85,8 +86,8 @@ sequenceDiagram
 - **Static, not ephemeral, IPv4:** an ephemeral address changes when the VM
   stops, and every device stores the address from its invite, so a change
   means everyone re-joins.
-- **No DNS for now** (owner): invites name the raw IP. A DNS name can be added
-  later for new invites only; devices that joined keep the IP.
+- **DNS name** (owner, 2026-11-16, D13): invites name
+  `relay.purplechaamba.com:443`, an A record for the static address.
 
 **Cost** (per month): e2-micro, 10 GB standard disk and 1 GB egress are in the
 free tier; the in-use static IPv4 is not: $0.005/h ≈ **$3.65** (sources
@@ -261,14 +262,48 @@ flowchart TB
 - On the hosts: both checks 0 failed; TLS from the Mac to `<relay-ip>:443`
   matches the new pin.
 
+### D12. Moved to project `vyajena` (owner, 2026-11-16)
+
+The relay was first created in `purple-eccdf` (results under D8). The owner
+then chose the existing project `vyajena` (number 80637483432, the old
+vyajena's Play CI project: androidpublisher and BigQuery APIs on; billing was
+off, Compute never enabled): "okay lets do it now. there should already be a
+project named Vyajena." No device used the first address, so the move costs
+nothing: `relay.conf` says `PROJECT=vyajena`, `create.sh` makes everything
+there with a new static address (`relay.env` and `known_hosts` are rewritten),
+and the `purple-eccdf` VM, address, firewall rules, subnet and VPC are
+deleted. The relay's own VPC keeps it apart from anything else in the project.
+
+### D13. A DNS name for the relay (owner, 2026-11-16)
+
+The owner changed "for now lets avoid the dns" to "lets do dns now".
+
+- **Name:** `relay.purplechaamba.com` (`RELAY_HOST` in `relay.conf`): one A
+  record for the static IPv4, no AAAA (the relay has no IPv6). The owner adds it
+  at the domain's DNS host (Squarespace); we have no access there.
+- **Invites** name `relay.purplechaamba.com:443` (`public_address`, rendered
+  from `RELAY_HOST`). The core already resolves names (`TcpStream::connect`
+  with a `host:port` string) and uses a fixed TLS server name; the pin is still
+  the Pi's SPKI, so DNS adds no trust. Tested in `client/tests/relay.rs`
+  (an invite naming `localhost:<port>`).
+- **The IP stays** where no DNS should be needed: the Pi's `tunnel.toml`
+  `remote_addr` and its `IPAddressAllow` (which also blocks DNS lookups for the
+  tunnel). The Pi never resolves the name.
+- **Moving the relay** now means a new A record, not a re-join.
+- **Checks:** `deploy/relay/check.sh` fails unless the name's A record is the
+  static address and it has no AAAA; `deploy/pi/check.sh` compares the pin seen
+  through the name with the Pi's loopback pin (so a missing record fails it).
+
 ## Risks / Trade-offs
 
 - [Relay compromised] → sees TLS bytes, client IPs and timing; can drop traffic
   (DoS). Cannot read or forge: TLS pinned, MLS inside.
-- [Static IP lost, or the relay moved elsewhere] → every invite and device
-  names the IP; a new IP means everyone re-joins (accepted: non-production,
-  owner). Never delete `vyajena-relay` the address; the VM can be rebuilt on
-  it. DNS later would make future moves free for new invites.
+- [Static IP lost, or the relay moved elsewhere] → devices store the name, so
+  a new IP needs only a new A record (and `relay.env`); nobody re-joins. Keep
+  the address anyway: the A record and the Pi's tunnel name it.
+- [DNS host compromised or the record wrong] → the name points elsewhere; the
+  pin refuses any other TLS key, so the worst case is DoS. `check.sh` fails
+  when the A record is not the static address.
 - [Latency] → India → US → India: two intercontinental legs per round trip,
   roughly 0.4–0.6 s per send. Accepted for the MVP; measured after deploy.
 - [rathole 0.5.0 is from 2023 and needs Rust 1.79] → small, pinned, built from
@@ -295,6 +330,7 @@ deleted (`gcloud compute instances delete`, `addresses delete`).
 
 ## Open Questions
 
-None. Resolved by the owner (2026-11-15): own VM, US free tier, static IPv4 no
-DNS, no migration. Picked here: IAP-only SSH (D7), `us-east1-b` (D2), tunnel
+None. Resolved by the owner (2026-11-15/16): own VM, US free tier, project
+`vyajena`, static IPv4 with the DNS name `relay.purplechaamba.com`, no
+migration. Picked here: IAP-only SSH (D7), `us-east1-b` (D2), tunnel
 port 2333 open to all (D2), build rathole from source (D3).

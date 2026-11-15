@@ -103,7 +103,7 @@ remote_checks() {
   # The tunnel (relay design D5): sandboxed, dynamic user, only loopback and
   # the relay, attached.
   local relay_ip
-  relay_ip="$(sed -n 's/^public_address = "\([0-9.]*\):[0-9]*"$/\1/p' /etc/vyajena/config.toml 2>/dev/null)"
+  relay_ip="$(sed -n 's/^remote_addr = "\([0-9.]*\):[0-9]*"$/\1/p' /etc/vyajena/tunnel.toml 2>/dev/null)"
   check tunnel-running "vyajena-tunnel.service is not active and enabled" \
     sh -c 'systemctl is-active --quiet vyajena-tunnel.service && systemctl is-enabled --quiet vyajena-tunnel.service'
   for want in DynamicUser=yes NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \

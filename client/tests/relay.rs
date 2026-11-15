@@ -6,6 +6,7 @@ mod support;
 
 use std::time::Duration;
 
+use client::identity::Invite;
 use client::{ConnectionState, Event, MessageBody};
 use support::device::{self, Device};
 use support::pi::TestPi;
@@ -49,6 +50,24 @@ async fn the_relay_forwards_tls_bytes_and_never_sees_the_text() {
         contains(&seen, &[0x17, 0x03, 0x03]),
         "no TLS 1.3 records seen"
     );
+}
+
+// spec: relay/relay-host
+#[tokio::test(flavor = "multi_thread")]
+async fn an_invite_naming_the_relay_by_dns_name_connects() {
+    // Invites name relay.purplechaamba.com:443; here "localhost" stands in for
+    // the name: the core resolves it and still checks only the Pi's pin.
+    let pi = TestPi::start().await;
+    let mut invite = Invite::decode(&pi.bootstrap).check("bootstrap invite");
+    invite.relay_address = format!("localhost:{}", pi.relay.addr.port());
+    let mut admin = Device::new().await;
+    admin
+        .client
+        .register(&invite.encode())
+        .await
+        .check("register through the named relay");
+    admin.client.start().await.check("start");
+    admin.wait_connected().await;
 }
 
 // spec: relay/tls-ends-on-the-pi

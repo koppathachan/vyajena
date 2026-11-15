@@ -254,6 +254,18 @@ remote_checks() {
 mac_checks() {
   local ip="$1" port
   [ -n "$ip" ] || { fail reachable "no RELAY_IP in $SECRETS/relay.env"; return; }
+  # Invites name RELAY_HOST: its A record must be the static address, and it
+  # must have no AAAA (the relay has no IPv6).
+  local a aaaa
+  a="$(dig +short A "$RELAY_HOST" | sort | tr '\n' ' ' | sed 's/ $//')"
+  aaaa="$(dig +short AAAA "$RELAY_HOST" | tr '\n' ' ' | sed 's/ $//')"
+  if [ "$a" = "$ip" ] && [ -z "$aaaa" ]; then
+    ok "dns $RELAY_HOST -> $ip"
+  else
+    local extra=""
+    [ -z "$aaaa" ] || extra=" and AAAA $aaaa"
+    fail dns "$RELAY_HOST has A ${a:-none}$extra, want only A $ip (set it at the DNS host)"
+  fi
   if nc -z -G 3 "$ip" "$TUNNEL_PORT" 2>/dev/null; then ok "reachable $ip:$TUNNEL_PORT"; else fail reachable "$ip:$TUNNEL_PORT does not answer"; fi
   if nc -z -G 3 "$ip" "$PUBLIC_PORT" 2>/dev/null; then
     ok "reachable $ip:$PUBLIC_PORT"
