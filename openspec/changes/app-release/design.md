@@ -297,7 +297,7 @@ that app. Facts from the old repo (read-only):
 
 - Package `com.chaamba.vyajena` (`app/android/RELEASE.md`, workflow
   `android-internal.yml`). Play package names never change, so vyajena2's
-  Android `applicationId` becomes `com.chaamba.vyajena` (R10). The Kotlin
+  Android `applicationId` becomes `com.chaamba.vyajena` (R10, owner yes 2026-11-15). This supersedes the flutter-app D1 app id on Android only. The Kotlin
   `namespace` (`com.purplechaamba.vyajena`, where `MainActivity` lives) stays:
   Android lets the two differ. The iOS bundle id stays `com.purplechaamba.vyajena`.
   Nothing in the Rust core or Dart reads the application id.
@@ -367,7 +367,7 @@ flowchart LR
 ## Open Questions
 
 The owner's decisions R1–R12 are listed with recommendations in `proposal.md`
-(R1, R2 answered for Android, 2026-11-15). D8, D11 (name), D14, D16 (R10–R12)
+(R1, R2 answered for Android, R10 answered, 2026-11-15). D8, D11 (name), D14, D16 (R11–R12)
 and the R4 key locations wait on them. Every iOS signing step waits on the Apple
 account (R2); the iOS build without signing (S1 with `--no-codesign`, the
 privacy manifest, plist keys) does not.

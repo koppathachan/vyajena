@@ -77,7 +77,7 @@ internal testing), which needs no review and works on the home LAN.
   Actions workflow, its signing secrets and its keyless Google access).
 - **iOS:** no Apple Developer account yet; it has to be bought first.
 
-Reusing the Play app has consequences that need a yes (R10–R12): Play never
+Reusing the Play app has consequences (R10 answered yes, 2026-11-15; R11–R12 open): Play never
 lets an app change its package name, and the old app is `com.chaamba.vyajena`.
 Updates must be signed with the upload key the old app used (`~/vyajena-upload.jks`,
 which was also in GitHub secrets). Every versionCode must be higher than the
@@ -96,7 +96,7 @@ highest the old CI uploaded (it used the run number + 100).
 | R7 | Release before the relay exists? | Yes, privately (R1), to the group's own phones on the home Wi-Fi, so real-phone QA starts now; no public listing before the relay |
 | R8 | Export compliance answer | `ITSAppUsesNonExemptEncryption = YES`, then answer App Store Connect as standard algorithms under the mass-market exemption (no CCATS); exclude France from distribution or file its declaration. Owner confirms; not legal advice |
 | R9 | iPhone only or iPhone + iPad | iPhone only (`TARGETED_DEVICE_FAMILY = 1`): iPads still run it, and no iPad screenshots or iPad review are needed |
-| R10 | Android application id, to reuse the Play app | `applicationId = "com.chaamba.vyajena"` on Android only; the Kotlin `namespace` and iOS bundle id stay `com.purplechaamba.vyajena`. (Alternative: a new Play app for `com.purplechaamba.vyajena` in the same console, no fee, testers re-invited) |
+| R10 | Android application id, to reuse the Play app | **Answered (owner, 2026-11-15): reuse it.** `applicationId = "com.chaamba.vyajena"` on Android only; the Kotlin `namespace` and iOS bundle id stay `com.purplechaamba.vyajena`. (Alternative: a new Play app for `com.purplechaamba.vyajena` in the same console, no fee, testers re-invited) |
 | R11 | Upload key after removing the old CI | Keep `~/vyajena-upload.jks` for the first upload, then ask Play for an upload key reset to a new key that has never been in CI, held as in R4. The old key sat in GitHub secrets |
 | R12 | Phones with the old vyajena installed | Uninstall the old app before installing vyajena2. A store update over it would leave the old app's data and keys behind, and nothing reads them |
 
