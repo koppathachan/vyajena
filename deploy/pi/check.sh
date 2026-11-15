@@ -187,6 +187,39 @@ remote_checks() {
   else
     ok "no reboot pending"
   fi
+
+  # Raspberry Pi kernel packages make no /run/reboot-required (qa-fixes D7):
+  # a newer kernel of the running flavour in /lib/modules means one waits.
+  local running newer
+  running="$(uname -r)"
+  newer="$(newer_kernel "$running" /lib/modules)"
+  if [ -n "$newer" ]; then
+    warn kernel-reboot "kernel $newer is installed, $running is running; reboot the Pi"
+  else
+    ok "kernel $running is the newest installed"
+  fi
+}
+
+# newer_kernel <running> <modules dir>: prints the newest kernel in the
+# folder with the running kernel's flavour (the part after the first "+",
+# e.g. "+rpt-rpi-v8", or after the last "-" without one) if it sorts above
+# the running one; else nothing. Other flavours (the Pi 5's "-2712") don't
+# count.
+newer_kernel() {
+  local running="$1" dir="$2" flavour name newest=""
+  if [[ "$running" == *+* ]]; then flavour="+${running#*+}"; else flavour="-${running##*-}"; fi
+  for name in "$dir"/*; do
+    name="${name##*/}"
+    [[ "$name" == ?*"$flavour" ]] || continue
+    [[ "${name%"$flavour"}" =~ ^[0-9][0-9.]*(-[0-9]+)?$ ]] || continue
+    if [ -z "$newest" ] || [ "$(printf '%s\n' "$newest" "$name" | sort -V | tail -n 1)" = "$name" ]; then
+      newest="$name"
+    fi
+  done
+  if [ -n "$newest" ] && [ "$newest" != "$running" ] &&
+    [ "$(printf '%s\n' "$running" "$newest" | sort -V | tail -n 1)" = "$newest" ]; then
+    echo "$newest"
+  fi
 }
 
 # --- from the Mac --------------------------------------------------------------
@@ -221,7 +254,7 @@ mac_checks() {
 }
 
 report="$(
-  { declare -f remote_checks; printf 'remote_checks %q\n' "$MAX_EXPOSURE"; } |
+  { declare -f remote_checks newer_kernel; printf 'remote_checks %q\n' "$MAX_EXPOSURE"; } |
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$PI" sudo bash -s
   mac_checks
 )"

@@ -24,8 +24,8 @@
 
 ## 5. Pi
 
-- [ ] 5.1 `check.sh`: `kernel-reboot` warning (D7); `shellcheck` clean (pi-deployment: Hardening check)
-- [ ] 5.2 `backup.sh`, then `deploy.sh`; `check.sh` 0 failed; same pin
+- [x] 5.1 `check.sh`: `kernel-reboot` warning (D7); `shellcheck` clean (pi-deployment: Hardening check)
+- [x] 5.2 `backup.sh`, then `deploy.sh`; `check.sh` 0 failed; same pin
 
 ## 6. Verify and docs
 
