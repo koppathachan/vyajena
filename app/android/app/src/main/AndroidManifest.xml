@@ -1,8 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The Rust core connects to the relay (the UI itself opens nothing). -->
+    <!-- The only two permissions (app-release: Declared permissions). The Rust
+         core connects to the Pi (the UI itself opens nothing); connectivity_plus
+         reads whether a network is up, to tell the core to reconnect. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
-        android:label="vyajena"
+        android:label="Vyajena"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"

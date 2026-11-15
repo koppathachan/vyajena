@@ -42,6 +42,9 @@ class _VyajenaAppState extends State<VyajenaApp> {
     networkChanges: widget.networkChanges,
     child: MaterialApp(
       title: 'Vyajena',
+      // Never the debug banner, also in profile builds and screenshots
+      // (app-release design D7).
+      debugShowCheckedModeBanner: false,
       theme: lightTheme,
       darkTheme: darkTheme,
       themeMode: themeMode,

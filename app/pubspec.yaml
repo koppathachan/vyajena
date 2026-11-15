@@ -48,6 +48,10 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   integration_test:
     sdk: flutter
+  # Saves store screenshots from integration_test/screenshots_test.dart
+  # (test_driver/screenshots.dart; app-release design D15). Dev only.
+  flutter_driver:
+    sdk: flutter
   freezed: ^3.2.5
   build_runner: ^2.15.1
 

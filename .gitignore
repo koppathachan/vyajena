@@ -40,3 +40,13 @@ build/
 
 # Local Pi server data (server/local.toml): database and private keys.
 .pi-local/
+
+# Release signing (app-release design D3): keys, certificates, profiles and
+# store API keys live with the owner, outside the repo, never in git or CI.
+key.properties
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+*.cer
+AuthKey_*.p8
