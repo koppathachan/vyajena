@@ -44,8 +44,8 @@
 
 ### D1. Private distribution first; the build does not depend on the choice
 
-Pending owner decisions R1 and R7. The same signed builds go to TestFlight
-internal testing and Play internal testing now, and to public review later. TestFlight
+Owner, 2026-11-15 (R1, R7): private first, before the relay. The same signed builds go to Play internal testing now and
+TestFlight internal testing once the Apple account exists, and to public review later. TestFlight
 builds expire after 90 days, so a private iOS release needs a fresh upload at
 least every 90 days; Play internal testing builds do not expire.
 
@@ -97,10 +97,10 @@ change also changes the Pi server build.
   the file is missing, Gradle throws `GradleException("release signing: <path>
   not found")`. No debug fallback. `flutter run --release` therefore needs the
   key too; local performance checks use `--profile`.
-- The Play app already exists (D16), so the upload key is the old one,
-  `~/vyajena-upload.jks`, until the owner resets it (R11). The owner moves it
-  under `~/.vyajena-release/` or points `vyajena.keyProperties` at it.
-- Play App Signing (already on for the old app) keeps the app signing key at Google;
+- The owner makes a **new** upload key for the new Play app (R10, R11), in
+  `~/.vyajena-release/`, passwords in the macOS Keychain, one backup in the
+  password manager (R4). The old app's `~/vyajena-upload.jks` is not used.
+- Play App Signing (required for new apps) keeps the app signing key at Google;
   the owner keeps only the **upload** key. If the upload key is lost, Play support
   can reset it, and installed apps keep updating. Its public SHA-256 fingerprint goes
   in `app/store/signing.md` (public, safe to commit) for the release check.
@@ -133,12 +133,10 @@ S1 result: *not run yet.*
 `flutter.versionCode`/`versionName`, `$(FLUTTER_BUILD_NAME)`/`$(FLUTTER_BUILD_NUMBER)`).
 One build number for both stores, always increasing. After a successful upload
 the owner tags `app-v<name>+<build>`; the release check compares against the
-highest such tag. Start: the old app's CI uploaded versionCodes from 101 up
-(run number + 100), so Play rejects `1.0.0+1`. The owner reads the highest
-versionCode in Play Console; the first vyajena2 release is `2.0.0+1000`, or
-higher if needed. The version name `2.0.0` tells testers it is the new app.
-That first tag is the baseline for the release check. Apple
-starts from the same number, so both stores share one sequence.
+highest such tag. Start: the Play app is new (R10) and nothing has been
+uploaded, so the first release is `1.0.0+1`, already in pubspec. That first tag
+is the baseline for the release check. Apple starts from the same number, so
+both stores share one sequence.
 
 ### D6. Shrinking keeps the JNI glue
 
@@ -173,7 +171,7 @@ screenshots clean).
 
 ### D8. Export compliance
 
-Pending owner decision R8. Recommended: `ITSAppUsesNonExemptEncryption = YES`
+Owner, 2026-11-15 (R8): `ITSAppUsesNonExemptEncryption = YES`
 in `Info.plist`. The app does not limit itself to OS encryption: its own Rust code
 implements MLS (OpenMLS), TLS 1.3 (rustls) and XChaCha20-Poly1305 sealing. All of
 these are standard, published algorithms, used for user data protection in a mass-market app,
@@ -181,8 +179,8 @@ which fits the US EAR mass-market exemption (§740.17(b)(1)); since 2021 no
 annual self-classification report is needed for it. App Store Connect then asks
 a short questionnaire once per app; `docs/release.md` records the answers
 (standard algorithms, no proprietary crypto, no CCATS) so they are the same each
-time. France needs an ANSSI declaration for encryption apps; recommended to
-leave France out of availability unless a group member lives there. Play has no
+time. France needs an ANSSI declaration for encryption apps, so France is left
+out of App Store availability (owner). Play has no
 equivalent question. This is the owner's call and not legal advice.
 
 - *Alternative:* `NO`. Rejected: it would be wrong, because Apple treats only
@@ -243,7 +241,10 @@ Display name from R3 in both `AndroidManifest.xml` (`android:label`) and
 `monochrome.png` (432×432 on transparent, for the adaptive and Android 13 themed
 icon). `app/store/icons.sh` uses macOS `sips` to write every `mipmap-*` and
 `AppIcon.appiconset` size, plus `mipmap-anydpi-v26/ic_launcher.xml`. Outputs are
-committed. No `flutter_launcher_icons`: the "UI goes through the core" test keeps
+committed. The image (owner, R3): the Malayalam letter "വ" in the slate seed
+colour on a light background. `app/store/icon/draw.swift` renders the three
+images with CoreGraphics + CoreText in a Malayalam font that ships with macOS
+(Malayalam Sangam MN), so the app itself still has no custom font. No `flutter_launcher_icons`: the "UI goes through the core" test keeps
 pubspec dependencies to an allow-list, and a script is enough.
 
 ### D12. Local network access on iOS (home-LAN phase)
@@ -276,7 +277,7 @@ Android SDK/NDK tools already on the Mac:
 
 ### D14. iPhone only
 
-Pending owner decision R9. `TARGETED_DEVICE_FAMILY = 1`: iPads still install
+Owner, 2026-11-15 (R9): iPhone only, `TARGETED_DEVICE_FAMILY = 1`: iPads still install
 and run the app in iPhone mode, and App Store Connect needs no iPad
 screenshots and no iPad review. `UISupportedInterfaceOrientations~ipad` goes.
 
@@ -289,45 +290,35 @@ a `integration_test/screenshots_test.dart` run on the **fake core** (Alice, Bob,
 sample text) on an iPhone 6.9" simulator and a phone emulator, saved under
 `app/store/screenshots/`. Never from the owner's group.
 
-### D16. Reuse the old Play app; retire its CI deployment
+### D16. A new Play app; the old one retires after
 
-Owner, 2026-11-15: the old vyajena (`~/code/vyajena`, mirrored publicly as
-`koppathachan/vyajena`) is already on Play internal testing, and vyajena2 reuses
-that app. Facts from the old repo (read-only):
+Owner, 2026-11-15 (R10–R12): a **new** Play app for `com.purplechaamba.vyajena`
+in the existing console, not the old vyajena's app. The old app and its CI
+deployment stay until vyajena2 is deployed and running; then the owner deletes
+them. Facts from the old repo (`~/code/vyajena`, mirrored publicly as
+`koppathachan/vyajena`; read-only):
 
-- Package `com.chaamba.vyajena` (`app/android/RELEASE.md`, workflow
-  `android-internal.yml`). Play package names never change, so vyajena2's
-  Android `applicationId` becomes `com.chaamba.vyajena` (R10, owner yes 2026-11-15). This supersedes the flutter-app D1 app id on Android only. The Kotlin
-  `namespace` (`com.purplechaamba.vyajena`, where `MainActivity` lives) stays:
-  Android lets the two differ. The iOS bundle id stays `com.purplechaamba.vyajena`.
-  Nothing in the Rust core or Dart reads the application id.
-- Upload key `~/vyajena-upload.jks`, which the old workflow rebuilt from the
-  `ANDROID_KEYSTORE_*` GitHub secrets. Uploads went through workload identity
-  federation as `<play-ci-service-account>`, with no
-  stored Google key.
-- versionCode = run number + 100 (D5).
+- Old package `com.chaamba.vyajena`, on Play internal testing, uploaded by the
+  `android-internal.yml` workflow, signed with `~/vyajena-upload.jks` rebuilt
+  from the `ANDROID_KEYSTORE_*`/`ANDROID_KEY_*` GitHub secrets, and pushed with
+  workload identity federation as `<play-ci-service-account>`.
+- Different package, so both apps install side by side on one phone, and nothing
+  in vyajena2 changes (`applicationId` stays). Testers keep the old app until it
+  is retired.
 
-Retiring the old deployment is the owner's work on GitHub, GCP and Play Console
-(task 7.0), never a session's: delete the workflow and the four
-`ANDROID_KEYSTORE_*`/`ANDROID_KEY_*` secrets in both old repos, remove the
-service account's access in Play Console › Users and permissions, and delete the
-workload identity provider (or the service account). vyajena2 uploads by hand
-(Play Console web upload), so nothing replaces them.
-
-Because the upload key lived in GitHub secrets, R11 recommends a Play upload key
-reset after the first vyajena2 upload. Play support does this. It changes only
-what the owner signs with, not what phones see.
-
-Old installs (R12): the old app's files (its database, Tor state) are in the same
-app sandbox, and vyajena2 never reads them. Testers uninstall the old app
-first, then install from the internal testing link. This is the same re-join as any
-debug-build phone (Risks).
+Retiring the old one is the owner's work on GitHub, GCP and Play Console (task
+7.7), never a session's, and only after vyajena2 runs on the group's phones:
+unpublish/delete the old Play app, delete the workflow and its four secrets in
+`chaamba/vyajena` and `koppathachan/vyajena`, remove the service account's
+Play access, and delete its workload identity provider (or the service
+account). The old upload key goes with it. vyajena2 uploads by hand (Play
+Console web upload), so nothing replaces the workflow.
 
 ```mermaid
 flowchart LR
-  old["old repo CI<br/>android-internal.yml + secrets + WIF"] -. "removed by the owner (7.0)" .-> x["gone"]
-  mac["owner's Mac<br/>flutter build appbundle<br/>+ release-check.sh"] -->|"signed with the upload key<br/>(~/vyajena-upload.jks, later reset)"| play["Play Console<br/>com.chaamba.vyajena · internal testing"]
-  play -->|"app signing key (Google)"| phones["testers' phones<br/>(old app uninstalled first)"]
+  mac["owner's Mac<br/>flutter build appbundle<br/>+ release-check.sh"] -->|"new upload key<br/>(~/.vyajena-release/)"| play["Play Console<br/>com.purplechaamba.vyajena · internal testing"]
+  play -->|"app signing key (Google)"| phones["group's phones"]
+  old["old app com.chaamba.vyajena<br/>+ repo CI, secrets, WIF"] -. "deleted by the owner once vyajena2 runs (7.7)" .-> x["gone"]
 ```
 
 ## Risks / Trade-offs
@@ -340,7 +331,7 @@ flowchart LR
 - [`flutter build ipa` broken on Xcode 27.2] → S1 first; `xcodebuild` fallback (D4).
 - [R8 strips the JNI class] → keep rules + S2 on a real release APK.
 - [Rust `.so` not 16 KB aligned → Play rejects the upload] → S3 + linker flag.
-- [Upload key lost] → Play App Signing allows an upload key reset; two backups (R4).
+- [Upload key lost] → Play App Signing allows an upload key reset; a password-manager backup (R4).
 - [iOS distribution certificate lost] → revoke and reissue; installed apps keep
   working, no user impact.
 - [Privacy answers drift from the code] → one answer sheet; a spec rule that any
@@ -366,8 +357,6 @@ flowchart LR
 
 ## Open Questions
 
-The owner's decisions R1–R12 are listed with recommendations in `proposal.md`
-(R1, R2 answered for Android, R10 answered, 2026-11-15). D8, D11 (name), D14, D16 (R11–R12)
-and the R4 key locations wait on them. Every iOS signing step waits on the Apple
-account (R2); the iOS build without signing (S1 with `--no-codesign`, the
-privacy manifest, plist keys) does not.
+None. The owner answered R1–R12 on 2026-11-15 (`proposal.md`). Every iOS
+signing step waits for the Apple account (R2); the unsigned iOS build (S1 with
+`--no-codesign`), the privacy manifest and the plist keys do not.
