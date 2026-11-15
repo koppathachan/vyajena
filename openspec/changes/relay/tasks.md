@@ -21,7 +21,7 @@
 - [x] 4.3 `deploy/relay/check.sh`: 0 failed (tunnel warning expected before 5.2); record the exposure score under D8 (tunnel warnings expected until 5.2)
 
 - [x] 4.4 Move to project `vyajena` (owner, D12): owner links billing; delete the `purple-eccdf` relay (VM, address, rules, subnet, VPC); `create.sh`, `deploy.sh`, `check.sh` in `vyajena`
-- [ ] 4.5 DNS name (owner, D13): `RELAY_HOST` rendered into invites; owner adds the A record `vyajarelay.purplechaamba.com` → the new static IPv4; `deploy/relay/check.sh` passes `dns`
+- [x] 4.5 DNS name (owner, D13): `RELAY_HOST` rendered into invites; owner adds the A record `vyajarelay.purplechaamba.com` → the new static IPv4; `deploy/relay/check.sh` passes `dns`
 
 ## 5. Pi reset onto the relay (owner yes first)
 
