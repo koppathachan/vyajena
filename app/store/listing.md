@@ -45,16 +45,17 @@ You need an invite from your group's admin to use Vyajena.
 
 First release of the new Vyajena.
 
-## Age rating answers
+## Age rating answers (IARC, saved in Play 2026-11-15)
 
-- Violence, sexual content, profanity, drugs, gambling, horror: none in the app
-  itself.
-- User-generated content / users can communicate: **yes** (private group chat
-  between invited members; no public content, no strangers).
-- Location sharing: no. Purchases: no. Ads: no.
-- Expected result: Play "Teen"-or-lower IARC rating; App Store 12+ or 17+
-  depending on the unrestricted-communication answer. Accept what the forms
-  give.
+Category: Social or communication → **Communication** (people already known to
+the user, small group). Precise location shared: no. Digital purchases: no.
+Users can block: no. Users can report: no. Chat moderation: no (end-to-end
+encrypted; only the admin removes people). Interactions limited to invited
+people: yes. Ratings contact: privacy@purplechaamba.com.
+
+Result: ESRB Everyone · PEGI Parental guidance · USK All ages · ClassInd All
+ages · IARC (rest of world) 12+, all with "Users interact". Re-answer if block,
+report or moderation is added.
 
 ## Reviewer access (App Review / Play "App access")
 
