@@ -21,7 +21,7 @@
 
 ## Goals / Non-Goals
 
-**Goals:** devices anywhere reach the Pi through `relay.purplechaamba.com:443`; nothing
+**Goals:** devices anywhere reach the Pi through `vyajarelay.purplechaamba.com:443`; nothing
 listens at home; the relay is stateless, rebuildable and checked by one command;
 the Pi starts fresh, backed up first.
 
@@ -87,7 +87,7 @@ sequenceDiagram
   stops, and every device stores the address from its invite, so a change
   means everyone re-joins.
 - **DNS name** (owner, 2026-11-16, D13): invites name
-  `relay.purplechaamba.com:443`, an A record for the static address.
+  `vyajarelay.purplechaamba.com:443`, an A record for the static address.
 
 **Cost** (per month): e2-micro, 10 GB standard disk and 1 GB egress are in the
 free tier; the in-use static IPv4 is not: $0.005/h ≈ **$3.65** (sources
@@ -272,16 +272,20 @@ project named Vyajena." No device used the first address, so the move costs
 nothing: `relay.conf` says `PROJECT=vyajena`, `create.sh` makes everything
 there with a new static address (`relay.env` and `known_hosts` are rewritten),
 and the `purple-eccdf` VM, address, firewall rules, subnet and VPC are
-deleted. The relay's own VPC keeps it apart from anything else in the project.
+deleted. The relay's own VPC keeps it apart from anything else in the project. Done 2026-11-16: the `purple-eccdf`
+relay (VM, address, rules, subnet, VPC) deleted; `create.sh` and `deploy.sh` in
+`vyajena` (new static address in `relay.env` and the hand-over note);
+`check.sh` 0 failed apart from `dns` until the owner adds the A record. The
+owner named the host `vyajarelay.purplechaamba.com`.
 
 ### D13. A DNS name for the relay (owner, 2026-11-16)
 
 The owner changed "for now lets avoid the dns" to "lets do dns now".
 
-- **Name:** `relay.purplechaamba.com` (`RELAY_HOST` in `relay.conf`): one A
+- **Name:** `vyajarelay.purplechaamba.com` (`RELAY_HOST` in `relay.conf`): one A
   record for the static IPv4, no AAAA (the relay has no IPv6). The owner adds it
   at the domain's DNS host (Squarespace); we have no access there.
-- **Invites** name `relay.purplechaamba.com:443` (`public_address`, rendered
+- **Invites** name `vyajarelay.purplechaamba.com:443` (`public_address`, rendered
   from `RELAY_HOST`). The core already resolves names (`TcpStream::connect`
   with a `host:port` string) and uses a fixed TLS server name; the pin is still
   the Pi's SPKI, so DNS adds no trust. Tested in `client/tests/relay.rs`
@@ -331,6 +335,6 @@ deleted (`gcloud compute instances delete`, `addresses delete`).
 ## Open Questions
 
 None. Resolved by the owner (2026-11-15/16): own VM, US free tier, project
-`vyajena`, static IPv4 with the DNS name `relay.purplechaamba.com`, no
+`vyajena`, static IPv4 with the DNS name `vyajarelay.purplechaamba.com`, no
 migration. Picked here: IAP-only SSH (D7), `us-east1-b` (D2), tunnel
 port 2333 open to all (D2), build rathole from source (D3).

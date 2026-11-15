@@ -55,7 +55,7 @@ async fn the_relay_forwards_tls_bytes_and_never_sees_the_text() {
 // spec: relay/relay-host
 #[tokio::test(flavor = "multi_thread")]
 async fn an_invite_naming_the_relay_by_dns_name_connects() {
-    // Invites name relay.purplechaamba.com:443; here "localhost" stands in for
+    // Invites name vyajarelay.purplechaamba.com:443; here "localhost" stands in for
     // the name: the core resolves it and still checks only the Pi's pin.
     let pi = TestPi::start().await;
     let mut invite = Invite::decode(&pi.bootstrap).check("bootstrap invite");

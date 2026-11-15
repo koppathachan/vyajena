@@ -11,13 +11,13 @@ decided the details on 2026-11-15 (relay only; push is the next change).
 - **Relay VM:** a new GCP free-tier e2-micro (`vyajena-relay`, US region, project
   `vyajena`), its own VPC, Debian 13, rathole 0.5.0 as a TCP passthrough.
   Reserved static external IPv4 (about $3.65/month), named
-  `relay.purplechaamba.com` (an A record at the owner's DNS host). Firewall: 443
+  `vyajarelay.purplechaamba.com` (an A record at the owner's DNS host). Firewall: 443
   and the tunnel port public, SSH only from Google IAP, everything else dropped.
   VPC flow logs off, no service account, a volatile journal: the VM keeps nothing.
 - **Tunnel:** a sandboxed `vyajena-tunnel.service` on the Pi (rathole client)
   dials out to the relay, authenticated with a token and Noise (the Pi pins the
   relay's Noise key). TLS still ends on the Pi, so the relay sees TLS bytes only.
-- **Pi:** `listen_address = "127.0.0.1:8443"`; invites name `relay.purplechaamba.com:443`. The
+- **Pi:** `listen_address = "127.0.0.1:8443"`; invites name `vyajarelay.purplechaamba.com:443`. The
   LAN 8443 rule and the subnet `IPAddressAllow` go: nftables drops all inbound
   again except SSH from home.
 - **Fresh start, no migration:** a scripted reset (`deploy/pi/deploy.sh
@@ -65,6 +65,6 @@ decided the details on 2026-11-15 (relay only; push is the next change).
   project (owner).
 - **Pi:** wiped and started fresh (backup first); `rathole` and
   `vyajena-tunnel.service` installed.
-- **Devices:** every device re-joins with a new invite naming `relay.purplechaamba.com:443`.
+- **Devices:** every device re-joins with a new invite naming `vyajarelay.purplechaamba.com:443`.
 - **Docs:** README, `CLAUDE.md`, `docs/architecture-decisions.md` (home-LAN phase
   ends; relay facts; cost and latency).

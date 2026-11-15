@@ -122,7 +122,7 @@ Pi and removes the folder when done.
 
 The real Pi (Raspberry Pi 4, Debian 13, `vyajan@192.168.1.8`) runs the server
 as `vyajena.service` on `127.0.0.1:8443` only, and `vyajena-tunnel.service`
-(rathole) dials out to the relay. Devices anywhere dial `relay.purplechaamba.com:443`;
+(rathole) dials out to the relay. Devices anywhere dial `vyajarelay.purplechaamba.com:443`;
 nothing listens at home but SSH from the home network. Needs Docker Desktop on
 the Mac (`build.sh` starts it), the Pi login with passwordless sudo, and the
 relay's secrets in `~/.vyajena-relay/` (see Relay). `PI=user@host` overrides the
@@ -178,7 +178,7 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -f
 A GCP free-tier e2-micro (`vyajena-relay`, `us-east1-b`, project
 `vyajena`, its own VPC) runs rathole 0.5.0 as a dumb TCP passthrough: 443
 for devices, 2333 for the Pi's tunnel (Noise, the relay's key pinned on the
-Pi, plus a token). TLS ends on the Pi. A reserved static IPv4, named `relay.purplechaamba.com` (an A record
+Pi, plus a token). TLS ends on the Pi. A reserved static IPv4, named `vyajarelay.purplechaamba.com` (an A record
 the owner keeps at the domain's DNS host; `check.sh` checks it),
 about $3.65/month; the rest is free tier. SSH only through Google IAP. It holds
 no state: logs in RAM, no service account. Names and sizes:

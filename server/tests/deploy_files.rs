@@ -202,7 +202,7 @@ fn the_relay_is_a_free_tier_e2_micro_in_the_us_on_its_own_network() {
     assert!(disk <= 30, "{disk} GB is over the free 30 GB");
     assert_eq!(conf("PROJECT"), "vyajena");
     assert_eq!(conf("PUBLIC_PORT"), "443");
-    assert_eq!(conf("RELAY_HOST"), "relay.purplechaamba.com");
+    assert_eq!(conf("RELAY_HOST"), "vyajarelay.purplechaamba.com");
 
     let sandbox = Sandbox::new().with_secrets();
     let commands = dry_run(&sandbox);
@@ -556,7 +556,7 @@ fn the_pi_listens_on_loopback_and_invites_name_the_relay() {
         .check("rendered deploy/pi/config.toml");
     assert_eq!(config.listen_address.to_string(), "127.0.0.1:8443");
     // Invites name the relay's DNS name; the Pi itself never resolves it.
-    assert_eq!(config.public_address, "relay.purplechaamba.com:443");
+    assert_eq!(config.public_address, "vyajarelay.purplechaamba.com:443");
     assert!(!sandbox.render("pi-config").contains(RELAY_IP));
     assert_eq!(config.admin_user_id(), "akhil@pi");
 }
