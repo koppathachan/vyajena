@@ -99,7 +99,9 @@ run checks the device log.
 
 ### Requirement: Declared permissions
 The Android release manifest SHALL request exactly `INTERNET` and
-`ACCESS_NETWORK_STATE`. The iOS app SHALL declare `NSLocalNetworkUsageDescription`
+`ACCESS_NETWORK_STATE` of the permissions a user or the system grants (the
+app's own signature-level `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
+that AndroidX adds is not one). The iOS app SHALL declare `NSLocalNetworkUsageDescription`
 while invites name a home-network address, and no other usage description,
 background mode or capability beyond the keychain. The release check enforces
 this on the merged manifest and the built `Info.plist`.
@@ -107,7 +109,8 @@ this on the merged manifest and the built `Info.plist`.
 #### Scenario: Merged manifest
 - **WHEN** the release check reads the bundle's merged `AndroidManifest.xml`
 - **THEN** it lists `android.permission.INTERNET` and
-  `android.permission.ACCESS_NETWORK_STATE` and no other permission
+  `android.permission.ACCESS_NETWORK_STATE` and no other permission besides
+  the app's own `com.purplechaamba.vyajena.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
 
 #### Scenario: First connect on an iPhone
 - **WHEN** Bob, on a real iPhone on the home Wi-Fi, joins from an invite naming
@@ -132,14 +135,14 @@ cryptography. The release check enforces the key.
 The iOS app SHALL ship a `PrivacyInfo.xcprivacy` that declares no tracking, no
 tracking domains, the data types that match the App Store privacy answers, and
 a reason for every required-reason API the app's own code and the Rust core call
-(at least file timestamps and system boot time). The release check enforces that
+(at least file timestamps and disk space, both from SQLite). The release check enforces that
 the file is in the archive.
 
 #### Scenario: Required-reason APIs
-- **WHEN** the core's SQLite store reads file timestamps and Rust's `Instant` reads
-  the boot clock in the release archive
+- **WHEN** the core's SQLite store calls `stat`/`fstat` (file timestamps) and
+  `statfs`/`fstatfs` (disk space) in the release archive's `bridge.framework`
 - **THEN** the privacy manifest lists `NSPrivacyAccessedAPICategoryFileTimestamp`
-  and `NSPrivacyAccessedAPICategorySystemBootTime` with their reasons, and App
+  and `NSPrivacyAccessedAPICategoryDiskSpace` with their reasons, and App
   Store Connect reports no missing reason
 
 ### Requirement: Privacy disclosures match the app

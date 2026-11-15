@@ -82,6 +82,24 @@ add `-C link-arg=-Wl,-z,max-page-size=16384` for the Android targets in
 No `[profile.release]` change unless S3 measures a problem: a workspace profile
 change also changes the Pi server build.
 
+S3 result (2026-11-15, `flutter build appbundle --release`, NDK 28.2, Rust
+release): **no flag needed.** `llvm-readelf -lW`: every `LOAD` segment of
+`arm64-v8a` and `x86_64` `libbridge.so` is aligned to `0x4000` (16 KB);
+`armeabi-v7a` is `0x1000`, which Play allows (the rule is for 64-bit). AGP
+strips all three and moves the symbols to `BUNDLE-METADATA/.../libbridge.so.sym`;
+no `.debug_*` sections are left. Sizes in the bundle: arm64-v8a 12.1 MB,
+armeabi-v7a 8.3 MB, x86_64 13.3 MB (bundle 81.6 MB with symbols; Play
+serves one ABI per phone). No profile change. First full build: 8.7 min.
+
+Flutter's own last step then failed with "failed to strip debug symbols": it
+runs the SDK's `apkanalyzer`, whose launcher script breaks when the Android SDK
+resolves to a path with a space (`/Volumes/Crucial X9/...` on this Mac;
+`Could not find or load main class X9.Library...`). The bundle itself is
+complete and stripped. So `app/store/build-aab.sh` lets exactly that failure
+through when the bundle exists, and `release-check.sh` checks the stripping
+itself (`stripped`). Moving `cmdline-tools` to a path without a space also
+fixes it.
+
 - *Alternative:* precompiled binaries from GitHub releases (cargokit
   supports it). Rejected: it adds a download and a signing key for binaries, for a
   one-person project that builds on one Mac.
@@ -125,7 +143,15 @@ change also changes the Pi server build.
 - Upload by the owner with Xcode Organizer or Transporter. No App Store Connect API
   key exists.
 
-S1 result: *not run yet.*
+S1 result (2026-11-15, Xcode 27.2, Flutter 3.44.4, no Apple account):
+**`flutter build ipa --release --no-codesign` works**: `Runner.xcarchive` in
+3–4 min (first build 4.2 min), `Runner` and `bridge.framework` `arm64` only. The
+Xcode 27.2 `lipo` failure is only in the fat simulator path; a device archive
+never hits it, so no `xcodebuild` fallback script. The signed export
+(`--export-options-plist=ios/ExportOptions.plist`) can only be checked once the
+owner's team exists (task 7.4). Flutter's validation warns that the launch
+image is the default placeholder (a plain white screen); App Store Connect
+accepts it.
 
 ### D5. Version from pubspec; release tags
 
@@ -156,7 +182,18 @@ in `release`. The `android-native-keyring-store` crate calls only framework clas
 **Spike S2** proves it: a release APK on the emulator joins a temp Pi and survives
 a kill + relaunch with its keys.
 
-S2 result: *not run yet.*
+S2 result (2026-11-15, throwaway AVD `vyajena_release_throwaway`, Android 15,
+release APK with R8, signed with a throwaway key in `spikes/`): **pass.**
+Joined a temp Pi from its bootstrap invite (`Devices.Register`), created the
+group, sent a text (✓ accepted), killed and relaunched: still `akhil@pi`,
+connected, history there, so the Android Keystore key and the sealed MLS state
+survived. `logcat`: no line from the app's Dart code or the core, and not the
+sent text (only the engine's Impeller line). Control build with the keep rules
+removed: also works, because AGP's `proguard-android-optimize.txt` already keeps
+classes with native methods (`-keepclasseswithmembernames ... native <methods>`).
+The explicit rules stay as a guard: the JNI name is a fixed contract.
+Without the key properties file, `flutter build apk --release` stops in 10 s
+with "release signing: ~/.vyajena-release/key.properties not found".
 
 ### D7. Release logs nothing
 
@@ -194,13 +231,29 @@ library linked into `Runner`, so `Runner/PrivacyInfo.xcprivacy` must cover it:
 | API category | Why the core uses it | Reason code |
 |---|---|---|
 | `NSPrivacyAccessedAPICategoryFileTimestamp` | SQLite `fstat`/`stat` on its own files | `C617.1` (files in the app container) |
-| `NSPrivacyAccessedAPICategorySystemBootTime` | Rust `Instant` (`mach_absolute_time`/`clock_gettime`) for timeouts, backoff | `35F9.1` (elapsed time between events) |
+| ~~`NSPrivacyAccessedAPICategorySystemBootTime`~~ | dropped by S4: Rust `Instant` uses `clock_gettime`, not `mach_absolute_time` | — |
+| `NSPrivacyAccessedAPICategoryDiskSpace` (added by S4) | SQLite's unix VFS: `statfs`/`fstatfs` for filesystem flags (locking, atomic writes) | `E174.1` (check disk space / file system before writing files) |
 
 `NSPrivacyTracking = false`, no tracking domains, collected data types from D10.
 **Spike S4** lists the core's undefined symbols (`nm -u libbridge.a`) against
 Apple's required-reason API list to catch others (for example disk space).
 
-S4 result: *not run yet.*
+S4 result (2026-11-15, `nm -u` on the archive's
+`Runner.app/Frameworks/bridge.framework/bridge`, arm64; the cargokit pod links
+the core as this dynamic framework, not into `Runner`): required-reason
+imports are `stat`, `fstat`, `fstatat`, `lstat` (file timestamps) and
+`statfs`, `fstatfs` (disk space), all from the bundled SQLite (libsqlite3-sys
+0.35: `unixSectorSize`/`osStatfs`). **No** `mach_absolute_time` or
+`systemUptime`: Rust's `Instant` on iOS uses `clock_gettime(CLOCK_UPTIME_RAW)`,
+which is not on Apple's list. Also imported, not on the list: `clock_gettime`,
+`sysctlbyname`, `futimes`, `utimes`. `Runner` itself imports none. So the
+manifest declares FileTimestamp `C617.1` and DiskSpace `E174.1`, not
+SystemBootTime.
+
+**Spec fix (apply, 2026-11-15):** "Privacy manifest" said "at least file
+timestamps and system boot time" from a guess about `Instant`; S4 shows disk
+space instead, so the requirement and its scenario now name FileTimestamp and
+DiskSpace.
 
 ### D10. One privacy answer sheet
 
@@ -264,16 +317,25 @@ Android SDK/NDK tools already on the Mac:
 
 | Check | How |
 |---|---|
-| Architectures | `unzip -l` on the AAB for the three `lib/<abi>/libbridge.so`; `lipo -archs` on the archive's app binary = `arm64` |
+| Architectures | `unzip -l` on the AAB for the three `lib/<abi>/libbridge.so`; `lipo -archs` on the archive's `Runner` and `Frameworks/bridge.framework/bridge` (where the cargokit pod puts the core) = `arm64`; `bridge` exports `frb_get_rust_content_hash` |
 | 16 KB alignment | NDK `llvm-readelf -lW` on extracted 64-bit `.so`: every `LOAD` `Align` ≥ `0x4000` |
 | Signer | `keytool -printcert -jarfile <aab>` SHA-256 = `app/store/signing.md`; ≠ `~/.android/debug.keystore` |
 | No key files tracked | `git ls-files` against D3's patterns |
 | Version | `pubspec.yaml` build number > highest `app-v*` tag; archive's `CFBundleVersion` equals it |
-| Permissions | `bundletool dump manifest` if installed, else the build's merged release manifest: exactly `INTERNET`, `ACCESS_NETWORK_STATE` |
-| iOS keys | `plutil -extract` on the archived `Info.plist`: `ITSAppUsesNonExemptEncryption`, `NSLocalNetworkUsageDescription`, display name; no other `NS*UsageDescription`; `PrivacyInfo.xcprivacy` present |
+| Permissions | the bundle's protobuf `base/manifest/AndroidManifest.xml`, read by an embedded `python3` reader (`aapt2` cannot read a bundle; no bundletool download): exactly `INTERNET`, `ACCESS_NETWORK_STATE`, ignoring the app's own AndroidX `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (spec fixed, see below) |
+| Stripped | `BUNDLE-METADATA/.../{libflutter,libapp,libbridge}.so.sym` present; no `.debug_*` in `libbridge.so` (stands in for Flutter's apkanalyzer step) |
+| iOS keys | `plutil -extract` on the archived `Info.plist`: `ITSAppUsesNonExemptEncryption`, `NSLocalNetworkUsageDescription`, display name, version; no other `NS*UsageDescription`; `PrivacyInfo.xcprivacy` present with FileTimestamp and DiskSpace |
 | Name and icons | same label on both; iOS 1024 icon has no alpha (`sips -g hasAlpha`) |
 | Core logs nothing | `cargo tree -p bridge -e normal --target <t>` for the four store targets: no `tracing-subscriber` (D7) |
 | No tracking SDK | no `com.google.firebase.analytics`, `crashlytics`, `com.google.android.gms.ads`, `Sentry` etc. in the AAB's dex class list or the archive's frameworks |
+
+**Spec fix (apply, 2026-11-15):** the release manifest also has
+`com.purplechaamba.vyajena.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, a
+signature-level permission AndroidX core defines and uses for the app's own
+not-exported receivers. Nobody grants it and other apps cannot hold it, so
+"Declared permissions" now says "exactly INTERNET and ACCESS_NETWORK_STATE of
+the permissions a user or the system grants" and its scenario names this one
+exception.
 
 ### D14. iPhone only
 

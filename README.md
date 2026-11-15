@@ -163,6 +163,22 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -f
 - **Apps:** paste an invite naming `192.168.1.8:8443`; the Android emulator
   needs no `adb reverse` (it reaches the LAN through the Mac).
 
+## Release
+
+The app ships privately for now: Play internal testing, and TestFlight
+internal testing once the Apple account exists (change `app-release`).
+[`docs/release.md`](docs/release.md) lists every owner step. In short:
+
+```bash
+app/store/build-aab.sh                      # signed bundle, upload key from the Keychain
+cd app && flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+app/store/release-check.sh                  # every line must PASS before an upload
+```
+
+Keys never enter the repo or CI. Store texts, privacy answers, icons
+(`app/store/icons.sh`) and screenshots (`app/store/screenshots.sh`, fake core
+only) live in `app/store/`.
+
 ## Development
 
 This project is spec-driven with [OpenSpec](https://github.com/Fission-AI/OpenSpec).
@@ -193,7 +209,8 @@ devices added or removed, this device removed), profiles, members, linking
 a device by text, and the admin screens. It reconnects as soon as the
 phone's network comes back. The server runs on the real Pi on
 the home network (`deploy/pi/`, change `pi-deployment`). Push is a
-placeholder until the relay change.
+placeholder until the relay change. Release builds are ready for Play
+internal testing and TestFlight (`app-release`).
 
 Next, in order: question-and-answer verification (`qa-verification`), the
 GCP relay with real push (FCM / APNs), then the terminal client.
