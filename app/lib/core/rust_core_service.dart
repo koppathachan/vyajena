@@ -40,6 +40,11 @@ class RustCoreService extends CoreService {
   Future<void> stopCore() => _c.stop();
 
   @override
+  Future<void> reconnectNow() async {
+    await _core?.reconnectNow();
+  }
+
+  @override
   Future<void> dispose() async {
     await _subscription?.cancel();
     await super.dispose();

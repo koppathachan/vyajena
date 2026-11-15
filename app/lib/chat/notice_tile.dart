@@ -1,10 +1,14 @@
 // app-ui: Notices in the chat: gap, removed for inactivity (with the time
 // messages stop), rejoined, a changed identity key naming the user (with
-// Accept on admin devices), and messages that could not be read.
+// Accept on admin devices), messages that could not be read, this device
+// removed, a group rename, and membership changes (qa-fixes design D5).
 import 'package:flutter/material.dart';
 
 import 'chat_model.dart';
 import 'time_text.dart';
+
+/// What the chat says once this device was removed from the group.
+const deviceRemovedText = 'This device was removed from the group.';
 
 /// The text of [notice]; [name] shows a user.
 String noticeText(
@@ -33,6 +37,18 @@ String noticeText(
   ServerIdentityNotice() =>
     "The server's identity does not match. Not connecting: someone may be "
         'pretending to be the server.',
+  DeviceRemovedNotice() => deviceRemovedText,
+  RenamedNotice(:final by, name: final groupName?) =>
+    '${name(by)} renamed the group to “$groupName”',
+  RenamedNotice(:final by) => '${name(by)} removed the group name',
+  MemberNotice(:final change, :final user, :final by) => switch (change) {
+    MemberChange.joined => '${name(user)} joined',
+    MemberChange.addedDevice => '${name(user)} added a device',
+    MemberChange.removedDevice => '${name(user)} removed a device',
+    MemberChange.removedDeviceOf =>
+      '${name(by)} removed a device of ${name(user)}',
+    MemberChange.removedUser => '${name(by)} removed ${name(user)}',
+  },
 };
 
 /// One notice row.
@@ -56,6 +72,7 @@ class NoticeTile extends StatelessWidget {
     final warning =
         notice is KeyChangedNotice && !(notice as KeyChangedNotice).accepted ||
         notice is ServerIdentityNotice ||
+        notice is DeviceRemovedNotice ||
         notice is CommitRefusedNotice;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),

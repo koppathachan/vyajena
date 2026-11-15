@@ -70,6 +70,49 @@ class ServerIdentityNotice extends Notice {
   const ServerIdentityNotice();
 }
 
+/// This device was removed from the group (revoked); the core stopped
+/// connecting (qa-fixes design D4).
+class DeviceRemovedNotice extends Notice {
+  const DeviceRemovedNotice();
+}
+
+/// [by] renamed the group to [name] (null: cleared the name).
+class RenamedNotice extends Notice {
+  const RenamedNotice(this.by, this.name);
+  final UserRef by;
+  final String? name;
+}
+
+/// What a membership notice says (qa-fixes design D5).
+enum MemberChange {
+  /// [MemberNotice.user]'s first device was added: "bob joined".
+  joined,
+
+  /// Another device of a member was added: "bob added a device".
+  addedDevice,
+
+  /// A user removed one of their own devices: "bob removed a device".
+  removedDevice,
+
+  /// Another user removed some of [MemberNotice.user]'s devices, not all:
+  /// "akhil removed a device of bob".
+  removedDeviceOf,
+
+  /// All devices of a user were removed by another user: "akhil removed
+  /// bob".
+  removedUser,
+}
+
+/// A change to the group's members.
+class MemberNotice extends Notice {
+  const MemberNotice(this.change, this.user, this.by);
+  final MemberChange change;
+  final UserRef user;
+
+  /// Who committed it.
+  final UserRef by;
+}
+
 /// One row of the chat.
 sealed class ChatItem {
   const ChatItem();
@@ -107,6 +150,12 @@ class ChatModel extends ChangeNotifier {
   final UserNames names;
 
   List<ChatMessage> _messages = const [];
+
+  /// The group's member devices as this model last knew them, by user:
+  /// what a membership change is told apart by (first device, last
+  /// device).
+  final Map<String, Set<String>> _members = {};
+  bool _removed = false;
   final List<_Anchored> _notices = [];
   String? _groupName;
   late final StreamSubscription<CoreEvent> _subscription;
@@ -153,6 +202,7 @@ class ChatModel extends ChangeNotifier {
     _primed = true;
     try {
       _groupName = await core.groupName();
+      await _reloadMembers();
       await _reload();
       _lastId ??= _messages.isEmpty ? null : _messages.last.id;
     } on Object {
@@ -201,6 +251,90 @@ class ChatModel extends ChangeNotifier {
     }
   }
 
+  /// Re-reads the member devices (none while not in the group).
+  Future<void> _reloadMembers() async {
+    List<MemberDevice> devices;
+    try {
+      devices = await core.members();
+    } on Object {
+      devices = const [];
+    }
+    _members.clear();
+    for (final d in devices) {
+      _members.putIfAbsent(_key(d.user), () => {}).add(d.device);
+    }
+  }
+
+  /// The notices for one `MembersChanged`, from what the model knew before
+  /// (qa-fixes design D5). Updates the known members.
+  void _membersChanged(
+    List<MemberDevice> added,
+    List<MemberDevice> removed,
+    UserRef? by,
+    List<MemberDevice> automatic,
+  ) {
+    if (by == null || (added.isEmpty && removed.isEmpty)) {
+      // This device joined (or rejoined), or created the group: no notice;
+      // learn the members afresh.
+      _reloadMembers();
+      return;
+    }
+    final quiet = {for (final d in automatic) '${_key(d.user)}/${d.device}'};
+    bool loud(MemberDevice d) => !quiet.contains('${_key(d.user)}/${d.device}');
+    final users = <String, UserRef>{};
+    final before = {
+      for (final e in _members.entries) e.key: Set<String>.of(e.value),
+    };
+    for (final d in removed) {
+      _members[_key(d.user)]?.remove(d.device);
+    }
+    for (final d in added) {
+      _members.putIfAbsent(_key(d.user), () => {}).add(d.device);
+    }
+    _members.removeWhere((_, devices) => devices.isEmpty);
+
+    final notices = <Notice>[];
+    // Removals first, then additions (a commit that does both reads that
+    // way), each user once, in the commit's order.
+    for (final d in removed.where(loud)) {
+      final key = _key(d.user);
+      if (users.containsKey('-$key')) continue;
+      users['-$key'] = d.user;
+      final MemberChange change;
+      if (_same(d.user, by)) {
+        change = MemberChange.removedDevice;
+      } else if (_members[key]?.isNotEmpty ?? false) {
+        change = MemberChange.removedDeviceOf;
+      } else {
+        change = MemberChange.removedUser;
+      }
+      notices.add(MemberNotice(change, d.user, by));
+    }
+    for (final d in added.where(loud)) {
+      final key = _key(d.user);
+      if (users.containsKey('+$key')) continue;
+      users['+$key'] = d.user;
+      final had = before[key]?.difference({
+        for (final r in removed)
+          if (_key(r.user) == key) r.device,
+      });
+      notices.add(
+        MemberNotice(
+          had == null || had.isEmpty
+              ? MemberChange.joined
+              : MemberChange.addedDevice,
+          d.user,
+          by,
+        ),
+      );
+    }
+    if (notices.isEmpty) return;
+    names
+        .load([by, for (final n in notices) (n as MemberNotice).user])
+        .then((_) => _changed());
+    notices.forEach(_notice);
+  }
+
   void _notice(Notice notice) {
     _notices.add(_Anchored(notice, _lastId));
     _changed();
@@ -216,9 +350,19 @@ class ChatModel extends ChangeNotifier {
       case CoreEvent_ProfileChanged(:final user):
         names.forget(user);
         names.load([user]).then((_) => _changed());
-      case CoreEvent_GroupSettingsChanged(:final name):
+      case CoreEvent_GroupSettingsChanged(
+        :final name,
+        :final previous,
+        :final by,
+      ):
         _groupName = name;
-        _changed();
+        // `previous` is null on this device's first sync: no notice then.
+        if (previous != null && previous != name) {
+          names.load([by]).then((_) => _changed());
+          _notice(RenamedNotice(by, name));
+        } else {
+          _changed();
+        }
       case CoreEvent_Unreadable(:final sender, :final acceptedAtMs):
         if (sender != null) {
           names.load([sender]).then((_) => _changed());
@@ -228,9 +372,6 @@ class ChatModel extends ChangeNotifier {
         _notice(GapNotice(newestExpiredAtMs));
       case CoreEvent_RemovedForInactivity(:final missedSinceMs):
         _notice(RemovedNotice(missedSinceMs));
-      case CoreEvent_Rejoined():
-        _notice(const RejoinedNotice());
-        _reload();
       case CoreEvent_IdentityKeyChanged(:final user):
         // One warning per changed key until it is accepted (the core warns
         // again each time it meets the key).
@@ -248,14 +389,31 @@ class ChatModel extends ChangeNotifier {
         _notice(CommitRefusedNotice(reason));
       case CoreEvent_ServerIdentityError():
         _notice(const ServerIdentityNotice());
-      case CoreEvent_JoinedGroup() ||
-          CoreEvent_MembersChanged() ||
-          CoreEvent_Removed() ||
-          CoreEvent_Connection() ||
-          CoreEvent_Other():
+      case CoreEvent_MembersChanged(
+        :final added,
+        :final removed,
+        :final by,
+        :final automatic,
+      ):
+        _membersChanged(added, removed, by, automatic);
+      case CoreEvent_Removed():
+        // Emitted again on each start (an app restart): one notice.
+        if (!_removed) {
+          _removed = true;
+          _notice(const DeviceRemovedNotice());
+        }
+      case CoreEvent_Rejoined():
+        _notice(const RejoinedNotice());
+        _reloadMembers();
+        _reload();
+      case CoreEvent_JoinedGroup():
+        _reloadMembers();
+      case CoreEvent_Connection() || CoreEvent_Other():
         break;
     }
   }
+
+  static String _key(UserRef user) => '${user.username}@${user.serverId}';
 
   static bool _same(UserRef a, UserRef b) =>
       a.username == b.username && a.serverId == b.serverId;

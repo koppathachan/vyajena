@@ -135,6 +135,9 @@ class FakeCoreService extends CoreService {
   Future<void> stopCore() async => calls.add('stop');
 
   @override
+  Future<void> reconnectNow() async => calls.add('reconnectNow');
+
+  @override
   Future<UserRef?> userId() async => storedUser;
 
   @override

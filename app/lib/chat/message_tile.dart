@@ -1,7 +1,10 @@
-// app-ui: Chat screen. One message: its sender as "Ali (alice)", its text
-// (or a placeholder for a body this version does not know), and for own
-// messages the send status: ⏳ sending, ✓ accepted, or failed with the
-// reason.
+// app-ui: Chat screen. One message. Another user's message shows its sender
+// as "Ali (alice)" and sits on the left. A message from this user (any of
+// their devices, `ownUser`) sits on the right, sized to its text, with no
+// sender label; one this device sent (`outgoing`) also shows its send
+// status inline at the end of the bubble: ⏳ sending, ✓ accepted, or failed
+// with the reason (qa-fixes design D1). A body this version does not know
+// shows a placeholder.
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
@@ -30,8 +33,8 @@ class MessageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
-    final own = message.outgoing;
-    final status = message.status;
+    final own = message.ownUser;
+    final status = message.outgoing ? message.status : null;
     final body = switch (message.body) {
       ChatBody_Text(:final text) => Text(text),
       ChatBody_Unsupported() => Text(
@@ -42,6 +45,39 @@ class MessageTile extends StatelessWidget {
         ),
       ),
     };
+    // Everything here sizes to its content: a widget that fills the width
+    // it is given (an Align, say) would stretch the bubble across the
+    // screen (design D1).
+    final content = own
+        ? Wrap(
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            spacing: 8,
+            children: [
+              body,
+              if (status != null)
+                Text(
+                  statusText(status),
+                  style: text.labelSmall?.copyWith(
+                    color: status is SendState_Failed
+                        ? scheme.error
+                        : scheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                sender,
+                style: text.labelMedium?.copyWith(color: scheme.primary),
+              ),
+              const SizedBox(height: 2),
+              body,
+            ],
+          );
     return Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -52,32 +88,7 @@ class MessageTile extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  sender,
-                  style: text.labelMedium?.copyWith(color: scheme.primary),
-                ),
-                const SizedBox(height: 2),
-                body,
-                if (own && status != null) ...[
-                  const SizedBox(height: 2),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      statusText(status),
-                      style: text.labelSmall?.copyWith(
-                        color: status is SendState_Failed
-                            ? scheme.error
-                            : scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            child: content,
           ),
         ),
       ),

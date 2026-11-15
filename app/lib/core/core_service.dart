@@ -42,6 +42,7 @@ abstract class CoreService {
     ConnectionStatus.disconnected,
   );
   final ValueNotifier<UserRef?> _user = ValueNotifier(null);
+  final ValueNotifier<bool> _removed = ValueNotifier(false);
   final StreamController<CoreEvent> _events =
       StreamController<CoreEvent>.broadcast();
   final List<Future<void> Function()> _beforeStart = [];
@@ -57,6 +58,11 @@ abstract class CoreService {
 
   /// This device's user, once registered or linked.
   ValueListenable<UserRef?> get user => _user;
+
+  /// Whether this device was removed from the group (revoked): the core
+  /// stopped connecting; the chat stays readable (app-ui: Notices in the
+  /// chat, "Bob is removed").
+  ValueListenable<bool> get removed => _removed;
 
   /// Every core event, in the core's order.
   Stream<CoreEvent> get events => _events.stream;
@@ -129,6 +135,7 @@ abstract class CoreService {
     if (event case CoreEvent_Connection(:final status)) {
       _connection.value = status;
     }
+    if (event is CoreEvent_Removed) _removed.value = true;
     _events.add(event);
   }
 
@@ -139,6 +146,7 @@ abstract class CoreService {
     _state.dispose();
     _connection.dispose();
     _user.dispose();
+    _removed.dispose();
   }
 
   // --- Implemented by the real core and the fake ---
@@ -154,6 +162,11 @@ abstract class CoreService {
   /// The core's stop.
   @protected
   Future<void> stopCore();
+
+  /// The phone's network changed: the core skips its reconnect backoff
+  /// wait if it is disconnected, and does nothing otherwise (app-ui:
+  /// Foreground and background, "Network back"; qa-fixes design D6).
+  Future<void> reconnectNow();
 
   /// This device's user, once registered or linked.
   Future<UserRef?> userId();

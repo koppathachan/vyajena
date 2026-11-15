@@ -1,6 +1,7 @@
 // app-ui: Composer limit. Text whose encoded content is over the core's
 // MAX_CONTENT_BYTES is refused before sending (`textFits`); the text stays
-// in the composer.
+// in the composer. Once this device was removed from the group the
+// composer is disabled (app-ui: Notices in the chat, "Bob is removed").
 import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
@@ -55,7 +56,12 @@ class _ComposerState extends State<Composer> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: widget.core.removed,
+    builder: (context, removed, _) => _box(context, removed),
+  );
+
+  Widget _box(BuildContext context, bool removed) => SafeArea(
     top: false,
     child: Padding(
       padding: const EdgeInsets.fromLTRB(12, 4, 8, 8),
@@ -66,11 +72,12 @@ class _ComposerState extends State<Composer> {
             child: TextField(
               key: const Key('composer'),
               controller: _text,
+              enabled: !removed,
               minLines: 1,
               maxLines: 6,
               textCapitalization: TextCapitalization.sentences,
               decoration: InputDecoration(
-                hintText: 'Message',
+                hintText: removed ? 'Removed from the group' : 'Message',
                 border: const OutlineInputBorder(),
                 isDense: true,
                 errorText: _error,
@@ -84,7 +91,7 @@ class _ComposerState extends State<Composer> {
           const SizedBox(width: 4),
           IconButton.filled(
             tooltip: 'Send',
-            onPressed: _sending ? null : _send,
+            onPressed: _sending || removed ? null : _send,
             icon: const Icon(Icons.send),
           ),
         ],

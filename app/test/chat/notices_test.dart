@@ -1,6 +1,8 @@
 // app-ui: Notices in the chat.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vyajena/app/connection_indicator.dart';
+import 'package:vyajena/chat/notice_tile.dart';
 import 'package:vyajena/chat/time_text.dart';
 import 'package:vyajena/core/core_service.dart';
 
@@ -12,6 +14,20 @@ final missedSince = DateTime(2026, 11, 2, 9, 30).millisecondsSinceEpoch;
 
 bool above(WidgetTester tester, Finder first, Finder second) =>
     tester.getTopLeft(first).dy < tester.getTopLeft(second).dy;
+
+const carol = UserRef(username: 'carol', serverId: 'pi');
+
+MemberDevice dev(UserRef user, String device) =>
+    MemberDevice(user: user, device: device);
+
+/// Akhil's phone and Bob's phone are in the group.
+List<MemberDevice> group() => [dev(akhil, 'a1'), dev(bob, 'b1')];
+
+/// Every notice text in the chat, top to bottom.
+List<String> noticeTexts(WidgetTester tester) => [
+  for (final tile in tester.widgetList<NoticeTile>(find.byType(NoticeTile)))
+    tile.text,
+].reversed.toList();
 
 void main() {
   // spec: app-ui/notices-in-the-chat
@@ -180,5 +196,231 @@ void main() {
     expect(above(tester, find.text('first'), gap), isTrue);
     expect(above(tester, gap, key), isTrue);
     expect(above(tester, key, find.text('second')), isTrue);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('Bob is removed: the chat says so, the indicator shows '
+      'removed, and the composer is disabled', (tester) async {
+    final core = FakeCoreService(storedUser: bob);
+    await openApp(tester, core);
+    core.receive(akhil, 'bye');
+    core.emit(const CoreEvent.connection(status: ConnectionStatus.connected));
+    await settle(tester);
+
+    core.emit(const CoreEvent.removed());
+    core.emit(
+      const CoreEvent.connection(status: ConnectionStatus.disconnected),
+    );
+    await settle(tester);
+    expect(find.text(deviceRemovedText), findsOneWidget);
+    expect(find.text('This device was removed from the group.'), findsOne);
+    expect(above(tester, find.text('bye'), find.text(deviceRemovedText)), true);
+    expect(find.byTooltip(ConnectionIndicator.removedLabel), findsOneWidget);
+    expect(find.byIcon(ConnectionIndicator.removedIcon), findsOneWidget);
+    final box = tester.widget<TextField>(find.byKey(const Key('composer')));
+    expect(box.enabled, isFalse);
+    expect(
+      tester
+          .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.send))
+          .onPressed,
+      isNull,
+    );
+    // History stays readable.
+    expect(find.text('bye'), findsOneWidget);
+
+    // The core says it again after a restart (each start): one notice.
+    await core.stop();
+    await core.start();
+    core.emit(const CoreEvent.removed());
+    await settle(tester);
+    expect(find.text(deviceRemovedText), findsOneWidget);
+    expect(find.byTooltip(ConnectionIndicator.removedLabel), findsOneWidget);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('Group renamed: every member sees "akhil renamed the group to '
+      '“Home chat”"', (tester) async {
+    final core = FakeCoreService(storedUser: bob)..group = 'Vyajena';
+    await openApp(tester, core);
+    expect(find.text('Vyajena'), findsOneWidget);
+    core.emit(
+      const CoreEvent.groupSettingsChanged(
+        name: 'Home chat',
+        previous: 'Vyajena',
+        by: akhil,
+      ),
+    );
+    await settle(tester);
+    expect(find.text('akhil renamed the group to “Home chat”'), findsOne);
+    expect(find.text('Home chat'), findsOneWidget);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('the first sync of the group name on a new device shows no '
+      'rename notice', (tester) async {
+    final core = FakeCoreService(storedUser: bob);
+    await openApp(tester, core);
+    core.emit(
+      const CoreEvent.groupSettingsChanged(name: 'Home chat', by: akhil),
+    );
+    await settle(tester);
+    expect(find.text('Home chat'), findsOneWidget);
+    expect(find.byType(NoticeTile), findsNothing);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('Membership changes: "carol joined", "bob added a device" and '
+      '"akhil removed carol", in that order', (tester) async {
+    final core = FakeCoreService(storedUser: bob)
+      ..displayNames = {'akhil@pi': 'Akhil (akhil)'}
+      ..memberDevices = group();
+    await openApp(tester, core);
+    core.receive(akhil, 'first');
+    await settle(tester);
+
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(carol, 'c1')],
+        removed: const [],
+        by: akhil,
+        automatic: const [],
+      ),
+    );
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(bob, 'b2')],
+        removed: const [],
+        by: bob,
+        automatic: const [],
+      ),
+    );
+    core.emit(
+      CoreEvent.membersChanged(
+        added: const [],
+        removed: [dev(carol, 'c1')],
+        by: akhil,
+        automatic: const [],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), [
+      'carol joined',
+      'bob added a device',
+      'Akhil (akhil) removed carol',
+    ]);
+    expect(above(tester, find.text('first'), find.text('carol joined')), true);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('a user removing one of their devices: "bob removed a '
+      'device"; all of a user\'s devices in one commit: one notice', (
+    tester,
+  ) async {
+    final core = FakeCoreService(storedUser: akhil)
+      ..admin = true
+      ..memberDevices = [...group(), dev(bob, 'b2')];
+    await openApp(tester, core);
+    core.emit(
+      CoreEvent.membersChanged(
+        added: const [],
+        removed: [dev(bob, 'b2')],
+        by: bob,
+        automatic: const [],
+      ),
+    );
+    // Carol joins with two devices at once, then the admin removes her.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(carol, 'c1'), dev(carol, 'c2')],
+        removed: const [],
+        by: akhil,
+        automatic: const [],
+      ),
+    );
+    core.emit(
+      CoreEvent.membersChanged(
+        added: const [],
+        removed: [dev(carol, 'c1'), dev(carol, 'c2')],
+        by: akhil,
+        automatic: const [],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), [
+      'bob removed a device',
+      'carol joined',
+      'akhil removed carol',
+    ]);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('Quiet inactivity re-add: no membership notice for an '
+      'inactivity removal or the re-add of the same device', (tester) async {
+    final core = FakeCoreService(storedUser: alice)
+      ..memberDevices = [...group(), dev(alice, 'l1')];
+    await openApp(tester, core);
+    // The Pi's inactivity Remove of Bob's phone, committed by the admin.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: const [],
+        removed: [dev(bob, 'b1')],
+        by: akhil,
+        automatic: [dev(bob, 'b1')],
+      ),
+    );
+    // Later the admin's phone re-adds it.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(bob, 'b1')],
+        removed: const [],
+        by: akhil,
+        automatic: [dev(bob, 'b1')],
+      ),
+    );
+    await settle(tester);
+    expect(find.byType(NoticeTile), findsNothing);
+
+    // And Bob, back, is still known: his new tablet is "added a device".
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(bob, 'b2')],
+        removed: const [],
+        by: bob,
+        automatic: const [],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), ['bob added a device']);
+  });
+
+  // spec: app-ui/notices-in-the-chat
+  testWidgets('no membership notice for the commit that added this device', (
+    tester,
+  ) async {
+    // Carol waits to be added.
+    final core = FakeCoreService(storedUser: carol)..epochValue = null;
+    await openApp(tester, core);
+    core
+      ..epochValue = BigInt.one
+      ..memberDevices = [...group(), dev(carol, 'c1')];
+    core.emit(const CoreEvent.joinedGroup());
+    core.emit(
+      const CoreEvent.membersChanged(added: [], removed: [], automatic: []),
+    );
+    await settle(tester);
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byType(NoticeTile), findsNothing);
+
+    // Then Bob links his tablet: Carol learned the members on joining.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(bob, 'b2')],
+        removed: const [],
+        by: bob,
+        automatic: const [],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), ['bob added a device']);
   });
 }

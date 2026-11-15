@@ -16,9 +16,12 @@ import 'theme.dart';
 /// The app, over [core]. Pump it before opening the core: its chat model
 /// follows the core's events from the start.
 class VyajenaApp extends StatefulWidget {
-  const VyajenaApp({super.key, required this.core});
+  const VyajenaApp({super.key, required this.core, this.networkChanges});
 
   final CoreService core;
+
+  /// The phone's network changes (see [CoreLifecycle.networkChanges]).
+  final Stream<bool>? networkChanges;
 
   @override
   State<VyajenaApp> createState() => _VyajenaAppState();
@@ -36,6 +39,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
   @override
   Widget build(BuildContext context) => CoreLifecycle(
     core: widget.core,
+    networkChanges: widget.networkChanges,
     child: MaterialApp(
       title: 'Vyajena',
       theme: lightTheme,

@@ -131,6 +131,17 @@ Implementation (part A), the shapes the app gets:
 - `IdentityKeyChanged` is followed by `ProfileChanged` with both fields unset
   when a stored profile was dropped (D3), so the app reloads that name.
 
+Implementation (part B), the app: the chat model keeps the member devices by
+user (read from `members()` before the engine starts and again after this
+device joins or rejoins) and applies each `MembersChanged` to it, so "first
+device" and "last device" come from what it knew before the commit. Removals
+are listed before additions, one notice per user and change. Besides the
+table, an admin removing some but not all of a user's devices shows "akhil
+removed a device of bob", and clearing the group name shows "akhil removed
+the group name". `Removed` comes on every start; the chat shows its notice
+once, and `CoreService.removed` turns the indicator to "Removed from the
+group" and disables the composer.
+
 ### D6. Reconnect when the network returns (F5)
 
 The app listens to `connectivity_plus` and, on a change to any connection,
@@ -139,6 +150,14 @@ disconnected and does nothing if connected. The core can't watch the phone's
 network itself without platform code, so the app does it. `connectivity_plus` is
 a Flutter Community package for iOS and Android with no extra permission beyond
 Android's `ACCESS_NETWORK_STATE`.
+
+Implementation (part B): only `lib/main.dart` imports `connectivity_plus`; it
+maps each change to "is any connection up" and passes that stream into
+`VyajenaApp`, whose `CoreLifecycle` calls `reconnectNow` when one is up (a
+change to none is skipped: nothing to reconnect over). Widget tests pass their
+own stream. The app-ui guard tests (UI goes through the core, "No socket in
+Dart") allow-list it in `main.dart` only: it reports the network state and
+opens no connection, so the requirement still holds.
 
 ### D7. Pending kernel reboot (F7)
 

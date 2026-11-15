@@ -1,4 +1,6 @@
 // app-ui: Foreground and background (flutter-app design D9).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
@@ -125,5 +127,36 @@ void main() {
     expect(core.state.value, CoreState.failed);
     expect(find.textContaining('no OS keychain is available'), findsOneWidget);
     expect(core.calls, ['open']);
+  });
+
+  // spec: app-ui/foreground-and-background
+  testWidgets('Network back: the app calls reconnect_now when a connection '
+      'comes up', (tester) async {
+    final network = StreamController<bool>();
+    addTearDown(network.close);
+    final core = FakeCoreService(storedUser: bob);
+    await tester.pumpWidget(
+      VyajenaApp(core: core, networkChanges: network.stream),
+    );
+    await core.open();
+    await tester.pump();
+    core.emit(
+      const CoreEvent.connection(status: ConnectionStatus.disconnected),
+    );
+
+    // Airplane mode on: nothing to reconnect over.
+    network.add(false);
+    await tester.pump();
+    expect(core.calls, ['open', 'start']);
+
+    // Airplane mode off: the core is told at once.
+    network.add(true);
+    await tester.pump();
+    expect(core.calls, ['open', 'start', 'reconnectNow']);
+
+    // Wi-Fi to mobile is a change too.
+    network.add(true);
+    await tester.pump();
+    expect(core.calls, ['open', 'start', 'reconnectNow', 'reconnectNow']);
   });
 }

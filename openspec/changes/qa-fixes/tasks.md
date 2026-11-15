@@ -18,9 +18,9 @@
 
 ## 4. App
 
-- [ ] 4.1 Message tile: own-user messages right-aligned, sized to text, no label; status inline for `outgoing` only (D1); widget tests (app-ui: Chat screen)
-- [ ] 4.2 Notices: removed (indicator removed, composer disabled), rename, joined / added a device / removed a device / removed a user, quiet for inactivity re-adds and own join (D5); widget tests (app-ui: Notices in the chat)
-- [ ] 4.3 `connectivity_plus` listener calls `reconnect_now` on a network change (D6); widget test on the fake core (app-ui: Foreground and background)
+- [x] 4.1 Message tile: own-user messages right-aligned, sized to text, no label; status inline for `outgoing` only (D1); widget tests (app-ui: Chat screen)
+- [x] 4.2 Notices: removed (indicator removed, composer disabled), rename, joined / added a device / removed a device / removed a user, quiet for inactivity re-adds and own join (D5); widget tests (app-ui: Notices in the chat)
+- [x] 4.3 `connectivity_plus` listener calls `reconnect_now` on a network change (D6); widget test on the fake core (app-ui: Foreground and background)
 
 ## 5. Pi
 

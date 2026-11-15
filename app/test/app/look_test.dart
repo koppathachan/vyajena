@@ -70,12 +70,14 @@ void main() {
       r'^  ([a-z_]+):',
       multiLine: true,
     ).allMatches(dependencies).map((m) => m.group(1)).toSet();
-    // The bridge and what its generated code needs; nothing for the look.
+    // The bridge and what its generated code needs, and the network state
+    // (qa-fixes D6); nothing for the look.
     expect(names, {
       'flutter',
       'bridge',
       'flutter_rust_bridge',
       'freezed_annotation',
+      'connectivity_plus',
     });
     final flutterSection = pubspec.substring(
       pubspec.lastIndexOf(RegExp(r'^flutter:', multiLine: true)),

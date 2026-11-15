@@ -1,4 +1,6 @@
-// The app's entry point: load the Rust bridge, open the core, show the app.
+// The app's entry point: load the Rust bridge, open the core, show the app
+// (with the phone's network changes from connectivity_plus).
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
@@ -9,6 +11,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
   final core = RustCoreService();
-  runApp(VyajenaApp(core: core));
+  final network = Connectivity().onConnectivityChanged.map(
+    (results) => results.any((r) => r != ConnectivityResult.none),
+  );
+  runApp(VyajenaApp(core: core, networkChanges: network));
   await core.open();
 }

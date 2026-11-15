@@ -48,6 +48,11 @@ const allowedFlutter = {
   'package:flutter/widgets.dart',
 };
 
+/// What only main.dart may import: the phone's network state, to tell the
+/// core to reconnect (qa-fixes design D6). It reads whether Wi-Fi or mobile
+/// data is up and opens no connection.
+const mainOnly = {'package:connectivity_plus/connectivity_plus.dart'};
+
 /// What only the generated bindings may import: FFI to the Rust core.
 const bindingOnly = {
   'dart:ffi',
@@ -69,6 +74,8 @@ void main() {
           _ when allowedDart.contains(uri) => true,
           _ when allowedFlutter.contains(uri) => true,
           _ when bindingOnly.contains(uri) => generated(file),
+          _ when mainOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/main.dart',
           _ => false,
         };
         if (!ok) bad.add('${file.path}: $uri');
@@ -102,11 +109,13 @@ void main() {
       r'^  ([a-z_]+):',
       multiLine: true,
     ).allMatches(section).map((m) => m.group(1)!).toSet();
+    // connectivity_plus only reports whether a connection is up (D6).
     expect(names, {
       'flutter',
       'bridge',
       'flutter_rust_bridge',
       'freezed_annotation',
+      'connectivity_plus',
     });
   });
 
