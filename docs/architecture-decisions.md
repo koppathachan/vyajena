@@ -1,6 +1,6 @@
 # Chat App MVP — Architecture Decisions
 
-Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app) · @Akhil Sasidharan
+Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app), Nov 15, 2026 (relay) · @Akhil Sasidharan
 
 ## Scope
 
@@ -14,7 +14,7 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 - Invite-only signup
 - Store-and-forward through the Pi server
 - One delivery status: accepted by the server (⏳ sending → ✓ accepted)
-- Push notifications as content-free wake pings (FCM, APNs), built with the relay and Pi deployment
+- Push notifications as content-free wake pings (FCM, APNs), built in the change after the relay (owner, 2026-11-15)
 - iOS and Android apps first; desktop later (decision #3)
 - Material 3 UI, `ColorScheme.fromSeed` with a muted seed and the `neutral` variant
 
@@ -46,7 +46,7 @@ flowchart LR
     core --- ks
   end
 
-  subgraph gcp["GCP e2-micro, US — sees TLS bytes only"]
+  subgraph gcp["GCP e2-micro, us-east1 — sees TLS bytes only"]
     relay["rathole relay<br/>TCP passthrough, no state"]
   end
 
@@ -120,7 +120,7 @@ The Pi is the single authority for routing, ordering and membership, and never f
 - **New users join on their own (flutter-app, owner 2026-11-12):** the admin inviting a user is the consent, so nobody taps "add". Once a new user's device uploads its first KeyPackages, the Pi sends a `JoinNotice` to the admin's connected devices, and again on every admin connect until that device is a member. The first admin device fetches that device's KeyPackage, checks its certificate (pinning the user's key on first sight) and commits the Add with its Welcome; a race loser gets `STALE_EPOCH` and does nothing. A changed identity key waits for the admin to accept it, and the accept is the add.
 - **Ordering:** checks the epoch on every envelope, gives each accepted one the next `server_seq` for the group, and appends Commits and Proposals to the commit log.
 - **Queues:** per-device store-and-forward queue of application ciphertext.
-- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute. Real FCM / APNs come with the relay and Pi deployment (owner, 2026-11-11); until then the app registers the core's placeholder token.
+- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute. Real FCM / APNs come in the change after the relay (owner, 2026-11-15); until then the app registers the core's placeholder token.
 
 **What it stores:** users and their identity public keys, devices with their certificates, KeyPackages, invite codes, push tokens, session token hashes, the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
 
@@ -182,36 +182,21 @@ sequenceDiagram
   C->>P: gRPC over HTTP/2, Messaging.Connect stream
 ```
 
-- **Relay:** GCP free-tier e2-micro (US region) running rathole as a TCP passthrough. It holds no state and can move to any VPS with a config change.
-- **Tunnel auth:** rathole token + Noise transport, so only the Pi can attach.
+- **Relay:** its own GCP free-tier e2-micro, `vyajena-relay` in `us-east1-b` (project `purple-eccdf`, its own VPC), running rathole 0.5.0 as a TCP passthrough: 443 for devices, 2333 for the tunnel. A reserved static IPv4 and no DNS name: invites name `<relay-ip>:443`. It holds no state and can be rebuilt, or moved to any VPS, from `deploy/relay/` and `~/.vyajena-relay/` (change `relay`).
+- **Tunnel auth:** rathole's Noise NK transport with the relay's static key pinned on the Pi (a fake relay cannot attach the Pi), plus a service token (nobody else can attach in the Pi's place). The tunnel port is open to all because the home IPv4 is dynamic.
 - **TLS:** the client pins the Pi's TLS public key. No domain or certificate authority needed.
 - **Transport:** gRPC over HTTP/2 + TLS on TCP 443. HTTP/3 (tonic-h3) stays deferred while it is experimental.
-- **Latency:** India → US relay → Pi in India costs about 0.5 s per send. Accepted for the MVP.
-- **Free tier limits to watch:** 1 GB/month outbound data, and a possible external IPv4 charge (about $3.65/month, check the bill).
+- **Latency:** India → US relay → Pi in India: two intercontinental legs per round trip, roughly 0.4–0.6 s per send. Accepted for the MVP.
+- **Cost:** the static IPv4 is billed, about $3.65/month (owner, 2026-11-15); the e2-micro, 10 GB standard disk and 1 GB/month outbound data are free tier. Watch the bill and the outbound data.
+- **Direct IPv6** to the Pi (the Airtel router drops inbound IPv6 today) is a possible later improvement, last.
 
-### Home-LAN phase (now, until the relay change)
+### Home-LAN phase (ended 2026-11-15)
 
-The Pi runs vyajena2 now (change `pi-deployment`), before the relay exists, so
-phones and the Mac's simulators on the home Wi-Fi reach it directly.
-
-```mermaid
-flowchart LR
-  dev["Phones, iOS Simulator, Android emulator<br/>(home Wi-Fi / the Mac)"] -->|"TLS, 192.168.1.8:8443"| pi["Pi: vyajena.service"]
-  mac["Mac"] -->|"SSH :22"| pi
-  out["Outside home, global IPv6"] -.->|"dropped by nftables"| pi
-```
-
-- The server listens on `0.0.0.0:8443`; invites name `192.168.1.8:8443`, a
-  static address set on the Pi's `eth0` (no router reservation yet).
-- nftables drops inbound except replies, SSH and 8443 from the home IPv4
-  subnet, and link-local IPv6 control traffic; the ISP's global IPv6 addresses
-  expose nothing.
-- **What the relay change undoes:** `listen_address` becomes
-  `127.0.0.1:8443` behind the rathole tunnel, the 8443 rule and the
-  service's `IPAddressAllow` for the subnet go, and nftables drops all
-  inbound again (SSH from home stays). Devices that joined in this phase
-  store `192.168.1.8:8443`, so the relay change must migrate their stored
-  address or they re-join.
+From `pi-deployment` until the `relay` change, devices on the home Wi-Fi
+dialed the Pi at `192.168.1.8:8443` and nothing outside home could reach it.
+The relay change moved the server to `127.0.0.1:8443` behind the tunnel,
+removed the LAN 8443 rule, and reset the Pi (no migration): every device
+re-joined with an invite naming the relay.
 
 ## Storage, keys and hardening
 
@@ -233,8 +218,10 @@ Messages are not encrypted at rest; keys live in the OS key store and every mach
 **Pi**
 
 - SSH with keys only, no password or root login.
-- nftables drops all inbound; the Pi only makes the outbound tunnel. (Home-LAN
-  phase: SSH and 8443 from the home subnet only, see Connectivity.)
+- nftables drops all inbound except SSH from the home subnet; the Pi only
+  makes the outbound tunnel. The server listens on loopback only and may
+  reach only loopback; the tunnel (`vyajena-tunnel.service`, a dynamic user)
+  only loopback and the relay.
 - Server runs as its own system user `vyajena` (no login shell); database and
   keys in `/var/lib/vyajena`, mode `700`, files `600`.
 - systemd sandboxing: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
@@ -247,10 +234,12 @@ Messages are not encrypted at rest; keys live in the OS key store and every mach
 
 **Relay**
 
-- Firewall: 443 public, tunnel port for the tunnel only, everything else closed.
-- SSH keys only, or GCP IAP with no public SSH.
-- VPC flow logs off, so client IPs are not kept.
-- Shares its VM with an existing service: one compromise exposes both. Worst case for chat is DoS plus client IPs.
+- Its own VM and VPC (owner, 2026-11-15): nothing else shares it. Worst case for chat, if it is compromised: DoS plus client IPs and timing.
+- VPC firewall: 443 and the tunnel port public, SSH only from Google IAP's range, everything else dropped; firewall logging off.
+- SSH only through GCP IAP, keys only (the relay key in `~/.vyajena-relay/`), no root; the host key is pinned from the VM's guest attributes.
+- VPC flow logs off, rathole logs at `warn`, the journal in RAM only: client IPs are not kept.
+- No service account or API scopes; rathole runs under a dynamic user with only `CAP_NET_BIND_SERVICE` and no writable path.
+- Unattended security updates, never an automatic reboot; checked by `deploy/relay/check.sh`.
 
 ## Wire protocol
 
@@ -290,6 +279,6 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 - [x] Desktop clients in the MVP, or mobile only? **Mobile now, desktop later** (owner, 2026-11-11; flutter-app): the Flutter app targets iOS and Android only; desktop builds come in a later change.
 - [x] Key rotation for idle groups? **Every 7 days, with jitter** (client-core): each device commits an update of its own leaf once it is 7 days old and replaces its last-resort KeyPackage once that is 7 days old, checking on connect and daily, with a random delay of up to an hour.
 - [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
-- [ ] Relay on the shared VM or its own VM?
-- [x] Build order? **Changed** (owner, 2026-11-11; flutter-app): 1. Pi server ✅, 2. Rust core library ✅, 3. Flutter app (iOS and Android; the first point where two people can chat locally, on two simulators), 4. question-and-answer verification (`qa-verification`), 5. relay and Pi deployment with real push (FCM/APNs), 6. the terminal client. (Was, pi-server-core: Pi, core, terminal client, deployment, then the app with push.)
+- [x] Relay on the shared VM or its own VM? **Its own VM** (owner, 2026-11-15; relay): a new free-tier e2-micro in `us-east1`, project `purple-eccdf`, used by nothing else; a static IPv4 (about $3.65/month), no DNS name. Real push comes in the next change.
+- [x] Build order? **Changed** (owner, 2026-11-11; flutter-app): 1. Pi server ✅, 2. Rust core library ✅, 3. Flutter app (iOS and Android; the first point where two people can chat locally, on two simulators), 4. question-and-answer verification (`qa-verification`), 5. relay and Pi deployment ✅ (relay first, real push (FCM/APNs) in the next change; owner, 2026-11-15), 6. the terminal client. (Was, pi-server-core: Pi, core, terminal client, deployment, then the app with push.)
 - [x] How is the app distributed? **Privately first** (owner, 2026-11-15; app-release): a new Play app `com.purplechaamba.vyajena` on internal testing now, TestFlight internal testing once the owner's individual Apple account exists; Android 7.0+ and iOS 15.0+, iPhone only; name "Vyajena", icon "വ്യ"; export compliance `ITSAppUsesNonExemptEncryption = YES` (mass-market, France left out); upload key and certificate held only by the owner (Keychain + password manager), never in the repo or CI; policy at https://www.purplechaamba.com/vyajena/privacy/. The old vyajena Play app and its CI deployment are deleted once this app runs. A **public** listing waits for: the relay (reviewers must reach the server), in-app account deletion, report/block, real push, and Play's 12-tester closed test. Steps: `docs/release.md`.

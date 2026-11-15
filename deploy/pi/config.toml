@@ -1,4 +1,5 @@
-# The Pi's server config (pi-deployment design D4), installed by deploy.sh as
+# The Pi's server config (pi-deployment design D4, relay design D5), rendered by
+# deploy/relay/render.sh and installed by deploy/pi/deploy.sh as
 # /etc/vyajena/config.toml. No secrets: the keys and the database live in
 # /var/lib/vyajena (the service's StateDirectory, mode 0700).
 
@@ -6,10 +7,10 @@
 server_id = "pi"
 # The admin is admin_username@server_id; the bootstrap invite creates that user.
 admin_username = "akhil"
-# Home-LAN phase: every address, port 8443. nftables lets only the home IPv4
-# subnet reach it. The relay change sets 127.0.0.1:8443 behind the tunnel.
-listen_address = "0.0.0.0:8443"
-# What invites tell devices to dial: the Pi's static LAN address on eth0.
-public_address = "192.168.1.8:8443"
+# Loopback only: devices reach it through the relay and vyajena-tunnel.service.
+listen_address = "127.0.0.1:8443"
+# What invites tell devices to dial: the relay's static IPv4 (relay.conf's
+# PUBLIC_PORT), from ~/.vyajena-relay/relay.env.
+public_address = "@RELAY_IP@:@PUBLIC_PORT@"
 database_path = "/var/lib/vyajena/pi.sqlite"
 key_dir = "/var/lib/vyajena/keys"

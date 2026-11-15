@@ -2,10 +2,14 @@
 
 mod support;
 
+use std::net::{SocketAddr, TcpStream, UdpSocket};
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use server::runtime::{Config, ConfigError};
+use support::Check;
+use support::binary::{Home, admin_on, logged};
 
 fn parse(text: &str) -> Result<Config, ConfigError> {
     Config::from_toml(text, Path::new("/srv/pi"))
@@ -162,4 +166,44 @@ fn server_exits_naming_the_field_and_touches_nothing() {
     assert!(stderr.contains("admin_username"), "{stderr}");
     assert!(!dir.join("keys").exists());
     assert!(!dir.join("pi.sqlite").exists());
+}
+
+/// This machine's address on its outbound interface (no packet is sent), if
+/// it has one besides loopback.
+fn lan_address() -> Option<std::net::IpAddr> {
+    let socket = UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
+}
+
+// spec: pi-runtime/configuration
+#[tokio::test]
+async fn behind_the_relay_listens_on_loopback_and_invites_name_the_relay() {
+    // The Pi's relay setup (deploy/pi/config.toml): loopback only, the relay's
+    // static address in invites.
+    let home = Home::new();
+    let text = with("public_address", r#""203.0.113.10:443""#);
+    std::fs::write(home.config(), text).check("write pi.toml");
+    let pi = home.start();
+
+    assert!(pi.addr.ip().is_loopback(), "listens on {}", pi.addr);
+    assert_eq!(
+        logged(&pi.log, "relay_address").as_deref(),
+        Some("203.0.113.10:443"),
+        "the bootstrap invite names the relay"
+    );
+    if let Some(ip) = lan_address() {
+        let lan = SocketAddr::new(ip, pi.addr.port());
+        assert!(
+            TcpStream::connect_timeout(&lan, Duration::from_secs(2)).is_err(),
+            "{lan} must not accept: the server is loopback-only"
+        );
+    }
+
+    let (conn, _admin, device, _stream) = admin_on(&pi).await;
+    let response = support::create_invite(&conn, &device, "bob").await;
+    let payload = response.payload.check("payload");
+    assert_eq!(payload.relay_address, "203.0.113.10:443");
+    assert_eq!(payload.tls_spki_sha256, pi.pin.to_vec());
 }

@@ -1,0 +1,52 @@
+# rathole on the relay (relay design D8), installed by deploy/relay/deploy.sh as
+# /etc/systemd/system/vyajena-relay.service. A TCP passthrough with no state:
+# no writable path, a dynamic user, only the right to bind port 443.
+# Logs (in RAM only): journalctl -u vyajena-relay
+[Unit]
+Description=vyajena2 relay (rathole server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+DynamicUser=yes
+LoadCredential=server.toml:/etc/vyajena-relay/server.toml
+ExecStart=/usr/local/bin/rathole --server ${CREDENTIALS_DIRECTORY}/server.toml
+# warn: no tunnel or client address is logged in normal operation (D3).
+Environment=RUST_LOG=warn
+Restart=always
+RestartSec=2
+
+# Only binding 443 (no PrivateUsers: it would void the capability).
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+UMask=0077
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectProc=invisible
+ProcSubset=pid
+DevicePolicy=closed
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

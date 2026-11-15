@@ -46,10 +46,16 @@ app/                    the Flutter app, iOS + Android only: lib/<feature>/ scre
                         widget tests on a fake core (test/support/), integration_test/
                         the real app on a simulator (run.sh starts a temp Pi)
 pbgen/                  regenerates the committed pb.rs files from proto/
-deploy/pi/              the real Pi: build.sh (arm64 container build), deploy.sh
-                        (harden + install/upgrade/--rollback over SSH), check.sh
-                        (hardening check), backup.sh, harden.sh (run by deploy),
-                        vyajena.service, nftables.conf, config.toml
+deploy/pi/              the real Pi: build.sh (arm64 container builds: server +
+                        rathole), deploy.sh (harden + install/upgrade/--rollback/
+                        --reset over SSH), check.sh (hardening check), backup.sh,
+                        harden.sh (run by deploy), vyajena.service,
+                        vyajena-tunnel.service, nftables.conf, config.toml and
+                        tunnel.toml (templates, filled by deploy/relay/render.sh)
+deploy/relay/           the GCP relay (rathole): relay.conf (names, sizes,
+                        versions), secrets.sh, create.sh (gcloud, --dry-run),
+                        build.sh, deploy.sh, check.sh, ssh.sh (IAP), render.sh,
+                        lib.sh, server.toml, vyajena-relay.service
 openspec/               config.yaml, specs/, changes/
 docs/                   architecture-decisions.md (with Mermaid diagrams)
 ```
@@ -68,16 +74,24 @@ cargo run -p server -- --config server/local.toml   # local Pi on 127.0.0.1:8443
 cd app && flutter analyze
 cd app && flutter test                       # widget tests (what CI runs)
 app/integration_test/run.sh <device id>      # the app on a simulator/emulator
-shellcheck deploy/pi/*.sh
+shellcheck deploy/pi/*.sh deploy/relay/*.sh
 deploy/pi/build.sh && deploy/pi/deploy.sh --no-build   # the real Pi (192.168.1.8)
 deploy/pi/check.sh                           # the Pi's hardening; must pass
 deploy/pi/backup.sh                          # DB + keys -> ~/vyajena-pi-backups/
+deploy/relay/create.sh --dry-run             # the relay's gcloud commands, run nothing
+deploy/relay/deploy.sh                       # the relay VM (needs gcloud auth login)
+deploy/relay/check.sh                        # the relay's hardening; must pass
 ```
 
 The real Pi holds the owner's group: deploy to it only when a change says so,
 never run tests against it, and never touch its `/var/lib/vyajena` by hand.
-Its first start printed the owner's bootstrap invite; a fresh database there
-means a new pin and re-joining every device.
+Its first start saved the owner's bootstrap invite to an owner-only file; a
+fresh database there (only ever through `deploy.sh --reset`, which backs up
+first) means a new pin and re-joining every device. Before any `gcloud`
+action that creates or changes something, show the owner the commands
+(`create.sh --dry-run`) and the cost and wait for a yes; the owner runs
+`gcloud auth login` themselves. The relay's secrets live only in
+`~/.vyajena-relay/`: never in the repo, never printed.
 
 Dart tests live in `app/test/` and `app/integration_test/`, never in `lib/`,
 tagged `// spec: <capability>/<title-slug>` like the Rust ones. `run.sh`

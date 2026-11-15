@@ -3,7 +3,10 @@
 # a release build in a linux/arm64 Debian bookworm container, so the binary
 # needs only glibc 2.34+ and the Pi needs no toolchain.
 #
-#   deploy/pi/build.sh        -> target/pi/vyajena-server
+#   deploy/pi/build.sh        -> target/pi/vyajena-server, target/pi/rathole
+#
+# rathole (the tunnel, relay design D3) is the pinned version from crates.io,
+# built by deploy/relay/build.sh arm64 in its own container.
 set -euo pipefail
 
 # Same Rust as the Mac; bookworm's glibc (2.36) is older than the Pi's (2.41).
@@ -35,3 +38,5 @@ mkdir -p "$(dirname "$out")"
 install -m 0755 "$repo/target/linux-arm64/release/server" "$out"
 file "$out"
 shasum -a 256 "$out"
+
+"$repo/deploy/relay/build.sh" arm64

@@ -25,6 +25,8 @@ pub struct Binary {
     pub pin: [u8; 32],
     /// The bootstrap invite code, logged on first start only.
     pub invite_code: Option<String>,
+    /// The log lines up to "listening".
+    pub log: Vec<String>,
 }
 
 /// A temp folder with a config for the binary (admin `akhil@pi`).
@@ -98,6 +100,7 @@ impl Home {
             addr,
             pin,
             invite_code,
+            log: lines,
         }
     }
 }

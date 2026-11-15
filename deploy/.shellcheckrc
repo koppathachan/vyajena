@@ -1,0 +1,4 @@
+# shellcheck settings for deploy/ (relay design D6): follow sourced files
+# such as deploy/relay/relay.conf.
+external-sources=true
+source-path=SCRIPTDIR

@@ -121,47 +121,88 @@ Pi and removes the folder when done.
 ## Run on the Pi
 
 The real Pi (Raspberry Pi 4, Debian 13, `vyajan@192.168.1.8`) runs the server
-as `vyajena.service`. Home-LAN phase: phones on the home Wi-Fi and the Mac's
-simulators dial `192.168.1.8:8443`; nothing outside home gets in. Needs Docker
-Desktop on the Mac (`build.sh` starts it) and the Pi login with passwordless
-sudo. `PI=user@host` overrides the target for every script.
+as `vyajena.service` on `127.0.0.1:8443` only, and `vyajena-tunnel.service`
+(rathole) dials out to the relay. Devices anywhere dial `<relay-ip>:443`;
+nothing listens at home but SSH from the home network. Needs Docker Desktop on
+the Mac (`build.sh` starts it), the Pi login with passwordless sudo, and the
+relay's secrets in `~/.vyajena-relay/` (see Relay). `PI=user@host` overrides the
+target for every script.
 
 ```
-build     deploy/pi/build.sh        arm64 release build in a container
-                                    -> target/pi/vyajena-server
+build     deploy/pi/build.sh        arm64 release builds in containers
+                                    -> target/pi/vyajena-server, target/pi/rathole
 deploy    deploy/pi/deploy.sh       build, harden the host, install, restart
           deploy/pi/deploy.sh --no-build   install the last build as is
-          deploy/pi/deploy.sh --rollback   back to the previous binary
-check     deploy/pi/check.sh        hardening check; FAIL <name> per problem
+          deploy/pi/deploy.sh --rollback   back to the previous server binary
+          deploy/pi/deploy.sh --reset      back up, then DELETE the group (asks for "pi")
+check     deploy/pi/check.sh        hardening + tunnel + relay pin; FAIL <name> per problem
 backup    deploy/pi/backup.sh       DB snapshot + keys -> ~/vyajena-pi-backups/<UTC time>/
-logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -f
+logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -f
 ```
 
-- **Bootstrap invite:** the first deploy prints it (log line `bootstrap admin
-  invite created`, field `payload`), once. Lost it?
+- **Config:** `deploy/pi/config.toml`, `tunnel.toml` and
+  `vyajena-tunnel.service` are templates; `deploy.sh` fills in the relay's
+  address and the tunnel token from `~/.vyajena-relay/`
+  (`deploy/relay/render.sh`) and pipes them over SSH. The token file on the Pi
+  is `/etc/vyajena/tunnel.toml`, root only.
+- **Bootstrap invite:** a first install or a `--reset` saves it to
+  `~/vyajena-pi-backups/bootstrap-invite-<UTC time>.txt` (owner only) instead
+  of printing it. Lost it?
   `ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -o cat | grep "bootstrap admin"`.
   It creates the admin `akhil@pi` and is valid for 7 days.
-- **TLS pin:** every deploy prints `tls_spki_sha256`; it never changes, since
-  upgrades keep `/var/lib/vyajena` (database and keys).
+- **TLS pin:** every deploy prints `tls_spki_sha256`. Upgrades keep
+  `/var/lib/vyajena` (database and keys), so it changes only with `--reset`.
+- **Reset** (`--reset`): type `pi` to confirm, `backup.sh` runs first (and a
+  failed backup stops everything), then the database and keys are deleted and
+  the server starts fresh: new pin, new bootstrap invite, every device re-joins.
 - **Hardening** (`harden.sh`, run by every deploy, idempotent): the `vyajena`
-  system user, SSH keys only and no root login, nftables (SSH and 8443 from
-  `192.168.1.0/24` only, inbound IPv6 dropped), unattended security updates
+  system user, SSH keys only and no root login, nftables (only SSH from
+  `192.168.1.0/24`, inbound IPv6 dropped), unattended security updates
   without automatic reboots, mDNS off, and the static address. SSH, firewall
   and address changes arm an automatic undo for 2 minutes and keep it only
   after a new SSH connection from the Mac gets in.
 - **Static address:** `192.168.1.8` is set on the Pi's `eth0` (NetworkManager),
-  not reserved on the router. If the router hands it to another device,
-  `check.sh` warns (`address-clash`); reserve `192.168.1.8` for MAC
-  `88:a2:9e:f3:2c:55` on the router, or shrink its DHCP pool.
+  for SSH from the Mac. If the router hands it to another device, `check.sh`
+  warns (`address-clash`); reserve `192.168.1.8` for MAC `88:a2:9e:f3:2c:55`
+  on the router, or shrink its DHCP pool.
 - **Pending reboot:** updates install by themselves but never reboot;
   `check.sh` warns `reboot-required`, or `kernel-reboot` when a newer kernel
   of the running flavour is installed (Raspberry Pi kernels leave no
   `/run/reboot-required`). Reboot when convenient:
-  `ssh vyajan@192.168.1.8 sudo reboot`.
+  `ssh vyajan@192.168.1.8 sudo reboot`. The tunnel comes back by itself.
 - **Backups** hold the server's private keys: they stay out of the repo, in
   owner-only folders.
-- **Apps:** paste an invite naming `192.168.1.8:8443`; the Android emulator
-  needs no `adb reverse` (it reaches the LAN through the Mac).
+
+## Relay
+
+A GCP free-tier e2-micro (`vyajena-relay`, `us-east1-b`, project
+`purple-eccdf`, its own VPC) runs rathole 0.5.0 as a dumb TCP passthrough: 443
+for devices, 2333 for the Pi's tunnel (Noise, the relay's key pinned on the
+Pi, plus a token). TLS ends on the Pi. A reserved static IPv4, no DNS name,
+about $3.65/month; the rest is free tier. SSH only through Google IAP. It holds
+no state: logs in RAM, no service account. Names and sizes:
+`deploy/relay/relay.conf`. Every script but `secrets.sh` needs a valid
+`gcloud auth login` (run it yourself).
+
+```
+secrets   deploy/relay/secrets.sh   token, Noise keys, SSH key -> ~/.vyajena-relay/ (once)
+create    deploy/relay/create.sh --dry-run   print the gcloud commands
+          deploy/relay/create.sh    VPC, firewall, static IP, VM (idempotent)
+build     deploy/relay/build.sh     rathole for amd64 -> target/relay/rathole
+deploy    deploy/relay/deploy.sh    build, harden, install, restart (--no-build, --rollback)
+check     deploy/relay/check.sh     GCP + host + ports; FAIL <name> per problem
+shell     deploy/relay/ssh.sh       SSH over IAP (or one command)
+```
+
+- **Secrets** live only in `~/.vyajena-relay/` (0700, files 0600): `token`,
+  `noise.key`, `noise.pub`, `ssh_ed25519`, plus `relay.env` (the address) and
+  `known_hosts` (the VM's host key, read from guest attributes). Keep a copy
+  in the password manager; never put them in the repo.
+- **Rebuild:** the VM is disposable. Delete it and run `create.sh` and
+  `deploy.sh` again; keep the static address, which every invite names.
+- **Rathole** is built from its crates.io source with its own lock file
+  (`--locked`) in a `rust:1.79` container (its lock does not build on newer
+  Rust). The Pi's copy comes from `deploy/pi/build.sh`.
 
 ## Release
 
@@ -207,11 +248,12 @@ Android emulator against a local Pi: join from an invite, automatic add of
 invited users, chat with send status and notices (renames, members joining,
 devices added or removed, this device removed), profiles, members, linking
 a device by text, and the admin screens. It reconnects as soon as the
-phone's network comes back. The server runs on the real Pi on
-the home network (`deploy/pi/`, change `pi-deployment`). Push is a
-placeholder until the relay change. Release builds are ready for Play
-internal testing and TestFlight (`app-release`).
+phone's network comes back. The server runs on the real Pi
+(`deploy/pi/`, change `pi-deployment`), reached from anywhere through the GCP
+relay (`deploy/relay/`, change `relay`). Push is a placeholder until the next
+change. Release builds are ready for Play internal testing and TestFlight
+(`app-release`).
 
-Next, in order: question-and-answer verification (`qa-verification`), the
-GCP relay with real push (FCM / APNs), then the terminal client.
+Next, in order: real push (FCM / APNs), question-and-answer verification
+(`qa-verification`), then the terminal client.
 Desktop builds come later. See the open decisions in the architecture doc.

@@ -9,15 +9,17 @@ set -euo pipefail
 PI="${PI:-vyajan@192.168.1.8}"
 readonly PI
 readonly HOST="${PI#*@}"
+# shellcheck source=../relay/relay.conf
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../relay/relay.conf"
 # The highest `systemd-analyze security` exposure accepted for vyajena.service
-# (design D3: the first real run on systemd 257 scored 1.0; what is left is
-# the network access the server needs).
+# and vyajena-tunnel.service (pi-deployment design D3: the first real run on
+# systemd 257 scored 1.0; what is left is the network access they need).
 readonly MAX_EXPOSURE="1.5"
 
 # --- run on the Pi as root (sent with declare -f) ----------------------------
 
 remote_checks() {
-  local max_exposure="$1"
+  local max_exposure="$1" tunnel_port="$2"
   ok() { echo "ok   $1"; }
   fail() { echo "FAIL $1: $2"; }
   warn() { echo "WARN $1: $2"; }
@@ -56,14 +58,20 @@ remote_checks() {
     got="$(systemctl show -p "$prop" --value vyajena.service)"
     if [ "$prop=$got" = "$want" ]; then ok "sandbox $prop"; else fail "sandbox $prop" "is '$got', want '${want#*=}'"; fi
   done
-  local exposure
-  exposure="$(systemd-analyze security vyajena.service --no-pager 2>/dev/null |
-    sed -n 's/.*Overall exposure level for [^:]*: \([0-9.]*\).*/\1/p')"
-  if [ -n "$exposure" ] && awk -v e="$exposure" -v m="$max_exposure" 'BEGIN {exit !(e <= m)}'; then
-    ok "sandbox exposure $exposure (max $max_exposure)"
-  else
-    fail "sandbox exposure" "systemd-analyze security says ${exposure:-nothing}, max $max_exposure"
-  fi
+  exposure_of() { # exposure_of <unit> <label>
+    local exposure
+    exposure="$(systemd-analyze security "$1" --no-pager 2>/dev/null |
+      sed -n 's/.*Overall exposure level for [^:]*: \([0-9.]*\).*/\1/p')"
+    if [ -n "$exposure" ] && awk -v e="$exposure" -v m="$max_exposure" 'BEGIN {exit !(e <= m)}'; then
+      ok "$2 exposure $exposure (max $max_exposure)"
+    else
+      fail "$2 exposure" "systemd-analyze security says ${exposure:-nothing}, max $max_exposure"
+    fi
+  }
+  exposure_of vyajena.service sandbox
+  # Loopback only: devices come through the tunnel (relay design D5).
+  got="$(systemctl show -p IPAddressAllow --value vyajena.service)"
+  if [ "$got" = "127.0.0.0/8 ::1/128" ]; then ok "sandbox IPAddressAllow loopback"; else fail "sandbox IPAddressAllow" "is '$got', want loopback only"; fi
   # No writes outside /var/lib/vyajena, tried inside the running service's
   # namespaces as its user. Its private /tmp and /var/tmp (PrivateTmp=yes)
   # are throwaway and seen by nothing else, so they are not probed.
@@ -92,6 +100,42 @@ remote_checks() {
     fail "sandbox writes" "vyajena.service has no main process"
   fi
 
+  # The tunnel (relay design D5): sandboxed, dynamic user, only loopback and
+  # the relay, attached.
+  local relay_ip
+  relay_ip="$(sed -n 's/^public_address = "\([0-9.]*\):[0-9]*"$/\1/p' /etc/vyajena/config.toml 2>/dev/null)"
+  check tunnel-running "vyajena-tunnel.service is not active and enabled" \
+    sh -c 'systemctl is-active --quiet vyajena-tunnel.service && systemctl is-enabled --quiet vyajena-tunnel.service'
+  for want in DynamicUser=yes NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \
+    PrivateTmp=yes PrivateDevices=yes PrivateUsers=yes CapabilityBoundingSet= AmbientCapabilities= \
+    "RestrictAddressFamilies=AF_INET AF_INET6" Restart=always StateDirectory= \
+    "IPAddressAllow=127.0.0.0/8 ::1/128 $relay_ip/32" "IPAddressDeny=0.0.0.0/0 ::/0"; do
+    prop="${want%%=*}"
+    got="$(systemctl show -p "$prop" --value vyajena-tunnel.service)"
+    if [ "$prop=$got" = "$want" ]; then ok "tunnel sandbox $prop"; else fail "tunnel sandbox $prop" "is '$got', want '${want#*=}'"; fi
+  done
+  exposure_of vyajena-tunnel.service "tunnel sandbox"
+  pid="$(systemctl show -p MainPID --value vyajena-tunnel.service)"
+  if [ -n "$pid" ] && [ "$pid" != 0 ]; then
+    local tuid tgid tbad="" tprobe=".vyajena-check-$$"
+    tuid="$(stat -c %u "/proc/$pid")"
+    tgid="$(stat -c %g "/proc/$pid")"
+    for path in / /etc /usr/local/bin /var/lib /var/lib/vyajena /var/log /home /root; do
+      if nsenter -t "$pid" -m -U -S "$tuid" -G "$tgid" sh -c "touch $path/$tprobe" 2>/dev/null; then
+        tbad="$tbad $path"
+        rm -f "$path/$tprobe"
+      fi
+    done
+    if [ -z "$tbad" ]; then ok "tunnel sandbox no writes"; else fail "tunnel sandbox writes" "rathole can write:$tbad"; fi
+  else
+    fail "tunnel sandbox writes" "vyajena-tunnel.service has no main process"
+  fi
+  if [ -n "$relay_ip" ] && ss -Htnp state established dst "$relay_ip:$tunnel_port" | grep -q '"rathole"'; then
+    ok "tunnel attached to $relay_ip:$tunnel_port"
+  else
+    fail tunnel "no rathole connection to ${relay_ip:-the relay}:$tunnel_port"
+  fi
+
   # File modes: database and keys owner-only.
   local f m
   for f in /var/lib/vyajena /var/lib/vyajena/keys; do
@@ -105,35 +149,39 @@ remote_checks() {
     if [ "$m" = "600 vyajena" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '${m:-missing}', want '600 vyajena'"; fi
   done
   for f in /usr/local/bin/vyajena-server:"755 root" /etc/vyajena/config.toml:"644 root" \
-    /etc/systemd/system/vyajena.service:"644 root"; do
+    /etc/systemd/system/vyajena.service:"644 root" /usr/local/bin/rathole:"755 root" \
+    /etc/vyajena/tunnel.toml:"600 root" /etc/systemd/system/vyajena-tunnel.service:"644 root"; do
     m="$(mode_of "${f%%:*}")"
     if [ "$m" = "${f#*:}" ]; then ok "file-mode ${f%%:*}"; else fail "file-mode ${f%%:*}" "is '${m:-missing}', want '${f#*:}'"; fi
   done
 
-  # Listening: SSH and the server only. NetworkManager's DHCP client sockets
-  # (UDP 68, 546) are clients, not services.
+  # Listening: SSH, and the server on loopback only. NetworkManager's DHCP
+  # client sockets (UDP 68, 546) are clients, not services.
   local listeners extra
   listeners="$(ss -H -tulnp)"
   extra="$(awk '
     $1 == "tcp" && $5 ~ /:22$/ && /"sshd"/ {next}
-    $1 == "tcp" && $5 ~ /:8443$/ && /"vyajena-server"/ {next}
+    $1 == "tcp" && $5 == "127.0.0.1:8443" && /"vyajena-server"/ {next}
     $1 == "udp" && $5 ~ /:(68|546)$/ && /"NetworkManager"/ {next}
     {print $1, $5, $7}' <<<"$listeners")"
   if [ -z "$extra" ]; then ok listening; else fail listening "unexpected listeners: $(tr '\n' ';' <<<"$extra")"; fi
-  check "listening 8443" "vyajena-server is not listening on 8443" \
-    grep -q '0.0.0.0:8443.*"vyajena-server"' <<<"$listeners"
+  check "listening 127.0.0.1:8443" "vyajena-server is not listening on 127.0.0.1:8443" \
+    grep -q '127.0.0.1:8443.*"vyajena-server"' <<<"$listeners"
 
-  # nftables: loaded, default drop, the two ports from the home subnet only.
+  # nftables: loaded, default drop, SSH from the home subnet the only port.
   local rules
   rules="$(nft list chain inet vyajena input 2>/dev/null || true)"
   check "nftables loaded" "no inet vyajena input chain" test -n "$rules"
   check "nftables policy" "input policy is not drop" grep -q "policy drop;" <<<"$rules"
   check "nftables ssh" "SSH is not limited to 192.168.1.0/24" \
     grep -q "ip saddr 192.168.1.0/24 tcp dport 22 accept" <<<"$rules"
-  check "nftables 8443" "8443 is not limited to 192.168.1.0/24" \
-    grep -q "ip saddr 192.168.1.0/24 tcp dport 8443 accept" <<<"$rules"
-  if grep -E "dport (22|8443) accept" <<<"$rules" | grep -vq "ip saddr 192.168.1.0/24"; then
-    fail "nftables open port" "a port is open beyond the home subnet"
+  if grep -q "dport 8443" <<<"$rules"; then
+    fail "nftables 8443" "a rule still accepts 8443; the server is loopback-only"
+  else
+    ok "nftables no 8443"
+  fi
+  if grep -E "tcp dport" <<<"$rules" | grep -vq "ip saddr 192.168.1.0/24 tcp dport 22 accept"; then
+    fail "nftables open port" "a port other than SSH from the home subnet is open"
   else
     ok "nftables open port"
   fi
@@ -224,11 +272,36 @@ newer_kernel() {
 
 # --- from the Mac --------------------------------------------------------------
 
+# spki <host:port>: SHA-256 of the TLS key the server presents (the pin).
+spki() {
+  openssl s_client -connect "$1" -alpn h2 </dev/null 2>/dev/null |
+    openssl x509 -pubkey -noout 2>/dev/null |
+    openssl pkey -pubin -outform der 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1
+}
+
 mac_checks() {
+  local empty
+  empty="$(printf '' | openssl dgst -sha256 -r | cut -d' ' -f1)"
   if nc -z -G 3 "$HOST" 8443 2>/dev/null; then
-    echo "ok   reachable $HOST:8443"
+    echo "FAIL lan-closed: $HOST:8443 answers on the LAN; the server must be loopback-only"
   else
-    echo "FAIL reachable: $HOST:8443 does not answer from the Mac"
+    echo "ok   lan-closed $HOST:8443"
+  fi
+  # The relay reaches this Pi: its 443 presents the key the Pi's loopback port
+  # presents (both ends through openssl, relay design D10).
+  local relay pi_pin relay_pin
+  relay="$(ssh -o BatchMode=yes "$PI" "sed -n 's/^public_address = \"\(.*\)\"\$/\1/p' /etc/vyajena/config.toml")"
+  pi_pin="$(ssh -o BatchMode=yes "$PI" "openssl s_client -connect 127.0.0.1:8443 -alpn h2 </dev/null 2>/dev/null |
+    openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -r | cut -d' ' -f1")"
+  relay_pin="$(spki "$relay")"
+  if [ -z "$relay" ]; then
+    echo "FAIL relay-pin: no public_address in the Pi's config"
+  elif [ -z "$pi_pin" ] || [ "$pi_pin" = "$empty" ]; then
+    echo "FAIL relay-pin: no TLS key on the Pi's 127.0.0.1:8443"
+  elif [ "$relay_pin" = "$pi_pin" ]; then
+    echo "ok   relay-pin $relay presents the Pi's key ${pi_pin:0:16}…"
+  else
+    echo "FAIL relay-pin: $relay presents '${relay_pin:0:16}', the Pi '${pi_pin:0:16}'"
   fi
   # Root login with a valid key is refused.
   if ssh -o BatchMode=yes -o ConnectTimeout=5 -o ControlPath=none "root@$HOST" true 2>/dev/null; then
@@ -254,7 +327,7 @@ mac_checks() {
 }
 
 report="$(
-  { declare -f remote_checks newer_kernel; printf 'remote_checks %q\n' "$MAX_EXPOSURE"; } |
+  { declare -f remote_checks newer_kernel; printf 'remote_checks %q %q\n' "$MAX_EXPOSURE" "$TUNNEL_PORT"; } |
     ssh -o BatchMode=yes -o ConnectTimeout=10 "$PI" sudo bash -s
   mac_checks
 )"

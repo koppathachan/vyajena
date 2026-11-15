@@ -1,0 +1,24 @@
+# rathole on the relay (relay design D4), rendered by deploy/relay/render.sh
+# with the secrets from ~/.vyajena-relay/ and installed by deploy/relay/deploy.sh
+# as /etc/vyajena-relay/server.toml (0600 root). A dumb TCP passthrough: TLS
+# ends on the Pi.
+
+[server]
+# The Pi dials this port; Noise NK with the relay's static key.
+bind_addr = "0.0.0.0:@TUNNEL_PORT@"
+heartbeat_interval = 30
+
+[server.transport]
+type = "noise"
+
+[server.transport.noise]
+pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+local_private_key = "@NOISE_PRIVATE_KEY@"
+
+# Devices dial 443; each connection goes through the tunnel to the Pi's
+# 127.0.0.1:8443, byte for byte.
+[server.services.vyajena]
+type = "tcp"
+token = "@TOKEN@"
+bind_addr = "0.0.0.0:@PUBLIC_PORT@"
+nodelay = true

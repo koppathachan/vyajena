@@ -54,8 +54,8 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
 SystemCallErrorNumber=EPERM
-# Home-LAN phase: only loopback and the home subnet, as nftables (D4).
-IPAddressAllow=localhost 192.168.1.0/24
+# Loopback only: devices come through vyajena-tunnel.service (relay D5).
+IPAddressAllow=localhost
 IPAddressDeny=any
 
 [Install]

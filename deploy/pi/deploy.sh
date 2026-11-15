@@ -3,12 +3,18 @@
 # design D5). Run on the Mac from anywhere in the repo:
 #
 #   deploy/pi/deploy.sh               build, harden, install, restart
-#   deploy/pi/deploy.sh --no-build    install target/pi/vyajena-server as is
-#   deploy/pi/deploy.sh --rollback    swap back the previous binary
+#   deploy/pi/deploy.sh --no-build    install target/pi/{vyajena-server,rathole} as is
+#   deploy/pi/deploy.sh --rollback    swap back the previous server binary
+#   deploy/pi/deploy.sh --reset       back up, then DELETE the group: a fresh
+#                                     server with a new pin (asks for the server id)
 #
 # PI=user@host overrides the target (default vyajan@192.168.1.8). The login
-# needs passwordless sudo. The database and keys in /var/lib/vyajena are never
-# touched, so the TLS pin and the users survive every upgrade.
+# needs passwordless sudo. The server config, the tunnel and its token come
+# from ~/.vyajena-relay/ through deploy/relay/render.sh (relay design D5, D6).
+# Except with --reset, the database and keys in /var/lib/vyajena are never
+# touched, so the TLS pin and the users survive every upgrade. A new bootstrap
+# invite is saved to an owner-only file in BACKUP_ROOT (~/vyajena-pi-backups),
+# never printed.
 set -euo pipefail
 
 PI="${PI:-vyajan@192.168.1.8}"
@@ -16,7 +22,10 @@ readonly PI
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(cd "$HERE/../.." && pwd)"
 BINARY="$REPO/target/pi/vyajena-server"
-readonly HERE REPO BINARY
+RATHOLE="$REPO/target/pi/rathole"
+RENDER="$REPO/deploy/relay/render.sh"
+BACKUP_ROOT="${BACKUP_ROOT:-$HOME/vyajena-pi-backups}"
+readonly HERE REPO BINARY RATHOLE RENDER BACKUP_ROOT
 
 die() {
   echo "deploy.sh: $*" >&2
@@ -105,11 +114,40 @@ remote_report() {
   fi
 }
 
+remote_wait_tunnel() {
+  local _
+  for _ in $(seq 1 20); do
+    systemctl is-active --quiet vyajena-tunnel.service && return 0
+    sleep 0.5
+  done
+  journalctl -u vyajena-tunnel.service -n 30 --no-pager >&2
+  echo "vyajena-tunnel.service is not active" >&2
+  return 1
+}
+
+# Deletes the group (pi-deployment: Scripted reset; relay design D9): only
+# ever called by remote_install with reset=yes, after deploy.sh made a backup.
+remote_wipe() {
+  set -euo pipefail
+  systemctl stop vyajena-tunnel.service vyajena.service 2>/dev/null || true
+  if [ -d /var/lib/vyajena ]; then
+    find /var/lib/vyajena -mindepth 1 -delete
+  fi
+  echo "deleted the database and keys in /var/lib/vyajena" >&2
+}
+
 remote_install() {
   set -euo pipefail
-  local staging="$1" bin=/usr/local/bin/vyajena-server first=no since
+  local staging="$1" reset="$2" bin=/usr/local/bin/vyajena-server first=no since
   [ -e "$bin" ] || first=yes
+  if [ "$reset" = yes ]; then
+    remote_wipe
+    first=yes
+  fi
   install -m 0644 -o root -g root "$staging/config.toml" /etc/vyajena/config.toml
+  install -m 0600 -o root -g root "$staging/tunnel.toml" /etc/vyajena/tunnel.toml
+  install -m 0644 -o root -g root "$staging/vyajena-tunnel.service" /etc/systemd/system/vyajena-tunnel.service
+  install -m 0755 -o root -g root "$staging/rathole" /usr/local/bin/rathole
   install -m 0644 -o root -g root "$staging/vyajena.service" /etc/systemd/system/vyajena.service
   install -m 0755 -o root -g root "$staging/vyajena-server" "$bin.new"
   if [ "$first" = yes ]; then
@@ -126,6 +164,9 @@ remote_install() {
   since="$(date +%s)"
   systemctl restart vyajena.service
   remote_wait_ready
+  systemctl enable --quiet vyajena-tunnel.service
+  systemctl restart vyajena-tunnel.service
+  remote_wait_tunnel
   remote_report "$since" "$first"
 }
 
@@ -147,24 +188,70 @@ remote_rollback() {
 run_remote() {
   local fn="$1"
   shift
-  { declare -f remote_wait_ready remote_report "$fn"; printf '%s' "$fn"; printf ' %q' "$@"; echo; } |
+  { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_report "$fn"
+    printf '%s' "$fn"; printf ' %q' "$@"; echo; } |
     pi sudo bash -s
 }
 
+# Prints the deploy report, but saves a bootstrap invite line to an
+# owner-only file outside the repo instead of showing it (design D9).
+divert_invite() {
+  local line file=""
+  while IFS= read -r line; do
+    if [[ "$line" == *"bootstrap admin invite created"* ]]; then
+      if [ -z "$file" ]; then
+        (umask 077; mkdir -p "$BACKUP_ROOT")
+        file="$BACKUP_ROOT/bootstrap-invite-$(date -u +%Y%m%dT%H%M%SZ).txt"
+        (umask 077; : >"$file")
+      fi
+      printf '%s\n' "$line" >>"$file"
+      echo "bootstrap invite saved to $file (owner only; paste its payload on the admin's first device)"
+    else
+      printf '%s\n' "$line"
+    fi
+  done
+}
+
+# The owner types the server id before anything is deleted.
+confirm_reset() {
+  local id answer
+  id="$(sed -n 's/^server_id = "\(.*\)"$/\1/p' "$HERE/config.toml")"
+  [ -n "$id" ] || die "no server_id in $HERE/config.toml"
+  echo "RESET: this deletes the group on $PI (users, devices, keys, queued messages)." >&2
+  echo "Every device has to re-join with a new invite. A backup is taken first." >&2
+  printf 'Type the server id (%s) to go on: ' "$id" >&2
+  IFS= read -r answer || true
+  [ "$answer" = "$id" ] || die "not confirmed; nothing changed"
+}
+
 main() {
-  local build=yes rollback=no
+  local build=yes rollback=no reset=no
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-build) build=no ;;
       --rollback) rollback=yes ;;
+      --reset) reset=yes ;;
       -h | --help)
-        sed -n '2,11p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
       *) die "unknown argument $1" ;;
     esac
     shift
   done
+
+  [ "$rollback" = no ] || [ "$reset" = no ] || die "--rollback and --reset do not mix"
+  case "$(mkdir -p "$BACKUP_ROOT" && cd "$BACKUP_ROOT" && pwd)/" in
+    "$REPO"/*) die "BACKUP_ROOT $BACKUP_ROOT is inside the repository; set it elsewhere" ;;
+  esac
+  # Fail before touching anything if the relay's settings are missing.
+  "$RENDER" pi-config >/dev/null
+  "$RENDER" pi-tunnel >/dev/null
+  if [ "$reset" = yes ]; then
+    confirm_reset
+    say "backing up first"
+    env BACKUP_ROOT="$BACKUP_ROOT" PI="$PI" "$HERE/backup.sh" || die "the backup failed; nothing was deleted"
+  fi
 
   open_session
   if [ "$rollback" = yes ]; then
@@ -177,13 +264,20 @@ main() {
     say "building"
     "$HERE/build.sh"
   fi
-  [ -x "$BINARY" ] || die "no $BINARY; run deploy/pi/build.sh"
-  file -b "$BINARY" | grep -q "ARM aarch64" || die "$BINARY is not an aarch64 binary"
+  local f
+  for f in "$BINARY" "$RATHOLE"; do
+    [ -x "$f" ] || die "no $f; run deploy/pi/build.sh"
+    file -b "$f" | grep -q "ARM aarch64" || die "$f is not an aarch64 binary"
+  done
 
   local staging
   staging="$(pi mktemp -d /tmp/vyajena-deploy.XXXXXX)"
-  scp -q -o ControlPath="$CONTROL" "$BINARY" "$HERE/harden.sh" "$HERE/config.toml" \
+  scp -q -o ControlPath="$CONTROL" "$BINARY" "$RATHOLE" "$HERE/harden.sh" \
     "$HERE/vyajena.service" "$HERE/nftables.conf" "$PI:$staging/"
+  # Rendered from ~/.vyajena-relay/; tunnel.toml holds the token.
+  "$RENDER" pi-config | pi "cat > '$staging/config.toml'"
+  "$RENDER" pi-tunnel | pi "umask 077; cat > '$staging/tunnel.toml'"
+  "$RENDER" pi-tunnel-unit | pi "cat > '$staging/vyajena-tunnel.service'"
 
   say "host setup"
   pi sudo bash "$staging/harden.sh" base
@@ -191,8 +285,12 @@ main() {
   staged_step "$staging" firewall
   staged_step "$staging" address
 
-  say "installing and restarting vyajena.service"
-  run_remote remote_install "$staging"
+  if [ "$reset" = yes ]; then
+    say "resetting: deleting the group, then a fresh vyajena.service and the tunnel"
+  else
+    say "installing and restarting vyajena.service and vyajena-tunnel.service"
+  fi
+  run_remote remote_install "$staging" "$reset" | divert_invite
   pi rm -rf "$staging"
   say "done; check with deploy/pi/check.sh"
 }
