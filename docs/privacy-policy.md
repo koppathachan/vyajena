@@ -1,16 +1,15 @@
 # Vyajena privacy policy
 
 <!--
-  Source of the page published at https://purplechaamba.com/vyajena/privacy
-  (app-release: Privacy disclosures match the app). It says what
-  app/store/privacy.md says; change both together. Before publishing, the
-  owner fills in CONTACT below (an address meant for this page).
+  Source of the page published at https://www.purplechaamba.com/vyajena/privacy/
+  (repo chaamba/purple-www, vyajena/privacy/index.html; GitHub Pages).
+  It says what app/store/privacy.md says; change all three together.
 -->
 
 *Last updated: 2026-11-15*
 
 Vyajena is an end-to-end encrypted, text-only chat for one private group. It is
-made and run by Akhil (purplechaamba.com), who also runs the group's server.
+made and run by Akhil Sasidharan (purplechaamba.com), who also runs the group's server.
 There are no ads, no analytics and no tracking.
 
 ## What leaves your phone
@@ -41,7 +40,7 @@ cloud backups. Deleting the app deletes them and your keys.
 
 Ask the group's admin to remove you: that deletes your username, your devices,
 their keys and anything still waiting for you on the server. You can also
-write to CONTACT.
+write to privacy@purplechaamba.com.
 
 ## Children
 
@@ -54,4 +53,4 @@ If what the app sends changes, this page changes first, with a new date.
 
 ## Contact
 
-CONTACT
+privacy@purplechaamba.com

@@ -121,7 +121,7 @@ void main() {
     expect(policy, contains('no tracking'));
     expect(
       read('store/listing.md'),
-      contains('https://purplechaamba.com/vyajena/privacy'),
+      contains('https://www.purplechaamba.com/vyajena/privacy/'),
     );
   });
 

@@ -78,7 +78,7 @@ internal testing), which needs no review and works on the home LAN.
 | R2 | Developer accounts | Play: the owner's existing console. Apple: an individual account (US$99/year), not bought yet; every iOS signing step waits for it |
 | R3 | Display name and icon | "Vyajena" on both stores and home screens. Icon: the Malayalam syllable "വ്യ" (vya; owner changed it from "വ" on 2026-11-15) in the muted slate seed colour on a light background |
 | R4 | Signing keys and backups | The owner alone. New Android upload keystore in `~/.vyajena-release/` (outside the repo, never in CI), passwords in the macOS Keychain, one backup in the owner's password manager. Play App Signing holds the app key. iOS distribution certificate in the login keychain, its `.p12` in the password manager |
-| R5 | Privacy policy and support URLs | `https://purplechaamba.com/vyajena/privacy` and `https://purplechaamba.com/vyajena`; page source committed, the owner publishes it |
+| R5 | Privacy policy and support URLs | `https://www.purplechaamba.com/vyajena/privacy/` and `https://www.purplechaamba.com/vyajena/`; page source committed, the owner publishes it |
 | R6 | Minimum OS versions | Android 7.0 (API 24), iOS 15.0; target API 36 |
 | R7 | Release before the relay? | Yes, privately (R1), to the group's phones on the home Wi-Fi |
 | R8 | Export compliance | `ITSAppUsesNonExemptEncryption = YES`; App Store Connect answers: standard algorithms, mass-market exemption, no CCATS; France left out of availability (not legal advice) |

@@ -346,7 +346,7 @@ screenshots and no iPad review. `UISupportedInterfaceOrientations~ipad` goes.
 ### D15. Listing text and screenshots
 
 `app/store/listing.md`: name, subtitle (≤30), short description (≤80, Play),
-full description, keywords (≤100, Apple), support URL (`https://purplechaamba.com/vyajena`,
+full description, keywords (≤100, Apple), support URL (`https://www.purplechaamba.com/vyajena/`,
 R5), category Social Networking / Communication, age-rating answers. Screenshots:
 a `integration_test/screenshots_test.dart` run on the **fake core** (Alice, Bob,
 sample text) on an iPhone 6.9" simulator and a phone emulator, saved under

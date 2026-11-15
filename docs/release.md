@@ -82,11 +82,16 @@ keytool -list -v -keystore ~/.vyajena-release/upload.jks -alias upload | grep SH
 
 Paste the value after `Upload key SHA-256:` in `app/store/signing.md`.
 
-### 3. Publish the privacy policy
+### 3. The privacy policy and support pages
 
-Publish `docs/privacy-policy.md` (fill in `CONTACT` first) at
-https://purplechaamba.com/vyajena/privacy, and a short support page at
-https://purplechaamba.com/vyajena.
+Published 2026-11-15 on GitHub Pages from `chaamba/purple-www` (the
+purplechaamba.com site; the bare domain has no website, so the URLs use `www`):
+
+- https://www.purplechaamba.com/vyajena/privacy/ (`vyajena/privacy/index.html`)
+- https://www.purplechaamba.com/vyajena/ (`vyajena/index.html`, support)
+
+Contact: privacy@purplechaamba.com. When `docs/privacy-policy.md` changes,
+change that page in the same week.
 
 ### 4. Play Console: the new app
 

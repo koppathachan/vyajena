@@ -9,8 +9,8 @@ listing later.
 
 - **Name:** Vyajena
 - **Package / bundle id:** `com.purplechaamba.vyajena`
-- **Privacy policy URL:** https://purplechaamba.com/vyajena/privacy
-- **Support / website URL:** https://purplechaamba.com/vyajena
+- **Privacy policy URL:** https://www.purplechaamba.com/vyajena/privacy/
+- **Support / website URL:** https://www.purplechaamba.com/vyajena/
 - **Category:** Communication (Play) · Social Networking (App Store)
 - **Price:** free, no in-app purchases, no ads
 
