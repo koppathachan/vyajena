@@ -12,9 +12,9 @@ readonly HERE
 # shellcheck source=lib.sh
 . "$HERE/lib.sh"
 # The highest `systemd-analyze security` exposure accepted for
-# vyajena-relay.service (design D8; what is left is the network and the one
-# capability it needs).
-readonly MAX_EXPOSURE="2.5"
+# vyajena-relay.service (design D8: the first run on Debian 13 scored 1.4;
+# what is left is the network and the one capability it needs).
+readonly MAX_EXPOSURE="2.0"
 readonly FREE_REGIONS="us-central1 us-east1 us-west1"
 
 ok() { echo "ok   $1"; }
@@ -179,8 +179,8 @@ remote_checks() {
   fi
 
   local version sha
-  version="$(/usr/local/bin/rathole --version 2>/dev/null | head -1)"
-  if [ "$version" = "rathole $want_version" ]; then ok "rathole version $want_version"; else fail "rathole version" "is '$version'"; fi
+  version="$(/usr/local/bin/rathole --version 2>/dev/null | sed -n 's/^Build Version: *//p')"
+  if [ "$version" = "$want_version" ]; then ok "rathole version $want_version"; else fail "rathole version" "is '$version'"; fi
   sha="$(sha256sum /usr/local/bin/rathole | cut -d' ' -f1)"
   if [ -z "$want_sha" ]; then
     warn rathole-build "no local target/relay/rathole to compare with"
@@ -197,14 +197,15 @@ remote_checks() {
     if [ "$m" = "${f#*:}" ]; then ok "file-mode ${f%%:*}"; else fail "file-mode ${f%%:*}" "is '${m:-missing}', want '${f#*:}'"; fi
   done
 
-  # Listening: SSH and rathole on public interfaces; chrony and DHCP clients
-  # are local or clients.
+  # Listening: SSH and rathole on public interfaces; anything bound to
+  # loopback only (the DNS stub, the local MTA, chrony) and DHCP clients are
+  # not reachable from outside.
   local listeners extra
   listeners="$(ss -H -tulnp)"
   extra="$(awk -v t=":$tunnel_port\$" '
     $1 == "tcp" && $5 ~ /:22$/ && /"sshd"/ {next}
     $1 == "tcp" && ($5 ~ /:443$/ || $5 ~ t) && /"rathole"/ {next}
-    $1 == "udp" && $5 ~ /^(127\.0\.0\.1|\[::1\]):323$/ && /"chronyd"/ {next}
+    $5 ~ /^(127\.[0-9.]+|\[::1\])(%lo)?:[0-9]+$/ {next}
     $1 == "udp" && $5 ~ /:(68|546)$/ {next}
     {print $1, $5, $7}' <<<"$listeners")"
   if [ -z "$extra" ]; then ok listening; else fail listening "unexpected listeners: $(tr '\n' ';' <<<"$extra")"; fi

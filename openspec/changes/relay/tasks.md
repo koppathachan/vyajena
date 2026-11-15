@@ -16,9 +16,9 @@
 
 ## 4. The relay on GCP (owner go-ahead first)
 
-- [ ] 4.1 Owner: billing open on `purple-eccdf` (budget alert), `gcloud auth login`, yes to the `create.sh --dry-run` commands and ~$3.65/month
-- [ ] 4.2 `secrets.sh`, `create.sh`, `build.sh`, `deploy.sh`; record the VM, zone and address in the hand-over note (not the repo)
-- [ ] 4.3 `deploy/relay/check.sh`: 0 failed (tunnel warning expected before 5.2); record the exposure score under D8
+- [x] 4.1 Owner: billing open on `purple-eccdf` (budget alert), `gcloud auth login`, yes to the `create.sh --dry-run` commands and ~$3.65/month
+- [x] 4.2 `secrets.sh`, `create.sh`, `build.sh`, `deploy.sh`; record the VM, zone and address in the hand-over note (not the repo)
+- [x] 4.3 `deploy/relay/check.sh`: 0 failed (tunnel warning expected before 5.2); record the exposure score under D8 (tunnel warnings expected until 5.2)
 
 ## 5. Pi reset onto the relay (owner yes first)
 

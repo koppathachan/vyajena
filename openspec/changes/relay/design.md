@@ -195,6 +195,23 @@ goes.
 - No host firewall on the VM: the VPC firewall is enforced outside the VM and
   checked; `check.sh` also fails on any unexpected listener.
 
+**Results on GCP (2026-11-16, tasks 4.2–4.3):** `create.sh` made the VPC, the
+three rules, the static address and the VM (`vyajena-relay`, `us-east1-b`,
+Debian 13, e2-micro); its address is in `~/.vyajena-relay/relay.env` and the
+hand-over note, not in the repo. Enabling Compute also created GCP's `default`
+network (with its `default-allow-*` rules); the relay is not on it. Fixes
+found on the way:
+- the first `create.sh` run hung on a gcloud "enable the API?" prompt right
+  after enabling Compute: `lib.sh` now sets `CLOUDSDK_CORE_DISABLE_PROMPTS=1`;
+- `rathole --version` prints `Build Version: 0.5.0` on its own line; the
+  check reads that;
+- Debian's `systemd-resolved` answered LLMNR on `*:5355`: `deploy.sh` turns
+  LLMNR and mDNS off; loopback-only listeners (the DNS stub, exim on
+  `localhost:25`) are allowed by the check.
+`check.sh`: 0 failed; warnings only for the tunnel not yet attached and 443
+not yet listening. `systemd-analyze security vyajena-relay.service`: **1.4**
+(threshold 2.0).
+
 ### D9. Pi reset (no migration)
 
 ```mermaid

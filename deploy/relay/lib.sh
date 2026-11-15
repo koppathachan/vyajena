@@ -7,6 +7,9 @@ LIB_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=relay.conf
 . "$LIB_HERE/relay.conf"
 SECRETS="${RELAY_SECRETS:-$HOME/.vyajena-relay}"
+# gcloud never waits on a prompt (an "enable this API?" question hung
+# create.sh once); a missing answer fails the command instead.
+export CLOUDSDK_CORE_DISABLE_PROMPTS=1
 
 # One SSH master per script run; relay_ssh and relay_scp reuse it.
 RELAY_CONTROL="$(mktemp -u "${TMPDIR:-/tmp}/vyajena-relay.XXXXXX")"
@@ -16,7 +19,7 @@ RELAY_SSH_OPTS=(
   -o "IdentityFile=$SECRETS/ssh_ed25519" -o IdentitiesOnly=yes
   -o "UserKnownHostsFile=$SECRETS/known_hosts" -o "HostKeyAlias=$NAME"
   -o StrictHostKeyChecking=yes -o ConnectTimeout=20
-  -o "ProxyCommand=gcloud compute start-iap-tunnel $NAME 22 --listen-on-stdin --project=$PROJECT --zone=$ZONE --verbosity=warning"
+  -o "ProxyCommand=gcloud compute start-iap-tunnel $NAME 22 --listen-on-stdin --project=$PROJECT --zone=$ZONE --verbosity=error"
   -o ServerAliveInterval=10
 )
 

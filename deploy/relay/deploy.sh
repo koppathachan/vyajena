@@ -79,6 +79,19 @@ CONF
     systemctl restart systemd-journald
     rm -rf /var/log/journal
   fi
+  # Nothing but SSH and rathole on a public interface: resolved's LLMNR and
+  # mDNS listen on every interface (UDP/TCP 5355) by default.
+  install -d -m 0755 /etc/systemd/resolved.conf.d
+  cat >/etc/systemd/resolved.conf.d/50-vyajena-relay.conf <<'CONF'
+# vyajena2 (deploy/relay/deploy.sh): no LLMNR or mDNS listeners.
+[Resolve]
+LLMNR=no
+MulticastDNS=no
+CONF
+  if systemctl is-active --quiet systemd-resolved.service; then
+    systemctl restart systemd-resolved.service
+  fi
+
   # A syslog daemon would write a second, persistent copy.
   if systemctl is-enabled --quiet rsyslog.service 2>/dev/null; then
     systemctl disable --now rsyslog.service >/dev/null 2>&1 || true
