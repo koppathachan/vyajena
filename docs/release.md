@@ -184,6 +184,20 @@ app/store/build-ipa.sh --upload             # to App Store Connect with Xcode's 
 build at least every 90 days, even with no changes. Use the same build number
 sequence as Android, and tag as above.
 
+### Push (change `push`)
+
+Both store builds need the owner's push setup (`openspec/changes/push/design.md`,
+"Owner steps"):
+
+- **Android:** `~/.vyajena-push/google-services.json` (Firebase in GCP project
+  `vyajena`, Android app `com.purplechaamba.vyajena`; never in the repo).
+  Gradle reads it; a release build without it stops. The merged manifest adds
+  `POST_NOTIFICATIONS`, `WAKE_LOCK` and `com.google.android.c2dm.permission.RECEIVE`.
+- **iOS:** the App ID has Push Notifications (Xcode's automatic signing adds it
+  from `Runner.entitlements`); the export sets `aps-environment` to production.
+- **Check after upload:** with the app closed, a message from another device
+  shows one notification, "New message", and nothing else.
+
 ## After the first install
 
 ### 8. Real-phone check (task 7.6)
@@ -205,7 +219,7 @@ and join again as a new device; the admin removes the old device.
 ### 10. Public listing later
 
 Not before: the relay (reviewers must reach the server), in-app account
-deletion, report/block for chat content, real push, and, for Play production
+deletion, report/block for chat content, and, for Play production
 on a personal account, a closed test with 12+ testers for 14 days.
 
 ### 11. Retire the old vyajena (only once this app runs on the group's phones)

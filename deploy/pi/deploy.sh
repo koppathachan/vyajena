@@ -13,6 +13,9 @@
 # PI=user@host overrides the target (default vyajan@192.168.1.8). The login
 # needs passwordless sudo. The server config, the tunnel and its token come
 # from ~/.vyajena-relay/ through deploy/relay/render.sh (relay design D5, D6).
+# The push keys (fcm-service-account.json, AuthKey_<key id>.p8) come from the
+# owner-only ~/.vyajena-push/ (PUSH_DIR overrides) and go only to
+# /var/lib/vyajena/push (push design D6); without them pings are only logged.
 # Except with --reset, the database and keys in /var/lib/vyajena are never
 # touched, so the TLS pin and the users survive every upgrade. A new bootstrap
 # invite is saved to an owner-only file in BACKUP_ROOT (~/vyajena-pi-backups),
@@ -27,7 +30,8 @@ BINARY="$REPO/target/pi/vyajena-server"
 RATHOLE="$REPO/target/pi/rathole"
 RENDER="$REPO/deploy/relay/render.sh"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/vyajena-pi-backups}"
-readonly HERE REPO BINARY RATHOLE RENDER BACKUP_ROOT
+PUSH_DIR="${PUSH_DIR:-$HOME/.vyajena-push}"
+readonly HERE REPO BINARY RATHOLE RENDER BACKUP_ROOT PUSH_DIR
 
 die() {
   echo "deploy.sh: $*" >&2
@@ -155,6 +159,28 @@ remote_wipe_review() {
   echo "deleted the review server's database and keys in /var/lib/vyajena-review" >&2
 }
 
+# Puts the staged push keys into /var/lib/vyajena/push (0700, files 0600,
+# owner vyajena) and removes any the Mac no longer has (pi-deployment: Push
+# credentials). The review server never gets them.
+remote_push_keys() {
+  set -euo pipefail
+  local staged="$1" dir=/var/lib/vyajena/push f name
+  install -d -m 0700 -o vyajena -g vyajena /var/lib/vyajena
+  install -d -m 0700 -o vyajena -g vyajena "$dir"
+  for f in "$dir"/*; do
+    [ -e "$f" ] || continue
+    name="${f##*/}"
+    if [ ! -e "$staged/$name" ]; then
+      rm -f -- "$f"
+      echo "removed push key $name (not in the Mac's folder)" >&2
+    fi
+  done
+  for f in "$staged"/*; do
+    [ -e "$f" ] || continue
+    install -m 0600 -o vyajena -g vyajena "$f" "$dir/${f##*/}"
+  done
+}
+
 remote_install() {
   set -euo pipefail
   local staging="$1" reset="$2" reset_review="$3" bin=/usr/local/bin/vyajena-server first=no
@@ -170,6 +196,9 @@ remote_install() {
     review_first=yes
   fi
   install -m 0644 -o root -g root "$staging/config.toml" /etc/vyajena/config.toml
+  install -m 0644 -o root -g root "$staging/push.toml" /etc/vyajena/push.toml
+  install -m 0644 -o root -g root "$staging/vyajena-egress.service" /etc/systemd/system/vyajena-egress.service
+  remote_push_keys "$staging/push"
   install -m 0644 -o root -g root "$staging/review.toml" /etc/vyajena/review.toml
   install -m 0644 -o root -g root "$staging/vyajena-review.service" /etc/systemd/system/vyajena-review.service
   install -m 0600 -o root -g root "$staging/tunnel.toml" /etc/vyajena/tunnel.toml
@@ -187,7 +216,9 @@ remote_install() {
     mv "$bin.new" "$bin"
   fi
   systemctl daemon-reload
-  systemctl enable --quiet vyajena.service vyajena-review.service
+  systemctl enable --quiet vyajena-egress.service vyajena.service vyajena-review.service
+  systemctl restart vyajena-egress.service
+  remote_wait_ready vyajena-egress.service 8445
   since="$(date +%s)"
   systemctl restart vyajena.service
   remote_wait_ready
@@ -207,6 +238,16 @@ remote_rollback() {
   mv -f "$bin" "$bin.rollback"
   mv -f "$bin.prev" "$bin"
   mv -f "$bin.rollback" "$bin.prev"
+  # A binary from before push has no --push and no egress-proxy (push design,
+  # Rollback): run it without them. The next normal deploy puts them back.
+  if ! "$bin" --help 2>/dev/null | grep -q -- '--push'; then
+    sed -i 's| --push /etc/vyajena/push.toml||' /etc/systemd/system/vyajena.service
+    systemctl disable --now --quiet vyajena-egress.service 2>/dev/null || true
+    systemctl daemon-reload
+    echo "the previous binary predates push: vyajena.service runs without --push, vyajena-egress is off" >&2
+  else
+    systemctl restart vyajena-egress.service
+  fi
   since="$(date +%s)"
   systemctl restart vyajena.service vyajena-review.service
   remote_wait_ready
@@ -219,7 +260,8 @@ remote_rollback() {
 run_remote() {
   local fn="$1"
   shift
-  { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_wipe_review remote_report "$fn"
+  { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_wipe_review remote_report \
+      remote_push_keys "$fn"
     printf '%s' "$fn"; printf ' %q' "$@"; echo; } |
     pi sudo bash -s
 }
@@ -243,6 +285,34 @@ divert_invite() {
       printf '%s\n' "$line"
     fi
   done
+}
+
+# mode_of <path>: permission bits, on macOS or Linux.
+mode_of() {
+  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+}
+
+# The push keys to send, one per line (pi-deployment: Push credentials):
+# refuses a folder or file open to group or others, more than one .p8, or an
+# odd .p8 name. No folder: none (pings are only logged).
+push_keys() {
+  [ -d "$PUSH_DIR" ] || return 0
+  local m f p8=0
+  m="$(mode_of "$PUSH_DIR")"
+  [ "$m" = 700 ] || die "$PUSH_DIR has mode $m; push credentials need 700 (chmod 700 $PUSH_DIR)"
+  for f in "$PUSH_DIR"/*; do
+    [ -f "$f" ] || continue
+    m="$(mode_of "$f")"
+    [ "$m" = 600 ] || [ "$m" = 400 ] || die "$f has mode $m; push credentials need 600 (chmod 600 $f)"
+  done
+  [ ! -e "$PUSH_DIR/fcm-service-account.json" ] || echo "$PUSH_DIR/fcm-service-account.json"
+  for f in "$PUSH_DIR"/AuthKey_*.p8; do
+    [ -e "$f" ] || continue
+    [[ "${f##*/}" =~ ^AuthKey_[A-Za-z0-9]{10}\.p8$ ]] || die "$f: name it AuthKey_<10-character key id>.p8, as Apple does"
+    p8=$((p8 + 1))
+    echo "$f"
+  done
+  [ "$p8" -le 1 ] || die "$PUSH_DIR has $p8 AuthKey_*.p8 files; keep exactly one"
 }
 
 # The owner types the server id before anything is deleted.
@@ -285,7 +355,13 @@ main() {
   case "$(mkdir -p "$BACKUP_ROOT" && cd "$BACKUP_ROOT" && pwd)/" in
     "$REPO"/*) die "BACKUP_ROOT $BACKUP_ROOT is inside the repository; set it elsewhere" ;;
   esac
-  # Fail before touching anything if the relay's settings are missing.
+  # Fail before touching anything if the push keys are open to others or the
+  # relay's settings are missing.
+  local push_files
+  push_files="$(push_keys)" || exit 1
+  if [ -z "$push_files" ]; then
+    say "no push keys in $PUSH_DIR: wake pings will only be logged"
+  fi
   "$RENDER" pi-config >/dev/null
   "$RENDER" pi-tunnel >/dev/null
   "$RENDER" pi-review-config >/dev/null
@@ -318,7 +394,15 @@ main() {
   local staging
   staging="$(pi mktemp -d /tmp/vyajena-deploy.XXXXXX)"
   scp -q -o ControlPath="$CONTROL" "$BINARY" "$RATHOLE" "$HERE/harden.sh" \
-    "$HERE/vyajena.service" "$HERE/vyajena-review.service" "$HERE/nftables.conf" "$PI:$staging/"
+    "$HERE/vyajena.service" "$HERE/vyajena-review.service" "$HERE/nftables.conf" \
+    "$HERE/push.toml" "$HERE/vyajena-egress.service" "$PI:$staging/"
+  # The push keys: owner-only in the staging folder, never printed.
+  pi "umask 077; mkdir '$staging/push'"
+  local key
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    pi "umask 077; cat > '$staging/push/${key##*/}'" <"$key"
+  done <<<"$push_files"
   "$RENDER" pi-review-config | pi "cat > '$staging/review.toml'"
   # Rendered from ~/.vyajena-relay/; tunnel.toml holds the token.
   "$RENDER" pi-config | pi "cat > '$staging/config.toml'"

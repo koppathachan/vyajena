@@ -136,6 +136,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ProfileInfo dco_decode_profile_info(dynamic raw);
 
   @protected
+  PushPlatform dco_decode_push_platform(dynamic raw);
+
+  @protected
   SendState dco_decode_send_state(dynamic raw);
 
   @protected
@@ -274,6 +277,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ProfileInfo sse_decode_profile_info(SseDeserializer deserializer);
+
+  @protected
+  PushPlatform sse_decode_push_platform(SseDeserializer deserializer);
 
   @protected
   SendState sse_decode_send_state(SseDeserializer deserializer);
@@ -451,6 +457,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_profile_info(ProfileInfo self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_push_platform(PushPlatform self, SseSerializer serializer);
 
   @protected
   void sse_encode_send_state(SendState self, SseSerializer serializer);

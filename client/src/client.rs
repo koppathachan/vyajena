@@ -733,8 +733,9 @@ impl Client {
     }
 
     /// Registers, replaces or (with `None`) clears this device's push token
-    /// (device-identity: Push token registration). Real push arrives with the
-    /// Flutter app; this is the placeholder the core already supports.
+    /// (device-identity: Push token registration). The app calls it on each
+    /// connect and when the platform rotates the token (app-ui: Push
+    /// notifications).
     pub async fn set_push_token(&self, token: Option<PushToken>) -> Result<(), ClientError> {
         let session = self.session()?;
         let push_token = token.map(|t| pb::PushToken {

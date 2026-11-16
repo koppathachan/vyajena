@@ -129,6 +129,21 @@ pub fn push_token(
     })
 }
 
+/// Clears `device_id`'s push token if it is still `token` (pi-runtime: Push
+/// errors, "New token raced the error"). Returns whether it was cleared.
+pub fn clear_push_token(
+    conn: &Connection,
+    device_id: &DeviceId,
+    token: &str,
+) -> Result<bool, StoreError> {
+    let changed = conn.execute(
+        "UPDATE devices SET push_platform = NULL, push_token = NULL
+         WHERE device_id = ?1 AND push_token = ?2",
+        params![device_id.as_slice(), token],
+    )?;
+    Ok(changed > 0)
+}
+
 /// One-time KeyPackages the Pi holds for `device_id`, for the low-KeyPackages
 /// notice (key-directory: Replenishment signal).
 pub fn one_time_key_packages(conn: &Connection, device_id: &DeviceId) -> Result<u32, StoreError> {

@@ -14,7 +14,7 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 - Invite-only signup
 - Store-and-forward through the Pi server
 - One delivery status: accepted by the server (⏳ sending → ✓ accepted)
-- Push notifications as content-free wake pings (FCM, APNs), built in the change after the relay (owner, 2026-11-15)
+- Push notifications as content-free wake pings (FCM, APNs) showing one fixed text, "New message" (change `push`, owner 2026-11-16); decrypted on-device previews are a later change
 - iOS and Android apps first; desktop later (decision #3)
 - Material 3 UI, `ColorScheme.fromSeed` with a muted seed and the `neutral` variant
 
@@ -62,8 +62,8 @@ flowchart LR
   pi -->|"dials out: rathole token + Noise"| relay
   relay ==>|"client bytes through the tunnel"| pi
   core -. "TLS session ends on the Pi, key pinned" .- pi
-  pi -->|"content-free wake ping"| push
-  push -.->|"wake"| core
+  pi -->|"content-free wake ping, via the Pi's egress proxy"| push
+  push -.->|"&quot;New message&quot;; tap opens the app"| core
 ```
 
 - **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
@@ -79,7 +79,7 @@ OpenMLS (RFC 9420) runs inside the Rust core on every device, so the relay and t
 | --- | --- | --- |
 | GCP relay | TLS bytes, client IPs, timing | Anything inside TLS |
 | Pi server | Group id, member devices and their public leaf keys, admin id, epoch, sender, time, size, membership changes | Message content, group name and settings, profiles |
-| Apple / Google | When a device gets a wake ping | Content, sender |
+| Apple / Google | When a device gets a wake ping (its push token, the fixed text "New message") | Content, sender, group, count |
 
 Each layer of a message on the wire, and who can open it:
 
@@ -120,7 +120,7 @@ The Pi is the single authority for routing, ordering and membership, and never f
 - **New users join on their own (flutter-app, owner 2026-11-12):** the admin inviting a user is the consent, so nobody taps "add". Once a new user's device uploads its first KeyPackages, the Pi sends a `JoinNotice` to the admin's connected devices, and again on every admin connect until that device is a member. The first admin device fetches that device's KeyPackage, checks its certificate (pinning the user's key on first sight) and commits the Add with its Welcome; a race loser gets `STALE_EPOCH` and does nothing. A changed identity key waits for the admin to accept it, and the accept is the add.
 - **Ordering:** checks the epoch on every envelope, gives each accepted one the next `server_seq` for the group, and appends Commits and Proposals to the commit log.
 - **Queues:** per-device store-and-forward queue of application ciphertext.
-- **Push:** sends a wake ping to FCM or APNs when a device with no open stream gets a new entry, at most once a minute. Real FCM / APNs come in the change after the relay (owner, 2026-11-15); until then the app registers the core's placeholder token.
+- **Push (change `push`, owner 2026-11-16):** sends a wake ping when a device with no open stream gets a new entry, at most once a minute. Android: FCM HTTP v1 with a service account of GCP project `vyajena` (Firebase added to it). iOS: APNs directly, with a `.p8` key the Pi signs its own ES256 JWT with; no Firebase SDK on iOS. Every ping is a visible notification with the one fixed text "New message" and nothing else; a new one replaces the shown one. A token the platform calls invalid is cleared; 429/5xx back off and retry. The server stays loopback-only: pings leave through `vyajena-egress.service`, a CONNECT proxy that reaches only the FCM, Google OAuth and APNs hosts on 443. Keys live only in `~/.vyajena-push/` on the Mac and `/var/lib/vyajena/push/` on the Pi. The review server only logs pings. The app registers its token through the core on every connect and asks for notification permission once, at its first connect after joining.
 
 **What it stores:** users and their identity public keys, devices with their certificates, KeyPackages, invite codes, push tokens, session token hashes, the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
 

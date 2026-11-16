@@ -54,6 +54,8 @@ void main() {
     expect(permissions, {
       'android.permission.INTERNET',
       'android.permission.ACCESS_NETWORK_STATE',
+      // push design D12: the "New message" notification (asked once).
+      'android.permission.POST_NOTIFICATIONS',
     });
   });
 
@@ -66,11 +68,18 @@ void main() {
     ).allMatches(plist).map((m) => m.group(1)).toSet();
     expect(usages, isEmpty);
     expect(plist, isNot(contains('UIBackgroundModes')));
-    expect(
-      Directory('ios/Runner').listSync().map((e) => e.path),
-      isNot(contains(endsWith('.entitlements'))),
-      reason: 'no capability beyond the default keychain',
-    );
+    // push design D12: the one capability beyond the default keychain is
+    // Push Notifications (aps-environment), in Runner.entitlements only.
+    final entitlements = Directory('ios/Runner')
+        .listSync()
+        .map((e) => e.path)
+        .where((p) => p.endsWith('.entitlements'))
+        .toList();
+    expect(entitlements, [endsWith('Runner.entitlements')]);
+    final keys = RegExp(
+      r'<key>([^<]+)</key>',
+    ).allMatches(read(entitlements.single)).map((m) => m.group(1)).toList();
+    expect(keys, ['aps-environment']);
   });
 
   // spec: app-release/encryption-export-declaration

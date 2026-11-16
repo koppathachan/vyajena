@@ -8,3 +8,10 @@ exclude = ["spikes"]
 edition = "2024"
 rust-version = "1.88"
 publish = false
+
+# The server tests make a throwaway 2048-bit RSA key (push tasks 1.4); unoptimised
+# that takes many seconds.
+[profile.dev.package.rsa]
+opt-level = 3
+[profile.dev.package.num-bigint-dig]
+opt-level = 3

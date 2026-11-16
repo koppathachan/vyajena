@@ -55,6 +55,42 @@ val uploadKey: UploadKey? = run {
     UploadKey(storeFile, storePassword, alias, keyPassword)
 }
 
+/**
+ * The Firebase settings for push (push design D8), read from the owner's
+ * `google-services.json` outside the repo (Gradle property
+ * `vyajena.googleServices`, default `~/.vyajena-push/google-services.json`;
+ * owner, 2026-11-16: not committed). They become the four string resources
+ * the Google Services plugin would write, so Firebase starts itself. Without
+ * the file the app builds and has no push (CI, emulators, contributors).
+ */
+val firebaseValues: Map<String, String>? = run {
+    val path = (project.findProperty("vyajena.googleServices") as String?)
+        ?: "${System.getProperty("user.home")}/.vyajena-push/google-services.json"
+    val file = File(path)
+    if (!file.isFile) return@run null
+    val json = groovy.json.JsonSlurper().parse(file) as Map<*, *>
+    val info = json["project_info"] as? Map<*, *>
+        ?: throw GradleException("$path has no project_info")
+    val client = (json["client"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().firstOrNull {
+        val clientInfo = it["client_info"] as? Map<*, *>
+        val android = clientInfo?.get("android_client_info") as? Map<*, *>
+        android?.get("package_name") == "com.purplechaamba.vyajena"
+    } ?: throw GradleException("$path has no Android app com.purplechaamba.vyajena")
+    val appId = (client["client_info"] as Map<*, *>)["mobilesdk_app_id"] as? String
+    val apiKey = ((client["api_key"] as? List<*>)?.firstOrNull() as? Map<*, *>)?.get("current_key") as? String
+    val sender = info["project_number"]?.toString()
+    val projectId = info["project_id"] as? String
+    if (appId == null || apiKey == null || sender == null || projectId == null) {
+        throw GradleException("$path lacks mobilesdk_app_id, api_key, project_number or project_id")
+    }
+    mapOf(
+        "google_app_id" to appId,
+        "google_api_key" to apiKey,
+        "gcm_defaultSenderId" to sender,
+        "project_id" to projectId,
+    )
+}
+
 android {
     namespace = "com.purplechaamba.vyajena"
     compileSdk = flutter.compileSdkVersion
@@ -74,6 +110,11 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        firebaseValues?.forEach { (name, value) -> resValue("string", name, value) }
+    }
+
+    buildFeatures {
+        resValues = true
     }
 
     signingConfigs {
@@ -114,6 +155,20 @@ gradle.taskGraph.whenReady {
                 "lives outside the repo, never in CI).",
         )
     }
+    // push design D8: a store build without Firebase would ship without push.
+    // -Pvyajena.allowNoPush=true is for throwaway release tests only.
+    if (wantsRelease && firebaseValues == null && project.findProperty("vyajena.allowNoPush") != "true") {
+        throw GradleException(
+            "push: no ~/.vyajena-push/google-services.json (or -Pvyajena.googleServices). " +
+                "See docs/release.md, \"Push\".",
+        )
+    }
+}
+
+dependencies {
+    // FCM only; no Analytics (push design D8).
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+    implementation("com.google.firebase:firebase-messaging")
 }
 
 kotlin {

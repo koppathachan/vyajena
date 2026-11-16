@@ -118,7 +118,8 @@ pub fn end_sessions(tx: &Transaction<'_>, device_id: &DeviceId) -> Result<(), St
 }
 
 /// Revokes `device_id`: it can no longer authenticate, its sessions end and
-/// its KeyPackages are deleted. Returns whether it was newly revoked.
+/// its KeyPackages and push token are deleted. Returns whether it was newly
+/// revoked.
 pub fn revoke_device(
     tx: &Transaction<'_>,
     device_id: &DeviceId,
@@ -127,6 +128,12 @@ pub fn revoke_device(
     let changed = tx.execute(
         "UPDATE devices SET revoked_at = ?2 WHERE device_id = ?1 AND revoked_at IS NULL",
         params![device_id.as_slice(), unix_millis(now)],
+    )?;
+    // device-identity: Push token registration: a revoked device is never
+    // pinged again, and it can no longer clear its own token.
+    tx.execute(
+        "UPDATE devices SET push_platform = NULL, push_token = NULL WHERE device_id = ?1",
+        params![device_id.as_slice()],
     )?;
     end_sessions(tx, device_id)?;
     tx.execute(

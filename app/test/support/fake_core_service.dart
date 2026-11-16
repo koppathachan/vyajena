@@ -190,6 +190,13 @@ class FakeCoreService extends CoreService {
   Future<void> revokeDevice(String device) async => calls.add('revokeDevice');
 
   @override
+  Future<void> setPushToken(PushPlatform platform, String token) async =>
+      _call('setPushToken', (platform, token));
+
+  @override
+  Future<void> clearPushToken() async => _call('clearPushToken');
+
+  @override
   Future<List<ChatMessage>> history(int limit) async {
     final start = messages.length > limit ? messages.length - limit : 0;
     return messages.sublist(start);

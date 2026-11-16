@@ -27,6 +27,7 @@ pub use sweep::{SWEEP_INTERVAL, sweep};
 use crate::auth::caller;
 use crate::pb;
 use crate::pb::messaging_server::{Messaging, MessagingServer};
+use crate::push::WakeOutcome;
 use crate::runtime::State;
 use crate::store::records;
 
@@ -100,10 +101,30 @@ pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
                 continue;
             }
             if state.hub.pings().take(&device_id, state.clock.now()) {
-                state.push.wake(device_id, token).await;
+                let sent = token.token.clone();
+                if state.push.wake(device_id, token).await == WakeOutcome::TokenInvalid {
+                    clear_invalid_token(&state, device_id, sent).await;
+                }
             }
         }
     });
+}
+
+/// The platform called `token` invalid (pi-runtime: Push errors): clear it,
+/// unless the device registered another one meanwhile.
+async fn clear_invalid_token(state: &State, device_id: DeviceId, token: String) {
+    let cleared = state
+        .store
+        .call(move |conn| records::clear_push_token(conn, &device_id, &token))
+        .await;
+    match cleared {
+        Ok(true) => tracing::info!(
+            device_id = %crate::runtime::server_keys::hex(&device_id),
+            "cleared a push token the platform called invalid"
+        ),
+        Ok(false) => {}
+        Err(error) => tracing::error!(%error, "clearing a push token failed"),
+    }
 }
 
 /// Starts the messaging background tasks: closing revoked devices' streams

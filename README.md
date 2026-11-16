@@ -137,7 +137,7 @@ deploy    deploy/pi/deploy.sh       build, harden the host, install, restart
           deploy/pi/deploy.sh --reset      back up, then DELETE the group (asks for "pi")
 check     deploy/pi/check.sh        hardening + tunnel + relay pin; FAIL <name> per problem
 backup    deploy/pi/backup.sh       DB snapshot + keys -> ~/vyajena-pi-backups/<UTC time>/
-logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -f
+logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -u vyajena-egress -f
 ```
 
 - **Config:** `deploy/pi/config.toml`, `tunnel.toml` and
@@ -173,6 +173,35 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -f
   `ssh vyajan@192.168.1.8 sudo reboot`. The tunnel comes back by itself.
 - **Backups** hold the server's private keys: they stay out of the repo, in
   owner-only folders.
+
+## Push
+
+A closed app is woken by a notification with one fixed text, "New message":
+no content, sender, group or count reaches Google or Apple (change `push`).
+Android: FCM HTTP v1 (Firebase in GCP project `vyajena`); iOS: APNs with a
+`.p8` key the Pi signs with, no Firebase on iOS. The review server only logs
+pings.
+
+```
+keys      ~/.vyajena-push/ (0700, files 0600; never in the repo)
+            fcm-service-account.json   service account vyajena-push@vyajena.iam (FCM only)
+            AuthKey_<key id>.p8        the APNs key, named as Apple downloads it
+            google-services.json       read by Gradle for Android builds (not sent to the Pi)
+deploy    deploy/pi/deploy.sh          copies the two Pi keys to /var/lib/vyajena/push (0600)
+egress    vyajena-egress.service       127.0.0.1:8445, CONNECT only to fcm.googleapis.com,
+                                       oauth2.googleapis.com, api(.sandbox).push.apple.com:443
+check     deploy/pi/check.sh           egress sandbox + allowlist, key modes; WARN push-fcm/push-apns
+logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena | grep "wake ping"
+```
+
+- The server stays loopback-only; its pings leave through the egress proxy
+  (`push.toml`: `credentials_dir`, `proxy`, APNs team and topic).
+- A platform without its key only logs pings; add the key and deploy again.
+- The app asks for notification permission once, at its first connect after
+  joining, and registers its token through the core on every connect.
+- Android builds without `~/.vyajena-push/google-services.json` have no push;
+  release builds refuse to build without it (`-Pvyajena.allowNoPush=true` for
+  throwaway tests).
 
 ## Relay
 
@@ -273,11 +302,11 @@ devices added or removed, this device removed), profiles, members, linking
 a device by text, and the admin screens. It reconnects as soon as the
 phone's network comes back. The server runs on the real Pi
 (`deploy/pi/`, change `pi-deployment`), reached from anywhere through the GCP
-relay (`deploy/relay/`, change `relay`). Push is a placeholder until the next
-change. Release builds are ready for Play internal testing and TestFlight
+relay (`deploy/relay/`, change `relay`). A closed app gets a content-free
+"New message" notification through FCM or APNs (change `push`). Release builds are ready for Play internal testing and TestFlight
 (`app-release`).
 
-Next, in order: real push (FCM / APNs), question-and-answer verification
+Next, in order: question-and-answer verification
 (`qa-verification`), then the terminal client.
 Desktop builds come later. See the open decisions in the architecture doc.
 

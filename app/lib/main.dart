@@ -1,10 +1,12 @@
 // The app's entry point: load the Rust bridge, open the core, show the app
-// (with the phone's network changes from connectivity_plus).
+// (with the phone's network changes from connectivity_plus and its push
+// service).
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
 import 'core/rust_core_service.dart';
+import 'push/push_platform.dart';
 import 'src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -14,6 +16,8 @@ Future<void> main() async {
   final network = Connectivity().onConnectivityChanged.map(
     (results) => results.any((r) => r != ConnectivityResult.none),
   );
-  runApp(VyajenaApp(core: core, networkChanges: network));
+  runApp(
+    VyajenaApp(core: core, networkChanges: network, push: MethodChannelPush()),
+  );
   await core.open();
 }

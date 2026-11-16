@@ -105,3 +105,41 @@ pub fn verify_device_certificate(
     key.verify_strict(&device_certificate_signing_input(certificate), &signature)
         .map_err(|_| CertificateError::BadSignature)
 }
+
+/// The longest push token the Pi accepts, in bytes (Push token registration).
+pub const MAX_PUSH_TOKEN_BYTES: usize = 4096;
+
+/// An APNs device token is this many hexadecimal characters, inclusive
+/// (Push token registration; it goes into the APNs request path).
+pub const APNS_TOKEN_HEX_LEN: std::ops::RangeInclusive<usize> = 64..=200;
+
+/// Which platform a push token is for (the wire's `PushPlatform`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushTokenKind {
+    /// Firebase Cloud Messaging.
+    Fcm,
+    /// Apple Push Notification service.
+    Apns,
+}
+
+/// What is wrong with a push token, if anything (Push token registration):
+/// empty, longer than [`MAX_PUSH_TOKEN_BYTES`], whitespace or control
+/// characters, or for APNs not [`APNS_TOKEN_HEX_LEN`] hex characters.
+pub fn push_token_problem(kind: PushTokenKind, token: &str) -> Option<&'static str> {
+    if token.is_empty() {
+        return Some("is empty");
+    }
+    if token.len() > MAX_PUSH_TOKEN_BYTES {
+        return Some("is longer than 4096 bytes");
+    }
+    if token.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Some("contains whitespace or control characters");
+    }
+    if kind == PushTokenKind::Apns
+        && !(APNS_TOKEN_HEX_LEN.contains(&token.len())
+            && token.bytes().all(|b| b.is_ascii_hexdigit()))
+    {
+        return Some("is not 64 to 200 hexadecimal characters");
+    }
+    None
+}

@@ -116,7 +116,8 @@ sequenceDiagram
 - **Backoff gate:** one per provider. While it waits, other pings to that
   platform wait behind it (a `tokio::sync::Mutex<Instant>`), so a 429 storm
   does not multiply. A dropped ping only delays delivery to the next app open.
-- **Timeouts:** 10 s per request, 30 s overall per ping.
+- **Timeouts:** 10 s per request; a backoff longer than 60 s drops the ping at
+  once (the gate still holds the platform for the whole wait).
 - **Logs:** `device_id`, `platform`, `outcome` (and the HTTP status on errors).
   Never the token, the FCM message name, the `apns-id`, or a response body.
 - Wake calls run in the existing spawned task in `messaging::notify`, so a
@@ -147,7 +148,8 @@ flowchart LR
   by the server against the webpki roots).
 - It refuses non-`CONNECT` (405), other hosts or ports (403), and names that
   resolve to loopback/private/link-local/CGNAT/unspecified addresses (403:
-  no DNS rebinding to the LAN). Tunnels end after 5 minutes idle.
+  no DNS rebinding to the LAN). A tunnel ends after an hour at most (the
+  providers' pools drop idle connections after 90 s); at most 64 at once.
 - Unit: `DynamicUser=yes`, the same sandbox as the tunnel,
   `IPAddressAllow=localhost 192.168.1.1/32` (DNS) and `IPAddressDeny` of
   private, link-local, CGNAT and ULA ranges, so it reaches the public internet
@@ -223,9 +225,9 @@ get no notification.
   there has no context and gets denied.
 - **The first time the core connects after the device joined or was linked**
   — the user just got in and the chat is on screen, so "allow notifications
-  for new messages" makes sense. Asked once per install (a flag in
-  `SharedPreferences` / `UserDefaults`, which iOS enforces anyway; Android 13+
-  stops showing it after two denials).
+  for new messages" makes sense. Asked once per install: Android 13+ keeps an
+  "asked" flag in `SharedPreferences` (older Android needs no prompt); iOS
+  prompts only while the status is `notDetermined`.
 - Denied → no token is registered (an existing one is cleared), the app works
   as before. The owner can turn it on later in system settings; the next
   connect registers then.

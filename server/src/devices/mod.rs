@@ -4,6 +4,7 @@
 use std::time::SystemTime;
 
 use protocol::device_identity::DeviceId;
+use protocol::device_identity::{PushTokenKind, push_token_problem};
 use protocol::wire_transport::{
     CHALLENGE_NONCE_LEN, CHALLENGE_TTL, MAX_APPLICATION_CIPHERTEXT_BYTES,
     MAX_HANDSHAKE_ENVELOPE_BYTES, PROTOCOL_VERSION, verify_auth_signature,
@@ -345,8 +346,14 @@ impl Devices for DevicesService {
                     .ok_or_else(|| {
                         Status::invalid_argument("push_token.platform must be FCM or APNS")
                     })?;
-                if token.token.is_empty() {
-                    return Err(Status::invalid_argument("push_token.token is empty"));
+                let kind = match platform {
+                    pb::PushPlatform::Apns => PushTokenKind::Apns,
+                    _ => PushTokenKind::Fcm,
+                };
+                if let Some(problem) = push_token_problem(kind, &token.token) {
+                    return Err(Status::invalid_argument(format!(
+                        "push_token.token {problem}"
+                    )));
                 }
                 Some((platform as i32, token.token))
             }

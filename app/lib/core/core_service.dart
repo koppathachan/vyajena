@@ -198,6 +198,14 @@ abstract class CoreService {
   /// Revokes another device of this user (hex id).
   Future<void> revokeDevice(String device);
 
+  /// Registers or replaces this device's push token on the Pi (app-ui: Push
+  /// notifications). Throws when offline; the app retries on the next
+  /// connect.
+  Future<void> setPushToken(PushPlatform platform, String token);
+
+  /// Clears this device's push token on the Pi.
+  Future<void> clearPushToken();
+
   /// The newest [limit] messages, oldest first.
   Future<List<ChatMessage>> history(int limit);
 

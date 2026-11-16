@@ -7,6 +7,8 @@ import '../chat/chat_model.dart';
 import '../chat/group_gate.dart';
 import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../push/push_platform.dart';
+import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
 import 'routes.dart';
@@ -16,12 +18,21 @@ import 'theme.dart';
 /// The app, over [core]. Pump it before opening the core: its chat model
 /// follows the core's events from the start.
 class VyajenaApp extends StatefulWidget {
-  const VyajenaApp({super.key, required this.core, this.networkChanges});
+  const VyajenaApp({
+    super.key,
+    required this.core,
+    this.networkChanges,
+    this.push,
+  });
 
   final CoreService core;
 
   /// The phone's network changes (see [CoreLifecycle.networkChanges]).
   final Stream<bool>? networkChanges;
+
+  /// The phone's push service (app-ui: Push notifications); none in most
+  /// widget tests.
+  final PushPlatformApi? push;
 
   @override
   State<VyajenaApp> createState() => _VyajenaAppState();
@@ -29,9 +40,20 @@ class VyajenaApp extends StatefulWidget {
 
 class _VyajenaAppState extends State<VyajenaApp> {
   late final ChatModel _chat = ChatModel(widget.core);
+  PushService? _push;
+
+  @override
+  void initState() {
+    super.initState();
+    final api = widget.push;
+    if (api != null) {
+      _push = PushService(core: widget.core, api: api)..start();
+    }
+  }
 
   @override
   void dispose() {
+    _push?.dispose();
     _chat.dispose();
     super.dispose();
   }
@@ -40,6 +62,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
   Widget build(BuildContext context) => CoreLifecycle(
     core: widget.core,
     networkChanges: widget.networkChanges,
+    push: widget.push,
     child: MaterialApp(
       title: 'Vyajena',
       // Never the debug banner, also in profile builds and screenshots

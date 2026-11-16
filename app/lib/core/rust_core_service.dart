@@ -87,6 +87,13 @@ class RustCoreService extends CoreService {
   Future<void> revokeDevice(String device) => _c.revokeDevice(device: device);
 
   @override
+  Future<void> setPushToken(PushPlatform platform, String token) =>
+      _c.setPushToken(platform: platform, token: token);
+
+  @override
+  Future<void> clearPushToken() => _c.clearPushToken();
+
+  @override
   Future<List<ChatMessage>> history(int limit) => _c.history(limit: limit);
 
   @override

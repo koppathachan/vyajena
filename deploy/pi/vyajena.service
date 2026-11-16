@@ -9,7 +9,8 @@ Wants=network-online.target
 Type=exec
 User=vyajena
 Group=vyajena
-ExecStart=/usr/local/bin/vyajena-server --config /etc/vyajena/config.toml
+# --push: real wake pings through vyajena-egress.service (push design D5, D6).
+ExecStart=/usr/local/bin/vyajena-server --config /etc/vyajena/config.toml --push /etc/vyajena/push.toml
 Environment=RUST_LOG=info
 
 # The database and keys: /var/lib/vyajena, the only writable path.
@@ -54,7 +55,8 @@ SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
 SystemCallErrorNumber=EPERM
-# Loopback only: devices come through vyajena-tunnel.service (relay D5).
+# Loopback only: devices come through vyajena-tunnel.service (relay D5) and
+# wake pings leave through vyajena-egress.service (push D5).
 IPAddressAllow=localhost
 IPAddressDeny=any
 

@@ -1,6 +1,10 @@
 //! The Pi server binary:
 //!
-//! - `server --config <file.toml>` runs the server until `SIGTERM` or Ctrl-C.
+//! - `server --config <file.toml> [--push <push.toml>]` runs the server until
+//!   `SIGTERM` or Ctrl-C; with `--push`, wake pings go to FCM / APNs
+//!   (pi-runtime: Push provider interface), else they are only logged.
+//! - `server egress-proxy --listen <addr>` runs the CONNECT proxy to the push
+//!   hosts (pi-runtime: Egress proxy).
 //! - `server backup --config <file.toml> --to <file>` writes a consistent
 //!   snapshot of the server's database to a new file (mode 0600) while the
 //!   server keeps running (pi-deployment: Backup to the Mac).
@@ -11,6 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
+use server::push::{LoggingProvider, Options, Providers, PushProvider, proxy};
 use server::runtime::{Config, Pi, SystemClock};
 use server::store::backup;
 use tracing_subscriber::EnvFilter;
@@ -23,13 +28,12 @@ fn main() -> Result<()> {
         )
         .init();
 
-    let command = command_from_args()?;
     // Config errors stop us here, before any key, database or port is touched
     // (pi-runtime: Configuration).
-    let config = Config::load(command.config())?;
-    let config = match command {
-        Command::Serve { .. } => config,
-        Command::Backup { to, .. } => {
+    let (config, push) = match command_from_args()? {
+        Command::EgressProxy { listen } => return egress_proxy(listen),
+        Command::Backup { config, to } => {
+            let config = Config::load(&config)?;
             let snapshot = backup::snapshot(&config.database_path, &to)
                 .with_context(|| format!("backing up to {}", to.display()))?;
             tracing::info!(
@@ -40,6 +44,26 @@ fn main() -> Result<()> {
             );
             return Ok(());
         }
+        Command::Serve { config, push } => (Config::load(&config)?, push),
+    };
+
+    // Push errors stop us here too, before any key, database or port
+    // (pi-runtime: Push configuration).
+    let push: Arc<dyn PushProvider> = match push {
+        None => {
+            tracing::info!("no --push: wake pings are only logged");
+            Arc::new(LoggingProvider)
+        }
+        Some(path) => {
+            let providers = Providers::load(&path, &Options::default())
+                .with_context(|| format!("push config {}", path.display()))?;
+            tracing::info!(
+                fcm = providers.has_fcm(),
+                apns = providers.has_apns(),
+                "push providers (a platform without credentials only logs its pings)"
+            );
+            Arc::new(providers)
+        }
     };
 
     tokio::runtime::Builder::new_multi_thread()
@@ -47,49 +71,83 @@ fn main() -> Result<()> {
         .build()
         .context("starting the async runtime")?
         .block_on(async {
-            let pi = Pi::start(config, Arc::new(SystemClock)).await?;
+            let pi = Pi::start_with_push(config, Arc::new(SystemClock), push).await?;
             pi.serve(shutdown_signal()).await?;
             Ok(())
         })
 }
 
-const USAGE: &str =
-    "usage: server --config <file.toml>\n       server backup --config <file.toml> --to <file>";
+const USAGE: &str = "usage: server --config <file.toml> [--push <push.toml>]
+       server backup --config <file.toml> --to <file>
+       server egress-proxy --listen <addr>";
+
+/// pi-runtime: Egress proxy, until `SIGTERM` or Ctrl-C.
+fn egress_proxy(listen: std::net::SocketAddr) -> Result<()> {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("starting the async runtime")?
+        .block_on(async {
+            let listener = tokio::net::TcpListener::bind(listen)
+                .await
+                .with_context(|| format!("binding {listen}"))?;
+            tracing::info!(%listen, hosts = ?proxy::PUSH_HOSTS, "egress proxy listening");
+            tokio::select! {
+                _ = proxy::serve(listener, proxy::Rules::push_hosts()) => {}
+                _ = shutdown_signal() => {}
+            }
+            Ok(())
+        })
+}
 
 /// What the binary was asked to do.
 enum Command {
     /// Run the server.
-    Serve { config: PathBuf },
+    Serve {
+        config: PathBuf,
+        push: Option<PathBuf>,
+    },
+    /// Run the egress proxy.
+    EgressProxy { listen: std::net::SocketAddr },
     /// Write a database snapshot to `to`.
     Backup { config: PathBuf, to: PathBuf },
 }
 
-impl Command {
-    fn config(&self) -> &std::path::Path {
-        match self {
-            Self::Serve { config } | Self::Backup { config, .. } => config,
-        }
-    }
-}
-
 fn command_from_args() -> Result<Command> {
     let mut args = std::env::args_os().skip(1).peekable();
-    let backup = args.peek().and_then(|a| a.to_str()) == Some("backup");
-    if backup {
+    let sub = args.peek().and_then(|a| a.to_str()).map(str::to_owned);
+    let backup = sub.as_deref() == Some("backup");
+    let egress = sub.as_deref() == Some("egress-proxy");
+    if backup || egress {
         args.next();
     }
     let mut config = None;
     let mut to = None;
+    let mut push = None;
+    let mut listen = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
-            Some("--config") => config = Some(path_after(&mut args, "--config")?),
+            Some("--config") if !egress => config = Some(path_after(&mut args, "--config")?),
             Some("--to") if backup => to = Some(path_after(&mut args, "--to")?),
+            Some("--push") if !backup && !egress => push = Some(path_after(&mut args, "--push")?),
+            Some("--listen") if egress => {
+                let text = path_after(&mut args, "--listen")?;
+                listen =
+                    Some(text.to_string_lossy().parse().with_context(|| {
+                        format!("--listen {text:?} is not an address and port")
+                    })?);
+            }
             Some("--help" | "-h") => {
                 println!("{USAGE}");
                 std::process::exit(0);
             }
             _ => bail!("unknown argument {arg:?}\n{USAGE}"),
         }
+    }
+    if egress {
+        return Ok(Command::EgressProxy {
+            listen: listen.context("missing --listen <addr>")?,
+        });
     }
     let config = config.context("missing --config <file.toml>")?;
     Ok(if backup {
@@ -98,7 +156,7 @@ fn command_from_args() -> Result<Command> {
             to: to.context("missing --to <file>")?,
         }
     } else {
-        Command::Serve { config }
+        Command::Serve { config, push }
     })
 }
 

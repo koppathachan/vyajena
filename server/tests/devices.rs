@@ -194,7 +194,8 @@ async fn new_fcm_token_replaces_the_old_one_and_can_be_cleared() {
     assert_eq!(stored_push_token(&pi, &admin).await, Some(fcm("second")));
     let apns = pb::PushToken {
         platform: pb::PushPlatform::Apns as i32,
-        token: "apns".to_owned(),
+        // 64 hex characters: APNs tokens go into the request path.
+        token: "ab".repeat(32),
     };
     update(Some(apns.clone())).await.check("APNs");
     assert_eq!(stored_push_token(&pi, &admin).await, Some(apns));

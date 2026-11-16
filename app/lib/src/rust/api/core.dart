@@ -30,6 +30,10 @@ abstract class Core implements RustOpaqueInterface {
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
 
+  /// Clears this device's push token on the Pi: no more wake pings
+  /// (notifications not allowed).
+  Future<void> clearPushToken();
+
   /// New device, step 2: completes linking with the approval text. Call
   /// [`Core::start`] next.
   Future<UserRef> completeLink({required String approvalText});
@@ -114,6 +118,14 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});
+
+  /// Registers or replaces this device's push token on the Pi (needs a
+  /// connection; fails `offline` otherwise, and the app retries on the next
+  /// connect).
+  Future<void> setPushToken({
+    required PushPlatform platform,
+    required String token,
+  });
 
   /// Starts (or restarts) the engine: connect, catch up, stay connected.
   Future<void> start();

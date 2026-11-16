@@ -50,3 +50,8 @@ key.properties
 *.mobileprovision
 *.cer
 AuthKey_*.p8
+
+# Push credentials and Firebase config live only in ~/.vyajena-push/ (push design D6, D8).
+google-services.json
+fcm-service-account.json
+AuthKey_*.p8

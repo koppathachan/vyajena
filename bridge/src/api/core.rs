@@ -10,7 +10,9 @@ use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
-use super::types::{ChatMessage, CoreEvent, InviteInfo, MemberDevice, ProfileInfo, UserRef};
+use super::types::{
+    ChatMessage, CoreEvent, InviteInfo, MemberDevice, ProfileInfo, PushPlatform, UserRef,
+};
 use crate::frb_generated::StreamSink;
 use crate::map;
 
@@ -173,6 +175,33 @@ impl Core {
     /// Whether the core is connected right now.
     pub fn is_connected(&self) -> bool {
         self.client.is_connected()
+    }
+
+    // --- Push (app-ui: Push notifications) ---
+
+    /// Registers or replaces this device's push token on the Pi (needs a
+    /// connection; fails `offline` otherwise, and the app retries on the next
+    /// connect).
+    pub async fn set_push_token(
+        &self,
+        platform: PushPlatform,
+        token: String,
+    ) -> Result<(), CoreError> {
+        let platform = match platform {
+            PushPlatform::Fcm => client::PushPlatform::Fcm,
+            PushPlatform::Apns => client::PushPlatform::Apns,
+        };
+        forward(
+            self.client
+                .set_push_token(Some(client::PushToken { platform, token }))
+                .await,
+        )
+    }
+
+    /// Clears this device's push token on the Pi: no more wake pings
+    /// (notifications not allowed).
+    pub async fn clear_push_token(&self) -> Result<(), CoreError> {
+        forward(self.client.set_push_token(None).await)
     }
 
     // --- Admin (app-ui: Admin screens) ---

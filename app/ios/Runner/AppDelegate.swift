@@ -1,5 +1,6 @@
 import Flutter
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -8,6 +9,23 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // APNs hands over the device token (app-ui: Push notifications).
+  override func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    Push.registered(deviceToken)
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+
+  override func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    Push.failed()
+    super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
   }
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
@@ -35,6 +53,85 @@ import UIKit
         result(FlutterMethodNotImplemented)
       }
     }
+    let push = FlutterMethodChannel(
+      name: Push.channelName,
+      binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    Push.channel = push
+    push.setMethodCallHandler(Push.handle)
+  }
+}
+
+/// APNs for the app (app-ui: Push notifications; push design D8, D9): no
+/// Firebase. The Pi sends a visible alert with the fixed text "New message";
+/// iOS shows it, and tapping it opens the app. While the app is in front no
+/// alert is shown (no UNUserNotificationCenter delegate): it is connected.
+enum Push {
+  static let channelName = "vyajena/push"
+  static var channel: FlutterMethodChannel?
+  /// The APNs token as hex, once iOS gave one this launch.
+  private static var token: String?
+  private static var waiting: [FlutterResult] = []
+
+  static func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    switch call.method {
+    case "ensurePermission":
+      ensurePermission(result)
+    case "token":
+      requestToken(result)
+    case "deleteToken":
+      UIApplication.shared.unregisterForRemoteNotifications()
+      token = nil
+      result(nil)
+    case "clearNotifications":
+      UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  /// iOS itself asks only once per install; later calls report the setting.
+  private static func ensurePermission(_ result: @escaping FlutterResult) {
+    let center = UNUserNotificationCenter.current()
+    center.getNotificationSettings { settings in
+      switch settings.authorizationStatus {
+      case .notDetermined:
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+          DispatchQueue.main.async { result(granted) }
+        }
+      case .authorized, .provisional, .ephemeral:
+        DispatchQueue.main.async { result(true) }
+      default:
+        DispatchQueue.main.async { result(false) }
+      }
+    }
+  }
+
+  private static func requestToken(_ result: @escaping FlutterResult) {
+    if let token {
+      result(token)
+      return
+    }
+    waiting.append(result)
+    UIApplication.shared.registerForRemoteNotifications()
+    // No answer (no network, simulator without APNs): try again next connect.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 15) { answer(nil) }
+  }
+
+  static func registered(_ deviceToken: Data) {
+    let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+    let rotated = token != nil && token != hex
+    token = hex
+    answer(hex)
+    if rotated { channel?.invokeMethod("tokenChanged", arguments: hex) }
+  }
+
+  static func failed() { answer(nil) }
+
+  private static func answer(_ value: String?) {
+    let results = waiting
+    waiting = []
+    for result in results { result(value) }
   }
 }
 

@@ -1,9 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- The only two permissions (app-release: Declared permissions). The Rust
+    <!-- The app's own permissions (app-release: Declared permissions). The Rust
          core connects to the Pi (the UI itself opens nothing); connectivity_plus
-         reads whether a network is up, to tell the core to reconnect. -->
+         reads whether a network is up, to tell the core to reconnect;
+         POST_NOTIFICATIONS shows the Pi's "New message" (push design D8, asked
+         once after joining). Firebase Messaging adds WAKE_LOCK and
+         c2dm RECEIVE itself. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Vyajena"
         android:name="${applicationName}"
@@ -33,6 +37,22 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Push (app-ui: Push notifications): FCM token rotation, and the
+             channel and icon of the "New message" notification Play
+             services shows from the Pi's ping. -->
+        <service
+            android:name=".VyajenaMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="messages"/>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

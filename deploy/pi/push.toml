@@ -1,0 +1,13 @@
+# The real server's push settings (push design D6), installed by deploy.sh as
+# /etc/vyajena/push.toml and passed with --push by vyajena.service only (the
+# review server has no push: owner, 2026-11-16). No secrets: the keys live in
+# credentials_dir (0700 vyajena), copied by deploy.sh from ~/.vyajena-push/.
+# A platform whose key file is missing only logs its pings.
+
+# fcm-service-account.json and/or AuthKey_<key id>.p8.
+credentials_dir = "/var/lib/vyajena/push"
+# Every push request goes through vyajena-egress.service (push design D5).
+proxy = "http://127.0.0.1:8445"
+# The owner's Apple Developer team and the app's bundle id (APNs).
+apns_team_id = "XMVHK3YASX"
+apns_topic = "com.purplechaamba.vyajena"

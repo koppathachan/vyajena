@@ -73,6 +73,16 @@ pub enum ConnectionStatus {
     Disconnected,
 }
 
+/// Which push service a token is for (device-identity: Push token
+/// registration).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushPlatform {
+    /// Firebase Cloud Messaging (Android).
+    Fcm,
+    /// Apple Push Notification service (iOS).
+    Apns,
+}
+
 /// One event from the core, in the core's order (client-runtime: Events in
 /// order).
 #[derive(Debug, Clone, PartialEq, Eq)]

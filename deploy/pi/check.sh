@@ -11,9 +11,10 @@ readonly PI
 readonly HOST="${PI#*@}"
 # shellcheck source=../relay/relay.conf
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../relay/relay.conf"
-# The highest `systemd-analyze security` exposure accepted for vyajena.service
-# and vyajena-tunnel.service (pi-deployment design D3: the first real run on
-# systemd 257 scored 1.0; what is left is the network access they need).
+# The highest `systemd-analyze security` exposure accepted for vyajena.service,
+# vyajena-tunnel.service and vyajena-egress.service (pi-deployment design D3:
+# the first real run on systemd 257 scored 1.0; what is left is the network
+# access they need).
 readonly MAX_EXPOSURE="1.5"
 
 # --- run on the Pi as root (sent with declare -f) ----------------------------
@@ -111,6 +112,78 @@ remote_checks() {
   server_checks vyajena.service vyajena /var/lib/vyajena /var/lib/vyajena-review ""
   server_checks vyajena-review.service vyajena-review /var/lib/vyajena-review /var/lib/vyajena "review "
 
+  # Push (push design D5-D7): only the real server runs with --push; the
+  # review server only logs pings.
+  local exec_main exec_review
+  exec_main="$(systemctl show -p ExecStart --value vyajena.service)"
+  exec_review="$(systemctl show -p ExecStart --value vyajena-review.service)"
+  if grep -q -- "--push /etc/vyajena/push.toml" <<<"$exec_main"; then ok "push vyajena.service --push"; else fail push "vyajena.service runs without --push /etc/vyajena/push.toml"; fi
+  if grep -q -- "--push" <<<"$exec_review"; then fail "review push" "vyajena-review.service runs with --push"; else ok "review no push"; fi
+
+  # The egress proxy (pi-deployment: Sandboxed service): dynamic user, no
+  # writable path, loopback + the router's DNS + public addresses only.
+  local dns
+  dns="$(sed -n 's/^nameserver \([0-9.]*\)$/\1/p' /etc/resolv.conf | head -n 1)"
+  check egress-running "vyajena-egress.service is not active and enabled" \
+    sh -c 'systemctl is-active --quiet vyajena-egress.service && systemctl is-enabled --quiet vyajena-egress.service'
+  for want in DynamicUser=yes NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \
+    PrivateTmp=yes PrivateDevices=yes PrivateUsers=yes CapabilityBoundingSet= AmbientCapabilities= \
+    "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" Restart=always StateDirectory= \
+    "IPAddressAllow=127.0.0.0/8 ::1/128 ${dns:-192.168.1.1}/32" \
+    "IPAddressDeny=0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10"; do
+    prop="${want%%=*}"
+    got="$(systemctl show -p "$prop" --value vyajena-egress.service)"
+    case "$prop" in IPAddress*) got="$(words "$got")"; want="$prop=$(words "${want#*=}")" ;; esac
+    if [ "$prop=$got" = "$want" ]; then ok "egress sandbox $prop"; else fail "egress sandbox $prop" "is '$got', want '${want#*=}'"; fi
+  done
+  exposure_of vyajena-egress.service "egress sandbox"
+  pid="$(systemctl show -p MainPID --value vyajena-egress.service)"
+  if [ -n "$pid" ] && [ "$pid" != 0 ]; then
+    local euid egid ebad="" eprobe=".vyajena-check-$$"
+    euid="$(stat -c %u "/proc/$pid")"
+    egid="$(stat -c %g "/proc/$pid")"
+    for path in / /etc /usr/local/bin /var/lib /var/lib/vyajena /var/log /home /root; do
+      if nsenter -t "$pid" -m -U -S "$euid" -G "$egid" sh -c "touch $path/$eprobe" 2>/dev/null; then
+        ebad="$ebad $path"
+        rm -f "$path/$eprobe"
+      fi
+    done
+    if [ -z "$ebad" ]; then ok "egress sandbox no writes"; else fail "egress sandbox writes" "the proxy can write:$ebad"; fi
+  else
+    fail "egress sandbox writes" "vyajena-egress.service has no main process"
+  fi
+  # The allowlist, asked on loopback: a host outside it gets 403; the push
+  # hosts get a tunnel (the Pi reaches Google and Apple).
+  connect_status() { # connect_status <host:port>: the proxy's status code
+    # shellcheck disable=SC2016 # $1 expands in the inner bash, on purpose
+    timeout 10 bash -c 'exec 3<>/dev/tcp/127.0.0.1/8445 &&
+      printf "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n" "$1" "$1" >&3 &&
+      head -n 1 <&3' _ "$1" 2>/dev/null | cut -d" " -f2
+  }
+  local code target
+  code="$(connect_status example.com:443)"
+  if [ "$code" = 403 ]; then ok "egress refuses example.com:443"; else fail "egress allowlist" "CONNECT example.com:443 got '${code:-nothing}', want 403"; fi
+  code="$(connect_status fcm.googleapis.com:22)"
+  if [ "$code" = 403 ]; then ok "egress refuses fcm.googleapis.com:22"; else fail "egress allowlist" "CONNECT fcm.googleapis.com:22 got '${code:-nothing}', want 403"; fi
+  for target in fcm.googleapis.com:443 oauth2.googleapis.com:443 api.push.apple.com:443; do
+    code="$(connect_status "$target")"
+    if [ "$code" = 200 ]; then ok "egress reaches $target"; else fail "egress reach" "CONNECT $target got '${code:-nothing}', want 200"; fi
+  done
+
+  # Push keys (pi-deployment: Push credentials): owner-only, the real server's
+  # folder only; a platform without a key is a warning (it only logs pings).
+  local pdir=/var/lib/vyajena/push
+  m="$(stat -c '%a %U' "$pdir" 2>/dev/null)"
+  if [ "$m" = "700 vyajena" ]; then ok "file-mode $pdir"; else fail "file-mode $pdir" "is '${m:-missing}', want '700 vyajena'"; fi
+  for f in "$pdir"/*; do
+    [ -e "$f" ] || continue
+    m="$(stat -c '%a %U' "$f")"
+    if [ "$m" = "600 vyajena" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '$m', want '600 vyajena'"; fi
+  done
+  [ -e "$pdir/fcm-service-account.json" ] || warn push-fcm "no FCM service account key on the Pi: Android pings are only logged"
+  compgen -G "$pdir/AuthKey_*.p8" >/dev/null || warn push-apns "no APNs key on the Pi: iPhone pings are only logged"
+  if [ -e /var/lib/vyajena-review/push ]; then fail "review push keys" "/var/lib/vyajena-review/push exists"; else ok "review has no push keys"; fi
+
   # The tunnel (relay design D5): sandboxed, dynamic user, only loopback and
   # the relay, attached.
   local relay_ip
@@ -167,18 +240,19 @@ remote_checks() {
   for f in /usr/local/bin/vyajena-server:"755 root" /etc/vyajena/config.toml:"644 root" \
     /etc/systemd/system/vyajena.service:"644 root" /usr/local/bin/rathole:"755 root" \
     /etc/vyajena/tunnel.toml:"600 root" /etc/systemd/system/vyajena-tunnel.service:"644 root" \
-    /etc/vyajena/review.toml:"644 root" /etc/systemd/system/vyajena-review.service:"644 root"; do
+    /etc/vyajena/review.toml:"644 root" /etc/systemd/system/vyajena-review.service:"644 root" \
+    /etc/vyajena/push.toml:"644 root" /etc/systemd/system/vyajena-egress.service:"644 root"; do
     m="$(mode_of "${f%%:*}")"
     if [ "$m" = "${f#*:}" ]; then ok "file-mode ${f%%:*}"; else fail "file-mode ${f%%:*}" "is '${m:-missing}', want '${f#*:}'"; fi
   done
 
-  # Listening: SSH, and the two servers on loopback only. NetworkManager's DHCP
+  # Listening: SSH, and the two servers and the egress proxy on loopback only. NetworkManager's DHCP
   # client sockets (UDP 68, 546) are clients, not services.
   local listeners extra
   listeners="$(ss -H -tulnp)"
   extra="$(awk '
     $1 == "tcp" && $5 ~ /:22$/ && /"sshd"/ {next}
-    $1 == "tcp" && ($5 == "127.0.0.1:8443" || $5 == "127.0.0.1:8444") && /"vyajena-server"/ {next}
+    $1 == "tcp" && ($5 == "127.0.0.1:8443" || $5 == "127.0.0.1:8444" || $5 == "127.0.0.1:8445") && /"vyajena-server"/ {next}
     $1 == "udp" && $5 ~ /:(68|546)$/ && /"NetworkManager"/ {next}
     {print $1, $5, $7}' <<<"$listeners")"
   if [ -z "$extra" ]; then ok listening; else fail listening "unexpected listeners: $(tr '\n' ';' <<<"$extra")"; fi
@@ -186,6 +260,8 @@ remote_checks() {
     grep -q '127.0.0.1:8444.*"vyajena-server"' <<<"$listeners"
   check "listening 127.0.0.1:8443" "vyajena-server is not listening on 127.0.0.1:8443" \
     grep -q '127.0.0.1:8443.*"vyajena-server"' <<<"$listeners"
+  check "egress listening 127.0.0.1:8445" "the egress proxy is not listening on 127.0.0.1:8445" \
+    grep -q '127.0.0.1:8445.*"vyajena-server"' <<<"$listeners"
 
   # nftables: loaded, default drop, SSH from the home subnet the only port.
   local rules
@@ -322,7 +398,7 @@ pin_check() {
 
 mac_checks() {
   local port
-  for port in 8443 8444; do
+  for port in 8443 8444 8445; do
     if nc -z -G 3 "$HOST" "$port" 2>/dev/null; then
       echo "FAIL lan-closed: $HOST:$port answers on the LAN; the servers must be loopback-only"
     else
@@ -350,14 +426,14 @@ mac_checks() {
   local v6 addr port open=""
   v6="$(ssh -o BatchMode=yes "$PI" "ip -6 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1")"
   for addr in $v6; do
-    for port in 22 8443 8444; do
+    for port in 22 8443 8444 8445; do
       if nc -z -G 3 "$addr" "$port" 2>/dev/null; then open="$open [$addr]:$port"; fi
     done
   done
   if [ -z "$v6" ]; then
     echo "ok   ipv6 (no global addresses)"
   elif [ -z "$open" ]; then
-    echo "ok   ipv6 global addresses drop 22, 8443 and 8444"
+    echo "ok   ipv6 global addresses drop 22, 8443, 8444 and 8445"
   else
     echo "FAIL ipv6: open over IPv6:$open"
   fi
