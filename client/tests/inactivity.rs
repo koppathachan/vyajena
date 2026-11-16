@@ -21,14 +21,7 @@ const TEN_DAYS: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 /// last-seen time is now and not after a clock jump.
 async fn go_offline(pi: &TestPi, device: &Device) {
     device.client.stop();
-    let id = device.device_id();
-    let deadline = tokio::time::Instant::now() + support::device::WAIT;
-    while pi.is_connected(&id) {
-        assert!(tokio::time::Instant::now() < deadline, "still connected");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    // The Pi records presence right after unregistering the stream.
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    pi.wait_offline_recorded(&device.device_id()).await;
 }
 
 /// The one-time KeyPackages the Pi holds for `device`.

@@ -6,7 +6,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -20,6 +20,9 @@ use super::Check;
 struct Shared {
     up: AtomicBool,
     accepted: AtomicUsize,
+    /// Bytes forwarded from devices to the Pi, and back.
+    bytes_up: AtomicU64,
+    bytes_down: AtomicU64,
     recording: AtomicBool,
     recorded: Mutex<Vec<u8>>,
     open: Mutex<Vec<AbortHandle>>,
@@ -34,8 +37,14 @@ pub struct Relay {
     accept: AbortHandle,
 }
 
-/// Copies one direction, recording what passes while recording is on.
-async fn pipe(mut from: OwnedReadHalf, mut to: OwnedWriteHalf, shared: Arc<Shared>) {
+/// Copies one direction (`upstream`: device to Pi), counting what passes and
+/// recording it while recording is on.
+async fn pipe(
+    mut from: OwnedReadHalf,
+    mut to: OwnedWriteHalf,
+    shared: Arc<Shared>,
+    upstream: bool,
+) {
     let mut buf = vec![0u8; 16 * 1024];
     loop {
         let n = match from.read(&mut buf).await {
@@ -43,6 +52,12 @@ async fn pipe(mut from: OwnedReadHalf, mut to: OwnedWriteHalf, shared: Arc<Share
             Ok(n) => n,
         };
         let Some(chunk) = buf.get(..n) else { break };
+        let count = if upstream {
+            &shared.bytes_up
+        } else {
+            &shared.bytes_down
+        };
+        count.fetch_add(n as u64, Ordering::SeqCst);
         if shared.recording.load(Ordering::SeqCst) {
             shared.recorded.lock().extend_from_slice(chunk);
         }
@@ -75,10 +90,10 @@ impl Relay {
                     if let Ok(outbound) = TcpStream::connect(to).await {
                         let (in_read, in_write) = inbound.into_split();
                         let (out_read, out_write) = outbound.into_split();
-                        let up = tokio::spawn(pipe(in_read, out_write, Arc::clone(&shared3)));
+                        let up = tokio::spawn(pipe(in_read, out_write, Arc::clone(&shared3), true));
                         // A cut aborts both directions.
                         shared3.open.lock().push(up.abort_handle());
-                        pipe(out_read, in_write, shared3).await;
+                        pipe(out_read, in_write, shared3, false).await;
                         let _ = up.await;
                     }
                 });
@@ -115,6 +130,16 @@ impl Relay {
     /// TCP connections accepted so far, forwarded or not.
     pub fn accepted(&self) -> usize {
         self.shared.accepted.load(Ordering::SeqCst)
+    }
+
+    /// Bytes forwarded so far from devices to the Pi.
+    pub fn bytes_up(&self) -> u64 {
+        self.shared.bytes_up.load(Ordering::SeqCst)
+    }
+
+    /// Bytes forwarded so far from the Pi to devices.
+    pub fn bytes_down(&self) -> u64 {
+        self.shared.bytes_down.load(Ordering::SeqCst)
     }
 
     /// Starts recording every byte forwarded, both ways.

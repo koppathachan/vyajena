@@ -197,7 +197,7 @@ async fn a_revoked_device_is_removed_and_cut_off() {
             ))
             .await
     );
-    assert!(!pi.is_connected(&phone_id));
+    pi.wait_disconnected(&phone_id).await;
 }
 
 // spec: device-identity/push-token-registration

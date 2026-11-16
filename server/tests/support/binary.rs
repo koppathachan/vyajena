@@ -127,8 +127,11 @@ impl Binary {
         assert!(status.success(), "kill -{signal} failed");
     }
 
-    /// Waits for the process to exit; panics after [`WAIT`].
-    pub fn wait(mut self) -> ExitStatus {
+    /// Waits for the process to exit; panics after [`WAIT`]. It yields
+    /// while it waits: the test's clients run on the same runtime, and the
+    /// server's graceful stop waits for each HTTP/2 client to answer its
+    /// shutdown PING.
+    pub async fn wait(mut self) -> ExitStatus {
         let deadline = Instant::now() + WAIT;
         loop {
             if let Some(status) = self.child.try_wait().check("try_wait") {
@@ -138,7 +141,7 @@ impl Binary {
                 let _ = self.child.kill();
                 panic!("the server did not exit within {WAIT:?}");
             }
-            std::thread::sleep(Duration::from_millis(20));
+            tokio::time::sleep(Duration::from_millis(20)).await;
         }
     }
 }

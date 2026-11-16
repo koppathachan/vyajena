@@ -90,13 +90,7 @@ fn store_raw_outgoing(device: &Device, content: &[u8]) {
 /// Stops `device` and waits until the Pi has seen its stream close.
 async fn go_offline(pi: &TestPi, device: &Device) {
     device.client.stop();
-    let id = device.device_id();
-    let deadline = tokio::time::Instant::now() + device::WAIT;
-    while pi.is_connected(&id) {
-        assert!(tokio::time::Instant::now() < deadline, "still connected");
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    pi.wait_offline_recorded(&device.device_id()).await;
 }
 
 // spec: message-content/inner-content-format
@@ -563,13 +557,16 @@ async fn messages_around_an_own_commit_are_all_read() {
     let pi = TestPi::start().await;
     let (_admin, mut alice, mut bob) = chat(&pi).await;
     let epoch = alice.epoch().check("epoch");
+    let first = pi.last_resort(&alice.device_id()).await;
 
     // Alice's leaf is due for rotation: it happens within the next hour of
-    // her clock, while Bob keeps writing. Her jobs wait for 100 ms of quiet,
-    // so Bob writes about that often: his messages land just before and
-    // just after her commit.
+    // her clock (from the timer check that finds it due, the same one that
+    // refreshes her last-resort KeyPackage), while Bob keeps writing. Her
+    // jobs wait for 100 ms of quiet, so Bob writes about that often: his
+    // messages land just before and just after her commit.
     alice.clock.advance(8 * DAY);
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    pi.wait_last_resort_replaced(&alice.device_id(), &first)
+        .await;
     alice.clock.advance(Duration::from_secs(61 * 60));
     let mut ids = Vec::new();
     for n in 0..30 {

@@ -82,12 +82,12 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
             .filter(|line| line.contains("wake ping"))
             .collect()
     };
-    for _ in 0..100 {
-        if !pings().is_empty() {
-            break;
-        }
+    let deadline = tokio::time::Instant::now() + support::messaging::WAIT;
+    while pings().is_empty() {
+        assert!(tokio::time::Instant::now() < deadline, "no wake ping");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    // No second one comes.
     tokio::time::sleep(Duration::from_millis(200)).await;
     let pings = pings();
     assert_eq!(pings.len(), 1, "{pings:?}");

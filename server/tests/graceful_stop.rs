@@ -54,7 +54,7 @@ async fn sigterm_mid_send_exits_zero_and_the_message_is_stored_or_resent() {
     stream.send_envelope(in_flight.clone()).await;
     pi.signal("TERM");
     let answered = answer_before_end(&mut stream, &in_flight.msg_id).await;
-    let status = pi.wait();
+    let status = pi.wait().await;
     assert_eq!(status.code(), Some(0), "exit status {status:?}");
     assert_eq!(status.signal(), None);
 
@@ -89,7 +89,7 @@ async fn sigterm_with_open_streams_exits_zero_and_keeps_the_pin() {
         matches!(&ended, Err(status) if status.code() == tonic::Code::Unavailable),
         "{ended:?}"
     );
-    let status = pi.wait();
+    let status = pi.wait().await;
     assert_eq!(status.code(), Some(0), "exit status {status:?}");
     // The database was closed: SQLite removes the WAL file at a clean close.
     assert!(!home.path().join("pi.sqlite-wal").exists());
@@ -108,6 +108,6 @@ async fn ctrl_c_still_stops_cleanly() {
     let home = Home::new();
     let pi = home.start();
     pi.signal("INT");
-    let status = pi.wait();
+    let status = pi.wait().await;
     assert_eq!(status.code(), Some(0), "exit status {status:?}");
 }

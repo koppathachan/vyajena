@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use support::Check;
 use support::harness::authed;
-use support::messaging::{Stream, commit_envelope, envelope, world};
+use support::messaging::{Stream, commit_envelope, envelope, wait_offline, world};
 use support::pb;
 use support::pb::client_frame::Frame as In;
 use support::pb::envelope::Kind;
@@ -91,7 +91,8 @@ async fn silent_client_is_closed_after_90_seconds_and_treated_as_offline() {
     w.pi.clock.advance(Duration::from_secs(90));
     let ended = w.phone_stream.ended().await;
     assert_eq!(ended.err().map(|s| s.code()), Some(Code::Unavailable));
-    assert!(!w.pi.state.hub.is_connected(&w.phone.device_id));
+    // The Pi unregisters the stream just after ending it.
+    wait_offline(&w.pi, &w.phone).await;
 }
 
 // spec: wire-transport/protocol-version-negotiation

@@ -4,7 +4,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use prost::Message as _;
 use server::runtime::{Bootstrap, Clock as _, Config, ManualClock, Pi, State};
@@ -15,6 +15,10 @@ use super::{Check, start_time};
 
 /// The server id of test servers.
 pub const SERVER_ID: &str = "pi";
+
+/// How long a helper here waits for something it expects (the same as the
+/// device helpers' `WAIT`).
+pub const WAIT: Duration = Duration::from_secs(20);
 
 /// The admin's username on test servers.
 pub const ADMIN: &str = "akhil";
@@ -157,6 +161,96 @@ impl TestPi {
     /// Whether `device` has an open `Connect` stream.
     pub fn is_connected(&self, device: &[u8; 16]) -> bool {
         self.state.hub.is_connected(device)
+    }
+
+    /// Waits until the Pi has registered `device`'s stream. The core reports
+    /// Connected once the stream's response headers arrive; the Pi registers
+    /// it only after reading its `Hello`, a moment later.
+    pub async fn wait_connected(&self, device: &[u8; 16]) {
+        self.wait_connection(device, true).await;
+    }
+
+    /// Waits until the Pi no longer has a stream for `device` (it
+    /// unregisters a stream after the device has seen it end).
+    pub async fn wait_disconnected(&self, device: &[u8; 16]) {
+        self.wait_connection(device, false).await;
+    }
+
+    /// Waits until the Pi has closed the stream of `device` (stopped by the
+    /// test) and recorded its last-seen time, which it writes right after
+    /// unregistering the stream: a later clock jump is then not taken for
+    /// time online.
+    pub async fn wait_offline_recorded(&self, device: &[u8; 16]) {
+        self.wait_disconnected(device).await;
+        // The Pi reads its clock for the presence row after unregistering,
+        // and the clock does not move while this waits.
+        let now = self
+            .now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| {
+                i64::try_from(since.as_millis()).unwrap_or(i64::MAX)
+            });
+        let id = *device;
+        let deadline = tokio::time::Instant::now() + WAIT;
+        loop {
+            let seen: Option<i64> = self
+                .query(move |db| {
+                    db.query_row(
+                        "SELECT max(last_seen_at) FROM presence WHERE device_id = ?1",
+                        [id.as_slice()],
+                        |row| row.get(0),
+                    )
+                })
+                .await;
+            if seen.is_some_and(|seen| seen >= now) {
+                return;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the Pi did not record the device's last-seen time"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
+    /// The last-resort KeyPackage the Pi holds for `device`.
+    pub async fn last_resort(&self, device: &[u8; 16]) -> Vec<u8> {
+        let id = *device;
+        self.query(move |db| {
+            db.query_row(
+                "SELECT key_package FROM key_packages WHERE device_id = ?1 AND last_resort = 1",
+                [id.as_slice()],
+                |row| row.get(0),
+            )
+        })
+        .await
+    }
+
+    /// Waits until `device` has replaced its last-resort KeyPackage `first`.
+    /// A device does that on the same timer check that finds its own leaf
+    /// due for rotation (both are due a week after it joined), so this also
+    /// tells a test that the device's timer has seen its clock.
+    pub async fn wait_last_resort_replaced(&self, device: &[u8; 16], first: &[u8]) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while self.last_resort(device).await == first {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "no last-resort refresh"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    async fn wait_connection(&self, device: &[u8; 16], connected: bool) {
+        let deadline = tokio::time::Instant::now() + WAIT;
+        while self.is_connected(device) != connected {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "timed out waiting for the Pi to see the stream {}",
+                if connected { "open" } else { "closed" }
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
     }
 }
 

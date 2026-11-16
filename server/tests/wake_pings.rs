@@ -28,12 +28,16 @@ async fn set_token(conn: &Conn, device: &TestDevice, token: &str) {
 
 /// Waits for `device` to have `expected` pings, then checks no more come.
 async fn pings_settle(pi: &TestPi, device: &TestDevice, expected: usize) {
-    for _ in 0..100 {
-        if pi.pushes.count(&device.device_id) >= expected {
-            break;
-        }
+    let deadline = tokio::time::Instant::now() + support::messaging::WAIT;
+    while pi.pushes.count(&device.device_id) < expected {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{} of {expected} pings",
+            pi.pushes.count(&device.device_id)
+        );
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
+    // No more come.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(pi.pushes.count(&device.device_id), expected);
 }

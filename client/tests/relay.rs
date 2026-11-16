@@ -109,13 +109,17 @@ async fn without_a_tunnel_the_core_retries_and_catches_up_when_it_is_back() {
     let text = "sent while the tunnel was down";
     admin.client.send_text(text).check("send");
 
+    // The cores keep retrying with backoff (0.25 s, then 0.5 s, ...).
     let accepted = pi.relay.accepted();
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    let retries = pi.relay.accepted() - accepted;
-    assert!(
-        retries >= 2,
-        "the cores kept retrying with backoff ({retries} attempts)"
-    );
+    let deadline = tokio::time::Instant::now() + support::device::WAIT;
+    while pi.relay.accepted() - accepted < 2 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the cores stopped retrying ({} attempts)",
+            pi.relay.accepted() - accepted
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
     assert!(!bob.client.is_connected());
 
     // The tunnel is back: same relay address, same pin, the message arrives.

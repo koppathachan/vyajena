@@ -25,15 +25,18 @@ async fn in_a_quiet_group_a_week_old_leaf_is_rotated() {
     let admin = device::admin_with_group(&pi).await;
     let alice = device::member_of_group(&admin, "alice").await;
     alice.wait_epoch(1).await;
+    let first = pi.last_resort(&alice.device_id()).await;
 
     // Six days: nothing.
     alice.clock.advance(6 * 24 * HOUR);
     let_timers_run().await;
     assert_eq!(admin.epoch(), Some(1));
 
-    // Seven days: due; it commits within the jitter (at most an hour).
+    // Seven days: due; it commits within the jitter (at most an hour) of the
+    // timer check that found it due.
     alice.clock.advance(24 * HOUR);
-    let_timers_run().await;
+    pi.wait_last_resort_replaced(&alice.device_id(), &first)
+        .await;
     alice.clock.advance(HOUR);
     admin.wait_epoch(2).await;
     alice.wait_epoch(2).await;
@@ -56,10 +59,16 @@ async fn two_devices_rotating_at_once_both_get_their_rotation_in() {
     let bob = device::member_of_group(&admin, "bob").await;
     alice.wait_epoch(2).await;
     bob.wait_epoch(2).await;
+    let alice_first = pi.last_resort(&alice.device_id()).await;
+    let bob_first = pi.last_resort(&bob.device_id()).await;
 
     alice.clock.advance(WEEK);
     bob.clock.advance(WEEK);
-    let_timers_run().await;
+    // Both timers found the rotation due.
+    pi.wait_last_resort_replaced(&alice.device_id(), &alice_first)
+        .await;
+    pi.wait_last_resort_replaced(&bob.device_id(), &bob_first)
+        .await;
     alice.clock.advance(HOUR);
     bob.clock.advance(HOUR);
     // Both rotate: whichever loses the race catches up and retries.

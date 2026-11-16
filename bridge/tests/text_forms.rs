@@ -38,14 +38,14 @@ async fn the_admin_links_a_tablet_by_text() {
     tablet
         .wait_event("joined", |e| matches!(e, CoreEvent::JoinedGroup))
         .await;
-    let devices = admin
-        .core
-        .members()
-        .check("members")
-        .into_iter()
-        .filter(|m| m.user == user(ADMIN))
-        .count();
-    assert_eq!(devices, 2);
+    // The tablet can join from the Welcome before the admin's device hears
+    // the Pi accepted its commit.
+    admin
+        .wait_until("the admin's two devices", |core| {
+            core.members()
+                .is_ok_and(|members| members.iter().filter(|m| m.user == user(ADMIN)).count() == 2)
+        })
+        .await;
 }
 
 #[tokio::test(flavor = "multi_thread")]

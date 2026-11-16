@@ -97,14 +97,19 @@ async fn alice_and_bob_chat_and_alice_sees_hi_go_from_sending_to_accepted() {
 #[tokio::test(flavor = "multi_thread")]
 async fn messages_reach_the_bridge_in_the_core_order() {
     let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let mut admin = device::admin_with_group(&pi).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     let words = ["one", "two", "three", "four", "five"];
-    for word in words {
-        admin.core.send_text(word.to_owned()).check("send");
-    }
+    let sent: Vec<i64> = words
+        .iter()
+        .map(|word| admin.core.send_text((*word).to_owned()).check("send"))
+        .collect();
     for word in words {
         wait_text(&mut bob, word).await;
+    }
+    // Bob can see a message before its sender hears the Pi accepted it.
+    for id in &sent {
+        wait_accepted(&mut admin, *id).await;
     }
     let received: Vec<_> = bob
         .events()

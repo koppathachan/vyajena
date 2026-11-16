@@ -414,13 +414,14 @@ pub async fn offline(conn: &Conn, device: &TestDevice) -> Stream {
 
 /// Waits until the Pi no longer has a stream for `device`.
 pub async fn wait_offline(pi: &TestPi, device: &TestDevice) {
-    for _ in 0..200 {
-        if !pi.state.hub.is_connected(&device.device_id) {
-            return;
-        }
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while pi.state.hub.is_connected(&device.device_id) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the device's stream did not close"
+        );
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    panic!("the device's stream did not close");
 }
 
 /// Builds the [`World`] on a fresh test server.
