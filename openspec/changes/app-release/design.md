@@ -153,6 +153,17 @@ owner's team exists (task 7.4). Flutter's validation warns that the launch
 image is the default placeholder (a plain white screen); App Store Connect
 accepts it.
 
+7.4 result (2026-11-16, paid Individual team `XMVHK3YASX`): the signed
+`flutter build ipa --export-options-plist=...` **fails**: it archives with a
+development profile, and Apple issues none while no device is registered to the
+team. Archiving unsigned (`--no-codesign`, as in S1) and signing at
+`xcodebuild -exportArchive -allowProvisioningUpdates` works without a device,
+once the export options name the team (`teamID`; an unsigned archive carries
+none). Xcode made a **cloud-managed** Apple Distribution certificate: Apple
+holds its private key, so there is no `.p12` to back up. Wrapped in
+`app/store/build-ipa.sh` (the fallback this section foresaw). Release check
+all PASS on 1.0.0 (2).
+
 ### D5. Version from pubspec; release tags
 
 `version: <name>+<build>` drives both platforms (Flutter already maps it:

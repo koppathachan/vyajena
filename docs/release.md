@@ -12,7 +12,7 @@ on 2026-11-15; re-check them when submitting.
 ```mermaid
 flowchart LR
   src["main, version in pubspec.yaml"] --> aab["app/store/build-aab.sh"]
-  src --> ipa["flutter build ipa"]
+  src --> ipa["app/store/build-ipa.sh"]
   aab --> chk["app/store/release-check.sh"]
   ipa --> chk
   chk -->|"web upload"| play["Play Console · internal testing"]
@@ -147,9 +147,10 @@ Xcode › Settings › Accounts: add your Apple ID. Open
 `app/ios/Runner.xcworkspace`, target **Runner** › Signing & Capabilities:
 Automatically manage signing, Team = your team. That writes
 `DEVELOPMENT_TEAM` into `project.pbxproj`; commit it (a team id is not a secret).
-Xcode makes the distribution certificate in your login keychain. Export it once
-(Keychain Access › My Certificates › Apple Distribution › Export, `.p12` with
-a password) and put the `.p12` and its password in your password manager.
+Done for team `XMVHK3YASX`, which is also `teamID` in `ios/ExportOptions.plist`.
+`app/store/build-ipa.sh` lets Xcode make a cloud-managed Apple Distribution
+certificate: Apple keeps its private key, so there is nothing to export or back
+up. No iPhone needs to be registered for App Store builds.
 
 ### 6. App Store Connect record
 
@@ -172,7 +173,7 @@ Apps › + › New App: iOS, name Vyajena, language English (US), bundle id
 ### 7. Every iOS release
 
 ```bash
-cd app && flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+app/store/build-ipa.sh                      # unsigned archive, signed App Store export
 app/store/release-check.sh --ios-only
 ```
 

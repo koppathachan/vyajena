@@ -2,7 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   App Store Connect export for `flutter build ipa` (app-release design D4).
-  Automatic signing with the owner's team (DEVELOPMENT_TEAM in the project);
+  Automatic signing with the owner's team (DEVELOPMENT_TEAM in the project,
+  teamID here: app/store/build-ipa.sh exports an unsigned archive, which names
+  no team);
   the build number comes from pubspec.yaml (D5), never from Xcode.
 -->
 <plist version="1.0">
@@ -11,6 +13,8 @@
 	<string>app-store-connect</string>
 	<key>signingStyle</key>
 	<string>automatic</string>
+	<key>teamID</key>
+	<string>XMVHK3YASX</string>
 	<key>destination</key>
 	<string>export</string>
 	<key>uploadSymbols</key>

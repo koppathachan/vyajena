@@ -235,7 +235,7 @@ internal testing once the Apple account exists (change `app-release`).
 
 ```bash
 app/store/build-aab.sh                      # signed bundle, upload key from the Keychain
-cd app && flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+app/store/build-ipa.sh                      # signed App Store IPA (team in Xcode)
 app/store/release-check.sh                  # every line must PASS before an upload
 ```
 
