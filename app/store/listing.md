@@ -65,25 +65,25 @@ one-time and expires after 7 days (`INVITE_TTL`), and a server holds one
 group.
 
 **Owner, 2026-11-16: reviewers never join the real group** ("we can't let
-reviewers access to internal chats"). They join a separate review server
+reviewers access to internal chats"). They use a separate review server
 (change `review-server`): `vyajarelay.purplechaamba.com:8443`, its own data,
-keys and pin, ids `<name>@review.purplechaamba.com`. Its admin is
-`review@review.purplechaamba.com` on the iOS simulator "Vyajena Review".
+keys and pin. No code change (owner; review mode PR koppathachan/vyajena#1
+closed unmerged): **the reviewer is the review server's admin**,
+`review@review.purplechaamba.com`, joining with its bootstrap invite. So the
+reviewer reaches every feature, admin screens included.
 
-Per review: on that simulator, menu → Invite a user → `playreview` → Copy;
-the owner pastes the invite into the store form (one-time, 7 days, never in
-the repo). After the review: menu → Remove a user (or
-`deploy/pi/deploy.sh --reset-review`).
+The invite is single-use and lasts 7 days (180 characters). It sits in the
+owner-only `~/vyajena-pi-backups/review-bootstrap-invite-<UTC>.txt`; the owner
+pastes it into the store form, never into the repo. Before each submission, or
+once it is used or expired: `deploy/pi/deploy.sh --no-build --reset-review`
+(owner's yes first) gives a new invite and review pin; update the form.
 
-Play "App access" text (instructions only; the owner pastes the invite):
+Play "Sign-in details" (Any other information, 500 max; 247 + the
+invite):
 
-> Vyajena is a private chat for one invite-only group; there is no sign-up or
-> password. 1. Open the app; it shows "Join the group". 2. Paste the invite
-> below into the Invite field and tap "Check invite". 3. Tap "Join". You are
-> now in a review group with its admin ("review") and can send and read
-> messages. Admin screens (inviting and removing people) appear only for the
-> group's admin. The invite works once and expires 7 days after it was
-> made; if it has expired, write to privacy@purplechaamba.com for a new one.
+> No sign-up or password. The invite below makes you admin of a review group. Open the app, paste it, tap Check invite, then Join, then Create the group. Send messages; the menu has Invite a user, Remove a user and Group name. The invite works once.
+>
+> <invite>
 
 ## Screenshots
 
