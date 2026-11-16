@@ -206,6 +206,27 @@ shell     deploy/relay/ssh.sh       SSH over IAP (or one command)
   (`--locked`) in a `rust:1.79` container (its lock does not build on newer
   Rust). The Pi's copy comes from `deploy/pi/build.sh`.
 
+## Review server
+
+Store reviewers (Play, App Store) get their own server, never the real group:
+`vyajena-review.service` on the Pi (user `vyajena-review`, data in
+`/var/lib/vyajena-review`, `127.0.0.1:8444`, ids `<name>@review.purplechaamba.com`),
+reached at **`vyajarelay.purplechaamba.com:8443`** through the same tunnel with
+its own token. Change `review-server`.
+
+```
+admin       the "Vyajena Review" iOS simulator (review@review.purplechaamba.com)
+invite      on that simulator: menu -> Invite a user -> a fresh single-use invite per review
+            (paste it into Play's App access form; never into the repo)
+reset       deploy/pi/deploy.sh --reset-review    wipes only the review server (type its id)
+            the new review bootstrap invite -> ~/vyajena-pi-backups/review-bootstrap-invite-<UTC>.txt
+check       deploy/pi/check.sh                    covers both servers; fails if they share a pin
+```
+
+- `deploy/pi/deploy.sh` installs and upgrades both servers; `backup.sh` skips
+  the review server (no real data).
+- After a review: remove the reviewer (menu -> Remove a user) or `--reset-review`.
+
 ## Release
 
 The app ships privately for now: Play internal testing, and TestFlight

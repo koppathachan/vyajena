@@ -13,6 +13,6 @@
 
 ## 3. Review admin and hand-off
 
-- [ ] 3.1 New simulator "Vyajena Review": install the app, join with the review bootstrap invite, create the review group
-- [ ] 3.2 A test reviewer device joins with a review invite and chats; it sees nothing of the real group
-- [ ] 3.3 README, architecture doc; tell app-release `vyajarelay.purplechaamba.com:8443`; validate --strict, tests, clippy, fmt
+- [x] 3.1 New simulator "Vyajena Review": install the app, join with the review bootstrap invite, create the review group
+- [x] 3.2 A test reviewer device joins with a review invite and chats; it sees nothing of the real group
+- [x] 3.3 README, architecture doc; tell app-release `vyajarelay.purplechaamba.com:8443`; validate --strict, tests, clippy, fmt

@@ -101,6 +101,26 @@ flowchart LR
 - The core already refuses a server whose pin differs (client-runtime: Wrong
   pin), which is the "real invite on the review port" scenario.
 
+### Results (2026-11-16)
+
+- Owner's yes; `create.sh` added only `vyajena-relay-review`; relay
+  redeployed; `deploy/pi/deploy.sh --no-build`: `harden.sh` created
+  `vyajena-review`, the real server restarted with **its pin unchanged**, the
+  review server started fresh with its own pin; its bootstrap invite went to an
+  owner-only file. `deploy/pi/check.sh` and `deploy/relay/check.sh`: 0 failed,
+  0 warnings; review exposure 0.9; `pins differ`; 443, 8443 and 2333 answer.
+- New simulator "Vyajena Review" (iPhone 16, iOS 26.5): the review bootstrap
+  invite previewed `review@review.purplechaamba.com on
+  vyajarelay.purplechaamba.com:8443`; joined, created the review group,
+  invited `tester`. The Android emulator `vyajena_test` joined as
+  `tester@review.purplechaamba.com`, was added automatically, and the two
+  chatted with ✓. The tester's Members screen listed only `review` and
+  `tester`. The real server logged nothing during the whole test. Then
+  `tester` was removed and the app uninstalled from the emulator.
+- Test driving notes: the emulator's floating stylus keyboard cut long
+  `adb input text`; 30-character chunks with the stylus setting off worked
+  (restored afterwards).
+
 ## Risks / Trade-offs
 
 - [Reviewers could reach the real server's port] → only with a real invite
