@@ -651,7 +651,14 @@ fn a_reset_needs_the_server_id_and_a_backup_before_anything_is_deleted() {
 
     // The right answer, but the backup fails (the fake ssh): the deploy stops
     // before opening its own session to the Pi.
-    let out = sandbox.run("deploy/pi/deploy.sh", &["--no-build", "--reset"], "pi\n");
+    let server_id = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
+        .check("rendered deploy/pi/config.toml")
+        .server_id;
+    let out = sandbox.run(
+        "deploy/pi/deploy.sh",
+        &["--no-build", "--reset"],
+        &format!("{server_id}\n"),
+    );
     assert!(!out.status.success());
     assert!(
         text(&out).contains("the backup failed; nothing was deleted"),
