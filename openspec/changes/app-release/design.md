@@ -366,7 +366,8 @@ Owner, 2026-11-15 (R10–R12): a **new** Play app for `com.purplechaamba.vyajena
 in the existing console, not the old vyajena's app. The old app and its CI
 deployment stay until vyajena2 is deployed and running; then the owner deletes
 them. Facts from the old repo (`~/code/vyajena`, mirrored publicly as
-`koppathachan/vyajena`; read-only):
+`koppathachan/vyajena`, renamed `koppathachan/vyajena-legacy` and archived on
+2026-11-16 when this repo took the name; read-only):
 
 - Old package `com.chaamba.vyajena`, on Play internal testing, uploaded by the
   `android-internal.yml` workflow, signed with `~/vyajena-upload.jks` rebuilt
@@ -379,10 +380,15 @@ them. Facts from the old repo (`~/code/vyajena`, mirrored publicly as
 Retiring the old one is the owner's work on GitHub, GCP and Play Console (task
 7.7), never a session's, and only after vyajena2 runs on the group's phones:
 unpublish/delete the old Play app, delete the workflow and its four secrets in
-`chaamba/vyajena` and `koppathachan/vyajena`, remove the service account's
-Play access, and delete its workload identity provider (or the service
-account). The old upload key goes with it. vyajena2 uploads by hand (Play
-Console web upload), so nothing replaces the workflow.
+`chaamba/vyajena` and `koppathachan/vyajena-legacy`, and remove the service
+account's access to the old app. The old upload key goes with it. vyajena2
+uploads by hand (Play Console web upload) for now.
+
+Owner, 2026-11-16 (relayed by the relay session): keep the service account to
+upload vyajena2 later, its email never in the repo (a GitHub Actions variable
+or `~/.vyajena-release/`). That wiring is not part of this change. Its workload
+identity provider was scoped to the old repo's name, which `koppathachan/vyajena`
+(this repo) now carries; the owner checks its attribute condition.
 
 ```mermaid
 flowchart LR

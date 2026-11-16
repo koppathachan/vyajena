@@ -210,10 +210,13 @@ on a personal account, a closed test with 12+ testers for 14 days.
 - Play Console: unpublish and delete the old app `com.chaamba.vyajena`.
 - GitHub: delete `.github/workflows/android-internal.yml` and the
   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
-  `ANDROID_KEY_PASSWORD` secrets in `chaamba/vyajena` and `koppathachan/vyajena`.
-- Play Console › Users and permissions: remove
-  `<play-ci-service-account>`.
-- GCP project `vyajena`: delete the `github-pool` workload identity provider
-  (or the service account).
+  `ANDROID_KEY_PASSWORD` secrets in `chaamba/vyajena` and
+  `koppathachan/vyajena-legacy` (the old repo, renamed and archived;
+  `koppathachan/vyajena` is now this repo).
+- Keep `<play-ci-service-account>` (its email stays out of the repo): the owner
+  plans to reuse it to upload this app. Until that is wired, remove its access
+  to the old app only, and check that the `github-pool` workload identity
+  provider trusts only the repositories you mean: the old repo's name now
+  belongs to this one.
 - Testers uninstall the old app. The old app's upload key
   retires with it.
