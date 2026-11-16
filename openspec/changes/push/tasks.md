@@ -27,12 +27,12 @@
 
 - [x] 4.1 README, `docs/architecture-decisions.md`, `docs/release.md` (push section only)
 - [x] 4.2 Tell app-release + owner: Android permissions, iOS Push capability, Play Data safety / App Store privacy, `google-services.json` on the build Mac
-- [ ] 4.3 `openspec validate push --strict`, `cargo test --workspace`, clippy, fmt, shellcheck
+- [x] 4.3 `openspec validate push --strict`, `cargo test --workspace`, clippy, fmt, shellcheck
 
 ## 5. Rollout (owner steps first)
 
 - [ ] 5.1 Owner: Firebase in `vyajena`, Android app, FCM service account key, APNs `.p8`, files in `~/.vyajena-push/`
-- [ ] 5.2 `deploy/pi/backup.sh`, `deploy/pi/build.sh`, `deploy/pi/deploy.sh --no-build`; `check.sh` 0 failed; real pin unchanged
+- [ ] 5.2 `deploy/pi/backup.sh`, `deploy/pi/build.sh`, `deploy/pi/deploy.sh --no-build`; `check.sh` 0 failed; real pin unchanged (2026-11-16: code + egress deployed without keys, backup 20261116T141149Z, check 0 failed / 2 WARN push-fcm, push-apns, pin e8cd17d5… unchanged; redeploy once the owner's keys exist)
 - [ ] 5.3 Owner: new Play internal + TestFlight builds
 - [ ] 5.4 Real check: closed app on the owner's Android phone and iPhone wakes with only "New message"; Pi journal shows device id + platform only
 - [ ] 5.5 `push-handover.md` in the tracker's notes folder
