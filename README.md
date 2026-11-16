@@ -259,3 +259,9 @@ change. Release builds are ready for Play internal testing and TestFlight
 Next, in order: real push (FCM / APNs), question-and-answer verification
 (`qa-verification`), then the terminal client.
 Desktop builds come later. See the open decisions in the architecture doc.
+
+## License
+
+GNU Affero General Public License v3.0 (`LICENSE`), like the original vyajena
+(now `koppathachan/vyajena-legacy`). Running a modified server for others
+means offering them its source.
