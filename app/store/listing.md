@@ -65,20 +65,24 @@ one-time and expires after 7 days (`INVITE_TTL`), and a server holds one
 group.
 
 **Owner, 2026-11-16: reviewers never join the real group** ("we can't let
-reviewers access to internal chats"; a delay is fine). Plan: a separate review
-server (its own data, keys and pin) on the Pi behind a second relay port, its
-admin on a spare device; the reviewer's invite comes from that server. Its own
-change, not app-release. Until it exists, Play App access, Target audience and
-Data safety stay unsent and distribution stays internal testing. The invite
-itself never goes in the repo.
+reviewers access to internal chats"). They join a separate review server
+(change `review-server`): `vyajarelay.purplechaamba.com:8443`, its own data,
+keys and pin, ids `<name>@review.purplechaamba.com`. Its admin is
+`review@review.purplechaamba.com` on the iOS simulator "Vyajena Review".
+
+Per review: on that simulator, menu → Invite a user → `playreview` → Copy;
+the owner pastes the invite into the store form (one-time, 7 days, never in
+the repo). After the review: menu → Remove a user (or
+`deploy/pi/deploy.sh --reset-review`).
 
 Play "App access" text (instructions only; the owner pastes the invite):
 
 > Vyajena is a private chat for one invite-only group; there is no sign-up or
 > password. 1. Open the app; it shows "Join the group". 2. Paste the invite
 > below into the Invite field and tap "Check invite". 3. Tap "Join". You are
-> now in the group as the user the invite names and can send and read
-> messages. The invite works once and expires 7 days after it was
+> now in a review group with its admin ("review") and can send and read
+> messages. Admin screens (inviting and removing people) appear only for the
+> group's admin. The invite works once and expires 7 days after it was
 > made; if it has expired, write to privacy@purplechaamba.com for a new one.
 
 ## Screenshots
