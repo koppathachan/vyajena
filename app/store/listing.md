@@ -61,11 +61,16 @@ report or moderation is added.
 
 Possible since the relay (2026-11-16): invites name
 `vyajarelay.purplechaamba.com:443`, reachable from anywhere. An invite is
-one-time and expires after 7 days (`INVITE_TTL`), and the server holds one
-group, so a reviewer joins the owner's real group and reads what is sent while
-they are in it. The owner decides whether and when to give one; the invite
-itself never goes in the repo. The admin removes the reviewer's account after
-the review.
+one-time and expires after 7 days (`INVITE_TTL`), and a server holds one
+group.
+
+**Owner, 2026-11-16: reviewers never join the real group** ("we can't let
+reviewers access to internal chats"; a delay is fine). Plan: a separate review
+server (its own data, keys and pin) on the Pi behind a second relay port, its
+admin on a spare device; the reviewer's invite comes from that server. Its own
+change, not app-release. Until it exists, Play App access, Target audience and
+Data safety stay unsent and distribution stays internal testing. The invite
+itself never goes in the repo.
 
 Play "App access" text (instructions only; the owner pastes the invite):
 
