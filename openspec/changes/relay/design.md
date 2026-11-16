@@ -321,6 +321,16 @@ The owner changed "for now lets avoid the dns" to "lets do dns now".
   relay ≈ 0.26 s, TLS handshake through to the Pi done at ≈ 0.8–1.3 s (once
   per connection). A send on the open stream costs one round trip over both
   legs, ≈ 0.5 s, as the architecture doc expected.
+- **The apps through the relay (2026-11-16, owner's request):** fresh
+  installs of the current app (`eccbe4f`) on the iPhone 16 simulator (the
+  admin's first device, owner's choice) and the Android emulator
+  `vyajena_test2` (bob), no `adb reverse`, no LAN. The bootstrap invite
+  previewed as `akhil@pi on vyajarelay.purplechaamba.com:443`; join, create
+  group, invite `bob`; bob's preview `bob@pi on vyajarelay.purplechaamba.com:443`,
+  join, the Pi sent the `JoinNotice` and the simulator added bob by itself
+  ("bob joined"); messages both ways with ✓. The Pi's journal shows ids and
+  events only. A stray `bo` invite (a typing race in the test driver, not the
+  app) was revoked from the Invites screen. Both checks 0 failed after.
 - Final run (task 6.2): shellcheck, `buf lint`, fmt, clippy, `openspec
   validate --strict` clean; `cargo test --workspace` 335 passed, 2 ignored.
   Two existing tests flaked once each under full-suite load and passed alone
