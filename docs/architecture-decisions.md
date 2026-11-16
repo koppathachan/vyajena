@@ -252,7 +252,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 | --- | --- |
 | `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage notices (`JoinNotice`: a new user's device waits for the admin's device to add it), heartbeats |
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
-| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing) |
+| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
 | `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.

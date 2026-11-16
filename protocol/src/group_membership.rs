@@ -26,6 +26,31 @@ pub const ROTATION_CHECK_INTERVAL: Duration = Duration::from_secs(DAY);
 /// devices do not all commit at the same moment (Own leaf rotation).
 pub const ROTATION_MAX_JITTER: Duration = Duration::from_secs(60 * 60);
 
+/// How many times the Pi accepts `Keys.RequestReadd` from one device in any
+/// [`READD_REQUEST_WINDOW`] (Re-add after an unusable Welcome): enough for a
+/// passing fault, not a commit loop.
+pub const MAX_READD_REQUESTS_PER_DAY: usize = 3;
+
+/// The sliding window [`MAX_READD_REQUESTS_PER_DAY`] counts in.
+pub const READD_REQUEST_WINDOW: Duration = Duration::from_secs(DAY);
+
+/// The longest `RequestReaddRequest.reason` the Pi accepts, in bytes; the core
+/// cuts its error text to this (at a character boundary).
+pub const MAX_READD_REASON_BYTES: usize = 512;
+
+/// `reason` cut to at most [`MAX_READD_REASON_BYTES`] bytes at a character
+/// boundary.
+pub fn readd_reason(reason: &str) -> &str {
+    if reason.len() <= MAX_READD_REASON_BYTES {
+        return reason;
+    }
+    let mut end = MAX_READD_REASON_BYTES;
+    while !reason.is_char_boundary(end) {
+        end -= 1;
+    }
+    reason.get(..end).unwrap_or_default()
+}
+
 /// Whether a leaf last updated `leaf_age` ago is due for rotation (Own leaf
 /// rotation): at [`OWN_LEAF_MAX_AGE`] or older.
 pub fn own_leaf_rotation_due(leaf_age: Duration) -> bool {

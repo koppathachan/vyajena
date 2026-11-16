@@ -21,8 +21,11 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
 
 pub use hub::Hub;
+pub(crate) use log::group_row;
 pub use stream::IDLE_CHECK_INTERVAL;
+pub(crate) use stream::{can_readd, device_ref, rejoin_notice};
 pub use sweep::{SWEEP_INTERVAL, sweep};
+pub(crate) use write::{Context, mark_inactive};
 
 use crate::auth::caller;
 use crate::pb;

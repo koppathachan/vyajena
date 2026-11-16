@@ -28,7 +28,7 @@ use crate::events::{
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
 use crate::identity::{DeviceKeys, Invite, LinkApproval, LinkRequest, PayloadError};
-use crate::keystore::{KeyStore, KeyStoreError, KeyStoreKind};
+use crate::keystore::{KeyName, KeyStore, KeyStoreError, KeyStoreKind};
 use crate::messaging::ContentError;
 use crate::mls::MlsError;
 use crate::mls::verify;
@@ -306,7 +306,8 @@ impl Client {
         let invite = Invite::decode(invite)?;
         let store = Arc::clone(&self.shared.key_store);
         let (keys, identity) = blocking(move || {
-            let keys = DeviceKeys::load_or_create(store.as_ref())?;
+            // device-identity: Fresh keys for a new signup.
+            let keys = DeviceKeys::create_fresh(store.as_ref())?;
             let identity = create_identity_key(store.as_ref())?;
             Ok((keys, identity))
         })
@@ -366,7 +367,14 @@ impl Client {
             return Err(ClientError::AlreadyRegistered);
         }
         let store = Arc::clone(&self.shared.key_store);
-        let keys = blocking(move || Ok(DeviceKeys::load_or_create(store.as_ref())?)).await?;
+        // device-identity: Fresh keys for a new signup. Each request starts
+        // over; a leftover identity key would make this device act as the
+        // user's identity device.
+        let keys = blocking(move || {
+            store.delete(KeyName::IdentityKey)?;
+            Ok(DeviceKeys::create_fresh(store.as_ref())?)
+        })
+        .await?;
         Ok(LinkRequest {
             auth_public_key: keys.auth_public(),
             mls_signature_public_key: keys.mls_public(),

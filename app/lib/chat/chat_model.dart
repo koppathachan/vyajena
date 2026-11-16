@@ -65,6 +65,17 @@ class CommitRefusedNotice extends Notice {
   final String reason;
 }
 
+/// The newest refusal the core reported (a Welcome or a commit this device
+/// could not use) and when it came: what the "waiting" screen shows while
+/// the device is in no group (app-ui: Join from an invite).
+class Refusal {
+  const Refusal(this.reason, this.atMs);
+  final String reason;
+
+  /// When the core reported it, in ms since the Unix epoch.
+  final int atMs;
+}
+
 /// The Pi's TLS key does not match the pin; the core stopped connecting.
 class ServerIdentityNotice extends Notice {
   const ServerIdentityNotice();
@@ -156,6 +167,8 @@ class ChatModel extends ChangeNotifier {
   /// device).
   final Map<String, Set<String>> _members = {};
   bool _removed = false;
+  Refusal? _refusal;
+  ReaddAnswer? _readd;
   final List<_Anchored> _notices = [];
   String? _groupName;
   late final StreamSubscription<CoreEvent> _subscription;
@@ -170,6 +183,14 @@ class ChatModel extends ChangeNotifier {
 
   /// The group's name, once an admin device set it.
   String? get groupName => _groupName;
+
+  /// The newest refusal since the device last joined; null: none.
+  Refusal? get refusal => _refusal;
+
+  /// The Pi's newest answer to this device asking to be added again, since
+  /// it last joined (group-membership: Re-add after an unusable Welcome);
+  /// null: it did not ask, or the answer changes nothing it waits for.
+  ReaddAnswer? get readd => _readd;
 
   /// The chat, oldest first.
   List<ChatItem> get items {
@@ -386,7 +407,14 @@ class ChatModel extends ChangeNotifier {
           _notice(KeyChangedNotice(user));
         }
       case CoreEvent_CommitRefused(:final reason):
+        _refusal = Refusal(reason, DateTime.now().millisecondsSinceEpoch);
         _notice(CommitRefusedNotice(reason));
+      case CoreEvent_ReaddRequested(:final outcome):
+        if (outcome == ReaddAnswer.asked ||
+            outcome == ReaddAnswer.limitReached) {
+          _readd = outcome;
+          _changed();
+        }
       case CoreEvent_ServerIdentityError():
         _notice(const ServerIdentityNotice());
       case CoreEvent_MembersChanged(
@@ -403,10 +431,14 @@ class ChatModel extends ChangeNotifier {
           _notice(const DeviceRemovedNotice());
         }
       case CoreEvent_Rejoined():
+        _refusal = null;
+        _readd = null;
         _notice(const RejoinedNotice());
         _reloadMembers();
         _reload();
       case CoreEvent_JoinedGroup():
+        _refusal = null;
+        _readd = null;
         _reloadMembers();
       case CoreEvent_Connection() || CoreEvent_Other():
         break;

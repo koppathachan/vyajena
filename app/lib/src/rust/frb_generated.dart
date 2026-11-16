@@ -1637,10 +1637,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 13:
         return CoreEvent_CommitRefused(reason: dco_decode_String(raw[1]));
       case 14:
+        return CoreEvent_ReaddRequested(
+          outcome: dco_decode_readd_answer(raw[1]),
+        );
+      case 15:
         return CoreEvent_Connection(
           status: dco_decode_connection_status(raw[1]),
         );
-      case 15:
+      case 16:
         return CoreEvent_Other();
       default:
         throw Exception("unreachable");
@@ -1773,6 +1777,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PushPlatform dco_decode_push_platform(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return PushPlatform.values[raw as int];
+  }
+
+  @protected
+  ReaddAnswer dco_decode_readd_answer(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ReaddAnswer.values[raw as int];
   }
 
   @protected
@@ -2061,9 +2071,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_reason = sse_decode_String(deserializer);
         return CoreEvent_CommitRefused(reason: var_reason);
       case 14:
+        var var_outcome = sse_decode_readd_answer(deserializer);
+        return CoreEvent_ReaddRequested(outcome: var_outcome);
+      case 15:
         var var_status = sse_decode_connection_status(deserializer);
         return CoreEvent_Connection(status: var_status);
-      case 15:
+      case 16:
         return CoreEvent_Other();
       default:
         throw UnimplementedError('');
@@ -2241,6 +2254,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var inner = sse_decode_i_32(deserializer);
     return PushPlatform.values[inner];
+  }
+
+  @protected
+  ReaddAnswer sse_decode_readd_answer(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ReaddAnswer.values[inner];
   }
 
   @protected
@@ -2532,11 +2552,14 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case CoreEvent_CommitRefused(reason: final reason):
         sse_encode_i_32(13, serializer);
         sse_encode_String(reason, serializer);
-      case CoreEvent_Connection(status: final status):
+      case CoreEvent_ReaddRequested(outcome: final outcome):
         sse_encode_i_32(14, serializer);
+        sse_encode_readd_answer(outcome, serializer);
+      case CoreEvent_Connection(status: final status):
+        sse_encode_i_32(15, serializer);
         sse_encode_connection_status(status, serializer);
       case CoreEvent_Other():
-        sse_encode_i_32(15, serializer);
+        sse_encode_i_32(16, serializer);
     }
   }
 
@@ -2702,6 +2725,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   @protected
   void sse_encode_push_platform(PushPlatform self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
+  void sse_encode_readd_answer(ReaddAnswer self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.index, serializer);
   }

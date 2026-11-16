@@ -2158,11 +2158,17 @@ impl SseDecode for crate::api::types::CoreEvent {
                 return crate::api::types::CoreEvent::CommitRefused { reason: var_reason };
             }
             14 => {
+                let mut var_outcome = <crate::api::types::ReaddAnswer>::sse_decode(deserializer);
+                return crate::api::types::CoreEvent::ReaddRequested {
+                    outcome: var_outcome,
+                };
+            }
+            15 => {
                 let mut var_status =
                     <crate::api::types::ConnectionStatus>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::Connection { status: var_status };
             }
-            15 => {
+            16 => {
                 return crate::api::types::CoreEvent::Other;
             }
             _ => {
@@ -2360,6 +2366,21 @@ impl SseDecode for crate::api::types::PushPlatform {
             0 => crate::api::types::PushPlatform::Fcm,
             1 => crate::api::types::PushPlatform::Apns,
             _ => unreachable!("Invalid variant for PushPlatform: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::ReaddAnswer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::ReaddAnswer::Asked,
+            1 => crate::api::types::ReaddAnswer::NotAMember,
+            2 => crate::api::types::ReaddAnswer::WelcomeQueued,
+            3 => crate::api::types::ReaddAnswer::AlreadyWaiting,
+            4 => crate::api::types::ReaddAnswer::LimitReached,
+            _ => unreachable!("Invalid variant for ReaddAnswer: {}", inner),
         };
     }
 }
@@ -2719,10 +2740,13 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::CoreEvent {
             crate::api::types::CoreEvent::CommitRefused { reason } => {
                 [13.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::CoreEvent::Connection { status } => {
-                [14.into_dart(), status.into_into_dart().into_dart()].into_dart()
+            crate::api::types::CoreEvent::ReaddRequested { outcome } => {
+                [14.into_dart(), outcome.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::CoreEvent::Other => [15.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::Connection { status } => {
+                [15.into_dart(), status.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::types::CoreEvent::Other => [16.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -2838,6 +2862,30 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::PushPlatform>
     for crate::api::types::PushPlatform
 {
     fn into_into_dart(self) -> crate::api::types::PushPlatform {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::ReaddAnswer {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Asked => 0.into_dart(),
+            Self::NotAMember => 1.into_dart(),
+            Self::WelcomeQueued => 2.into_dart(),
+            Self::AlreadyWaiting => 3.into_dart(),
+            Self::LimitReached => 4.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::ReaddAnswer
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ReaddAnswer>
+    for crate::api::types::ReaddAnswer
+{
+    fn into_into_dart(self) -> crate::api::types::ReaddAnswer {
         self
     }
 }
@@ -3107,12 +3155,16 @@ impl SseEncode for crate::api::types::CoreEvent {
                 <i32>::sse_encode(13, serializer);
                 <String>::sse_encode(reason, serializer);
             }
-            crate::api::types::CoreEvent::Connection { status } => {
+            crate::api::types::CoreEvent::ReaddRequested { outcome } => {
                 <i32>::sse_encode(14, serializer);
+                <crate::api::types::ReaddAnswer>::sse_encode(outcome, serializer);
+            }
+            crate::api::types::CoreEvent::Connection { status } => {
+                <i32>::sse_encode(15, serializer);
                 <crate::api::types::ConnectionStatus>::sse_encode(status, serializer);
             }
             crate::api::types::CoreEvent::Other => {
-                <i32>::sse_encode(15, serializer);
+                <i32>::sse_encode(16, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -3276,6 +3328,25 @@ impl SseEncode for crate::api::types::PushPlatform {
             match self {
                 crate::api::types::PushPlatform::Fcm => 0,
                 crate::api::types::PushPlatform::Apns => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::types::ReaddAnswer {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::types::ReaddAnswer::Asked => 0,
+                crate::api::types::ReaddAnswer::NotAMember => 1,
+                crate::api::types::ReaddAnswer::WelcomeQueued => 2,
+                crate::api::types::ReaddAnswer::AlreadyWaiting => 3,
+                crate::api::types::ReaddAnswer::LimitReached => 4,
                 _ => {
                     unimplemented!("");
                 }

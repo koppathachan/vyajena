@@ -8,13 +8,14 @@ use openmls::prelude::tls_codec::Deserialize as _;
 use openmls::prelude::{ExtensionType, KeyPackageIn, ProtocolVersion};
 use openmls_rust_crypto::RustCrypto;
 use protocol::device_identity::DeviceId;
-use protocol::group_membership::ADMIN_EXTENSION_TYPE;
+use protocol::group_membership::{ADMIN_EXTENSION_TYPE, MAX_READD_REASON_BYTES};
 use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
 use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
 
 use crate::auth::caller;
-use crate::membership::{CIPHERSUITE, certificate, joins};
+use crate::membership::{CIPHERSUITE, GroupState, certificate, inactivity, joins, readd};
+use crate::messaging;
 use crate::pb;
 use crate::pb::keys_server::{Keys, KeysServer};
 use crate::runtime::clock::unix_millis;
@@ -196,6 +197,127 @@ impl Keys for KeysService {
             self.state.hub.send_frame(&helper, notice);
         }
         Ok(Response::new(pb::UploadKeyPackagesResponse {}))
+    }
+
+    // group-membership: Re-add after an unusable Welcome (welcome-recovery
+    // design D2-D4).
+    async fn request_readd(
+        &self,
+        request: Request<pb::RequestReaddRequest>,
+    ) -> Result<Response<pb::RequestReaddResponse>, Status> {
+        let caller = caller(&request)?.clone();
+        let request = request.into_inner();
+        if request.last_resort_key_package.is_empty() {
+            return Err(Status::invalid_argument(
+                "exactly one last-resort KeyPackage is required",
+            ));
+        }
+        if request.reason.len() > MAX_READD_REASON_BYTES {
+            return Err(Status::invalid_argument(format!(
+                "the reason is over {MAX_READD_REASON_BYTES} bytes"
+            )));
+        }
+        let now = self.state.clock.now();
+        let device_hex = crate::runtime::server_keys::hex(&caller.device_id);
+        let limited = !self.state.readd_asks.allowed(&caller.device_id, now);
+        let admin = self.state.config.admin_username.clone();
+        let server_id = self.state.config.server_id.clone();
+        let keys = self.state.keys.clone();
+        let refused_seq = request.refused_welcome_seq;
+        let reason = request.reason.clone();
+        let device_id = caller.device_id;
+        let decided = self
+            .state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let device = records::device(&tx, &caller.device_id)?
+                    .ok_or_else(|| StoreError::Inconsistent("caller's device is missing".into()))?;
+                let crypto = RustCrypto::default();
+                for bytes in request
+                    .key_packages
+                    .iter()
+                    .chain(std::iter::once(&request.last_resort_key_package))
+                {
+                    if let Err(status) = check_key_package(&crypto, bytes, &device) {
+                        return Ok(Err(status));
+                    }
+                }
+                let outcome = if !readd::is_member(&tx, &caller.device_id)? {
+                    pb::ReaddOutcome::NotAMember
+                } else if inactivity::is_inactive(&tx, &caller.device_id)? {
+                    pb::ReaddOutcome::AlreadyWaiting
+                } else if readd::welcome_queued(&tx, &caller.device_id, refused_seq)? {
+                    pb::ReaddOutcome::WelcomeQueued
+                } else if limited {
+                    pb::ReaddOutcome::LimitReached
+                } else {
+                    pb::ReaddOutcome::Asked
+                };
+                let Some((group_id, _)) =
+                    messaging::group_row(&tx)?.filter(|_| outcome == pb::ReaddOutcome::Asked)
+                else {
+                    return Ok(Ok((outcome, Vec::new(), Vec::new())));
+                };
+                tx.execute(
+                    "DELETE FROM key_packages WHERE device_id = ?1",
+                    params![caller.device_id.as_slice()],
+                )?;
+                store_key_packages(
+                    &tx,
+                    &caller.device_id,
+                    &request.key_packages,
+                    &request.last_resort_key_package,
+                    now,
+                )?;
+                let mut state = GroupState::load(&tx)?
+                    .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
+                let ctx = messaging::Context {
+                    server_id: &server_id,
+                    keys: &keys,
+                    now,
+                };
+                let notify = messaging::mark_inactive(&tx, &ctx, &mut state, &caller.device_id)?;
+                state.save(&tx)?;
+                inactivity::mark_returned(&tx, &caller.device_id, now)?;
+                let me = messaging::device_ref(&caller.device_id, &caller.username, &server_id);
+                let rejoin = inactivity::active_members(&tx)?
+                    .into_iter()
+                    .filter(|(helper, helper_user)| {
+                        messaging::can_readd(
+                            helper,
+                            helper_user,
+                            &caller.device_id,
+                            &caller.username,
+                            &admin,
+                        )
+                    })
+                    .map(|(helper, _)| (helper, messaging::rejoin_notice(&group_id, me.clone())))
+                    .collect::<Vec<_>>();
+                tx.commit()?;
+                Ok(Ok((outcome, notify, rejoin)))
+            })
+            .await??;
+        let (outcome, notify, rejoin) = decided;
+        if outcome == pb::ReaddOutcome::Asked {
+            self.state.readd_asks.record(&device_id, now);
+        }
+        // The core's error text (never content), so the owner can read the
+        // cause in the Pi's journal.
+        tracing::info!(
+            device_id = %device_hex,
+            refused_welcome_seq = refused_seq,
+            outcome = outcome.as_str_name(),
+            reason = %reason,
+            "a device asked to be added again"
+        );
+        messaging::notify(&self.state, notify);
+        for (helper, notice) in rejoin {
+            self.state.hub.send_frame(&helper, notice);
+        }
+        Ok(Response::new(pb::RequestReaddResponse {
+            outcome: outcome.into(),
+        }))
     }
 
     async fn fetch_key_packages(

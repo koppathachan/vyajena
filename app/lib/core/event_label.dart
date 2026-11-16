@@ -25,6 +25,7 @@ String eventLabel(CoreEvent event) => switch (event) {
   CoreEvent_JoinedGroup() => 'joined-group',
   CoreEvent_MembersChanged() => 'members-changed',
   CoreEvent_CommitRefused() => 'commit-refused',
+  CoreEvent_ReaddRequested() => 'readd-requested',
   CoreEvent_Connection(:final status) => 'connection ${status.name}',
   CoreEvent_Other() => 'other',
 };

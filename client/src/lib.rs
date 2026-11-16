@@ -49,5 +49,5 @@ pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
     ConnectionState, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member, Message,
-    MessageBody, MessageId, Profile, PushPlatform, PushToken, SendStatus, UserId,
+    MessageBody, MessageId, Profile, PushPlatform, PushToken, ReaddOutcome, SendStatus, UserId,
 };

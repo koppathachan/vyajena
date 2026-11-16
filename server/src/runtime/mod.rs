@@ -20,6 +20,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::service::Routes;
 
 use crate::auth::AuthLayer;
+use crate::membership::readd::ReaddAsks;
 use crate::messaging::Hub;
 use crate::push::{LoggingProvider, PushProvider};
 use crate::store::{Store, StoreError};
@@ -106,6 +107,9 @@ pub struct State {
     pub hub: Arc<Hub>,
     /// Where wake pings go (pi-runtime: Push provider interface).
     pub push: Arc<dyn PushProvider>,
+    /// Recent `Keys.RequestReadd` asks per device (group-membership: Re-add
+    /// after an unusable Welcome).
+    pub readd_asks: Arc<ReaddAsks>,
 }
 
 /// A started server: keys loaded, database open, port bound.
@@ -172,6 +176,7 @@ impl Pi {
                 key_packages_low: broadcast::channel(KEY_PACKAGES_LOW_CHANNEL_CAPACITY).0,
                 hub: Arc::new(Hub::new()),
                 push,
+                readd_asks: Arc::new(ReaddAsks::default()),
             },
             listener,
             local_addr,

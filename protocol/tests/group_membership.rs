@@ -335,3 +335,29 @@ fn own_leaf_rotates_after_seven_days() {
     assert_eq!(ROTATION_MAX_JITTER, Duration::from_secs(60 * 60));
     const { assert!(ROTATION_MAX_JITTER.as_secs() < ROTATION_CHECK_INTERVAL.as_secs()) };
 }
+
+// spec: group-membership/re-add-after-an-unusable-welcome
+#[test]
+fn readd_reason_is_cut_at_a_character_boundary() {
+    use protocol::group_membership::{MAX_READD_REASON_BYTES, readd_reason};
+    assert_eq!(
+        readd_reason("no matching KeyPackage"),
+        "no matching KeyPackage"
+    );
+    let long = "é".repeat(MAX_READD_REASON_BYTES); // 2 bytes each
+    let cut = readd_reason(&long);
+    assert!(cut.len() <= MAX_READD_REASON_BYTES);
+    assert_eq!(cut.len(), MAX_READD_REASON_BYTES);
+    let odd = format!("x{long}");
+    let cut = readd_reason(&odd);
+    assert_eq!(cut.len(), MAX_READD_REASON_BYTES - 1);
+    assert!(odd.starts_with(cut));
+}
+
+// spec: group-membership/re-add-after-an-unusable-welcome
+#[test]
+fn readd_limits_are_a_few_a_day() {
+    use protocol::group_membership::{MAX_READD_REQUESTS_PER_DAY, READD_REQUEST_WINDOW};
+    assert_eq!(MAX_READD_REQUESTS_PER_DAY, 3);
+    assert_eq!(READD_REQUEST_WINDOW.as_secs(), 24 * 3600);
+}

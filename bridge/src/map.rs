@@ -4,13 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use client::net::NetError;
 use client::{
-    ClientError, ConnectionState, DeviceId, Event, Member, Message, MessageBody, SendStatus, UserId,
+    ClientError, ConnectionState, DeviceId, Event, Member, Message, MessageBody, ReaddOutcome,
+    SendStatus, UserId,
 };
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatMessage, ConnectionStatus, CoreEvent, InviteInfo, MemberDevice, SendState,
-    UserRef,
+    ChatBody, ChatMessage, ConnectionStatus, CoreEvent, InviteInfo, MemberDevice, ReaddAnswer,
+    SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -142,6 +143,15 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             automatic: automatic.iter().map(member).collect(),
         },
         Event::CommitRefused { reason } => CoreEvent::CommitRefused { reason },
+        Event::ReaddRequested { outcome } => CoreEvent::ReaddRequested {
+            outcome: match outcome {
+                ReaddOutcome::Asked => ReaddAnswer::Asked,
+                ReaddOutcome::NotAMember => ReaddAnswer::NotAMember,
+                ReaddOutcome::WelcomeQueued => ReaddAnswer::WelcomeQueued,
+                ReaddOutcome::AlreadyWaiting => ReaddAnswer::AlreadyWaiting,
+                ReaddOutcome::LimitReached => ReaddAnswer::LimitReached,
+            },
+        },
         Event::Connection(state) => CoreEvent::Connection {
             status: match state {
                 ConnectionState::Connecting => ConnectionStatus::Connecting,
