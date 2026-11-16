@@ -59,6 +59,13 @@ answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL em
 - **WHEN** Bob's laptop loses the network for a minute
 - **THEN** the core reconnects on its own and catches up in order
 
+#### Scenario: Relay without a tunnel
+- **WHEN** the Pi's tunnel is down, so the relay refuses Bob's TCP connection on
+  443 or accepts it and closes it at once, and Alice sends a message meanwhile
+- **THEN** Bob's core treats it as a network drop, keeps retrying with backoff,
+  and once the tunnel is back connects with the same pin and receives Alice's
+  message
+
 #### Scenario: Reconnect now
 - **WHEN** Bob's core is waiting 30 seconds before its next retry and the app
   calls `reconnect_now`

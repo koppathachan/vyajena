@@ -16,6 +16,12 @@ start, naming the bad field, if a setting is missing, invalid or unknown.
 - **THEN** the server exits with an error naming `admin_username` and opens no
   port
 
+#### Scenario: Behind the relay
+- **WHEN** the server starts with `listen_address = "127.0.0.1:8443"` and
+  `public_address = "203.0.113.10:443"`
+- **THEN** it accepts connections only on loopback, and the bootstrap invite and
+  every `Admin.CreateInvite` payload name `203.0.113.10:443`
+
 ### Requirement: First start
 On first start with an empty key directory the server SHALL generate its TLS key
 pair and its MLS external sender key pair, write each private key with file mode
