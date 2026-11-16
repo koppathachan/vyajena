@@ -30,7 +30,7 @@ flowchart LR
 | Version | `app/pubspec.yaml` `version:` | `<name>+<build>`; the build number only goes up, shared by both stores |
 | Minimum OS | Flutter defaults, Podfile | Android 7.0 (API 24), iOS 15.0; target API 36 |
 | iPhone only | `TARGETED_DEVICE_FAMILY = 1` | iPads run it in iPhone mode |
-| Export compliance | `Info.plist` | `ITSAppUsesNonExemptEncryption = YES` |
+| Export compliance | `Info.plist` | `ITSAppUsesNonExemptEncryption = NO` (design D8) |
 | Privacy answers | `app/store/privacy.md` | Play Data safety + App Store labels |
 | Listing text | `app/store/listing.md` | name, descriptions, keywords, URLs |
 | Icons | `app/store/icon/`, `app/store/icons.sh` | "വ്യ"; `play-icon-512.png`, `feature.png` for Play |
@@ -162,11 +162,13 @@ Apps › + › New App: iOS, name Vyajena, language English (US), bundle id
 - **Pricing and Availability:** free; **remove France** (export compliance, R8).
 - **App Information:** category Social Networking; age rating from
   `app/store/listing.md`.
-- **Export compliance** (asked on the first build): the app uses encryption;
-  it is standard encryption algorithms (MLS RFC 9420, TLS 1.3, Ed25519, X25519,
-  AES-GCM, ChaCha20-Poly1305) instead of or in addition to Apple's OS
-  encryption; it qualifies for the mass-market exemption; no proprietary
-  algorithms; no CCATS. Not legal advice.
+- **Export compliance** (done 2026-11-16, App Information › App Encryption
+  Documentation, nothing uploaded): app purpose; standard encryption
+  algorithms (MLS RFC 9420, TLS 1.3, Ed25519, X25519, AES-GCM,
+  ChaCha20-Poly1305) instead of or in addition to Apple's OS encryption; not
+  available in France. Apple's answer: no documents needed, so `Info.plist`
+  declares `ITSAppUsesNonExemptEncryption = NO` and no build asks again. A
+  France release needs this revisited (design D8). Not legal advice.
 - **TestFlight › Internal testing:** add the group as App Store Connect users
   (any role) and to an internal group (up to 100). No review is needed.
 
@@ -175,10 +177,10 @@ Apps › + › New App: iOS, name Vyajena, language English (US), bundle id
 ```bash
 app/store/build-ipa.sh                      # unsigned archive, signed App Store export
 app/store/release-check.sh --ios-only
+app/store/build-ipa.sh --upload             # to App Store Connect with Xcode's account
 ```
 
-Upload `app/build/ios/ipa/*.ipa` with Transporter (or Xcode › Organizer ›
-Distribute App). TestFlight builds **expire after 90 days**, so upload a new
+(Or upload `app/build/ios/ipa/*.ipa` with Transporter.) TestFlight builds **expire after 90 days**, so upload a new
 build at least every 90 days, even with no changes. Use the same build number
 sequence as Android, and tag as above.
 

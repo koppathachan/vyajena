@@ -234,6 +234,19 @@ equivalent question. This is the owner's call and not legal advice.
 - *Alternative:* `NO`. Rejected: it would be wrong, because Apple treats only
   encryption inside the OS as exempt from the question.
 
+**Changed to `NO`, owner, 2026-11-16** ("Yes, switch to NO"). The first upload
+of 1.0.0 (2) with `YES` was refused: "Invalid Export Compliance Code. The
+export compliance key value [] in the app's Info.plist doesn't match the key
+value of the app's export compliance documentation." With `YES`, App Store
+Connect now wants an `ITSEncryptionExportComplianceCode` from approved
+documentation. Its App Encryption Documentation questions, answered as above
+(standard algorithms; not available in France), end with: no documents needed,
+and the app may declare in `Info.plist` that it does not use (non-exempt)
+encryption so the questions are not asked again. So `NO`, on Apple's own
+answer for these choices. The facts above are unchanged; France stays out of
+availability, and a France release would need the ANSSI declaration and this
+key revisited. Still not legal advice.
+
 ### D9. Privacy manifest for the Rust core
 
 The Flutter engine ships its own privacy manifest; the Rust core is a static

@@ -75,10 +75,10 @@ void main() {
 
   // spec: app-release/encryption-export-declaration
   test('Upload without a prompt: Info.plist declares '
-      'ITSAppUsesNonExemptEncryption = YES (owner R8)', () {
+      'ITSAppUsesNonExemptEncryption = NO (owner R8, 2026-11-16)', () {
     expect(
       plistValue(read(infoPlist), 'ITSAppUsesNonExemptEncryption'),
-      'true',
+      'false',
     );
   });
 

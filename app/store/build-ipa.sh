@@ -7,8 +7,31 @@
 # cloud-managed Apple Distribution certificate and the App Store profile with
 # the Apple account added in Xcode › Settings › Accounts.
 #
-#   app/store/build-ipa.sh       # then: app/store/release-check.sh --ios-only
+#   app/store/build-ipa.sh            # then: app/store/release-check.sh --ios-only
+#   app/store/build-ipa.sh --upload   # after the check passes: sends the archive
+#                                     # to App Store Connect (Xcode's account)
 set -euo pipefail
+
+if [ "${1:-}" = "--upload" ]; then
+  # Re-exports the archive the last build made with destination "upload".
+  app="$(cd "$(dirname "$0")/.." && pwd)"
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  cp "$app/ios/ExportOptions.plist" "$tmp/upload.plist"
+  plutil -replace destination -string upload "$tmp/upload.plist"
+  for try in 1 2 3; do
+    if xcodebuild -exportArchive \
+      -archivePath "$app/build/ios/archive/Runner.xcarchive" \
+      -exportOptionsPlist "$tmp/upload.plist" \
+      -exportPath "$tmp/out" \
+      -allowProvisioningUpdates; then
+      exit 0
+    fi
+    [ "$try" -lt 3 ] || exit 1
+    echo "upload failed (try $try of 3); retrying"
+    sleep 10
+  done
+fi
 
 app="$(cd "$(dirname "$0")/.." && pwd)"
 archive="$app/build/ios/archive/Runner.xcarchive"

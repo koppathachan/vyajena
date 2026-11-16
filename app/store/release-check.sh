@@ -297,10 +297,10 @@ if [ "$check_ios" = 1 ]; then
       fail "ios core linked" "no bridge.framework with the bridge's symbols"
     fi
 
-    if [ "$(value ITSAppUsesNonExemptEncryption)" = "true" ]; then
-      pass "export compliance" "ITSAppUsesNonExemptEncryption = YES"
+    if [ "$(value ITSAppUsesNonExemptEncryption)" = "false" ]; then
+      pass "export compliance" "ITSAppUsesNonExemptEncryption = NO (design D8)"
     else
-      fail "export compliance" "ITSAppUsesNonExemptEncryption is not YES"
+      fail "export compliance" "ITSAppUsesNonExemptEncryption is not NO (design D8)"
     fi
     usages="$(plutil -convert xml1 -o - "$plist" | sed -n 's/.*<key>\(NS[A-Za-z]*UsageDescription\)<\/key>.*/\1/p' | sort | tr '\n' ' ')"
     if [ -z "$usages" ]; then

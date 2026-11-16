@@ -81,7 +81,7 @@ internal testing), which needs no review and works on the home LAN.
 | R5 | Privacy policy and support URLs | `https://www.purplechaamba.com/vyajena/privacy/` and `https://www.purplechaamba.com/vyajena/`; page source committed, the owner publishes it |
 | R6 | Minimum OS versions | Android 7.0 (API 24), iOS 15.0; target API 36 |
 | R7 | Release before the relay? | Yes, privately (R1), to the group's phones on the home Wi-Fi |
-| R8 | Export compliance | `ITSAppUsesNonExemptEncryption = YES`; App Store Connect answers: standard algorithms, mass-market exemption, no CCATS; France left out of availability (not legal advice) |
+| R8 | Export compliance | `ITSAppUsesNonExemptEncryption = NO` (was YES; changed 2026-11-16 on App Store Connect's answer, design D8); App Store Connect answers: standard algorithms, mass-market exemption, no CCATS; France left out of availability (not legal advice) |
 | R9 | iPhone or iPad | iPhone only (`TARGETED_DEVICE_FAMILY = 1`) |
 | R10 | Play app | A **new** Play app for `com.purplechaamba.vyajena` in the existing console (no fee; testers invited afresh). The old app `com.chaamba.vyajena` stays until vyajena2 is deployed and running, then the owner deletes it and its old repo deployment (the `android-internal` workflow, its signing secrets, the `play-internal-ci` service account's access) |
 | R11 | Upload key | A new key made for the new app (R4); the old `~/vyajena-upload.jks` stays with the old app and goes with it |
