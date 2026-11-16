@@ -125,6 +125,7 @@ void main() {
       expect(text.toLowerCase(), contains('username'));
       expect(text, contains('IP address'));
       expect(text, contains('7 days'));
+      expect(text, contains('New message'), reason: 'push wake-ups (push D12)');
     }
     expect(policy, contains('no tracking'));
     expect(

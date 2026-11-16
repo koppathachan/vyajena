@@ -222,8 +222,10 @@ PY
     # not-exported receivers is not a permission the user grants.
     perms="$(awk '$1 == "uses-permission" { sub(/^name=/, "", $2); print $2 }' "$work/manifest.txt" |
       grep -vx "$package.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" | sort | tr '\n' ' ' || true)"
-    if [ "$perms" = "android.permission.ACCESS_NETWORK_STATE android.permission.INTERNET " ]; then
-      pass permissions "exactly INTERNET and ACCESS_NETWORK_STATE"
+    # push design D12: POST_NOTIFICATIONS (the app), WAKE_LOCK and c2dm RECEIVE
+    # (firebase-messaging) for the "New message" wake-up.
+    if [ "$perms" = "android.permission.ACCESS_NETWORK_STATE android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE " ]; then
+      pass permissions "exactly INTERNET, ACCESS_NETWORK_STATE and push (POST_NOTIFICATIONS, WAKE_LOCK, c2dm RECEIVE)"
     else
       fail permissions "the bundle asks for: ${perms:-nothing readable}"
     fi
@@ -307,6 +309,21 @@ if [ "$check_ios" = 1 ]; then
       pass "ios permissions" "no usage descriptions"
     else
       fail "ios permissions" "usage descriptions: ${usages:-none}"
+    fi
+    # The one capability beyond the keychain is Push (push design D12). The
+    # archive is unsigned (build-ipa.sh signs at export), so read the source.
+    ent="$app/ios/Runner/Runner.entitlements"
+    ent_keys="$( [ -f "$ent" ] && plutil -convert json -o - "$ent" | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin))))' || true)"
+    if [ "$ent_keys" = "aps-environment" ]; then
+      pass "ios capabilities" "Push only (aps-environment)"
+    else
+      fail "ios capabilities" "Runner.entitlements keys: ${ent_keys:-none}"
+    fi
+    plist_xml="$(plutil -convert xml1 -o - "$plist")"
+    if [[ "$plist_xml" == *UIBackgroundModes* ]]; then
+      fail "ios background" "UIBackgroundModes is set"
+    else
+      pass "ios background" "no background modes"
     fi
     if [ "$(value CFBundleDisplayName)" = "Vyajena" ]; then
       pass "ios name" "Vyajena"

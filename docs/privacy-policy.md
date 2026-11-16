@@ -6,7 +6,7 @@
   It says what app/store/privacy.md says; change all three together.
 -->
 
-*Last updated: 2026-11-15*
+*Last updated: 2026-11-16*
 
 Vyajena is an end-to-end encrypted, text-only chat for one private group. It is
 made and run by Akhil Sasidharan (purplechaamba.com), who also runs the group's server.
@@ -26,10 +26,17 @@ There are no ads, no analytics and no tracking.
   phone; they stay in the phone's key store (Android Keystore, iOS Keychain).
 - **Your IP address** reaches the server because your phone connects to it.
   The server does not store it.
+- **A push token** for each of your devices (from Google on Android, from
+  Apple on iPhone) is stored on the server while that device is in the group,
+  so it can wake the app when a message arrives. The server then asks Google
+  or Apple to show a notification whose only text is "New message": they
+  learn that your phone was woken, never who wrote, in which group, or what.
+  If you turn notifications off, the app removes the token.
 
 Everything travels over TLS 1.3 to the group's own server. Nothing is sold,
 shared with anyone else, or used for advertising or tracking. The app contains
-no third-party analytics, advertising or crash-reporting code.
+no third-party analytics, advertising or crash-reporting code. On Android it
+includes Google's Firebase Cloud Messaging, only to receive those wake-ups.
 
 ## On your phone
 

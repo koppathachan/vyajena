@@ -98,18 +98,23 @@ run checks the device log.
   app's Dart code or the core, and contains neither "hi" nor "hey"
 
 ### Requirement: Declared permissions
-The Android release manifest SHALL request exactly `INTERNET` and
-`ACCESS_NETWORK_STATE` of the permissions a user or the system grants (the
-app's own signature-level `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
-that AndroidX adds is not one). The iOS app SHALL declare no usage
-description (invites name the relay's public name, so iOS never asks for local
-network access), no background mode and no capability beyond the keychain. The release check enforces
+The Android release manifest SHALL request exactly `INTERNET`,
+`ACCESS_NETWORK_STATE`, `POST_NOTIFICATIONS`, `WAKE_LOCK` and
+`com.google.android.c2dm.permission.RECEIVE` of the permissions a user or the
+system grants (the last three for push wake-ups; the app's own signature-level
+`<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` that AndroidX adds is not
+one). The iOS app SHALL declare no usage description (invites name the relay's
+public name, so iOS never asks for local network access), no background mode
+and no capability beyond the keychain and Push Notifications
+(`aps-environment`). The release check enforces
 this on the merged manifest and the built `Info.plist`.
 
 #### Scenario: Merged manifest
 - **WHEN** the release check reads the bundle's merged `AndroidManifest.xml`
-- **THEN** it lists `android.permission.INTERNET` and
-  `android.permission.ACCESS_NETWORK_STATE` and no other permission besides
+- **THEN** it lists `android.permission.INTERNET`,
+  `android.permission.ACCESS_NETWORK_STATE`,
+  `android.permission.POST_NOTIFICATIONS`, `android.permission.WAKE_LOCK` and
+  `com.google.android.c2dm.permission.RECEIVE` and no other permission besides
   the app's own `com.purplechaamba.vyajena.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
 
 #### Scenario: First connect on an iPhone

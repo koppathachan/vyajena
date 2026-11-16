@@ -333,6 +333,15 @@ your home network."). No Bonjour, so no `NSBonjourServices`. The relay change
 removes the key once invites name a public address. Android needs nothing for
 the LAN. Only a real iPhone can check this (task 7.6).
 
+**Spec fix, 2026-11-16 (push change, 2a5ec0b):** push wake-ups add Android
+`POST_NOTIFICATIONS` (the app; asked once after joining) plus `WAKE_LOCK` and
+`com.google.android.c2dm.permission.RECEIVE` (firebase-messaging, no
+Analytics), and the iOS Push Notifications capability (`Runner.entitlements`,
+`aps-environment` only; no background mode, no usage string). Declared
+permissions now names exactly these; the release check reads the merged
+manifest and the source entitlements (the archive is unsigned until export).
+The push session updated the two release tests (push design D12).
+
 **Spec fix, 2026-11-16 (after the relay change went live):** invites now name
 `vyajarelay.purplechaamba.com:443`, a public address, so iOS never asks for
 local network access and the key's text ("on your home network") is no longer

@@ -17,10 +17,13 @@ to. Nothing goes to anyone else.
 | Username (chosen by the group's admin) | Readable | The owner's Pi | While the user is in the group |
 | Identity and device public keys, device certificates, KeyPackages | Readable (public keys) | The owner's Pi | While the user or device is in the group |
 | IP address | The network connection itself | The owner's Pi | Not stored (only in a debug log when a TLS handshake fails, off by default) |
-| Push token | Not sent yet (a later change; then: readable, to the Pi, which sends a content-free wake-up through Google or Apple) | — | — |
+| Push token (FCM registration token on Android, APNs device token on iPhone) | Readable | The owner's Pi, which sends Google (FCM) or Apple (APNs) a wake-up whose only text is "New message": no sender, group or content | While the device is in the group; cleared when notifications are refused or the device is removed |
 
 Nothing else: no contacts, location, photos, files, analytics, crash reports,
-advertising ids or tracking. No third-party SDK collects anything. All traffic
+advertising ids or tracking. The only third-party SDK is Google's Firebase
+Cloud Messaging on Android (no Analytics), which receives the wake-ups; Google
+and Apple act as service providers delivering them, so the token is not
+"shared" in the stores' sense. All traffic
 is TLS 1.3 to a server whose key the invite pins.
 
 ## Google Play: Data safety
@@ -33,7 +36,8 @@ is TLS 1.3 to a server whose key the invite pins.
 - **Data types collected:**
   - *Personal info › User IDs* (the username): collected, not shared,
     processed ephemerally: no; required; purpose: App functionality.
-  - *Device or other IDs* (device public keys and certificates): collected,
+  - *Device or other IDs* (device public keys and certificates; the FCM push
+    token): collected,
     not shared; required; purpose: App functionality.
 - **Messages:** not declared as collected. They leave the phone only end-to-end
   encrypted, and nobody but the sender and recipients can read them; Play's
@@ -46,8 +50,9 @@ is TLS 1.3 to a server whose key the invite pins.
 - **Do you or your third-party partners collect data from this app?** Yes.
 - **Identifiers › User ID:** collected; linked to the user; not used for
   tracking; purpose: App Functionality.
-- **Identifiers › Device ID:** collected; linked to the user; not used for
-  tracking; purpose: App Functionality.
+- **Identifiers › Device ID** (device keys and certificates; the APNs push
+  token): collected; linked to the user; not used for tracking; purpose: App
+  Functionality.
 - **User Content › Other User Content / Emails or Text Messages:** not collected
   (end-to-end encrypted; the developer cannot read it).
 - **Tracking:** none. `NSPrivacyTracking = false`, no tracking domains.

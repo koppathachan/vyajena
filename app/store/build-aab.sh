@@ -13,6 +13,13 @@ set -euo pipefail
 app="$(cd "$(dirname "$0")/.." && pwd)"
 aab="$app/build/app/outputs/bundle/release/app-release.aab"
 
+# Push (change push): Gradle stops a release build without the owner's
+# Firebase config; say so before asking the Keychain for anything.
+if [ ! -f "$HOME/.vyajena-push/google-services.json" ]; then
+  echo "missing ~/.vyajena-push/google-services.json (Firebase, change push; owner steps in docs/release.md)" >&2
+  exit 1
+fi
+
 VYAJENA_UPLOAD_STORE_PASSWORD="$(security find-generic-password -s vyajena-upload -a store -w)"
 VYAJENA_UPLOAD_KEY_PASSWORD="$(security find-generic-password -s vyajena-upload -a key -w)"
 export VYAJENA_UPLOAD_STORE_PASSWORD VYAJENA_UPLOAD_KEY_PASSWORD
