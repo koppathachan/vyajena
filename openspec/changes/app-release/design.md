@@ -164,6 +164,15 @@ holds its private key, so there is no `.p12` to back up. Wrapped in
 `app/store/build-ipa.sh` (the fallback this section foresaw). Release check
 all PASS on 1.0.0 (2).
 
+Push (2026-11-16): an unsigned archive carries no entitlements, and the export
+keeps only what the archived app's signature holds, so 1.0.0 (3) first came out
+without `aps-environment` (iPhone push would never arrive). `build-ipa.sh` now
+signs the archived `Runner.app` once with the Apple Development identity and
+`Runner.entitlements` before the export; the export re-signs it for the App
+Store with `aps-environment = production` (Xcode added Push to the App ID and
+profile itself) and the script stops if that is missing. Still no registered
+device needed. Release check all PASS on 1.0.0 (3).
+
 ### D5. Version from pubspec; release tags
 
 `version: <name>+<build>` drives both platforms (Flutter already maps it:
