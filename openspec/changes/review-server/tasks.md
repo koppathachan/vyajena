@@ -7,9 +7,9 @@
 
 ## 2. Rollout (owner yes first)
 
-- [ ] 2.1 Owner: yes to `create.sh --dry-run` (one new free firewall rule) and a short tunnel restart for the real group
-- [ ] 2.2 `secrets.sh`, `create.sh`, `deploy/relay/deploy.sh`, `deploy/pi/deploy.sh --no-build`
-- [ ] 2.3 Both checks 0 failed; the real pin unchanged; review pin through `:8443`
+- [x] 2.1 Owner: yes to `create.sh --dry-run` (one new free firewall rule) and a short tunnel restart for the real group
+- [x] 2.2 `secrets.sh`, `create.sh`, `deploy/relay/deploy.sh`, `deploy/pi/deploy.sh --no-build`
+- [x] 2.3 Both checks 0 failed; the real pin unchanged; review pin through `:8443`
 
 ## 3. Review admin and hand-off
 
