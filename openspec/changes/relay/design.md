@@ -12,8 +12,8 @@
   services if possible"; "everyone re-joins as though its new… we treat it like
   non production"; "for now lets avoid the dns", then (2026-11-16) "lets do dns
   now" (D13).
-- GCP state (after the owner logged in again, 2026-11-15): billing account
-  the billing account is **closed**; billing is off on `purple-eccdf`,
+- GCP state (after the owner logged in again, 2026-11-15): the billing account
+  is **closed**; billing is off on `purple-eccdf`,
   `vyajena` and `triple-reef-499411-e4`; the Compute API was never enabled (no
   VMs, IPs or disks). **Step 0, owner only:** reopen billing and set a $1
   budget alert. Only then, with the owner's go-ahead, enable Compute
@@ -336,6 +336,16 @@ The owner changed "for now lets avoid the dns" to "lets do dns now".
   Two existing tests flaked once each under full-suite load and passed alone
   (`graceful_stop::sigterm_with_open_streams_exits_zero_and_keeps_the_pin` 3/3,
   `bridge text_forms::the_admin_links_a_tablet_by_text`); not touched here.
+
+### D14. The real Pi's ids: `vyajan@purplechaamba.com` (owner, 2026-11-16)
+
+After the emulator test the owner reset again and renamed the ids:
+`server_id = "purplechaamba.com"` (a domain the owner holds, unique if servers
+ever federate) and `admin_username = "vyajan"`. `server_id` is more than a
+label: the Pi stores it at first start and refuses another, it is in every
+device certificate's user id (clients reject a leaf naming another server), it
+is the Pi's MLS external-sender credential, and the admin's id is in the group
+context, so it changes only with `--reset`. Networking does not use it.
 
 ## Risks / Trade-offs
 

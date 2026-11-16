@@ -149,7 +149,8 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -u vyajena-tunnel -f
   `~/vyajena-pi-backups/bootstrap-invite-<UTC time>.txt` (owner only) instead
   of printing it. Lost it?
   `ssh vyajan@192.168.1.8 sudo journalctl -u vyajena -o cat | grep "bootstrap admin"`.
-  It creates the admin `akhil@pi` and is valid for 7 days.
+  It creates the admin `vyajan@purplechaamba.com` (`deploy/pi/config.toml`) and
+  is valid for 7 days.
 - **TLS pin:** every deploy prints `tls_spki_sha256`. Upgrades keep
   `/var/lib/vyajena` (database and keys), so it changes only with `--reset`.
 - **Reset** (`--reset`): type `pi` to confirm, `backup.sh` runs first (and a

@@ -558,7 +558,7 @@ fn the_pi_listens_on_loopback_and_invites_name_the_relay() {
     // Invites name the relay's DNS name; the Pi itself never resolves it.
     assert_eq!(config.public_address, "vyajarelay.purplechaamba.com:443");
     assert!(!sandbox.render("pi-config").contains(RELAY_IP));
-    assert_eq!(config.admin_user_id(), "akhil@pi");
+    assert_eq!(config.admin_user_id(), "vyajan@purplechaamba.com");
 }
 
 // spec: pi-deployment/host-hardening

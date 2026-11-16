@@ -3,10 +3,12 @@
 # /etc/vyajena/config.toml. No secrets: the keys and the database live in
 # /var/lib/vyajena (the service's StateDirectory, mode 0700).
 
-# The part after "@" in every user id; fixed at the first start.
-server_id = "pi"
+# The part after "@" in every user id, fixed at the first start (in the
+# database, device certificates and the Pi's MLS credential): a domain the
+# owner holds, so it stays unique if servers ever federate (owner, 2026-11-16).
+server_id = "purplechaamba.com"
 # The admin is admin_username@server_id; the bootstrap invite creates that user.
-admin_username = "akhil"
+admin_username = "vyajan"
 # Loopback only: devices reach it through the relay and vyajena-tunnel.service.
 listen_address = "127.0.0.1:8443"
 # What invites tell devices to dial: the relay's DNS name and port
