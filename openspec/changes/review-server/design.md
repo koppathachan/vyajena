@@ -121,6 +121,48 @@ flowchart LR
   `adb input text`; 30-character chunks with the stylus setting off worked
   (restored afterwards).
 
+### D6. Review mode (2026-11-16, owner)
+
+- **Why:** Play's App access form wants one set of sign-in details, reused for
+  every update and never expiring. Invites are single-use and expire after 7
+  days, and a reviewer could only be added while the "Vyajena Review" simulator
+  (the review admin) is online. A reusable invite in the proto was rejected by
+  the owner: "this is the separate server, don't they have autonomy to do what
+  they want? we can restrict it to one admin and one client [...] our code is
+  opensource so they should be able to test it however they want." So the
+  reviewer becomes the admin, and the exception lives only in the review
+  server's config. No proto or app changes.
+- **Config:** `review_mode = true` (optional bool, default false) only in
+  `deploy/pi/review.toml`; `deploy/pi/config.toml` never has it
+  (`deploy_files.rs` checks both).
+- **Bootstrap invite:** created with `expires_at` 9999-12-31T23:59:59Z
+  (`invites::never()`, the latest protobuf `Timestamp`). `Devices.Register`
+  accepts it again after use, only in review mode; `used_at` is set on each use,
+  so a used one is not listed and `RevokeInvite` says it was already used.
+- **Fresh review** (`server/src/review/`): in the signup's transaction, after
+  the certificate checks out, every table but `meta`, `invites` (bootstrap row
+  only) and `sequence` (reset to 0) is emptied. The table list is read from
+  `sqlite_master`, so tables added later are wiped too; foreign keys are
+  deferred to the commit. Keys live in `key_dir`, so the pin is unchanged. After
+  the commit every open stream is ended with `PERMISSION_DENIED` ("a new review
+  started"); old sessions are gone, so those devices cannot authenticate.
+- **Cap:** in review mode `Admin.CreateInvite` is refused with
+  `FAILED_PRECONDITION` while a non-removed user other than the admin exists or
+  a non-bootstrap invite is pending: 1 admin + 1 client. Removing the user or
+  revoking the invite frees the slot. Linked devices are not capped.
+- **Trade-offs:** anyone with the invite wipes the review in progress (two
+  stores reviewing at once kick each other out; the owner accepts this). The
+  review server already deployed has a used 7-day bootstrap invite: after the
+  deploy, `--reset-review` creates the never-expiring one.
+- **Real server:** no `review_mode`, so every path is as before: single-use,
+  `INVITE_TTL`, no cap. Tests prove it.
+- **Tests** (`server/tests/review_mode.rs`): a fresh review wipes every table but
+  the kept ones and keeps the pin and server id; the new reviewer creates the
+  group; the old devices' streams end and they cannot authenticate; the cap;
+  the never-expiring bootstrap invite survives a restart and 10 years; the real
+  server's bootstrap invite is single-use and expires, and it has no cap;
+  `review_mode` config parsing.
+
 ## Risks / Trade-offs
 
 - [Reviewers could reach the real server's port] → only with a real invite
@@ -140,4 +182,4 @@ vyajena-relay-review`).
 
 ## Open Questions
 
-None: answered by the owner (D1–D3).
+None: answered by the owner (D1–D3, D6).

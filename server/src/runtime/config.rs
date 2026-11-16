@@ -8,6 +8,8 @@
 //! public_address = "relay.example:443"   # optional: put in invite payloads
 //! database_path = "data/pi.sqlite"       # relative paths: from the config file's folder
 //! key_dir = "data/keys"
+//! review_mode = true                     # optional, default false: the store
+//!                                        # reviewers' server only (review-server)
 //! ```
 
 use std::net::SocketAddr;
@@ -29,6 +31,10 @@ pub struct Config {
     pub database_path: PathBuf,
     /// The folder holding the TLS and MLS external sender private keys.
     pub key_dir: PathBuf,
+    /// review-server: Review mode. The store reviewers' server only: its
+    /// bootstrap invite never expires and each use starts a fresh review, and
+    /// it holds at most the admin and one other user. Off unless set.
+    pub review_mode: bool,
 }
 
 /// The config field names, as written in the TOML file.
@@ -45,6 +51,8 @@ pub mod field {
     pub const DATABASE_PATH: &str = "database_path";
     /// `key_dir`
     pub const KEY_DIR: &str = "key_dir";
+    /// `review_mode`
+    pub const REVIEW_MODE: &str = "review_mode";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -53,6 +61,7 @@ pub mod field {
         PUBLIC_ADDRESS,
         DATABASE_PATH,
         KEY_DIR,
+        REVIEW_MODE,
     ];
 }
 
@@ -145,6 +154,7 @@ impl Config {
 
         let database_path = base.join(required_str(&table, field::DATABASE_PATH)?);
         let key_dir = base.join(required_str(&table, field::KEY_DIR)?);
+        let review_mode = optional_bool(&table, field::REVIEW_MODE)?.unwrap_or(false);
 
         Ok(Self {
             server_id,
@@ -153,6 +163,7 @@ impl Config {
             public_address,
             database_path,
             key_dir,
+            review_mode,
         })
     }
 
@@ -173,6 +184,17 @@ fn optional_str(table: &toml::Table, field: &'static str) -> Result<Option<Strin
         Some(other) => Err(ConfigError::Invalid {
             field,
             reason: format!("must be a string, found {}", other.type_str()),
+        }),
+    }
+}
+
+fn optional_bool(table: &toml::Table, field: &'static str) -> Result<Option<bool>, ConfigError> {
+    match table.get(field) {
+        None => Ok(None),
+        Some(toml::Value::Boolean(value)) => Ok(Some(*value)),
+        Some(other) => Err(ConfigError::Invalid {
+            field,
+            reason: format!("must be true or false, found {}", other.type_str()),
         }),
     }
 }

@@ -854,3 +854,25 @@ fn the_pi_check_covers_the_review_server_and_separate_pins() {
     let relay_check = read("deploy/relay/check.sh");
     assert!(relay_check.contains("$NAME-review INGRESS false false tcp:$REVIEW_PORT"));
 }
+
+// spec: review-server/review-mode
+#[test]
+fn only_the_review_server_runs_in_review_mode() {
+    let sandbox = Sandbox::new().with_secrets();
+    let review = Config::from_toml(&sandbox.render("pi-review-config"), Path::new("/"))
+        .check("rendered deploy/pi/review.toml");
+    let real = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
+        .check("rendered deploy/pi/config.toml");
+    assert!(
+        review.review_mode,
+        "review.toml must set review_mode = true"
+    );
+    assert!(
+        !real.review_mode,
+        "the real server must never run in review mode"
+    );
+    assert!(
+        !read("deploy/pi/config.toml").contains("review_mode"),
+        "deploy/pi/config.toml must not mention review_mode"
+    );
+}

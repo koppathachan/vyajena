@@ -48,3 +48,39 @@ port) and SHALL fail if both servers present the same TLS key.
 #### Scenario: Review service down
 - **WHEN** `vyajena-review.service` is stopped
 - **THEN** the check fails and names the review server
+
+### Requirement: Review mode
+A server whose config sets `review_mode = true` SHALL run in review mode; only
+the review server's config sets it, and it is off by default. In review mode:
+the bootstrap invite SHALL never expire and SHALL stay usable after use, so the
+stores get one set of sign-in details that works for every review. Each signup
+with it SHALL start a fresh review in one transaction: every user, device,
+session, other invite, KeyPackage, the group state and every queue are deleted;
+the server id, the bootstrap invite and the keys (so the TLS pin) are kept; the
+previous review's open streams are closed; then the new reviewer is registered
+as the admin. The server SHALL hold at most the admin and one other user:
+`Admin.CreateInvite` SHALL be refused with `FAILED_PRECONDITION` while a user
+other than the admin exists or an invite is pending.
+
+#### Scenario: A new review
+- **WHEN** a reviewer signs up with the review bootstrap invite after an earlier
+  review created a group, a user and messages
+- **THEN** the reviewer becomes the admin of an empty server with the same TLS
+  pin and server id, can create the group, and nothing of the earlier review
+  remains
+
+#### Scenario: The previous review's devices
+- **WHEN** a fresh review starts while the previous review's devices have open
+  streams
+- **THEN** their streams end and they can no longer authenticate
+
+#### Scenario: One other user
+- **WHEN** the review admin has invited one user and calls `Admin.CreateInvite`
+  again, before or after that user signs up
+- **THEN** the Pi refuses with `FAILED_PRECONDITION`, and allows it again once
+  the pending invite is revoked or the user is removed
+
+#### Scenario: Not in review mode
+- **WHEN** a server without `review_mode` (the real server) is used
+- **THEN** its bootstrap invite and invites stay single-use and expire after 7
+  days, and there is no limit on users

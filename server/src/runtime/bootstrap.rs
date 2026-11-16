@@ -1,7 +1,9 @@
 //! device-identity: Bootstrap admin. On a start with no users and no usable
 //! bootstrap invite, the Pi creates one invite for the configured admin user id
 //! and prints its payload to the log once. The user created from it is the
-//! admin (the admin is whoever `admin_username` names).
+//! admin (the admin is whoever `admin_username` names). In review mode
+//! (review-server: Review mode) that invite never expires, and each use of it
+//! starts a fresh review (see `crate::review`).
 
 use std::time::SystemTime;
 
@@ -66,6 +68,7 @@ pub async fn ensure_bootstrap_invite(
     let admin = config.admin_username.clone();
     let server_id = config.server_id.clone();
     let relay_address = config.public_address.clone();
+    let review_mode = config.review_mode;
     store
         .call(move |conn| {
             let tx = conn.transaction()?;
@@ -78,7 +81,11 @@ pub async fn ensure_bootstrap_invite(
                     expires_at: pending.expires_at,
                 });
             }
-            let invite = invites::create(&tx, &admin, now, true)?;
+            let invite = if review_mode {
+                invites::create_expiring(&tx, &admin, now, invites::never(), true)?
+            } else {
+                invites::create(&tx, &admin, now, true)?
+            };
             tx.commit()?;
             let payload = pb::InvitePayload {
                 relay_address,

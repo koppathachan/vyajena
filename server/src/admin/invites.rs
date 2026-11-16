@@ -1,7 +1,9 @@
 //! device-identity: Invites. Invite rows: single use, bound to a username,
-//! expiring [`INVITE_TTL`] after creation.
+//! expiring [`INVITE_TTL`] after creation. The one exception is the review
+//! server's bootstrap invite (review-server: Review mode), which never expires
+//! ([`never`]) and stays usable after use.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -29,6 +31,15 @@ pub struct Invite {
     pub bootstrap: bool,
 }
 
+/// Seconds from the Unix epoch to 9999-12-31T23:59:59Z, the latest time a
+/// protobuf `Timestamp` can carry.
+const NEVER_UNIX_SECS: u64 = 253_402_300_799;
+
+/// The expiry stored for an invite that never expires: 9999-12-31T23:59:59Z.
+pub fn never() -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(NEVER_UNIX_SECS)
+}
+
 /// A fresh invite code: 16 random bytes, base64url without padding (22 chars).
 pub fn new_invite_code() -> Result<String, StoreError> {
     let mut bytes = [0u8; INVITE_CODE_BYTES];
@@ -37,18 +48,31 @@ pub fn new_invite_code() -> Result<String, StoreError> {
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
-/// Creates and stores a new invite for `username`, created at `now`.
+/// Creates and stores a new invite for `username`, created at `now`, expiring
+/// [`INVITE_TTL`] later.
 pub fn create(
     tx: &Transaction<'_>,
     username: &str,
     now: SystemTime,
     bootstrap: bool,
 ) -> Result<Invite, StoreError> {
+    create_expiring(tx, username, now, now + INVITE_TTL, bootstrap)
+}
+
+/// Creates and stores a new invite for `username`, created at `now`, expiring
+/// at `expires_at` ([`never`] for the review server's bootstrap invite).
+pub fn create_expiring(
+    tx: &Transaction<'_>,
+    username: &str,
+    now: SystemTime,
+    expires_at: SystemTime,
+    bootstrap: bool,
+) -> Result<Invite, StoreError> {
     let invite = Invite {
         code: new_invite_code()?,
         username: username.to_owned(),
         created_at: now,
-        expires_at: now + INVITE_TTL,
+        expires_at,
         bootstrap,
     };
     tx.execute(
@@ -113,6 +137,17 @@ pub fn list_unused(tx: &Transaction<'_>, now: SystemTime) -> Result<Vec<Invite>,
         invites.push(row?);
     }
     Ok(invites)
+}
+
+/// How many invites other than bootstrap invites are unused, unrevoked and
+/// unexpired at `now` (review-server: Review mode, the user cap).
+pub fn count_pending(tx: &Transaction<'_>, now: SystemTime) -> Result<i64, StoreError> {
+    Ok(tx.query_row(
+        "SELECT count(*) FROM invites
+         WHERE bootstrap = 0 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?1",
+        params![unix_millis(now)],
+        |row| row.get(0),
+    )?)
 }
 
 /// What [`revoke`] found.

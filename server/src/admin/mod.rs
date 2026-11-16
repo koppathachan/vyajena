@@ -65,6 +65,8 @@ impl Admin for AdminService {
             return Err(Status::invalid_argument(format!("username {problem}")));
         }
         let now = self.state.clock.now();
+        let review_mode = self.state.config.review_mode;
+        let admin_username = self.state.config.admin_username.clone();
         let invite = self
             .state
             .store
@@ -76,6 +78,12 @@ impl Admin for AdminService {
                     return Ok(Err(Status::already_exists(
                         "a user with this username exists",
                     )));
+                }
+                // review-server: Review mode: the admin and one other user.
+                if review_mode
+                    && let Err(refused) = crate::review::check_user_cap(&tx, &admin_username, now)?
+                {
+                    return Ok(Err(refused));
                 }
                 let invite = invites::create(&tx, &username, now, false)?;
                 tx.commit()?;

@@ -16,7 +16,7 @@ use super::pb::devices_client::DevicesClient;
 use super::pb::keys_client::KeysClient;
 use super::pb::messaging_client::MessagingClient;
 use super::push::RecordingPush;
-use super::{Check, config_in, manual_clock, tls_client};
+use super::{Check, config_from, config_text, manual_clock, review_config_text, tls_client};
 
 /// A running test server.
 pub struct TestPi {
@@ -33,6 +33,7 @@ pub struct TestPi {
     /// Every wake ping the server sent (it also logs them, as the logging
     /// provider does).
     pub pushes: RecordingPush,
+    config_text: String,
     stop: Option<oneshot::Sender<()>>,
     _dir: tempfile::TempDir,
 }
@@ -41,28 +42,38 @@ impl TestPi {
     /// Starts a fresh server (admin `akhil@pi`) whose wake pings are
     /// recorded in [`TestPi::pushes`].
     pub async fn start() -> Self {
-        Self::start_inner(true).await
+        Self::start_inner(true, config_text()).await
+    }
+
+    /// Starts a fresh server like [`TestPi::start`], in review mode
+    /// (review-server: Review mode).
+    pub async fn start_review() -> Self {
+        Self::start_inner(true, review_config_text()).await
     }
 
     /// Starts a fresh server with the default push provider (the logging
     /// one); [`TestPi::pushes`] stays empty.
     pub async fn start_with_default_push() -> Self {
-        Self::start_inner(false).await
+        Self::start_inner(false, config_text()).await
     }
 
-    async fn start_inner(record: bool) -> Self {
+    async fn start_inner(record: bool, config_text: String) -> Self {
         let dir = tempfile::tempdir().check("temp dir");
         let clock = manual_clock();
         let pushes = RecordingPush::default();
         let pi = if record {
             Pi::start_with_push(
-                config_in(dir.path()),
+                config_from(&config_text, dir.path()),
                 Arc::new(clock.clone()),
                 Arc::new(pushes.clone()),
             )
             .await
         } else {
-            Pi::start(config_in(dir.path()), Arc::new(clock.clone())).await
+            Pi::start(
+                config_from(&config_text, dir.path()),
+                Arc::new(clock.clone()),
+            )
+            .await
         }
         .check("server start");
         let bootstrap_code = match pi.bootstrap() {
@@ -83,6 +94,7 @@ impl TestPi {
             state,
             bootstrap_code,
             pushes,
+            config_text,
             stop: Some(stop),
             _dir: dir,
         }
@@ -96,7 +108,7 @@ impl TestPi {
             let _ = stop.send(());
         }
         let pi = Pi::start_with_push(
-            config_in(self._dir.path()),
+            config_from(&self.config_text, self._dir.path()),
             Arc::new(self.clock.clone()),
             Arc::new(self.pushes.clone()),
         )

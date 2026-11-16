@@ -12,3 +12,8 @@ listen_address = "127.0.0.1:8444"
 public_address = "@RELAY_HOST@:@REVIEW_PORT@"
 database_path = "/var/lib/vyajena-review/pi.sqlite"
 key_dir = "/var/lib/vyajena-review/keys"
+
+# review-server: Review mode (design D6). The bootstrap invite never expires
+# and each use starts a fresh review (one set of sign-in details for the
+# stores); at most the admin and one other user. Never in config.toml.
+review_mode = true

@@ -214,18 +214,26 @@ Store reviewers (Play, App Store) get their own server, never the real group:
 reached at **`vyajarelay.purplechaamba.com:8443`** through the same tunnel with
 its own token. Change `review-server`.
 
+It runs in **review mode** (`review_mode = true`, only in `review.toml`;
+design D6): the reviewer is the admin.
+
 ```
-admin       the "Vyajena Review" iOS simulator (review@review.purplechaamba.com)
-invite      on that simulator: menu -> Invite a user -> a fresh single-use invite per review
-            (paste it into Play's App access form; never into the repo)
+sign-in     the review bootstrap invite: never expires, reusable; paste it once
+            into Play's App access form (never into the repo)
+each use    starts a fresh review: wipes users, devices, group, messages;
+            keeps the server id, the pin and the invite; old devices are cut off
+cap         1 admin + 1 user (CreateInvite -> FAILED_PRECONDITION until the
+            user is removed or the pending invite revoked)
 reset       deploy/pi/deploy.sh --reset-review    wipes only the review server (type its id)
             the new review bootstrap invite -> ~/vyajena-pi-backups/review-bootstrap-invite-<UTC>.txt
+            (a reset makes a new pin and a new invite: update Play)
 check       deploy/pi/check.sh                    covers both servers; fails if they share a pin
 ```
 
 - `deploy/pi/deploy.sh` installs and upgrades both servers; `backup.sh` skips
   the review server (no real data).
-- After a review: remove the reviewer (menu -> Remove a user) or `--reset-review`.
+- Two reviewers at once kick each other out (each use starts over).
+- The real server never runs in review mode: single-use 7-day invites, no cap.
 
 ## Release
 

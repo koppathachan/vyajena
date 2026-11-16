@@ -18,5 +18,6 @@ pub mod messaging;
 #[rustfmt::skip]
 pub mod pb;
 pub mod push;
+pub mod review;
 pub mod runtime;
 pub mod store;

@@ -43,7 +43,17 @@ key_dir = "keys"
 
 /// A config whose database and keys live in `dir`, on a random local port.
 pub fn config_in(dir: &Path) -> Config {
-    match Config::from_toml(&config_text(), dir) {
+    config_from(&config_text(), dir)
+}
+
+/// The test config with `review_mode = true` (review-server: Review mode).
+pub fn review_config_text() -> String {
+    format!("{}review_mode = true\n", config_text())
+}
+
+/// `text` as a config whose relative paths live in `dir`.
+pub fn config_from(text: &str, dir: &Path) -> Config {
+    match Config::from_toml(text, dir) {
         Ok(config) => config,
         Err(error) => panic!("test config is invalid: {error}"),
     }

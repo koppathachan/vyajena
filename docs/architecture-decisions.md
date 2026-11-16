@@ -188,7 +188,7 @@ sequenceDiagram
 - **Transport:** gRPC over HTTP/2 + TLS on TCP 443. HTTP/3 (tonic-h3) stays deferred while it is experimental.
 - **Latency:** India → US relay → Pi in India: two intercontinental legs per round trip, roughly 0.4–0.6 s per send. Accepted for the MVP.
 - **Cost:** the static IPv4 is billed, about $3.65/month (owner, 2026-11-15); the e2-micro, 10 GB standard disk and 1 GB/month outbound data are free tier. Watch the bill and the outbound data.
-- **Review server** (change `review-server`, owner 2026-11-16): store reviewers use a second, separate server on the Pi (own user, data, keys, pin; ids `<name>@review.purplechaamba.com`) at `vyajarelay.purplechaamba.com:8443`, through the same tunnel with its own token. They never join or see the real group.
+- **Review server** (change `review-server`, owner 2026-11-16): store reviewers use a second, separate server on the Pi (own user, data, keys, pin; ids `<name>@review.purplechaamba.com`) at `vyajarelay.purplechaamba.com:8443`, through the same tunnel with its own token. They never join or see the real group. It runs in **review mode** (design D6, owner 2026-11-16): its bootstrap invite never expires and each use starts a fresh review with the reviewer as admin (1 admin + 1 user); no proto or app changes, and the real server is unchanged.
 - **Direct IPv6** to the Pi (the Airtel router drops inbound IPv6 today) is a possible later improvement, last.
 
 ### Home-LAN phase (ended 2026-11-15)

@@ -109,8 +109,9 @@ impl Devices for DevicesService {
             .certificate
             .ok_or_else(|| Status::invalid_argument("certificate is required"))?;
         let server_id = self.state.config.server_id.clone();
+        let review_mode = self.state.config.review_mode;
         let now = self.state.clock.now();
-        let username = self
+        let (username, wiped) = self
             .state
             .store
             .call(move |conn| {
@@ -121,6 +122,7 @@ impl Devices for DevicesService {
                     &request.identity_public_key,
                     &signed,
                     &server_id,
+                    review_mode,
                     now,
                 );
                 if result.is_ok() {
@@ -129,6 +131,20 @@ impl Devices for DevicesService {
                 Ok(result)
             })
             .await??;
+        if let Some(wiped) = wiped {
+            // review-server: Review mode: the previous review's devices are
+            // gone; end their open streams (and any that raced the wipe).
+            for (device_id, _) in self.state.hub.connected() {
+                self.state.hub.close(
+                    &device_id,
+                    Status::permission_denied("a new review started; this device was removed"),
+                );
+            }
+            tracing::info!(
+                devices = wiped.len(),
+                "review mode: the bootstrap invite started a fresh review"
+            );
+        }
         tracing::info!(%username, "registered a user and their first device");
         Ok(Response::new(pb::RegisterResponse {
             user_id: Some(pb::UserId {
@@ -367,26 +383,52 @@ impl Devices for DevicesService {
     }
 }
 
+/// An invite as `register` reads it.
+struct InviteRow {
+    username: String,
+    expires_at: SystemTime,
+    used: bool,
+    revoked: bool,
+    bootstrap: bool,
+}
+
 /// device-identity: Signup with an invite; Admin-owned usernames. Returns the
-/// new user's username.
+/// new user's username and, when the review server's bootstrap invite started a
+/// fresh review (review-server: Review mode), the devices that were wiped.
 fn register(
     tx: &Transaction<'_>,
     invite_code: &str,
     identity_public_key: &[u8],
     signed: &pb::SignedDeviceCertificate,
     server_id: &str,
+    review_mode: bool,
     now: SystemTime,
-) -> Result<String, Status> {
-    let invite: Option<(String, i64, Option<i64>, Option<i64>)> = tx
+) -> Result<(String, Option<Vec<DeviceId>>), Status> {
+    let invite = tx
         .query_row(
-            "SELECT username, expires_at, used_at, revoked_at FROM invites WHERE code = ?1",
+            "SELECT username, expires_at, used_at, revoked_at, bootstrap
+             FROM invites WHERE code = ?1",
             params![invite_code],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok(InviteRow {
+                    username: row.get(0)?,
+                    expires_at: from_unix_millis(row.get(1)?),
+                    used: row.get::<_, Option<i64>>(2)?.is_some(),
+                    revoked: row.get::<_, Option<i64>>(3)?.is_some(),
+                    bootstrap: row.get(4)?,
+                })
+            },
         )
         .optional()
         .map_err(StoreError::from)?;
-    let username = match invite {
-        Some((username, expires_at, None, None)) if now < from_unix_millis(expires_at) => username,
+    let usable = |invite: &InviteRow| !invite.revoked && now < invite.expires_at;
+    let (username, fresh_review) = match invite {
+        Some(invite) if usable(&invite) && !invite.used => (invite.username, false),
+        // review-server: Review mode: the bootstrap invite stays usable after
+        // use; each use starts a fresh review.
+        Some(invite) if usable(&invite) && invite.bootstrap && review_mode => {
+            (invite.username, true)
+        }
         _ => {
             return Err(Status::permission_denied(
                 "the invite is unknown, used, revoked or expired",
@@ -401,6 +443,13 @@ fn register(
             "the certificate must name {username}@{server_id}, the user the invite creates"
         )));
     }
+    // Only after the certificate checks out, so a bad request wipes nothing;
+    // the caller commits only on success.
+    let wiped = if fresh_review {
+        Some(crate::review::fresh_review(tx, invite_code)?)
+    } else {
+        None
+    };
     match records::user(tx, &username)? {
         None => {
             tx.execute(
@@ -428,7 +477,7 @@ fn register(
         params![invite_code, unix_millis(now)],
     )
     .map_err(StoreError::from)?;
-    Ok(username)
+    Ok((username, wiped))
 }
 
 /// device-identity: Device linking. Returns the new device's id.
