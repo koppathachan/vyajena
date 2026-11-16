@@ -32,34 +32,6 @@ remote_checks() {
   # Address lists compare as sets: systemd prints them in its own order.
   words() { tr ' ' '\n' <<<"$1" | sed '/^$/d' | sort | tr '\n' ' ' | sed 's/ $//'; }
 
-  # Service user: a system account with no login shell and no password.
-  local entry uid shell
-  entry="$(getent passwd vyajena || true)"
-  uid="$(cut -d: -f3 <<<"$entry")"
-  shell="$(cut -d: -f7 <<<"$entry")"
-  if [ -z "$entry" ]; then
-    fail service-user "no vyajena user"
-  elif [ "$uid" -ge 1000 ] || { [ "$shell" != /usr/sbin/nologin ] && [ "$shell" != /bin/false ]; }; then
-    fail service-user "uid $uid, shell $shell (want a system uid and nologin)"
-  elif ! getent shadow vyajena | cut -d: -f2 | grep -qE '^[!*]'; then
-    fail service-user "vyajena has a usable password"
-  else
-    ok service-user
-  fi
-
-  check service-running "vyajena.service is not active and enabled" \
-    sh -c 'systemctl is-active --quiet vyajena.service && systemctl is-enabled --quiet vyajena.service'
-
-  # Sandbox settings, as systemd applies them.
-  local want prop got
-  for want in User=vyajena NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \
-    PrivateTmp=yes PrivateDevices=yes CapabilityBoundingSet= AmbientCapabilities= \
-    "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" Restart=on-failure \
-    StateDirectory=vyajena UMask=0077 KillSignal=15; do
-    prop="${want%%=*}"
-    got="$(systemctl show -p "$prop" --value vyajena.service)"
-    if [ "$prop=$got" = "$want" ]; then ok "sandbox $prop"; else fail "sandbox $prop" "is '$got', want '${want#*=}'"; fi
-  done
   exposure_of() { # exposure_of <unit> <label>
     local exposure
     exposure="$(systemd-analyze security "$1" --no-pager 2>/dev/null |
@@ -70,37 +42,74 @@ remote_checks() {
       fail "$2 exposure" "systemd-analyze security says ${exposure:-nothing}, max $max_exposure"
     fi
   }
-  exposure_of vyajena.service sandbox
-  # Loopback only: devices come through the tunnel (relay design D5).
-  got="$(systemctl show -p IPAddressAllow --value vyajena.service)"
-  if [ "$(words "$got")" = "$(words "127.0.0.0/8 ::1/128")" ]; then ok "sandbox IPAddressAllow loopback"; else fail "sandbox IPAddressAllow" "is '$got', want loopback only"; fi
-  # No writes outside /var/lib/vyajena, tried inside the running service's
-  # namespaces as its user. Its private /tmp and /var/tmp (PrivateTmp=yes)
-  # are throwaway and seen by nothing else, so they are not probed.
-  local pid vuid vgid
-  pid="$(systemctl show -p MainPID --value vyajena.service)"
-  vuid="$(id -u vyajena 2>/dev/null || echo 65534)"
-  vgid="$(id -g vyajena 2>/dev/null || echo 65534)"
-  if [ -n "$pid" ] && [ "$pid" != 0 ]; then
-    local probe=".vyajena-check-$$"
-    if nsenter -t "$pid" -m -U -S "$vuid" -G "$vgid" \
-      sh -c "touch /var/lib/vyajena/$probe && rm /var/lib/vyajena/$probe" 2>/dev/null; then
-      ok "sandbox writes to /var/lib/vyajena"
+  # server_checks <unit> <user> <state dir> <other server's dir> <name prefix>:
+  # the real server and the review server get the same checks
+  # (review-server design D3); neither may write the other's directory.
+  server_checks() {
+    local unit="$1" user="$2" dir="$3" other="$4" pfx="$5"
+    # Service user: a system account with no login shell and no password.
+    local entry uid shell
+    entry="$(getent passwd "$user" || true)"
+    uid="$(cut -d: -f3 <<<"$entry")"
+    shell="$(cut -d: -f7 <<<"$entry")"
+    if [ -z "$entry" ]; then
+      fail "${pfx}service-user" "no $user user"
+    elif [ "$uid" -ge 1000 ] || { [ "$shell" != /usr/sbin/nologin ] && [ "$shell" != /bin/false ]; }; then
+      fail "${pfx}service-user" "uid $uid, shell $shell (want a system uid and nologin)"
+    elif ! getent shadow "$user" | cut -d: -f2 | grep -qE '^[!*]'; then
+      fail "${pfx}service-user" "$user has a usable password"
     else
-      fail "sandbox writes" "the service cannot write /var/lib/vyajena"
+      ok "${pfx}service-user"
     fi
-    local path bad=""
-    for path in / /etc /usr/local/bin /var/lib /var/log /home /root; do
-      if nsenter -t "$pid" -m -U -S "$vuid" -G "$vgid" \
-        sh -c "touch $path/$probe" 2>/dev/null; then
-        bad="$bad $path"
-        rm -f "$path/$probe"
-      fi
+
+    check "${pfx}service-running" "$unit is not active and enabled" \
+      sh -c "systemctl is-active --quiet $unit && systemctl is-enabled --quiet $unit"
+
+    # Sandbox settings, as systemd applies them.
+    local want prop got
+    for want in "User=$user" NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \
+      PrivateTmp=yes PrivateDevices=yes CapabilityBoundingSet= AmbientCapabilities= \
+      "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" Restart=on-failure \
+      "StateDirectory=${dir#/var/lib/}" UMask=0077 KillSignal=15; do
+      prop="${want%%=*}"
+      got="$(systemctl show -p "$prop" --value "$unit")"
+      if [ "$prop=$got" = "$want" ]; then ok "${pfx}sandbox $prop"; else fail "${pfx}sandbox $prop" "is '$got', want '${want#*=}'"; fi
     done
-    if [ -z "$bad" ]; then ok "sandbox no writes elsewhere"; else fail "sandbox writes" "the service can write:$bad"; fi
-  else
-    fail "sandbox writes" "vyajena.service has no main process"
-  fi
+    exposure_of "$unit" "${pfx}sandbox"
+    # Loopback only: devices come through the tunnel (relay design D5).
+    got="$(systemctl show -p IPAddressAllow --value "$unit")"
+    if [ "$(words "$got")" = "$(words "127.0.0.0/8 ::1/128")" ]; then ok "${pfx}sandbox IPAddressAllow loopback"; else fail "${pfx}sandbox IPAddressAllow" "is '$got', want loopback only"; fi
+    # No writes outside /var/lib/vyajena, tried inside the running service's
+    # namespaces as its user. Its private /tmp and /var/tmp (PrivateTmp=yes)
+    # are throwaway and seen by nothing else, so they are not probed.
+    local pid vuid vgid
+    pid="$(systemctl show -p MainPID --value "$unit")"
+    vuid="$(id -u "$user" 2>/dev/null || echo 65534)"
+    vgid="$(id -g "$user" 2>/dev/null || echo 65534)"
+    if [ -n "$pid" ] && [ "$pid" != 0 ]; then
+      local probe=".vyajena-check-$$"
+      if nsenter -t "$pid" -m -U -S "$vuid" -G "$vgid" \
+        sh -c "touch $dir/$probe && rm $dir/$probe" 2>/dev/null; then
+        ok "${pfx}sandbox writes to $dir"
+      else
+        fail "${pfx}sandbox writes" "the service cannot write $dir"
+      fi
+      local path bad=""
+      for path in / /etc /usr/local/bin /var/lib /var/log /home /root $other; do
+        if nsenter -t "$pid" -m -U -S "$vuid" -G "$vgid" \
+          sh -c "touch $path/$probe" 2>/dev/null; then
+          bad="$bad $path"
+          rm -f "$path/$probe"
+        fi
+      done
+      if [ -z "$bad" ]; then ok "${pfx}sandbox no writes elsewhere"; else fail "${pfx}sandbox writes" "the service can write:$bad"; fi
+    else
+      fail "${pfx}sandbox writes" "$unit has no main process"
+    fi
+
+  }
+  server_checks vyajena.service vyajena /var/lib/vyajena /var/lib/vyajena-review ""
+  server_checks vyajena-review.service vyajena-review /var/lib/vyajena-review /var/lib/vyajena "review "
 
   # The tunnel (relay design D5): sandboxed, dynamic user, only loopback and
   # the relay, attached.
@@ -141,33 +150,40 @@ remote_checks() {
 
   # File modes: database and keys owner-only.
   local f m
-  for f in /var/lib/vyajena /var/lib/vyajena/keys; do
-    m="$(mode_of "$f")"
-    if [ "$m" = "700 vyajena" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '${m:-missing}', want '700 vyajena'"; fi
-  done
-  for f in /var/lib/vyajena/pi.sqlite /var/lib/vyajena/pi.sqlite-wal /var/lib/vyajena/pi.sqlite-shm \
-    /var/lib/vyajena/keys/tls_key.pem /var/lib/vyajena/keys/mls_external_sender_key.pem; do
-    [ -e "$f" ] || { [[ "$f" == *-wal || "$f" == *-shm ]] && continue; }
-    m="$(mode_of "$f")"
-    if [ "$m" = "600 vyajena" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '${m:-missing}', want '600 vyajena'"; fi
+  local owner d
+  for d in vyajena vyajena-review; do
+    owner="$d"
+    for f in "/var/lib/$d" "/var/lib/$d/keys"; do
+      m="$(mode_of "$f")"
+      if [ "$m" = "700 $owner" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '${m:-missing}', want '700 $owner'"; fi
+    done
+    for f in "/var/lib/$d/pi.sqlite" "/var/lib/$d/pi.sqlite-wal" "/var/lib/$d/pi.sqlite-shm" \
+      "/var/lib/$d/keys/tls_key.pem" "/var/lib/$d/keys/mls_external_sender_key.pem"; do
+      [ -e "$f" ] || { [[ "$f" == *-wal || "$f" == *-shm ]] && continue; }
+      m="$(mode_of "$f")"
+      if [ "$m" = "600 $owner" ]; then ok "file-mode $f"; else fail "file-mode $f" "is '${m:-missing}', want '600 $owner'"; fi
+    done
   done
   for f in /usr/local/bin/vyajena-server:"755 root" /etc/vyajena/config.toml:"644 root" \
     /etc/systemd/system/vyajena.service:"644 root" /usr/local/bin/rathole:"755 root" \
-    /etc/vyajena/tunnel.toml:"600 root" /etc/systemd/system/vyajena-tunnel.service:"644 root"; do
+    /etc/vyajena/tunnel.toml:"600 root" /etc/systemd/system/vyajena-tunnel.service:"644 root" \
+    /etc/vyajena/review.toml:"644 root" /etc/systemd/system/vyajena-review.service:"644 root"; do
     m="$(mode_of "${f%%:*}")"
     if [ "$m" = "${f#*:}" ]; then ok "file-mode ${f%%:*}"; else fail "file-mode ${f%%:*}" "is '${m:-missing}', want '${f#*:}'"; fi
   done
 
-  # Listening: SSH, and the server on loopback only. NetworkManager's DHCP
+  # Listening: SSH, and the two servers on loopback only. NetworkManager's DHCP
   # client sockets (UDP 68, 546) are clients, not services.
   local listeners extra
   listeners="$(ss -H -tulnp)"
   extra="$(awk '
     $1 == "tcp" && $5 ~ /:22$/ && /"sshd"/ {next}
-    $1 == "tcp" && $5 == "127.0.0.1:8443" && /"vyajena-server"/ {next}
+    $1 == "tcp" && ($5 == "127.0.0.1:8443" || $5 == "127.0.0.1:8444") && /"vyajena-server"/ {next}
     $1 == "udp" && $5 ~ /:(68|546)$/ && /"NetworkManager"/ {next}
     {print $1, $5, $7}' <<<"$listeners")"
   if [ -z "$extra" ]; then ok listening; else fail listening "unexpected listeners: $(tr '\n' ';' <<<"$extra")"; fi
+  check "review listening 127.0.0.1:8444" "the review server is not listening on 127.0.0.1:8444" \
+    grep -q '127.0.0.1:8444.*"vyajena-server"' <<<"$listeners"
   check "listening 127.0.0.1:8443" "vyajena-server is not listening on 127.0.0.1:8443" \
     grep -q '127.0.0.1:8443.*"vyajena-server"' <<<"$listeners"
 
@@ -282,29 +298,47 @@ spki() {
     openssl pkey -pubin -outform der 2>/dev/null | openssl dgst -sha256 -r | cut -d' ' -f1
 }
 
-mac_checks() {
-  local empty
+# pin_check <name> <config on the Pi> <loopback port>: the public_address in
+# that config presents the same key as the Pi's loopback port; sets PIN.
+pin_check() {
+  local name="$1" config="$2" port="$3" empty relay pi_pin relay_pin
+  PIN=""
   empty="$(printf '' | openssl dgst -sha256 -r | cut -d' ' -f1)"
-  if nc -z -G 3 "$HOST" 8443 2>/dev/null; then
-    echo "FAIL lan-closed: $HOST:8443 answers on the LAN; the server must be loopback-only"
-  else
-    echo "ok   lan-closed $HOST:8443"
-  fi
-  # The relay reaches this Pi: its 443 presents the key the Pi's loopback port
-  # presents (both ends through openssl, relay design D10).
-  local relay pi_pin relay_pin
-  relay="$(ssh -o BatchMode=yes "$PI" "sed -n 's/^public_address = \"\(.*\)\"\$/\1/p' /etc/vyajena/config.toml")"
-  pi_pin="$(ssh -o BatchMode=yes "$PI" "openssl s_client -connect 127.0.0.1:8443 -alpn h2 </dev/null 2>/dev/null |
+  relay="$(ssh -o BatchMode=yes "$PI" "sed -n 's/^public_address = \"\(.*\)\"\$/\1/p' $config")"
+  pi_pin="$(ssh -o BatchMode=yes "$PI" "openssl s_client -connect 127.0.0.1:$port -alpn h2 </dev/null 2>/dev/null |
     openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -r | cut -d' ' -f1")"
   relay_pin="$(spki "$relay")"
   if [ -z "$relay" ]; then
-    echo "FAIL relay-pin: no public_address in the Pi's config"
+    echo "FAIL $name: no public_address in the Pi's $config"
   elif [ -z "$pi_pin" ] || [ "$pi_pin" = "$empty" ]; then
-    echo "FAIL relay-pin: no TLS key on the Pi's 127.0.0.1:8443"
+    echo "FAIL $name: no TLS key on the Pi's 127.0.0.1:$port"
   elif [ "$relay_pin" = "$pi_pin" ]; then
-    echo "ok   relay-pin $relay presents the Pi's key ${pi_pin:0:16}…"
+    echo "ok   $name $relay presents the Pi's key ${pi_pin:0:16}…"
+    PIN="$pi_pin"
   else
-    echo "FAIL relay-pin: $relay presents '${relay_pin:0:16}', the Pi '${pi_pin:0:16}'"
+    echo "FAIL $name: $relay presents '${relay_pin:0:16}', the Pi '${pi_pin:0:16}'"
+  fi
+}
+
+mac_checks() {
+  local port
+  for port in 8443 8444; do
+    if nc -z -G 3 "$HOST" "$port" 2>/dev/null; then
+      echo "FAIL lan-closed: $HOST:$port answers on the LAN; the servers must be loopback-only"
+    else
+      echo "ok   lan-closed $HOST:$port"
+    fi
+  done
+  # The relay reaches this Pi: each public port presents the key its loopback
+  # port presents (both ends through openssl, relay design D10, review-server
+  # D3), and the two servers never share a key.
+  pin_check relay-pin /etc/vyajena/config.toml 8443
+  local real_pin="$PIN"
+  pin_check review-pin /etc/vyajena/review.toml 8444
+  if [ -n "$real_pin" ] && [ -n "$PIN" ] && [ "$real_pin" != "$PIN" ]; then
+    echo "ok   pins differ (real ${real_pin:0:16}…, review ${PIN:0:16}…)"
+  else
+    echo "FAIL pins differ: the real and the review server present the same or no key"
   fi
   # Root login with a valid key is refused.
   if ssh -o BatchMode=yes -o ConnectTimeout=5 -o ControlPath=none "root@$HOST" true 2>/dev/null; then
@@ -316,14 +350,14 @@ mac_checks() {
   local v6 addr port open=""
   v6="$(ssh -o BatchMode=yes "$PI" "ip -6 -o addr show scope global | awk '{print \$4}' | cut -d/ -f1")"
   for addr in $v6; do
-    for port in 22 8443; do
+    for port in 22 8443 8444; do
       if nc -z -G 3 "$addr" "$port" 2>/dev/null; then open="$open [$addr]:$port"; fi
     done
   done
   if [ -z "$v6" ]; then
     echo "ok   ipv6 (no global addresses)"
   elif [ -z "$open" ]; then
-    echo "ok   ipv6 global addresses drop 22 and 8443"
+    echo "ok   ipv6 global addresses drop 22, 8443 and 8444"
   else
     echo "FAIL ipv6: open over IPv6:$open"
   fi

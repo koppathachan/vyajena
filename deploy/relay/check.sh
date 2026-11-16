@@ -110,9 +110,10 @@ gcp_checks() {
   expect="$(printf '%s\n' \
     "$NAME-iap-ssh INGRESS false false tcp:22 0 $IAP_RANGE $NAME" \
     "$NAME-public INGRESS false false tcp:$PUBLIC_PORT 0 0.0.0.0/0 $NAME" \
+    "$NAME-review INGRESS false false tcp:$REVIEW_PORT 0 0.0.0.0/0 $NAME" \
     "$NAME-tunnel INGRESS false false tcp:$TUNNEL_PORT 0 0.0.0.0/0 $NAME" | sort)"
   if [ "$got" = "$expect" ]; then
-    ok "firewall rules (443, $TUNNEL_PORT public; 22 from IAP; logging off)"
+    ok "firewall rules ($PUBLIC_PORT, $REVIEW_PORT, $TUNNEL_PORT public; 22 from IAP; logging off)"
   else
     fail "firewall rule" "the VPC's rules differ from the three expected: $(diff <(echo "$expect") <(echo "$got") | grep '^[<>]' | tr '\n' ';')"
   fi
@@ -126,7 +127,7 @@ gcp_checks() {
 # --- on the relay as root (sent with declare -f) -----------------------------
 
 remote_checks() {
-  local max_exposure="$1" tunnel_port="$2" want_sha="$3" want_version="$4"
+  local max_exposure="$1" tunnel_port="$2" want_sha="$3" want_version="$4" review_port="$5"
   ok() { echo "ok   $1"; }
   fail() { echo "FAIL $1: $2"; }
   warn() { echo "WARN $1: $2"; }
@@ -202,9 +203,9 @@ remote_checks() {
   # not reachable from outside.
   local listeners extra
   listeners="$(ss -H -tulnp)"
-  extra="$(awk -v t=":$tunnel_port\$" '
+  extra="$(awk -v t=":$tunnel_port\$" -v r=":$review_port\$" '
     $1 == "tcp" && $5 ~ /:22$/ && /"sshd"/ {next}
-    $1 == "tcp" && ($5 ~ /:443$/ || $5 ~ t) && /"rathole"/ {next}
+    $1 == "tcp" && ($5 ~ /:443$/ || $5 ~ t || $5 ~ r) && /"rathole"/ {next}
     $5 ~ /^(127\.[0-9.]+|\[::1\])(%lo)?:[0-9]+$/ {next}
     $1 == "udp" && $5 ~ /:(68|546)$/ {next}
     {print $1, $5, $7}' <<<"$listeners")"
@@ -267,16 +268,18 @@ mac_checks() {
     fail dns "$RELAY_HOST has A ${a:-none}$extra, want only A $ip (set it at the DNS host)"
   fi
   if nc -z -G 3 "$ip" "$TUNNEL_PORT" 2>/dev/null; then ok "reachable $ip:$TUNNEL_PORT"; else fail reachable "$ip:$TUNNEL_PORT does not answer"; fi
-  if nc -z -G 3 "$ip" "$PUBLIC_PORT" 2>/dev/null; then
-    ok "reachable $ip:$PUBLIC_PORT"
-  else
-    warn reachable "$ip:$PUBLIC_PORT does not answer (it listens only while the Pi's tunnel is attached)"
-  fi
+  for port in "$PUBLIC_PORT" "$REVIEW_PORT"; do
+    if nc -z -G 3 "$ip" "$port" 2>/dev/null; then
+      ok "reachable $ip:$port"
+    else
+      warn reachable "$ip:$port does not answer (it listens only while the Pi's tunnel offers it)"
+    fi
+  done
   local open=""
-  for port in 22 80 8443; do
+  for port in 22 80 9443; do
     if nc -z -G 3 "$ip" "$port" 2>/dev/null; then open="$open $port"; fi
   done
-  if [ -z "$open" ]; then ok "closed 22, 80, 8443 (public SSH too)"; else fail "firewall open" "$ip answers on:$open"; fi
+  if [ -z "$open" ]; then ok "closed 22, 80, 9443 (public SSH too)"; else fail "firewall open" "$ip answers on:$open"; fi
 }
 
 ip="$(relay_ip)"
@@ -287,7 +290,7 @@ report="$(
   gcp_checks "$ip"
   if relay_open 2>/dev/null; then
     { declare -f remote_checks
-      printf 'remote_checks %q %q %q %q\n' "$MAX_EXPOSURE" "$TUNNEL_PORT" "$want_sha" "$RATHOLE_VERSION"
+      printf 'remote_checks %q %q %q %q %q\n' "$MAX_EXPOSURE" "$TUNNEL_PORT" "$want_sha" "$RATHOLE_VERSION" "$REVIEW_PORT"
     } | relay_ssh sudo bash -s
   else
     fail ssh "cannot reach $NAME over IAP with the relay key"

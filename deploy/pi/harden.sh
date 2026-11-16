@@ -35,6 +35,12 @@ base() {
       --shell /usr/sbin/nologin vyajena
     log "created the vyajena system user"
   fi
+  # The store reviewers' server runs as its own user (review-server D1).
+  if ! id vyajena-review >/dev/null 2>&1; then
+    useradd --system --user-group --home-dir /var/lib/vyajena-review --no-create-home \
+      --shell /usr/sbin/nologin vyajena-review
+    log "created the vyajena-review system user"
+  fi
   install -d -m 0755 -o root -g root /etc/vyajena
 
   # Nothing but SSH and the server listens (pi-deployment: Host hardening).

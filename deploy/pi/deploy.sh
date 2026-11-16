@@ -7,6 +7,8 @@
 #   deploy/pi/deploy.sh --rollback    swap back the previous server binary
 #   deploy/pi/deploy.sh --reset       back up, then DELETE the group: a fresh
 #                                     server with a new pin (asks for the server id)
+#   deploy/pi/deploy.sh --reset-review  wipe only the store reviewers' server
+#                                     (no backup; asks for its server id)
 #
 # PI=user@host overrides the target (default vyajan@192.168.1.8). The login
 # needs passwordless sudo. The server config, the tunnel and its token come
@@ -88,30 +90,36 @@ staged_step() {
 
 # --- run on the Pi as root (sent with declare -f) ----------------------------
 
+# remote_wait_ready [unit port]: the real server (default) or the review one.
 remote_wait_ready() {
-  local _
+  local unit="${1:-vyajena.service}" port="${2:-8443}" _
   for _ in $(seq 1 40); do
-    if systemctl is-active --quiet vyajena.service &&
-      ss -tlnH 'sport = :8443' | grep -q .; then
+    if systemctl is-active --quiet "$unit" &&
+      ss -tlnH "sport = :$port" | grep -q .; then
       return 0
     fi
     sleep 0.5
   done
-  journalctl -u vyajena.service -n 30 --no-pager >&2
-  echo "vyajena.service is not active and listening on 8443" >&2
+  journalctl -u "$unit" -n 30 --no-pager >&2
+  echo "$unit is not active and listening on $port" >&2
   return 1
 }
 
+# remote_report <since> <first> [unit label]: the pin, and on a first start the
+# bootstrap invite line; lines get "<label>: " so deploy.sh can tell the
+# servers apart (the review server's are "review: ...").
 remote_report() {
-  local since="$1" first="$2" log
-  log="$(journalctl -u vyajena.service -o cat --no-pager --since "@$since")"
-  grep -m1 "TLS key pin" <<<"$log" | grep -o 'tls_spki_sha256=[0-9a-f]*' || true
-  if [ "$first" = yes ]; then
-    echo "First install. The bootstrap invite (once; copy the payload to the admin's first device):"
-    grep "bootstrap admin invite created" <<<"$log" || echo "(none logged: see journalctl -u vyajena)"
-  else
-    grep "bootstrap invite printed at first start is still valid" <<<"$log" || true
-  fi
+  local since="$1" first="$2" unit="${3:-vyajena.service}" label="${4:-}" log
+  log="$(journalctl -u "$unit" -o cat --no-pager --since "@$since")"
+  {
+    grep -m1 "TLS key pin" <<<"$log" | grep -o 'tls_spki_sha256=[0-9a-f]*' || true
+    if [ "$first" = yes ]; then
+      echo "First install. The bootstrap invite (once; copy the payload to the admin's first device):"
+      grep "bootstrap admin invite created" <<<"$log" || echo "(none logged: see journalctl -u $unit)"
+    else
+      grep "bootstrap invite printed at first start is still valid" <<<"$log" || true
+    fi
+  } | sed "s/^/${label:+$label: }/"
 }
 
 remote_wait_tunnel() {
@@ -136,15 +144,34 @@ remote_wipe() {
   echo "deleted the database and keys in /var/lib/vyajena" >&2
 }
 
+# Wipes only the store reviewers' server (review-server: Review reset): never
+# /var/lib/vyajena. Called by remote_install with reset_review=yes.
+remote_wipe_review() {
+  set -euo pipefail
+  systemctl stop vyajena-review.service 2>/dev/null || true
+  if [ -d /var/lib/vyajena-review ]; then
+    find /var/lib/vyajena-review -mindepth 1 -delete
+  fi
+  echo "deleted the review server's database and keys in /var/lib/vyajena-review" >&2
+}
+
 remote_install() {
   set -euo pipefail
-  local staging="$1" reset="$2" bin=/usr/local/bin/vyajena-server first=no since
+  local staging="$1" reset="$2" reset_review="$3" bin=/usr/local/bin/vyajena-server first=no
+  local review_first=no since
   [ -e "$bin" ] || first=yes
+  [ -e /var/lib/vyajena-review/keys ] || review_first=yes
   if [ "$reset" = yes ]; then
     remote_wipe
     first=yes
   fi
+  if [ "$reset_review" = yes ]; then
+    remote_wipe_review
+    review_first=yes
+  fi
   install -m 0644 -o root -g root "$staging/config.toml" /etc/vyajena/config.toml
+  install -m 0644 -o root -g root "$staging/review.toml" /etc/vyajena/review.toml
+  install -m 0644 -o root -g root "$staging/vyajena-review.service" /etc/systemd/system/vyajena-review.service
   install -m 0600 -o root -g root "$staging/tunnel.toml" /etc/vyajena/tunnel.toml
   install -m 0644 -o root -g root "$staging/vyajena-tunnel.service" /etc/systemd/system/vyajena-tunnel.service
   install -m 0755 -o root -g root "$staging/rathole" /usr/local/bin/rathole
@@ -160,14 +187,17 @@ remote_install() {
     mv "$bin.new" "$bin"
   fi
   systemctl daemon-reload
-  systemctl enable --quiet vyajena.service
+  systemctl enable --quiet vyajena.service vyajena-review.service
   since="$(date +%s)"
   systemctl restart vyajena.service
   remote_wait_ready
+  systemctl restart vyajena-review.service
+  remote_wait_ready vyajena-review.service 8444
   systemctl enable --quiet vyajena-tunnel.service
   systemctl restart vyajena-tunnel.service
   remote_wait_tunnel
   remote_report "$since" "$first"
+  remote_report "$since" "$review_first" vyajena-review.service review
 }
 
 remote_rollback() {
@@ -178,8 +208,9 @@ remote_rollback() {
   mv -f "$bin.prev" "$bin"
   mv -f "$bin.rollback" "$bin.prev"
   since="$(date +%s)"
-  systemctl restart vyajena.service
+  systemctl restart vyajena.service vyajena-review.service
   remote_wait_ready
+  remote_wait_ready vyajena-review.service 8444
   remote_report "$since" no
 }
 
@@ -188,7 +219,7 @@ remote_rollback() {
 run_remote() {
   local fn="$1"
   shift
-  { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_report "$fn"
+  { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_wipe_review remote_report "$fn"
     printf '%s' "$fn"; printf ' %q' "$@"; echo; } |
     pi sudo bash -s
 }
@@ -196,16 +227,18 @@ run_remote() {
 # Prints the deploy report, but saves a bootstrap invite line to an
 # owner-only file outside the repo instead of showing it (design D9).
 divert_invite() {
-  local line file=""
+  local line file
   while IFS= read -r line; do
     if [[ "$line" == *"bootstrap admin invite created"* ]]; then
-      if [ -z "$file" ]; then
-        (umask 077; mkdir -p "$BACKUP_ROOT")
-        file="$BACKUP_ROOT/bootstrap-invite-$(date -u +%Y%m%dT%H%M%SZ).txt"
-        (umask 077; : >"$file")
+      local kind=bootstrap-invite who="real server"
+      if [[ "$line" == "review: "* ]]; then
+        kind=review-bootstrap-invite
+        who="review server"
       fi
+      file="$BACKUP_ROOT/$kind-$(date -u +%Y%m%dT%H%M%SZ).txt"
+      (umask 077; mkdir -p "$BACKUP_ROOT"; : >>"$file")
       printf '%s\n' "$line" >>"$file"
-      echo "bootstrap invite saved to $file (owner only; paste its payload on the admin's first device)"
+      echo "$who: bootstrap invite saved to $file (owner only; paste its payload on that server's admin device)"
     else
       printf '%s\n' "$line"
     fi
@@ -213,26 +246,33 @@ divert_invite() {
 }
 
 # The owner types the server id before anything is deleted.
+# confirm_reset [config file]: the real server (default) or the review one.
 confirm_reset() {
-  local id answer
-  id="$(sed -n 's/^server_id = "\(.*\)"$/\1/p' "$HERE/config.toml")"
-  [ -n "$id" ] || die "no server_id in $HERE/config.toml"
-  echo "RESET: this deletes the group on $PI (users, devices, keys, queued messages)." >&2
-  echo "Every device has to re-join with a new invite. A backup is taken first." >&2
+  local config="${1:-$HERE/config.toml}" id answer
+  id="$(sed -n 's/^server_id = "\(.*\)"$/\1/p' "$config")"
+  [ -n "$id" ] || die "no server_id in $config"
+  if [ "$config" = "$HERE/config.toml" ]; then
+    echo "RESET: this deletes the group on $PI (users, devices, keys, queued messages)." >&2
+    echo "Every device has to re-join with a new invite. A backup is taken first." >&2
+  else
+    echo "REVIEW RESET: this deletes the store reviewers' server on $PI (not the real group)." >&2
+    echo "No backup: it holds no real data. The review admin re-joins with a new invite." >&2
+  fi
   printf 'Type the server id (%s) to go on: ' "$id" >&2
   IFS= read -r answer || true
   [ "$answer" = "$id" ] || die "not confirmed; nothing changed"
 }
 
 main() {
-  local build=yes rollback=no reset=no
+  local build=yes rollback=no reset=no reset_review=no
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-build) build=no ;;
       --rollback) rollback=yes ;;
       --reset) reset=yes ;;
+      --reset-review) reset_review=yes ;;
       -h | --help)
-        sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
       *) die "unknown argument $1" ;;
@@ -240,13 +280,18 @@ main() {
     shift
   done
 
-  [ "$rollback" = no ] || [ "$reset" = no ] || die "--rollback and --reset do not mix"
+  [ "$rollback" = no ] || { [ "$reset" = no ] && [ "$reset_review" = no ]; } ||
+    die "--rollback and the resets do not mix"
   case "$(mkdir -p "$BACKUP_ROOT" && cd "$BACKUP_ROOT" && pwd)/" in
     "$REPO"/*) die "BACKUP_ROOT $BACKUP_ROOT is inside the repository; set it elsewhere" ;;
   esac
   # Fail before touching anything if the relay's settings are missing.
   "$RENDER" pi-config >/dev/null
   "$RENDER" pi-tunnel >/dev/null
+  "$RENDER" pi-review-config >/dev/null
+  if [ "$reset_review" = yes ]; then
+    confirm_reset "$HERE/review.toml"
+  fi
   if [ "$reset" = yes ]; then
     confirm_reset
     say "backing up first"
@@ -273,7 +318,8 @@ main() {
   local staging
   staging="$(pi mktemp -d /tmp/vyajena-deploy.XXXXXX)"
   scp -q -o ControlPath="$CONTROL" "$BINARY" "$RATHOLE" "$HERE/harden.sh" \
-    "$HERE/vyajena.service" "$HERE/nftables.conf" "$PI:$staging/"
+    "$HERE/vyajena.service" "$HERE/vyajena-review.service" "$HERE/nftables.conf" "$PI:$staging/"
+  "$RENDER" pi-review-config | pi "cat > '$staging/review.toml'"
   # Rendered from ~/.vyajena-relay/; tunnel.toml holds the token.
   "$RENDER" pi-config | pi "cat > '$staging/config.toml'"
   "$RENDER" pi-tunnel | pi "umask 077; cat > '$staging/tunnel.toml'"
@@ -290,7 +336,7 @@ main() {
   else
     say "installing and restarting vyajena.service and vyajena-tunnel.service"
   fi
-  run_remote remote_install "$staging" "$reset" | divert_invite
+  run_remote remote_install "$staging" "$reset" "$reset_review" | divert_invite
   pi rm -rf "$staging"
   say "done; check with deploy/pi/check.sh"
 }

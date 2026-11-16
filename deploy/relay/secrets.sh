@@ -4,6 +4,7 @@
 #   deploy/relay/secrets.sh     -> ~/.vyajena-relay/ (0700, files 0600)
 #
 #   token                the rathole service token (64 hex digits)
+#   review-token         the review server's service token (review-server)
 #   noise.key noise.pub  the relay's X25519 Noise key pair (base64, raw 32 bytes);
 #                        the Pi pins noise.pub
 #   ssh_ed25519(.pub)    the only key the relay VM accepts, over IAP
@@ -33,6 +34,11 @@ made=""
 if [ ! -s "$dir/token" ]; then
   openssl rand -hex 32 >"$dir/token"
   made="$made token"
+fi
+
+if [ ! -s "$dir/review-token" ]; then
+  openssl rand -hex 32 >"$dir/review-token"
+  made="$made review-token"
 fi
 
 if [ ! -s "$dir/noise.key" ]; then

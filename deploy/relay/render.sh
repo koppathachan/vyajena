@@ -6,6 +6,7 @@
 #   deploy/relay/render.sh relay-server    deploy/relay/server.toml
 #   deploy/relay/render.sh pi-tunnel       deploy/pi/tunnel.toml
 #   deploy/relay/render.sh pi-config       deploy/pi/config.toml
+#   deploy/relay/render.sh pi-review-config deploy/pi/review.toml
 #   deploy/relay/render.sh pi-tunnel-unit  deploy/pi/vyajena-tunnel.service
 #
 # RELAY_SECRETS overrides ~/.vyajena-relay (made by deploy/relay/secrets.sh;
@@ -61,23 +62,30 @@ case "${1:-}" in
   relay-server)
     key="$(read_value noise.key "$KEY")"
     token="$(read_value token "$TOKEN")"
+    review="$(read_value review-token "$TOKEN")"
+    [ "$review" != "$token" ] || die "review-token must differ from token"
     render "$HERE/server.toml" TUNNEL_PORT "$TUNNEL_PORT" PUBLIC_PORT "$PUBLIC_PORT" \
-      NOISE_PRIVATE_KEY "$key" TOKEN "$token"
+      NOISE_PRIVATE_KEY "$key" TOKEN "$token" REVIEW_TOKEN "$review" REVIEW_PORT "$REVIEW_PORT"
     ;;
   pi-tunnel)
     ip="$(relay_ip)"
     pub="$(read_value noise.pub "$KEY")"
     token="$(read_value token "$TOKEN")"
+    review="$(read_value review-token "$TOKEN")"
     render "$HERE/../pi/tunnel.toml" RELAY_IP "$ip" TUNNEL_PORT "$TUNNEL_PORT" \
-      NOISE_PUBLIC_KEY "$pub" TOKEN "$token"
+      NOISE_PUBLIC_KEY "$pub" TOKEN "$token" REVIEW_TOKEN "$review"
     ;;
   pi-config)
     [[ "$RELAY_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "RELAY_HOST in relay.conf is not a DNS name"
     render "$HERE/../pi/config.toml" RELAY_HOST "$RELAY_HOST" PUBLIC_PORT "$PUBLIC_PORT"
     ;;
+  pi-review-config)
+    [[ "$RELAY_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "RELAY_HOST in relay.conf is not a DNS name"
+    render "$HERE/../pi/review.toml" RELAY_HOST "$RELAY_HOST" REVIEW_PORT "$REVIEW_PORT"
+    ;;
   pi-tunnel-unit)
     ip="$(relay_ip)"
     render "$HERE/../pi/vyajena-tunnel.service" RELAY_IP "$ip"
     ;;
-  *) die "usage: render.sh relay-server | pi-tunnel | pi-config | pi-tunnel-unit" ;;
+  *) die "usage: render.sh relay-server | pi-tunnel | pi-config | pi-review-config | pi-tunnel-unit" ;;
 esac

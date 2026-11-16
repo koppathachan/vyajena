@@ -249,10 +249,12 @@ fn the_firewall_opens_443_and_the_tunnel_and_ssh_only_from_iap() {
         .iter()
         .filter(|c| c.contains("firewall-rules create"))
         .collect();
-    assert_eq!(rules.len(), 3, "{rules:#?}");
+    assert_eq!(rules.len(), 4, "{rules:#?}");
     let tunnel = conf("TUNNEL_PORT");
+    let review = conf("REVIEW_PORT");
     let expect = [
         ("tcp:443", "0.0.0.0/0"),
+        (&*format!("tcp:{review}"), "0.0.0.0/0"),
         (&*format!("tcp:{tunnel}"), "0.0.0.0/0"),
         ("tcp:22", "35.235.240.0/20"),
     ];
@@ -404,6 +406,7 @@ fn secrets_are_made_once_owner_only_and_never_printed() {
     assert_eq!(mode(&dir), 0o700);
     let names = [
         "token",
+        "review-token",
         "noise.key",
         "noise.pub",
         "ssh_ed25519",
@@ -502,8 +505,8 @@ fn the_dry_run_prints_every_gcloud_command_and_runs_none() {
         .iter()
         .filter(|c| c.starts_with("gcloud "))
         .collect();
-    // APIs, network, subnet, 3 rules, address, VM, host keys.
-    assert_eq!(gcloud.len(), 9, "{gcloud:#?}");
+    // APIs, network, subnet, 4 rules, address, VM, host keys.
+    assert_eq!(gcloud.len(), 10, "{gcloud:#?}");
     assert!(gcloud.iter().all(|c| c.contains("--project=vyajena")));
     // The real run refuses without a gcloud login (the fake fails).
     let out = sandbox.run("deploy/relay/create.sh", &[], "");
@@ -676,7 +679,7 @@ fn a_reset_needs_the_server_id_and_a_backup_before_anything_is_deleted() {
     let deploy = read("deploy/pi/deploy.sh");
     assert!(deploy.contains("find /var/lib/vyajena -mindepth 1 -delete"));
     assert!(deploy.contains("if [ \"$reset\" = yes ]; then\n    remote_wipe"));
-    assert!(deploy.contains("bootstrap-invite-"));
+    assert!(deploy.contains("kind=bootstrap-invite"));
 }
 
 // spec: pi-deployment/hardening-check
@@ -696,4 +699,158 @@ fn the_pi_check_covers_the_tunnel_and_the_relay_path() {
     ] {
         assert!(check.contains(name), "pi check.sh has no {name:?} check");
     }
+}
+
+// --- review-server -----------------------------------------------------------
+
+// spec: review-server/separate-review-server
+#[test]
+fn the_review_server_has_its_own_ids_port_user_and_data() {
+    let sandbox = Sandbox::new().with_secrets();
+    let review = Config::from_toml(&sandbox.render("pi-review-config"), Path::new("/"))
+        .check("rendered deploy/pi/review.toml");
+    let real = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
+        .check("rendered deploy/pi/config.toml");
+    assert_eq!(review.admin_user_id(), "review@review.purplechaamba.com");
+    assert_eq!(review.listen_address.to_string(), "127.0.0.1:8444");
+    assert_ne!(review.server_id, real.server_id);
+    assert_ne!(review.listen_address, real.listen_address);
+    assert_ne!(review.database_path, real.database_path);
+    assert_ne!(review.key_dir, real.key_dir);
+    assert!(review.key_dir.starts_with("/var/lib/vyajena-review"));
+
+    // The unit differs from the real one only in user, config and state dir.
+    let real_unit = read("deploy/pi/vyajena.service");
+    let review_unit = read("deploy/pi/vyajena-review.service");
+    for line in [
+        "User=vyajena-review",
+        "Group=vyajena-review",
+        "StateDirectory=vyajena-review",
+        "ExecStart=/usr/local/bin/vyajena-server --config /etc/vyajena/review.toml",
+    ] {
+        assert!(
+            review_unit.lines().any(|l| l == line),
+            "review unit lacks {line}"
+        );
+    }
+    let settings = |unit: &str| -> Vec<String> {
+        let own = [
+            "User=",
+            "Group=",
+            "StateDirectory=",
+            "ExecStart=",
+            "Description=",
+        ];
+        unit.lines()
+            .filter(|l| !l.starts_with('#') && l.contains('='))
+            .filter(|l| !own.iter().any(|k| l.starts_with(k)))
+            .map(str::to_owned)
+            .collect()
+    };
+    assert_eq!(
+        settings(&review_unit),
+        settings(&real_unit),
+        "same sandbox as the real server"
+    );
+    assert!(read("deploy/pi/harden.sh").contains("--shell /usr/sbin/nologin vyajena-review"));
+}
+
+// spec: review-server/review-route-through-the-relay
+#[test]
+fn the_review_route_has_its_own_token_and_ports() {
+    let sandbox = Sandbox::new().with_secrets();
+    let server = toml(&sandbox.render("relay-server"));
+    let client = toml(&sandbox.render("pi-tunnel"));
+    let review_token = sandbox.secret("review-token");
+    assert_ne!(review_token, sandbox.secret("token"));
+    assert_eq!(
+        string(&server, "server.services.review.token"),
+        review_token
+    );
+    assert_eq!(
+        string(&client, "client.services.review.token"),
+        review_token
+    );
+    assert_eq!(
+        string(&server, "server.services.review.bind_addr"),
+        "0.0.0.0:8443"
+    );
+    assert_eq!(
+        string(&client, "client.services.review.local_addr"),
+        "127.0.0.1:8444"
+    );
+    // Review invites name the relay's DNS name and the review port.
+    let review = Config::from_toml(&sandbox.render("pi-review-config"), Path::new("/"))
+        .check("review config");
+    assert_eq!(review.public_address, "vyajarelay.purplechaamba.com:8443");
+    assert_eq!(conf("REVIEW_PORT"), "8443");
+}
+
+// spec: review-server/review-reset
+#[test]
+fn a_review_reset_needs_the_review_id_and_never_touches_the_real_server() {
+    let sandbox = Sandbox::new().with_secrets();
+    let out = sandbox.run(
+        "deploy/pi/deploy.sh",
+        &["--no-build", "--reset-review"],
+        "pi\n",
+    );
+    assert!(!out.status.success());
+    assert!(
+        text(&out).contains("not confirmed; nothing changed"),
+        "{}",
+        text(&out)
+    );
+    assert!(sandbox.calls().is_empty(), "{}", sandbox.calls());
+
+    // The right id: no backup is taken; the deploy goes straight to the Pi
+    // (the fake ssh refuses, so nothing more happens).
+    let out = sandbox.run(
+        "deploy/pi/deploy.sh",
+        &["--no-build", "--reset-review"],
+        "review.purplechaamba.com\n",
+    );
+    assert!(!out.status.success());
+    assert!(text(&out).contains("REVIEW RESET"), "{}", text(&out));
+    assert!(!text(&out).contains("backing up"), "{}", text(&out));
+    assert!(
+        !sandbox.calls().contains("sudo bash -s"),
+        "no backup: {}",
+        sandbox.calls()
+    );
+
+    let deploy = read("deploy/pi/deploy.sh");
+    let wipe = deploy
+        .split("remote_wipe_review() {")
+        .nth(1)
+        .and_then(|rest| rest.split("\n}\n").next())
+        .check("remote_wipe_review");
+    assert!(wipe.contains("find /var/lib/vyajena-review -mindepth 1 -delete"));
+    assert!(
+        !wipe.contains("/var/lib/vyajena "),
+        "the review wipe names the real dir"
+    );
+    assert!(
+        !wipe.contains("vyajena.service"),
+        "the review wipe stops the real server"
+    );
+    assert!(deploy.contains("kind=review-bootstrap-invite"));
+}
+
+// spec: review-server/review-server-check
+#[test]
+fn the_pi_check_covers_the_review_server_and_separate_pins() {
+    let check = read("deploy/pi/check.sh");
+    for name in [
+        "server_checks vyajena-review.service vyajena-review /var/lib/vyajena-review",
+        "review listening 127.0.0.1:8444",
+        "review-pin",
+        "pins differ",
+        "lan-closed",
+        "/etc/vyajena/review.toml:\"644 root\"",
+    ] {
+        assert!(check.contains(name), "pi check.sh has no {name:?}");
+    }
+    let relay_check = read("deploy/relay/check.sh");
+    assert!(relay_check.contains("$NAME-review INGRESS false false tcp:$REVIEW_PORT"));
 }

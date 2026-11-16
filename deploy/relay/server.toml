@@ -22,3 +22,11 @@ type = "tcp"
 token = "@TOKEN@"
 bind_addr = "0.0.0.0:@PUBLIC_PORT@"
 nodelay = true
+
+# Store reviewers' separate server (review-server design D1): its own token,
+# the Pi's 127.0.0.1:8444. Never the real group.
+[server.services.review]
+type = "tcp"
+token = "@REVIEW_TOKEN@"
+bind_addr = "0.0.0.0:@REVIEW_PORT@"
+nodelay = true
