@@ -58,14 +58,13 @@ void main() {
   });
 
   // spec: app-release/declared-permissions
-  test('First connect on an iPhone: the app gives its reason for local '
-      'network access and asks for nothing else', () {
+  test('First connect on an iPhone: the app dials the relay and asks for '
+      'nothing', () {
     final plist = read(infoPlist);
-    expect(plistValue(plist, 'NSLocalNetworkUsageDescription'), isNotEmpty);
     final usages = RegExp(
       r'<key>(NS\w+UsageDescription)</key>',
     ).allMatches(plist).map((m) => m.group(1)).toSet();
-    expect(usages, {'NSLocalNetworkUsageDescription'});
+    expect(usages, isEmpty);
     expect(plist, isNot(contains('UIBackgroundModes')));
     expect(
       Directory('ios/Runner').listSync().map((e) => e.path),

@@ -185,10 +185,10 @@ sequence as Android, and tag as above.
 
 ### 8. Real-phone check (task 7.6)
 
-On the home Wi-Fi, with the store builds:
+With the store builds, once on mobile data and once on Wi-Fi:
 
-- iPhone: joining from an invite shows the **Local Network** prompt with the
-  app's own text; after Allow, it joins.
+- iPhone: joining from an invite (it names `vyajarelay.purplechaamba.com:443`)
+  asks for no permission and joins.
 - Android: kill and relaunch; the app still opens the group (keys survived R8).
 - Device logs (`adb logcat`, or Console.app for the iPhone) show no line from
   the app and none of the test text.

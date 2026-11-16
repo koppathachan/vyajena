@@ -300,7 +300,7 @@ images with CoreGraphics + CoreText in a Malayalam font that ships with macOS
 (Malayalam Sangam MN), so the app itself still has no custom font. No `flutter_launcher_icons`: the "UI goes through the core" test keeps
 pubspec dependencies to an allow-list, and a script is enough.
 
-### D12. Local network access on iOS (home-LAN phase)
+### D12. Local network access on iOS (home-LAN phase; dropped after the relay)
 
 iOS 14+ asks before an app connects to an address on the local network, unicast
 included; the simulator never asks, so no run so far could show it. Add
@@ -308,6 +308,14 @@ included; the simulator never asks, so no run so far could show it. Add
 your home network."). No Bonjour, so no `NSBonjourServices`. The relay change
 removes the key once invites name a public address. Android needs nothing for
 the LAN. Only a real iPhone can check this (task 7.6).
+
+**Spec fix, 2026-11-16 (after the relay change went live):** invites now name
+`vyajarelay.purplechaamba.com:443`, a public address, so iOS never asks for
+local network access and the key's text ("on your home network") is no longer
+true. The relay change left the key in place for this change to decide. Dropped:
+`Info.plist`, Declared permissions (no usage description at all), its test and
+the release check. The app is unchanged on Android, and no iOS build has
+shipped yet, so nothing on a store changes.
 
 ### D13. The release check
 
@@ -324,7 +332,7 @@ Android SDK/NDK tools already on the Mac:
 | Version | `pubspec.yaml` build number > highest `app-v*` tag; archive's `CFBundleVersion` equals it |
 | Permissions | the bundle's protobuf `base/manifest/AndroidManifest.xml`, read by an embedded `python3` reader (`aapt2` cannot read a bundle; no bundletool download): exactly `INTERNET`, `ACCESS_NETWORK_STATE`, ignoring the app's own AndroidX `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` (spec fixed, see below) |
 | Stripped | `BUNDLE-METADATA/.../{libflutter,libapp,libbridge}.so.sym` present; no `.debug_*` in `libbridge.so` (stands in for Flutter's apkanalyzer step) |
-| iOS keys | `plutil -extract` on the archived `Info.plist`: `ITSAppUsesNonExemptEncryption`, `NSLocalNetworkUsageDescription`, display name, version; no other `NS*UsageDescription`; `PrivacyInfo.xcprivacy` present with FileTimestamp and DiskSpace |
+| iOS keys | `plutil -extract` on the archived `Info.plist`: `ITSAppUsesNonExemptEncryption`, display name, version; no `NS*UsageDescription`; `PrivacyInfo.xcprivacy` present with FileTimestamp and DiskSpace |
 | Name and icons | same label on both; iOS 1024 icon has no alpha (`sips -g hasAlpha`) |
 | Core logs nothing | `cargo tree -p bridge -e normal --target <t>` for the four store targets: no `tracing-subscriber` (D7) |
 | No tracking SDK | no `com.google.firebase.analytics`, `crashlytics`, `com.google.android.gms.ads`, `Sentry` etc. in the AAB's dex class list or the archive's frameworks |

@@ -31,8 +31,8 @@ Network prompt with no usage text, because the Pi is reached at `192.168.1.8`.
   and the bridge survive shrinking; no debug banner; no analytics or crash SDK;
   release builds log nothing at all, keeping the invariant "Nothing logs content".
 - **Permissions declared:** Android exactly `INTERNET` and `ACCESS_NETWORK_STATE`
-  (from `connectivity_plus`, added by `qa-fixes`); iOS `NSLocalNetworkUsageDescription`
-  for the home-LAN phase, nothing else.
+  (from `connectivity_plus`, added by `qa-fixes`); iOS none (the home-LAN
+  `NSLocalNetworkUsageDescription` was dropped once the relay went live, design D12).
 - **Store declarations:** `ITSAppUsesNonExemptEncryption` set in `Info.plist`
   (the app does its own end-to-end encryption with standard algorithms:
   OpenMLS, TLS 1.3 via rustls, XChaCha20-Poly1305); `PrivacyInfo.xcprivacy` for the
@@ -105,8 +105,7 @@ now, and this change does not touch them.)
 - `app/android/`: `app/build.gradle.kts` (release signing from an outside
   file, R8 rules), `app/proguard-rules.pro` (new), `AndroidManifest.xml` (label,
   `ACCESS_NETWORK_STATE` check), launcher icon resources.
-- `app/ios/`: `Info.plist` (display name, `ITSAppUsesNonExemptEncryption`,
-  `NSLocalNetworkUsageDescription`), `Runner/PrivacyInfo.xcprivacy` (new),
+- `app/ios/`: `Info.plist` (display name, `ITSAppUsesNonExemptEncryption`), `Runner/PrivacyInfo.xcprivacy` (new),
   `project.pbxproj` (team, device family), app icon set, `ExportOptions.plist`.
 - `app/lib/app/app.dart`: `debugShowCheckedModeBanner: false`.
 - `app/pubspec.yaml`: version only. No new dependencies.

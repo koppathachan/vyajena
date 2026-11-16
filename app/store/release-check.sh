@@ -303,8 +303,8 @@ if [ "$check_ios" = 1 ]; then
       fail "export compliance" "ITSAppUsesNonExemptEncryption is not YES"
     fi
     usages="$(plutil -convert xml1 -o - "$plist" | sed -n 's/.*<key>\(NS[A-Za-z]*UsageDescription\)<\/key>.*/\1/p' | sort | tr '\n' ' ')"
-    if [ "$usages" = "NSLocalNetworkUsageDescription " ]; then
-      pass "ios permissions" "only NSLocalNetworkUsageDescription"
+    if [ -z "$usages" ]; then
+      pass "ios permissions" "no usage descriptions"
     else
       fail "ios permissions" "usage descriptions: ${usages:-none}"
     fi

@@ -101,9 +101,9 @@ run checks the device log.
 The Android release manifest SHALL request exactly `INTERNET` and
 `ACCESS_NETWORK_STATE` of the permissions a user or the system grants (the
 app's own signature-level `<package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
-that AndroidX adds is not one). The iOS app SHALL declare `NSLocalNetworkUsageDescription`
-while invites name a home-network address, and no other usage description,
-background mode or capability beyond the keychain. The release check enforces
+that AndroidX adds is not one). The iOS app SHALL declare no usage
+description (invites name the relay's public name, so iOS never asks for local
+network access), no background mode and no capability beyond the keychain. The release check enforces
 this on the merged manifest and the built `Info.plist`.
 
 #### Scenario: Merged manifest
@@ -113,10 +113,9 @@ this on the merged manifest and the built `Info.plist`.
   the app's own `com.purplechaamba.vyajena.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`
 
 #### Scenario: First connect on an iPhone
-- **WHEN** Bob, on a real iPhone on the home Wi-Fi, joins from an invite naming
-  `192.168.1.8:8443`
-- **THEN** iOS asks for local network access with the app's own reason text, and
-  after Bob allows it `Devices.Register` succeeds
+- **WHEN** Bob, on a real iPhone, joins from an invite naming
+  `vyajarelay.purplechaamba.com:443`
+- **THEN** iOS asks for no permission and `Devices.Register` succeeds
 
 ### Requirement: Encryption export declaration
 The iOS app SHALL declare `ITSAppUsesNonExemptEncryption` in `Info.plist` with the
