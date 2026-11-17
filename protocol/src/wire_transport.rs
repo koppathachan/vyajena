@@ -8,8 +8,28 @@ use crate::device_identity::{ED25519_PUBLIC_KEY_LEN, ED25519_SIGNATURE_LEN};
 
 /// The protocol version this contract defines, sent in `Hello.protocol_version`
 /// and listed in `ServerInfo.supported_protocol_versions`
-/// (Protocol version negotiation).
-pub const PROTOCOL_VERSION: u32 = 1;
+/// (Protocol version negotiation). Version 2 adds DMs (change `dms`): a Pi that
+/// lists it knows the `Dms` service. On the stream both versions behave the
+/// same.
+pub const PROTOCOL_VERSION: u32 = 2;
+
+/// Every version the Pi accepts in `Hello`: version 1 is what 1.0.0 apps speak.
+pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 2] = [1, 2];
+
+/// The version a client speaks to a Pi that lists `supported`: the highest
+/// one this contract knows, or `None` if they share none.
+pub fn negotiate_protocol_version(supported: &[u32]) -> Option<u32> {
+    SUPPORTED_PROTOCOL_VERSIONS
+        .iter()
+        .rev()
+        .find(|v| supported.contains(v))
+        .copied()
+}
+
+/// Whether a Pi that lists `supported` knows DMs (direct-messages).
+pub fn pi_knows_dms(supported: &[u32]) -> bool {
+    supported.contains(&2)
+}
 
 /// Prefix of the bytes a device auth key signs to authenticate:
 /// `AUTH_CONTEXT || nonce || tls_exporter` (Session authentication).

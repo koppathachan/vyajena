@@ -11,7 +11,7 @@
 ## 2. Proto and shared rules
 
 - [x] 2.1 `dms.proto` (`Dms.CreateDm`), `ServerFrame.dm_closed` (`DmClosed`), `REJECTION_REASON_GROUP_CLOSED`, `FetchKeyPackagesRequest.group_id`; `buf lint`, `buf breaking`; `cargo run -p pbgen`
-- [ ] 2.2 `protocol`: `PROTOCOL_VERSION = 2`, supported `[1, 2]`; DM extension `0xF0A2` encode/parse; DM commit authority rule; tests `group-membership/commit-authority`, `direct-messages/dm-members`
+- [x] 2.2 `protocol`: `PROTOCOL_VERSION = 2`, supported `[1, 2]`; DM extension `0xF0A2` encode/parse; DM commit authority rule; tests `group-membership/commit-authority`, `direct-messages/dm-members`
 
 ## 3. Pi
 
