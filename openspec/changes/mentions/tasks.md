@@ -21,4 +21,4 @@
 
 ## 5. Check
 
-- [ ] 5.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `flutter analyze`, `flutter test`, `openspec validate mentions --strict`
+- [x] 5.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `flutter analyze`, `flutter test`, `openspec validate mentions --strict`

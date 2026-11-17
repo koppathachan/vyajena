@@ -74,7 +74,7 @@ async fn alice_mentions_bob_after_an_emoji_and_bob_replies() {
         .check("send");
     wait_accepted(&mut alice, id).await;
     let received = wait_text(&mut bob, text).await;
-    assert_eq!(received.mentions, [at_bob.clone()]);
+    assert_eq!(received.mentions, std::slice::from_ref(&at_bob));
     assert!(received.mentions_me);
     assert_eq!(bob.core.unseen_mentions().check("unseen"), [received.id]);
     assert!(bob.core.mark_mention_seen(received.id).check("seen"));
