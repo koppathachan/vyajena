@@ -104,6 +104,12 @@ enum CoreErrorKind {
   /// The text is longer than a message may be (app-ui: Composer limit).
   tooLong,
 
+  /// A mention does not fit the text (message-content: Mentions).
+  invalidMention,
+
+  /// No stored chat message has that id (client-runtime: Reply lookup).
+  noSuchMessage,
+
   /// The Pi rejected the commit.
   rejected,
 

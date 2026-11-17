@@ -782,6 +782,18 @@ impl Engine {
         let waiting = self.inflight.as_ref().is_some_and(|f| f.accepted.is_none());
         let held = !self.deferred.is_empty() && !self.draining;
         if kind == Kind::Welcome {
+            // The Welcome this device already joined from, delivered again
+            // because its ACK was lost to a crash or a drop (client-runtime:
+            // Local message store, "Crash before ack"): its KeyPackage is used
+            // up, so staging it again would fail and ask for a needless
+            // re-add. A real re-add's Welcome always comes later.
+            if self
+                .store()
+                .group()?
+                .is_some_and(|row| envelope.server_seq <= row.processed_seq)
+            {
+                return self.ack(&envelope.group_id, envelope.server_seq).await;
+            }
             if held || waiting {
                 self.deferred.push_back(envelope);
                 return Ok(());

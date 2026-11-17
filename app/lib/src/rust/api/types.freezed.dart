@@ -1545,6 +1545,265 @@ String toString() {
 
 
 /// @nodoc
+mixin _$MentionTarget {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MentionTarget);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'MentionTarget()';
+}
+
+
+}
+
+/// @nodoc
+class $MentionTargetCopyWith<$Res>  {
+$MentionTargetCopyWith(MentionTarget _, $Res Function(MentionTarget) __);
+}
+
+
+/// Adds pattern-matching-related methods to [MentionTarget].
+extension MentionTargetPatterns on MentionTarget {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( MentionTarget_User value)?  user,TResult Function( MentionTarget_Everyone value)?  everyone,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case MentionTarget_User() when user != null:
+return user(_that);case MentionTarget_Everyone() when everyone != null:
+return everyone(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( MentionTarget_User value)  user,required TResult Function( MentionTarget_Everyone value)  everyone,}){
+final _that = this;
+switch (_that) {
+case MentionTarget_User():
+return user(_that);case MentionTarget_Everyone():
+return everyone(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( MentionTarget_User value)?  user,TResult? Function( MentionTarget_Everyone value)?  everyone,}){
+final _that = this;
+switch (_that) {
+case MentionTarget_User() when user != null:
+return user(_that);case MentionTarget_Everyone() when everyone != null:
+return everyone(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( UserRef user)?  user,TResult Function()?  everyone,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case MentionTarget_User() when user != null:
+return user(_that.user);case MentionTarget_Everyone() when everyone != null:
+return everyone();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( UserRef user)  user,required TResult Function()  everyone,}) {final _that = this;
+switch (_that) {
+case MentionTarget_User():
+return user(_that.user);case MentionTarget_Everyone():
+return everyone();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( UserRef user)?  user,TResult? Function()?  everyone,}) {final _that = this;
+switch (_that) {
+case MentionTarget_User() when user != null:
+return user(_that.user);case MentionTarget_Everyone() when everyone != null:
+return everyone();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class MentionTarget_User extends MentionTarget {
+  const MentionTarget_User({required this.user}): super._();
+  
+
+/// The user.
+ final  UserRef user;
+
+/// Create a copy of MentionTarget
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$MentionTarget_UserCopyWith<MentionTarget_User> get copyWith => _$MentionTarget_UserCopyWithImpl<MentionTarget_User>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MentionTarget_User&&(identical(other.user, user) || other.user == user));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,user);
+
+@override
+String toString() {
+  return 'MentionTarget.user(user: $user)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $MentionTarget_UserCopyWith<$Res> implements $MentionTargetCopyWith<$Res> {
+  factory $MentionTarget_UserCopyWith(MentionTarget_User value, $Res Function(MentionTarget_User) _then) = _$MentionTarget_UserCopyWithImpl;
+@useResult
+$Res call({
+ UserRef user
+});
+
+
+
+
+}
+/// @nodoc
+class _$MentionTarget_UserCopyWithImpl<$Res>
+    implements $MentionTarget_UserCopyWith<$Res> {
+  _$MentionTarget_UserCopyWithImpl(this._self, this._then);
+
+  final MentionTarget_User _self;
+  final $Res Function(MentionTarget_User) _then;
+
+/// Create a copy of MentionTarget
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? user = null,}) {
+  return _then(MentionTarget_User(
+user: null == user ? _self.user : user // ignore: cast_nullable_to_non_nullable
+as UserRef,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class MentionTarget_Everyone extends MentionTarget {
+  const MentionTarget_Everyone(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is MentionTarget_Everyone);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'MentionTarget.everyone()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$SendState {
 
 

@@ -49,8 +49,11 @@ class FakeCoreService extends CoreService {
   /// Errors a call throws, by call name (as in [calls]).
   Map<String, Object> fails = {};
 
-  /// The texts [sendText] stored, in order.
+  /// The texts [sendText] and [sendMessage] stored, in order.
   final List<String> sent = [];
+
+  /// What [unseenMentions] returns; [markMentionSeen] removes from it.
+  List<int> unseen = [];
 
   /// The arguments of the last calls that take one, by call name.
   final Map<String, Object?> args = {};
@@ -80,8 +83,16 @@ class FakeCoreService extends CoreService {
   }
 
   /// A received message from [sender], appended to [messages] and emitted
-  /// as the core would.
-  ChatMessage receive(UserRef sender, String text) {
+  /// as the core would. A message that [mentionsMe] is also listed in
+  /// [unseen], as the core stores it.
+  ChatMessage receive(
+    UserRef sender,
+    String text, {
+    List<MentionSpan> mentions = const [],
+    bool mentionsMe = false,
+    ReplyQuote? reply,
+    bool emitEvent = true,
+  }) {
     final message = ChatMessage(
       id: _newId(),
       sender: sender,
@@ -89,10 +100,14 @@ class FakeCoreService extends CoreService {
       outgoing: false,
       ownUser: false,
       body: ChatBody.text(text: text),
+      mentions: mentions,
+      mentionsMe: mentionsMe,
+      reply: reply,
       acceptedAtMs: 1,
     );
     messages.add(message);
-    emit(CoreEvent.message(message: message));
+    if (mentionsMe) unseen.add(message.id);
+    if (emitEvent) emit(CoreEvent.message(message: message));
     return message;
   }
 
@@ -108,6 +123,9 @@ class FakeCoreService extends CoreService {
             outgoing: m.outgoing,
             ownUser: m.ownUser,
             body: m.body,
+            mentions: m.mentions,
+            mentionsMe: m.mentionsMe,
+            reply: m.reply,
             sentAtMs: m.sentAtMs,
             acceptedAtMs: status is SendState_Accepted ? 2 : m.acceptedAtMs,
             status: status,
@@ -213,6 +231,36 @@ class FakeCoreService extends CoreService {
   @override
   Future<int> sendText(String text) async {
     _call('sendText', text);
+    return _storeOwn(text, const [], null);
+  }
+
+  @override
+  Future<int> sendMessage(
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  }) async {
+    _call('sendMessage', (text: text, mentions: mentions, replyTo: replyTo));
+    ReplyQuote? reply;
+    if (replyTo != null) {
+      final original = await message(replyTo);
+      if (original == null) {
+        throw const CoreError(
+          kind: CoreErrorKind.noSuchMessage,
+          message: 'no such message',
+        );
+      }
+      final body = original.body;
+      reply = ReplyQuote(
+        to: original.sender,
+        quote: body is ChatBody_Text ? body.text : '',
+        originalId: original.id,
+      );
+    }
+    return _storeOwn(text, mentions, reply);
+  }
+
+  int _storeOwn(String text, List<MentionSpan> mentions, ReplyQuote? reply) {
     sent.add(text);
     final id = _newId();
     messages.add(
@@ -223,11 +271,23 @@ class FakeCoreService extends CoreService {
         outgoing: true,
         ownUser: true,
         body: ChatBody.text(text: text),
+        mentions: mentions,
+        mentionsMe: false,
+        reply: reply,
         sentAtMs: 1,
         status: const SendState.sending(),
       ),
     );
     return id;
+  }
+
+  @override
+  Future<List<int>> unseenMentions() async => List.of(unseen);
+
+  @override
+  Future<bool> markMentionSeen(int id) async {
+    _call('markMentionSeen', id);
+    return unseen.remove(id);
   }
 
   static String _key(UserRef user) => '${user.username}@${user.serverId}';

@@ -103,6 +103,21 @@ class RustCoreService extends CoreService {
   Future<int> sendText(String text) => _c.sendText(text: text);
 
   @override
+  Future<int> sendMessage(
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  }) => _c.sendMessage(text: text, mentions: mentions, replyTo: replyTo);
+
+  @override
+  Future<List<int>> unseenMentions() async => [
+    for (final id in await _c.unseenMentions()) id.toInt(),
+  ];
+
+  @override
+  Future<bool> markMentionSeen(int id) => _c.markMentionSeen(id: id);
+
+  @override
   Future<String> displayName(UserRef user) => _c.displayName(user: user);
 
   @override

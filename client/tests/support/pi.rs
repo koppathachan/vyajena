@@ -1,12 +1,17 @@
 //! The real Pi in-process for end-to-end tests (client-core design D8): a
-//! temporary database and keys, a manual clock, and a fixed local port so it
-//! can be restarted at the same relay address its invites name.
+//! temporary database and keys and a manual clock, behind a test relay whose
+//! address the invites name. The Pi binds a port of its own choosing at every
+//! start (no free port picked and released first, which a parallel test could
+//! take), and the relay is pointed at it.
 
+use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use prost::Message as _;
+use server::push::{PushProvider, WakeOutcome};
 use server::runtime::{Bootstrap, Clock as _, Config, ManualClock, Pi, State};
 use tokio::sync::oneshot;
 
@@ -23,11 +28,57 @@ pub const WAIT: Duration = Duration::from_secs(20);
 /// The admin's username on test servers.
 pub const ADMIN: &str = "akhil";
 
+/// Records every wake ping the test server sends: only what the provider
+/// interface carries, the device id and its token (message-delivery:
+/// Content-free wake pings).
+#[derive(Debug, Clone, Default)]
+pub struct Pushes(Arc<Mutex<Vec<Ping>>>);
+
+/// One recorded ping: the device id and its token.
+type Ping = ([u8; 16], String);
+
+impl Pushes {
+    /// The pings so far, oldest first: device id and token.
+    pub fn sent(&self) -> Vec<Ping> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Pings sent to `device` so far.
+    pub fn count(&self, device: &[u8; 16]) -> usize {
+        self.sent().iter().filter(|(id, _)| id == device).count()
+    }
+}
+
+// What `#[async_trait]` expands to, written out: the bridge tests share this
+// file and do not depend on tonic or async-trait.
+impl PushProvider for Pushes {
+    fn wake<'life0, 'async_trait>(
+        &'life0 self,
+        device_id: [u8; 16],
+        token: server::pb::PushToken,
+    ) -> Pin<Box<dyn Future<Output = WakeOutcome> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((device_id, token.token));
+        Box::pin(std::future::ready(WakeOutcome::Sent))
+    }
+}
+
 /// A running test server.
 pub struct TestPi {
+    /// Every wake ping it sent.
+    pub pushes: Pushes,
     /// Moves the server's time.
     pub clock: ManualClock,
-    /// Where it listens.
+    /// Where it listens now (another port after a restart).
     pub addr: SocketAddr,
     /// The relay in front of it, whose address the invites name.
     pub relay: Relay,
@@ -39,17 +90,13 @@ pub struct TestPi {
     dir: tempfile::TempDir,
 }
 
-fn free_port() -> SocketAddr {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").check("bind a free port");
-    listener.local_addr().check("local addr")
-}
-
-fn config(dir: &std::path::Path, addr: SocketAddr, relay: SocketAddr) -> Config {
+/// The Pi's config: any free local port, invites naming the relay.
+fn config(dir: &std::path::Path, relay: SocketAddr) -> Config {
     let text = format!(
         r#"
 server_id = "{SERVER_ID}"
 admin_username = "{ADMIN}"
-listen_address = "{addr}"
+listen_address = "127.0.0.1:0"
 public_address = "{relay}"
 database_path = "pi.sqlite"
 key_dir = "keys"
@@ -72,14 +119,19 @@ impl TestPi {
         super::init_logging();
         let dir = tempfile::tempdir().check("temp dir");
         let clock = ManualClock::new(start_time());
-        let addr = free_port();
-        let relay = Relay::start(addr).await;
-        let pi = Pi::start(
-            config(dir.path(), addr, relay.addr),
+        // The relay's own port is known before the Pi starts (its invites
+        // name it); it learns the Pi's port once the Pi is listening.
+        let relay = Relay::start(([127, 0, 0, 1], 0).into()).await;
+        let pushes = Pushes::default();
+        let pi = Pi::start_with_push(
+            config(dir.path(), relay.addr),
             Arc::new(clock.clone()),
+            Arc::new(pushes.clone()),
         )
         .await
         .check("server start");
+        let addr = pi.local_addr();
+        relay.retarget(addr);
         let bootstrap = match pi.bootstrap() {
             Bootstrap::Created(invite) => invite.payload.encode_to_vec(),
             other => panic!("expected a bootstrap invite, got {other:?}"),
@@ -87,6 +139,7 @@ impl TestPi {
         let state = pi.state().clone();
         let stop = serve(pi).await;
         Self {
+            pushes,
             clock,
             addr,
             relay,
@@ -106,22 +159,20 @@ impl TestPi {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
 
-    /// Starts the server again on the same database, keys and port.
+    /// Starts the server again on the same database and keys, behind the
+    /// same relay address (on a new port of its own, which the relay is
+    /// pointed at).
     pub async fn restart(&mut self) {
         self.stop().await;
-        let mut tries = 0;
-        let pi = loop {
-            let config = config(self.dir.path(), self.addr, self.relay.addr);
-            match Pi::start(config, Arc::new(self.clock.clone())).await {
-                Ok(pi) => break pi,
-                Err(error) if tries < 50 => {
-                    tries += 1;
-                    let _ = error;
-                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                }
-                Err(error) => panic!("server restart failed: {error:?}"),
-            }
-        };
+        let pi = Pi::start_with_push(
+            config(self.dir.path(), self.relay.addr),
+            Arc::new(self.clock.clone()),
+            Arc::new(self.pushes.clone()),
+        )
+        .await
+        .check("server restart");
+        self.addr = pi.local_addr();
+        self.relay.retarget(self.addr);
         self.state = pi.state().clone();
         self.stop = Some(serve(pi).await);
     }

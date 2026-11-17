@@ -80,6 +80,49 @@ pub enum MessageBody {
     Unsupported,
 }
 
+/// Who a mention points at (message-content: Mentions).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MentionTarget {
+    /// One user.
+    User(UserId),
+    /// Every member; any member may send it.
+    Everyone,
+}
+
+/// One mention in a text: its target and the UTF-8 byte range of the text
+/// it covers (message-content: Mentions).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Mention {
+    /// Who it points at.
+    pub target: MentionTarget,
+    /// UTF-8 byte offset of the range in the text.
+    pub start: usize,
+    /// UTF-8 byte length of the range.
+    pub len: usize,
+}
+
+impl Mention {
+    /// Whether it names `user` or everyone.
+    pub fn names(&self, user: &UserId) -> bool {
+        match &self.target {
+            MentionTarget::User(target) => target == user,
+            MentionTarget::Everyone => true,
+        }
+    }
+}
+
+/// What a reply answers (message-content: Replies; client-runtime: Reply
+/// lookup).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    /// The user who sent the original.
+    pub to: UserId,
+    /// The quote of the original the replier's core sent.
+    pub quote: String,
+    /// The original's local id, when this device has it stored.
+    pub original: Option<MessageId>,
+}
+
 /// A chat message, received or sent by this device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -96,6 +139,14 @@ pub struct Message {
     pub own_user: bool,
     /// The body.
     pub body: MessageBody,
+    /// The valid mentions in a text body, in text order (message-content:
+    /// Mentions); empty for other bodies.
+    pub mentions: Vec<Mention>,
+    /// Whether a mention names this device's user or everyone, and another
+    /// user sent it.
+    pub mentions_me: bool,
+    /// What it answers, if it is a reply (message-content: Replies).
+    pub reply: Option<Reply>,
     /// The sender's clock when it was sent.
     pub sent_at: Option<SystemTime>,
     /// When the Pi accepted it; `None` while sending.

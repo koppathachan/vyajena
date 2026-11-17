@@ -179,3 +179,35 @@ async fn linking_after_a_reinstall_starts_with_new_keys_and_no_identity_key() {
         .check("auth key");
     assert_ne!(new_auth.as_slice(), old_auth.as_slice());
 }
+
+// spec: client-runtime/local-message-store
+#[tokio::test(flavor = "multi_thread")]
+async fn a_welcome_delivered_again_after_a_crash_is_not_refused() {
+    let pi = TestPi::start().await;
+    let mut admin = device::admin_with_group(&pi).await;
+    let mut bob = device::member_of_group(&admin, "bob").await;
+    // Bob's phone joined from its Welcome; the network drops and the phone
+    // restarts before its ACK reaches the Pi, which delivers the Welcome
+    // again. Bob is already in: no refusal, no re-add.
+    pi.relay.cut();
+    bob.restart().await;
+    let id = admin.client.send_text("still there?").check("send");
+    pi.relay.restore();
+    admin
+        .wait_event(
+            "accepted",
+            |e| matches!(e, Event::SendStatus { id: i, status: SendStatus::Accepted } if *i == id),
+        )
+        .await;
+    bob.wait_event("the message arrives", |e| matches!(e, Event::Message(_)))
+        .await;
+    let events = bob.events();
+    assert!(
+        !events.iter().any(|e| matches!(
+            e,
+            Event::CommitRefused { .. } | Event::ReaddRequested { .. } | Event::Rejoined
+        )),
+        "{events:?}"
+    );
+    admin.wait_members(&[member(&admin), member(&bob)]).await;
+}

@@ -131,6 +131,8 @@ void main() {
           outgoing: false,
           ownUser: false,
           body: ChatBody.text(text: 'before'),
+          mentions: [],
+          mentionsMe: false,
           acceptedAtMs: 1,
         ),
       ];

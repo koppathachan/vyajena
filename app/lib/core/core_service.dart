@@ -215,6 +215,22 @@ abstract class CoreService {
   /// Sends a text message; returns its local id.
   Future<int> sendText(String text);
 
+  /// Sends a text message with [mentions] (ranges of [text] in UTF-16 code
+  /// units, as Dart indexes strings), answering message [replyTo] if set;
+  /// returns its local id (message-content: Mentions; Replies).
+  Future<int> sendMessage(
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  });
+
+  /// The local ids of messages whose mention of this user is not seen yet,
+  /// oldest first (client-runtime: Unseen mentions).
+  Future<List<int>> unseenMentions();
+
+  /// Marks the mention in message [id] seen.
+  Future<bool> markMentionSeen(int id);
+
   /// How to show [user]: "Ali (alice)", or the username alone.
   Future<String> displayName(UserRef user);
 

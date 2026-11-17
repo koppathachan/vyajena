@@ -24,6 +24,41 @@ pub enum ChatBody {
     Unsupported,
 }
 
+/// Who a mention points at (message-content: Mentions).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MentionTarget {
+    /// One user.
+    User {
+        /// The user.
+        user: UserRef,
+    },
+    /// Every member.
+    Everyone,
+}
+
+/// One mention in a text, as a range of UTF-16 code units (Dart string
+/// indices; mentions design D1).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MentionSpan {
+    /// Who it points at.
+    pub target: MentionTarget,
+    /// First code unit of the range.
+    pub start: u32,
+    /// Code units in the range.
+    pub length: u32,
+}
+
+/// What a reply answers (message-content: Replies).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyQuote {
+    /// The user who sent the original.
+    pub to: UserRef,
+    /// The quote of the original, at most 100 characters, only to be shown.
+    pub quote: String,
+    /// The original's local id when this device has it (tap to jump).
+    pub original_id: Option<i64>,
+}
+
 /// Where an own message stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SendState {
@@ -54,6 +89,13 @@ pub struct ChatMessage {
     pub own_user: bool,
     /// The body.
     pub body: ChatBody,
+    /// The mentions in a text body, in text order; empty otherwise.
+    pub mentions: Vec<MentionSpan>,
+    /// Whether it mentions this device's user or everyone (from another
+    /// user): highlighted (app-ui: Mentions of me).
+    pub mentions_me: bool,
+    /// What it answers, if it is a reply.
+    pub reply: Option<ReplyQuote>,
     /// The sender's clock when sent.
     pub sent_at_ms: Option<i64>,
     /// When the Pi accepted it; unset while sending.

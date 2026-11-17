@@ -8,6 +8,7 @@ syntax = "proto3";
 package vyajena.v1;
 
 import "google/protobuf/timestamp.proto";
+import "vyajena/v1/common.proto";
 
 // message-content: Inner content format. A client send time and exactly one
 // body. A client that decrypts a `Content` whose body it does not know (the
@@ -23,12 +24,57 @@ message Content {
   }
 }
 
-// message-content: Text only. UTF-8 text and nothing else: no attachments, link
-// previews or rich formatting. The client limits text to what encrypts within
+// message-content: Text only. UTF-8 text, optional mentions and one optional
+// reply reference, and nothing else: no attachments, link previews or rich
+// formatting. The client limits text to what encrypts within
 // the 65,536-byte ciphertext cap and refuses to send longer text
 // (wire-transport: Size limits).
+//
+// message-content: Mentions; Replies (change `mentions`). `mentions` and
+// `reply_to` are optional; a client that predates them ignores them as
+// unknown fields and shows `text` alone, which still holds the typed "@Ali".
 message Text {
   string text = 1;
+  // The mentions in `text`, in any order; ranges never overlap.
+  repeated Mention mentions = 2;
+  // Set when this message answers another one.
+  ReplyTo reply_to = 3;
+}
+
+// message-content: Mentions. One mention of a user, or of everyone, over a
+// range of `Text.text`. `start` and `length` are UTF-8 byte offsets; the range
+// is not empty, lies inside the text and on character boundaries, and does
+// not overlap another mention. The sending client refuses a bad range; a
+// receiving client drops it and still shows the text. Any member may mention
+// `everyone`. Whether a message mentions a user is read from these targets,
+// never from the text.
+message Mention {
+  // Mentions every member of the group.
+  message Everyone {}
+
+  oneof target {
+    // A user mentioned by id.
+    UserId user = 1;
+    Everyone everyone = 2;
+  }
+  // UTF-8 byte offset of the range in `Text.text`.
+  uint32 start = 3;
+  // UTF-8 byte length of the range.
+  uint32 length = 4;
+}
+
+// message-content: Replies. The message this one answers, and a short quote
+// of it so a device without the original still shows what was answered.
+message ReplyTo {
+  // The device that sent the original, as its envelope's `sender` named it.
+  DeviceRef sender = 1;
+  // The original envelope's `msg_id` (16 bytes).
+  bytes msg_id = 2;
+  // The original's text with whitespace folded to single spaces, at most
+  // `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, the last one "…" when
+  // cut.
+  // Receivers cut a longer quote to the limit.
+  string quote = 3;
 }
 
 // message-content: Group settings travel encrypted. The group name and settings,

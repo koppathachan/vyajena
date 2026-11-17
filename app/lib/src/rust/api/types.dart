@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 @freezed
 sealed class ChatBody with _$ChatBody {
@@ -46,6 +46,16 @@ class ChatMessage {
   /// The body.
   final ChatBody body;
 
+  /// The mentions in a text body, in text order; empty otherwise.
+  final List<MentionSpan> mentions;
+
+  /// Whether it mentions this device's user or everyone (from another
+  /// user): highlighted (app-ui: Mentions of me).
+  final bool mentionsMe;
+
+  /// What it answers, if it is a reply.
+  final ReplyQuote? reply;
+
   /// The sender's clock when sent.
   final PlatformInt64? sentAtMs;
 
@@ -62,6 +72,9 @@ class ChatMessage {
     required this.outgoing,
     required this.ownUser,
     required this.body,
+    required this.mentions,
+    required this.mentionsMe,
+    this.reply,
     this.sentAtMs,
     this.acceptedAtMs,
     this.status,
@@ -75,6 +88,9 @@ class ChatMessage {
       outgoing.hashCode ^
       ownUser.hashCode ^
       body.hashCode ^
+      mentions.hashCode ^
+      mentionsMe.hashCode ^
+      reply.hashCode ^
       sentAtMs.hashCode ^
       acceptedAtMs.hashCode ^
       status.hashCode;
@@ -90,6 +106,9 @@ class ChatMessage {
           outgoing == other.outgoing &&
           ownUser == other.ownUser &&
           body == other.body &&
+          mentions == other.mentions &&
+          mentionsMe == other.mentionsMe &&
+          reply == other.reply &&
           sentAtMs == other.sentAtMs &&
           acceptedAtMs == other.acceptedAtMs &&
           status == other.status;
@@ -316,6 +335,51 @@ class MemberDevice {
           device == other.device;
 }
 
+/// One mention in a text, as a range of UTF-16 code units (Dart string
+/// indices; mentions design D1).
+class MentionSpan {
+  /// Who it points at.
+  final MentionTarget target;
+
+  /// First code unit of the range.
+  final int start;
+
+  /// Code units in the range.
+  final int length;
+
+  const MentionSpan({
+    required this.target,
+    required this.start,
+    required this.length,
+  });
+
+  @override
+  int get hashCode => target.hashCode ^ start.hashCode ^ length.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MentionSpan &&
+          runtimeType == other.runtimeType &&
+          target == other.target &&
+          start == other.start &&
+          length == other.length;
+}
+
+@freezed
+sealed class MentionTarget with _$MentionTarget {
+  const MentionTarget._();
+
+  /// One user.
+  const factory MentionTarget.user({
+    /// The user.
+    required UserRef user,
+  }) = MentionTarget_User;
+
+  /// Every member.
+  const factory MentionTarget.everyone() = MentionTarget_Everyone;
+}
+
 /// A user's profile.
 class ProfileInfo {
   /// The display name, if set.
@@ -368,6 +432,32 @@ enum ReaddAnswer {
 
   /// It asked too often today; it asks again at a later start.
   limitReached,
+}
+
+/// What a reply answers (message-content: Replies).
+class ReplyQuote {
+  /// The user who sent the original.
+  final UserRef to;
+
+  /// The quote of the original, at most 100 characters, only to be shown.
+  final String quote;
+
+  /// The original's local id when this device has it (tap to jump).
+  final PlatformInt64? originalId;
+
+  const ReplyQuote({required this.to, required this.quote, this.originalId});
+
+  @override
+  int get hashCode => to.hashCode ^ quote.hashCode ^ originalId.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ReplyQuote &&
+          runtimeType == other.runtimeType &&
+          to == other.to &&
+          quote == other.quote &&
+          originalId == other.originalId;
 }
 
 @freezed

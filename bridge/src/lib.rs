@@ -10,6 +10,7 @@
 //!   `app/`) reads it and writes `src/frb_generated.rs` and
 //!   `app/lib/src/rust/`; both are committed and never edited by hand.
 //! - `map` (private): core types to bridge types.
+//! - [`spans`]: mention ranges, UTF-8 bytes to UTF-16 code units and back.
 //!
 //! The generated FFI file is the one place with `unsafe` code, the isolated
 //! exception `openspec/config.yaml` allows; [`api`] forbids it.
@@ -21,3 +22,4 @@ pub mod api;
 #[allow(clippy::all, clippy::pedantic, unreachable_pub, unused, missing_docs)]
 mod frb_generated;
 mod map;
+pub mod spans;
