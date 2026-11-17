@@ -289,6 +289,17 @@ impl Engine {
         if engine.shared.store.last_resort_uploaded_at()?.is_none() {
             engine.push_job(Job::UploadKeyPackages { remaining: Some(0) });
         }
+        // group-membership: Re-add after an unusable Welcome. A device with
+        // no group asks once per start; the Pi tells a stuck one from one
+        // still waiting for its first add. Not the admin's: before the group
+        // exists the admin's first device creates it, and a linked admin
+        // device asks when it refuses its Welcome.
+        if !engine.account.is_admin && engine.shared.store.group()?.is_none() {
+            engine.push_job(Job::RequestReadd {
+                refused_seq: 0,
+                reason: "no group at start".into(),
+            });
+        }
         Ok(engine)
     }
 
@@ -681,7 +692,12 @@ impl Engine {
             }
             Some(In::RemovedNotice(notice)) => {
                 // group-membership: Automatic re-add. This device waits on
-                // the stream for the Welcome that re-adds it.
+                // the stream for the Welcome that re-adds it. A device in no
+                // group (it asked to be re-added after an unusable Welcome)
+                // was removed from nothing it knows: no notice.
+                if self.store().group()?.is_none() {
+                    return Ok(());
+                }
                 if let Some(at) = notice.missed_since.as_ref() {
                     self.emit(Event::RemovedForInactivity {
                         missed_since: crate::identity::certificate::from_timestamp(at),
@@ -1088,10 +1104,8 @@ impl Engine {
             Ok(staged) => staged,
             Err(error) => {
                 tracing::warn!(server_seq = seq, %error, "cannot use a Welcome");
-                self.emit(Event::CommitRefused {
-                    reason: format!("a Welcome could not be used: {error}"),
-                });
-                return self.ack(&envelope.group_id, seq).await;
+                let reason = format!("a Welcome could not be used: {error}");
+                return self.refuse_welcome(&envelope.group_id, seq, reason).await;
             }
         };
         let needed = verify::users_in_welcome(staged.members());
@@ -1125,10 +1139,9 @@ impl Engine {
             let Some((user, key)) = new_key else {
                 self.note_key_change(&problem).await;
                 tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
-                self.emit(Event::CommitRefused {
-                    reason: problem.to_string(),
-                });
-                return self.ack(&envelope.group_id, seq).await;
+                return self
+                    .refuse_welcome(&envelope.group_id, seq, problem.to_string())
+                    .await;
             };
             tracing::info!(user = %user, "a Welcome uses a new identity key; checking it");
             pinned.insert(user.clone(), key.clone());
@@ -1179,6 +1192,25 @@ impl Engine {
             automatic: Vec::new(),
         });
         self.ack(&envelope.group_id, seq).await
+    }
+
+    /// A Welcome this device cannot use: say why, ACK it, and ask the Pi to
+    /// be added again (group-membership: Re-add after an unusable Welcome).
+    async fn refuse_welcome(
+        &mut self,
+        group_id: &[u8],
+        seq: u64,
+        reason: String,
+    ) -> Result<(), EngineError> {
+        self.emit(Event::CommitRefused {
+            reason: reason.clone(),
+        });
+        self.ack(group_id, seq).await?;
+        self.push_job(Job::RequestReadd {
+            refused_seq: seq,
+            reason,
+        });
+        Ok(())
     }
 
     // --- Identity keys (key-directory: Clients verify the identity chain) ---

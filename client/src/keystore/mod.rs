@@ -212,6 +212,21 @@ pub fn choose_key_store<K: KeyStore + 'static>(
     }
 }
 
+/// Writes a fresh random secret of `len` bytes under `name`, replacing any
+/// secret left there (device-identity: Fresh keys for a new signup).
+pub fn create_fresh(
+    store: &dyn KeyStore,
+    name: KeyName,
+    len: usize,
+) -> Result<Secret, KeyStoreError> {
+    let mut secret = Zeroizing::new(vec![0u8; len]);
+    getrandom::fill(&mut secret).map_err(|error| KeyStoreError::Random(error.to_string()))?;
+    let replaced = store.get(name)?.is_some();
+    store.set(name, &secret)?;
+    tracing::info!(key = %name, kind = ?store.kind(), replaced, "created key");
+    Ok(secret)
+}
+
 /// Reads `name`, creating a fresh random secret of `len` bytes if it is
 /// missing.
 pub fn get_or_create(

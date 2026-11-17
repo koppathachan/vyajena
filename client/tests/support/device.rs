@@ -86,6 +86,22 @@ impl Device {
         }
     }
 
+    /// The same phone after the app was deleted and installed again on
+    /// iOS: a new, empty data directory, but the Keychain (`keys`) still
+    /// holds the old install's keys.
+    pub async fn reinstalled(&self) -> Self {
+        let dir = super::temp_dir();
+        let (client, log) = open(dir.path(), &self.keys, &self.clock).await;
+        Self {
+            client,
+            keys: self.keys.clone(),
+            clock: self.clock.clone(),
+            dir,
+            log,
+            seen: 0,
+        }
+    }
+
     /// Simulates a crash and restart: drops the client (its engine stops at
     /// once) and opens a new one on the same database and keys, then starts
     /// it.

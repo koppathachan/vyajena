@@ -53,6 +53,83 @@ void main() {
   });
 
   // spec: app-ui/join-from-an-invite
+  testWidgets('Welcome refused while waiting: the waiting screen shows the '
+      'owner\'s text with the reason and when, and the chat once the device '
+      'joins', (tester) async {
+    final core = FakeCoreService()..epochValue = null;
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:bob');
+    await tap(tester, find.text('Join'));
+    expect(find.byKey(const Key('refusal')), findsNothing);
+
+    core.emit(
+      const CoreEvent.commitRefused(
+        reason: 'a Welcome could not be used: no matching KeyPackage',
+      ),
+    );
+    await settle(tester);
+    expect(find.text(waitingText), findsNothing);
+    expect(find.text(refusedText), findsOneWidget);
+    // "Reason: <error> (<time>)", the time as the chat shows times.
+    expect(
+      find.textContaining(
+        RegExp(
+          r'^Reason: a Welcome could not be used: no matching KeyPackage '
+          r'\(.*\d:\d\d.*\)$',
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    core.epochValue = BigInt.one;
+    core.emit(const CoreEvent.joinedGroup());
+    await settle(tester);
+    expect(find.byKey(const Key('refusal')), findsNothing);
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  // spec: app-ui/join-from-an-invite
+  testWidgets('Asked to be added again: the owner\'s text, or that it waits '
+      'for the admin after the daily limit', (tester) async {
+    final core = FakeCoreService()..epochValue = null;
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:bob');
+    await tap(tester, find.text('Join'));
+
+    // Answers that change nothing it waits for show nothing.
+    core.emit(const CoreEvent.readdRequested(outcome: ReaddAnswer.notAMember));
+    await settle(tester);
+    expect(find.byKey(const Key('refusal')), findsNothing);
+    expect(find.text(waitingText), findsOneWidget);
+
+    // Stuck from an older build: no refusal on record, only the ask.
+    core.emit(const CoreEvent.readdRequested(outcome: ReaddAnswer.asked));
+    await settle(tester);
+    expect(find.text(refusedText), findsOneWidget);
+    expect(find.text(readdAskedText), findsOneWidget);
+
+    core.emit(
+      const CoreEvent.commitRefused(reason: 'a Welcome could not be used: x'),
+    );
+    core.emit(
+      const CoreEvent.readdRequested(outcome: ReaddAnswer.limitReached),
+    );
+    await settle(tester);
+    expect(find.text(readdLimitText), findsOneWidget);
+    expect(find.text(readdAskedText), findsNothing);
+    expect(
+      find.textContaining('Reason: a Welcome could not be used: x ('),
+      findsOneWidget,
+    );
+
+    core.epochValue = BigInt.one;
+    core.emit(const CoreEvent.joinedGroup());
+    await settle(tester);
+    expect(find.byKey(const Key('refusal')), findsNothing);
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  // spec: app-ui/join-from-an-invite
   testWidgets('Wrong pin: a server identity error, not a network error, and '
       'no join', (tester) async {
     final core = FakeCoreService()

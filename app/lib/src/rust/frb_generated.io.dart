@@ -139,6 +139,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PushPlatform dco_decode_push_platform(dynamic raw);
 
   @protected
+  ReaddAnswer dco_decode_readd_answer(dynamic raw);
+
+  @protected
   SendState dco_decode_send_state(dynamic raw);
 
   @protected
@@ -280,6 +283,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PushPlatform sse_decode_push_platform(SseDeserializer deserializer);
+
+  @protected
+  ReaddAnswer sse_decode_readd_answer(SseDeserializer deserializer);
 
   @protected
   SendState sse_decode_send_state(SseDeserializer deserializer);
@@ -460,6 +466,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_push_platform(PushPlatform self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_readd_answer(ReaddAnswer self, SseSerializer serializer);
 
   @protected
   void sse_encode_send_state(SendState self, SseSerializer serializer);

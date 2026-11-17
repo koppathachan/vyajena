@@ -38,6 +38,9 @@ pub struct Upload {
     /// Its hash reference (TLS-serialized), to delete its private key once
     /// it is two refreshes old.
     pub last_resort_ref: Vec<u8>,
+    /// The one-time KeyPackages' hash references (TLS-serialized), to delete
+    /// their private keys if the Pi does not take them.
+    pub one_time_refs: Vec<Vec<u8>>,
 }
 
 fn build(
@@ -63,6 +66,14 @@ fn bytes(key_package: &KeyPackage) -> Result<Vec<u8>, MlsError> {
         .map_err(|e| MlsError::new("serializing a KeyPackage", e))
 }
 
+fn hash_ref(provider: &MlsProvider, key_package: &KeyPackage) -> Result<Vec<u8>, MlsError> {
+    key_package
+        .hash_ref(provider.crypto())
+        .map_err(|e| MlsError::new("hashing a KeyPackage", e))?
+        .tls_serialize_detached()
+        .map_err(|e| MlsError::new("serializing a KeyPackage reference", e))
+}
+
 /// `one_time` fresh one-time KeyPackages and a fresh last-resort one. Their
 /// private keys go into OpenMLS storage (sealed, design D3).
 pub fn new_upload(
@@ -72,19 +83,18 @@ pub fn new_upload(
     one_time: usize,
 ) -> Result<Upload, MlsError> {
     let mut packages = Vec::with_capacity(one_time);
+    let mut one_time_refs = Vec::with_capacity(one_time);
     for _ in 0..one_time {
-        packages.push(bytes(&build(provider, signer, credential, false)?)?);
+        let key_package = build(provider, signer, credential, false)?;
+        one_time_refs.push(hash_ref(provider, &key_package)?);
+        packages.push(bytes(&key_package)?);
     }
     let last = build(provider, signer, credential, true)?;
-    let last_resort_ref = last
-        .hash_ref(provider.crypto())
-        .map_err(|e| MlsError::new("hashing a KeyPackage", e))?
-        .tls_serialize_detached()
-        .map_err(|e| MlsError::new("serializing a KeyPackage reference", e))?;
     Ok(Upload {
         one_time: packages,
         last_resort: bytes(&last)?,
-        last_resort_ref,
+        last_resort_ref: hash_ref(provider, &last)?,
+        one_time_refs,
     })
 }
 

@@ -262,7 +262,7 @@ struct ConnectInfo {
     rejoin: Vec<(DeviceId, pb::ServerFrame)>,
 }
 
-fn device_ref(device_id: &DeviceId, username: &str, server_id: &str) -> pb::DeviceRef {
+pub(crate) fn device_ref(device_id: &DeviceId, username: &str, server_id: &str) -> pb::DeviceRef {
     pb::DeviceRef {
         user_id: Some(pb::UserId {
             username: username.to_owned(),
@@ -272,7 +272,7 @@ fn device_ref(device_id: &DeviceId, username: &str, server_id: &str) -> pb::Devi
     }
 }
 
-fn rejoin_notice(group_id: &[u8], device: pb::DeviceRef) -> pb::ServerFrame {
+pub(crate) fn rejoin_notice(group_id: &[u8], device: pb::DeviceRef) -> pb::ServerFrame {
     frame(Out::RejoinNotice(pb::RejoinNotice {
         group_id: group_id.to_vec(),
         device: Some(device),
@@ -282,7 +282,7 @@ fn rejoin_notice(group_id: &[u8], device: pb::DeviceRef) -> pb::ServerFrame {
 /// Whether `helper` (of `helper_user`) may re-add a device of `user`: one of
 /// the user's own other devices, or an admin device (group-membership:
 /// Automatic re-add).
-fn can_readd(
+pub(crate) fn can_readd(
     helper: &DeviceId,
     helper_user: &str,
     device: &DeviceId,

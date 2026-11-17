@@ -20,6 +20,11 @@ service Keys {
 
   // key-directory: Identity key lookup.
   rpc GetIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+
+  // group-membership: Re-add after an unusable Welcome. The calling device
+  // could not use the Welcome that added it (or has no group while the Pi
+  // counts it as a member) and asks to be added again, with fresh KeyPackages.
+  rpc RequestReadd(RequestReaddRequest) returns (RequestReaddResponse);
 }
 
 // key-directory: KeyPackage upload. One-time KeyPackages plus exactly one
@@ -96,4 +101,56 @@ message UserIdentityKey {
   UserId user_id = 1;
   // The user's identity public key (Ed25519, 32 bytes).
   bytes identity_public_key = 2;
+}
+
+// group-membership: Re-add after an unusable Welcome.
+//
+// Sent by a device that refused a Welcome, or that has no group when its core
+// starts. The Pi answers `READD_OUTCOME_ASKED` only if the calling device is a
+// non-revoked member in the tree, is not already waiting to be re-added, has
+// no Welcome queued after `refused_welcome_seq`, and has asked fewer than
+// `protocol::group_membership::MAX_READD_REQUESTS_PER_DAY` times in the last
+// 24 hours. Then, in one transaction, it replaces all of the device's
+// KeyPackages with the ones in this request (checked as in
+// `UploadKeyPackages`), marks the device inactive and back (so it issues its
+// external Remove proposal and sends a `RejoinNotice` for it to the devices
+// that may re-add it), and logs `reason`. Otherwise it changes nothing and
+// stores no KeyPackage.
+//
+// The Pi gains no power from this: it adds no one; a member device commits the
+// re-add after checking the KeyPackage's certificate against the user's pinned
+// identity key, as for every add.
+message RequestReaddRequest {
+  // The `server_seq` of the Welcome this device refused; 0 when it asks
+  // because it has no group at start. A Welcome queued for it with a higher
+  // `server_seq` means it should process that one first.
+  uint64 refused_welcome_seq = 1;
+  // Why the device could not use the Welcome: the core's error text, for the
+  // Pi's log. At most `protocol::group_membership::MAX_READD_REASON_BYTES`
+  // bytes; never message content.
+  string reason = 2;
+  // Fresh one-time KeyPackages; they replace all of the device's stored ones.
+  repeated bytes key_packages = 3;
+  // A fresh last-resort KeyPackage.
+  bytes last_resort_key_package = 4;
+}
+
+message RequestReaddResponse {
+  ReaddOutcome outcome = 1;
+}
+
+enum ReaddOutcome {
+  READD_OUTCOME_UNSPECIFIED = 0;
+  // The Pi marked the device for a re-add and stored its new KeyPackages.
+  READD_OUTCOME_ASKED = 1;
+  // The device is not in the tree: it waits for its first add (`JoinNotice`)
+  // as usual. Nothing changed.
+  READD_OUTCOME_NOT_A_MEMBER = 2;
+  // A Welcome for the device is still queued: process it first. Nothing
+  // changed.
+  READD_OUTCOME_WELCOME_QUEUED = 3;
+  // The device already waits to be re-added (inactive). Nothing changed.
+  READD_OUTCOME_ALREADY_WAITING = 4;
+  // The device asked too often in the last 24 hours. Nothing changed.
+  READD_OUTCOME_LIMIT_REACHED = 5;
 }

@@ -314,7 +314,7 @@ extension CoreEventPatterns on CoreEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_Message value)?  message,TResult Function( CoreEvent_SendStatus value)?  sendStatus,TResult Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult Function( CoreEvent_GroupSettingsChanged value)?  groupSettingsChanged,TResult Function( CoreEvent_Unreadable value)?  unreadable,TResult Function( CoreEvent_Gap value)?  gap,TResult Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult Function( CoreEvent_Rejoined value)?  rejoined,TResult Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult Function( CoreEvent_Removed value)?  removed,TResult Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult Function( CoreEvent_MembersChanged value)?  membersChanged,TResult Function( CoreEvent_CommitRefused value)?  commitRefused,TResult Function( CoreEvent_Connection value)?  connection,TResult Function( CoreEvent_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_Message value)?  message,TResult Function( CoreEvent_SendStatus value)?  sendStatus,TResult Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult Function( CoreEvent_GroupSettingsChanged value)?  groupSettingsChanged,TResult Function( CoreEvent_Unreadable value)?  unreadable,TResult Function( CoreEvent_Gap value)?  gap,TResult Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult Function( CoreEvent_Rejoined value)?  rejoined,TResult Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult Function( CoreEvent_Removed value)?  removed,TResult Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult Function( CoreEvent_MembersChanged value)?  membersChanged,TResult Function( CoreEvent_CommitRefused value)?  commitRefused,TResult Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult Function( CoreEvent_Connection value)?  connection,TResult Function( CoreEvent_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
@@ -331,7 +331,8 @@ return serverIdentityError(_that);case CoreEvent_Removed() when removed != null:
 return removed(_that);case CoreEvent_JoinedGroup() when joinedGroup != null:
 return joinedGroup(_that);case CoreEvent_MembersChanged() when membersChanged != null:
 return membersChanged(_that);case CoreEvent_CommitRefused() when commitRefused != null:
-return commitRefused(_that);case CoreEvent_Connection() when connection != null:
+return commitRefused(_that);case CoreEvent_ReaddRequested() when readdRequested != null:
+return readdRequested(_that);case CoreEvent_Connection() when connection != null:
 return connection(_that);case CoreEvent_Other() when other != null:
 return other(_that);case _:
   return orElse();
@@ -351,7 +352,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_Message value)  message,required TResult Function( CoreEvent_SendStatus value)  sendStatus,required TResult Function( CoreEvent_ProfileChanged value)  profileChanged,required TResult Function( CoreEvent_GroupSettingsChanged value)  groupSettingsChanged,required TResult Function( CoreEvent_Unreadable value)  unreadable,required TResult Function( CoreEvent_Gap value)  gap,required TResult Function( CoreEvent_RemovedForInactivity value)  removedForInactivity,required TResult Function( CoreEvent_Rejoined value)  rejoined,required TResult Function( CoreEvent_IdentityKeyChanged value)  identityKeyChanged,required TResult Function( CoreEvent_ServerIdentityError value)  serverIdentityError,required TResult Function( CoreEvent_Removed value)  removed,required TResult Function( CoreEvent_JoinedGroup value)  joinedGroup,required TResult Function( CoreEvent_MembersChanged value)  membersChanged,required TResult Function( CoreEvent_CommitRefused value)  commitRefused,required TResult Function( CoreEvent_Connection value)  connection,required TResult Function( CoreEvent_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_Message value)  message,required TResult Function( CoreEvent_SendStatus value)  sendStatus,required TResult Function( CoreEvent_ProfileChanged value)  profileChanged,required TResult Function( CoreEvent_GroupSettingsChanged value)  groupSettingsChanged,required TResult Function( CoreEvent_Unreadable value)  unreadable,required TResult Function( CoreEvent_Gap value)  gap,required TResult Function( CoreEvent_RemovedForInactivity value)  removedForInactivity,required TResult Function( CoreEvent_Rejoined value)  rejoined,required TResult Function( CoreEvent_IdentityKeyChanged value)  identityKeyChanged,required TResult Function( CoreEvent_ServerIdentityError value)  serverIdentityError,required TResult Function( CoreEvent_Removed value)  removed,required TResult Function( CoreEvent_JoinedGroup value)  joinedGroup,required TResult Function( CoreEvent_MembersChanged value)  membersChanged,required TResult Function( CoreEvent_CommitRefused value)  commitRefused,required TResult Function( CoreEvent_ReaddRequested value)  readdRequested,required TResult Function( CoreEvent_Connection value)  connection,required TResult Function( CoreEvent_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message():
@@ -368,7 +369,8 @@ return serverIdentityError(_that);case CoreEvent_Removed():
 return removed(_that);case CoreEvent_JoinedGroup():
 return joinedGroup(_that);case CoreEvent_MembersChanged():
 return membersChanged(_that);case CoreEvent_CommitRefused():
-return commitRefused(_that);case CoreEvent_Connection():
+return commitRefused(_that);case CoreEvent_ReaddRequested():
+return readdRequested(_that);case CoreEvent_Connection():
 return connection(_that);case CoreEvent_Other():
 return other(_that);}
 }
@@ -384,7 +386,7 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_Message value)?  message,TResult? Function( CoreEvent_SendStatus value)?  sendStatus,TResult? Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult? Function( CoreEvent_GroupSettingsChanged value)?  groupSettingsChanged,TResult? Function( CoreEvent_Unreadable value)?  unreadable,TResult? Function( CoreEvent_Gap value)?  gap,TResult? Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult? Function( CoreEvent_Rejoined value)?  rejoined,TResult? Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult? Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult? Function( CoreEvent_Removed value)?  removed,TResult? Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult? Function( CoreEvent_MembersChanged value)?  membersChanged,TResult? Function( CoreEvent_CommitRefused value)?  commitRefused,TResult? Function( CoreEvent_Connection value)?  connection,TResult? Function( CoreEvent_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_Message value)?  message,TResult? Function( CoreEvent_SendStatus value)?  sendStatus,TResult? Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult? Function( CoreEvent_GroupSettingsChanged value)?  groupSettingsChanged,TResult? Function( CoreEvent_Unreadable value)?  unreadable,TResult? Function( CoreEvent_Gap value)?  gap,TResult? Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult? Function( CoreEvent_Rejoined value)?  rejoined,TResult? Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult? Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult? Function( CoreEvent_Removed value)?  removed,TResult? Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult? Function( CoreEvent_MembersChanged value)?  membersChanged,TResult? Function( CoreEvent_CommitRefused value)?  commitRefused,TResult? Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult? Function( CoreEvent_Connection value)?  connection,TResult? Function( CoreEvent_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
@@ -401,7 +403,8 @@ return serverIdentityError(_that);case CoreEvent_Removed() when removed != null:
 return removed(_that);case CoreEvent_JoinedGroup() when joinedGroup != null:
 return joinedGroup(_that);case CoreEvent_MembersChanged() when membersChanged != null:
 return membersChanged(_that);case CoreEvent_CommitRefused() when commitRefused != null:
-return commitRefused(_that);case CoreEvent_Connection() when connection != null:
+return commitRefused(_that);case CoreEvent_ReaddRequested() when readdRequested != null:
+return readdRequested(_that);case CoreEvent_Connection() when connection != null:
 return connection(_that);case CoreEvent_Other() when other != null:
 return other(_that);case _:
   return null;
@@ -420,7 +423,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ChatMessage message)?  message,TResult Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult Function( String? name,  String? previous,  UserRef by)?  groupSettingsChanged,TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs)?  unreadable,TResult Function( PlatformInt64 newestExpiredAtMs)?  gap,TResult Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult Function()?  rejoined,TResult Function( UserRef user)?  identityKeyChanged,TResult Function()?  serverIdentityError,TResult Function()?  removed,TResult Function()?  joinedGroup,TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult Function( String reason)?  commitRefused,TResult Function( ConnectionStatus status)?  connection,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ChatMessage message)?  message,TResult Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult Function( String? name,  String? previous,  UserRef by)?  groupSettingsChanged,TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs)?  unreadable,TResult Function( PlatformInt64 newestExpiredAtMs)?  gap,TResult Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult Function()?  rejoined,TResult Function( UserRef user)?  identityKeyChanged,TResult Function()?  serverIdentityError,TResult Function()?  removed,TResult Function()?  joinedGroup,TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult Function( String reason)?  commitRefused,TResult Function( ReaddAnswer outcome)?  readdRequested,TResult Function( ConnectionStatus status)?  connection,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
 return message(_that.message);case CoreEvent_SendStatus() when sendStatus != null:
@@ -436,7 +439,8 @@ return serverIdentityError();case CoreEvent_Removed() when removed != null:
 return removed();case CoreEvent_JoinedGroup() when joinedGroup != null:
 return joinedGroup();case CoreEvent_MembersChanged() when membersChanged != null:
 return membersChanged(_that.added,_that.removed,_that.by,_that.automatic);case CoreEvent_CommitRefused() when commitRefused != null:
-return commitRefused(_that.reason);case CoreEvent_Connection() when connection != null:
+return commitRefused(_that.reason);case CoreEvent_ReaddRequested() when readdRequested != null:
+return readdRequested(_that.outcome);case CoreEvent_Connection() when connection != null:
 return connection(_that.status);case CoreEvent_Other() when other != null:
 return other();case _:
   return orElse();
@@ -456,7 +460,7 @@ return other();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ChatMessage message)  message,required TResult Function( PlatformInt64 id,  SendState status)  sendStatus,required TResult Function( UserRef user,  String? displayName,  String? about)  profileChanged,required TResult Function( String? name,  String? previous,  UserRef by)  groupSettingsChanged,required TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs)  unreadable,required TResult Function( PlatformInt64 newestExpiredAtMs)  gap,required TResult Function( PlatformInt64 missedSinceMs)  removedForInactivity,required TResult Function()  rejoined,required TResult Function( UserRef user)  identityKeyChanged,required TResult Function()  serverIdentityError,required TResult Function()  removed,required TResult Function()  joinedGroup,required TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)  membersChanged,required TResult Function( String reason)  commitRefused,required TResult Function( ConnectionStatus status)  connection,required TResult Function()  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ChatMessage message)  message,required TResult Function( PlatformInt64 id,  SendState status)  sendStatus,required TResult Function( UserRef user,  String? displayName,  String? about)  profileChanged,required TResult Function( String? name,  String? previous,  UserRef by)  groupSettingsChanged,required TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs)  unreadable,required TResult Function( PlatformInt64 newestExpiredAtMs)  gap,required TResult Function( PlatformInt64 missedSinceMs)  removedForInactivity,required TResult Function()  rejoined,required TResult Function( UserRef user)  identityKeyChanged,required TResult Function()  serverIdentityError,required TResult Function()  removed,required TResult Function()  joinedGroup,required TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)  membersChanged,required TResult Function( String reason)  commitRefused,required TResult Function( ReaddAnswer outcome)  readdRequested,required TResult Function( ConnectionStatus status)  connection,required TResult Function()  other,}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message():
 return message(_that.message);case CoreEvent_SendStatus():
@@ -472,7 +476,8 @@ return serverIdentityError();case CoreEvent_Removed():
 return removed();case CoreEvent_JoinedGroup():
 return joinedGroup();case CoreEvent_MembersChanged():
 return membersChanged(_that.added,_that.removed,_that.by,_that.automatic);case CoreEvent_CommitRefused():
-return commitRefused(_that.reason);case CoreEvent_Connection():
+return commitRefused(_that.reason);case CoreEvent_ReaddRequested():
+return readdRequested(_that.outcome);case CoreEvent_Connection():
 return connection(_that.status);case CoreEvent_Other():
 return other();}
 }
@@ -488,7 +493,7 @@ return other();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ChatMessage message)?  message,TResult? Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult? Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult? Function( String? name,  String? previous,  UserRef by)?  groupSettingsChanged,TResult? Function( UserRef? sender,  PlatformInt64? acceptedAtMs)?  unreadable,TResult? Function( PlatformInt64 newestExpiredAtMs)?  gap,TResult? Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult? Function()?  rejoined,TResult? Function( UserRef user)?  identityKeyChanged,TResult? Function()?  serverIdentityError,TResult? Function()?  removed,TResult? Function()?  joinedGroup,TResult? Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult? Function( String reason)?  commitRefused,TResult? Function( ConnectionStatus status)?  connection,TResult? Function()?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ChatMessage message)?  message,TResult? Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult? Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult? Function( String? name,  String? previous,  UserRef by)?  groupSettingsChanged,TResult? Function( UserRef? sender,  PlatformInt64? acceptedAtMs)?  unreadable,TResult? Function( PlatformInt64 newestExpiredAtMs)?  gap,TResult? Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult? Function()?  rejoined,TResult? Function( UserRef user)?  identityKeyChanged,TResult? Function()?  serverIdentityError,TResult? Function()?  removed,TResult? Function()?  joinedGroup,TResult? Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult? Function( String reason)?  commitRefused,TResult? Function( ReaddAnswer outcome)?  readdRequested,TResult? Function( ConnectionStatus status)?  connection,TResult? Function()?  other,}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
 return message(_that.message);case CoreEvent_SendStatus() when sendStatus != null:
@@ -504,7 +509,8 @@ return serverIdentityError();case CoreEvent_Removed() when removed != null:
 return removed();case CoreEvent_JoinedGroup() when joinedGroup != null:
 return joinedGroup();case CoreEvent_MembersChanged() when membersChanged != null:
 return membersChanged(_that.added,_that.removed,_that.by,_that.automatic);case CoreEvent_CommitRefused() when commitRefused != null:
-return commitRefused(_that.reason);case CoreEvent_Connection() when connection != null:
+return commitRefused(_that.reason);case CoreEvent_ReaddRequested() when readdRequested != null:
+return readdRequested(_that.outcome);case CoreEvent_Connection() when connection != null:
 return connection(_that.status);case CoreEvent_Other() when other != null:
 return other();case _:
   return null;
@@ -1366,6 +1372,73 @@ class _$CoreEvent_CommitRefusedCopyWithImpl<$Res>
   return _then(CoreEvent_CommitRefused(
 reason: null == reason ? _self.reason : reason // ignore: cast_nullable_to_non_nullable
 as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class CoreEvent_ReaddRequested extends CoreEvent {
+  const CoreEvent_ReaddRequested({required this.outcome}): super._();
+  
+
+/// What the Pi answered.
+ final  ReaddAnswer outcome;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CoreEvent_ReaddRequestedCopyWith<CoreEvent_ReaddRequested> get copyWith => _$CoreEvent_ReaddRequestedCopyWithImpl<CoreEvent_ReaddRequested>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreEvent_ReaddRequested&&(identical(other.outcome, outcome) || other.outcome == outcome));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,outcome);
+
+@override
+String toString() {
+  return 'CoreEvent.readdRequested(outcome: $outcome)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CoreEvent_ReaddRequestedCopyWith<$Res> implements $CoreEventCopyWith<$Res> {
+  factory $CoreEvent_ReaddRequestedCopyWith(CoreEvent_ReaddRequested value, $Res Function(CoreEvent_ReaddRequested) _then) = _$CoreEvent_ReaddRequestedCopyWithImpl;
+@useResult
+$Res call({
+ ReaddAnswer outcome
+});
+
+
+
+
+}
+/// @nodoc
+class _$CoreEvent_ReaddRequestedCopyWithImpl<$Res>
+    implements $CoreEvent_ReaddRequestedCopyWith<$Res> {
+  _$CoreEvent_ReaddRequestedCopyWithImpl(this._self, this._then);
+
+  final CoreEvent_ReaddRequested _self;
+  final $Res Function(CoreEvent_ReaddRequested) _then;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? outcome = null,}) {
+  return _then(CoreEvent_ReaddRequested(
+outcome: null == outcome ? _self.outcome : outcome // ignore: cast_nullable_to_non_nullable
+as ReaddAnswer,
   ));
 }
 

@@ -1545,6 +1545,92 @@ pub struct UserIdentityKey {
     #[prost(bytes = "vec", tag = "2")]
     pub identity_public_key: ::prost::alloc::vec::Vec<u8>,
 }
+/// group-membership: Re-add after an unusable Welcome.
+///
+/// Sent by a device that refused a Welcome, or that has no group when its core
+/// starts. The Pi answers `READD_OUTCOME_ASKED` only if the calling device is a
+/// non-revoked member in the tree, is not already waiting to be re-added, has
+/// no Welcome queued after `refused_welcome_seq`, and has asked fewer than
+/// `protocol::group_membership::MAX_READD_REQUESTS_PER_DAY` times in the last
+/// 24 hours. Then, in one transaction, it replaces all of the device's
+/// KeyPackages with the ones in this request (checked as in
+/// `UploadKeyPackages`), marks the device inactive and back (so it issues its
+/// external Remove proposal and sends a `RejoinNotice` for it to the devices
+/// that may re-add it), and logs `reason`. Otherwise it changes nothing and
+/// stores no KeyPackage.
+///
+/// The Pi gains no power from this: it adds no one; a member device commits the
+/// re-add after checking the KeyPackage's certificate against the user's pinned
+/// identity key, as for every add.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RequestReaddRequest {
+    /// The `server_seq` of the Welcome this device refused; 0 when it asks
+    /// because it has no group at start. A Welcome queued for it with a higher
+    /// `server_seq` means it should process that one first.
+    #[prost(uint64, tag = "1")]
+    pub refused_welcome_seq: u64,
+    /// Why the device could not use the Welcome: the core's error text, for the
+    /// Pi's log. At most `protocol::group_membership::MAX_READD_REASON_BYTES`
+    /// bytes; never message content.
+    #[prost(string, tag = "2")]
+    pub reason: ::prost::alloc::string::String,
+    /// Fresh one-time KeyPackages; they replace all of the device's stored ones.
+    #[prost(bytes = "vec", repeated, tag = "3")]
+    pub key_packages: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// A fresh last-resort KeyPackage.
+    #[prost(bytes = "vec", tag = "4")]
+    pub last_resort_key_package: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RequestReaddResponse {
+    #[prost(enumeration = "ReaddOutcome", tag = "1")]
+    pub outcome: i32,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReaddOutcome {
+    Unspecified = 0,
+    /// The Pi marked the device for a re-add and stored its new KeyPackages.
+    Asked = 1,
+    /// The device is not in the tree: it waits for its first add (`JoinNotice`)
+    /// as usual. Nothing changed.
+    NotAMember = 2,
+    /// A Welcome for the device is still queued: process it first. Nothing
+    /// changed.
+    WelcomeQueued = 3,
+    /// The device already waits to be re-added (inactive). Nothing changed.
+    AlreadyWaiting = 4,
+    /// The device asked too often in the last 24 hours. Nothing changed.
+    LimitReached = 5,
+}
+impl ReaddOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "READD_OUTCOME_UNSPECIFIED",
+            Self::Asked => "READD_OUTCOME_ASKED",
+            Self::NotAMember => "READD_OUTCOME_NOT_A_MEMBER",
+            Self::WelcomeQueued => "READD_OUTCOME_WELCOME_QUEUED",
+            Self::AlreadyWaiting => "READD_OUTCOME_ALREADY_WAITING",
+            Self::LimitReached => "READD_OUTCOME_LIMIT_REACHED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "READD_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "READD_OUTCOME_ASKED" => Some(Self::Asked),
+            "READD_OUTCOME_NOT_A_MEMBER" => Some(Self::NotAMember),
+            "READD_OUTCOME_WELCOME_QUEUED" => Some(Self::WelcomeQueued),
+            "READD_OUTCOME_ALREADY_WAITING" => Some(Self::AlreadyWaiting),
+            "READD_OUTCOME_LIMIT_REACHED" => Some(Self::LimitReached),
+            _ => None,
+        }
+    }
+}
 /// Generated server implementations.
 pub mod keys_server {
     #![allow(
@@ -1580,6 +1666,16 @@ pub mod keys_server {
             request: tonic::Request<super::GetIdentityKeysRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetIdentityKeysResponse>,
+            tonic::Status,
+        >;
+        /// group-membership: Re-add after an unusable Welcome. The calling device
+        /// could not use the Welcome that added it (or has no group while the Pi
+        /// counts it as a member) and asks to be added again, with fresh KeyPackages.
+        async fn request_readd(
+            &self,
+            request: tonic::Request<super::RequestReaddRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RequestReaddResponse>,
             tonic::Status,
         >;
     }
@@ -1781,6 +1877,49 @@ pub mod keys_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetIdentityKeysSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/vyajena.v1.Keys/RequestReadd" => {
+                    #[allow(non_camel_case_types)]
+                    struct RequestReaddSvc<T: Keys>(pub Arc<T>);
+                    impl<T: Keys> tonic::server::UnaryService<super::RequestReaddRequest>
+                    for RequestReaddSvc<T> {
+                        type Response = super::RequestReaddResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RequestReaddRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Keys>::request_readd(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RequestReaddSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

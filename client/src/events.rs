@@ -220,8 +220,32 @@ pub enum Event {
         /// Why, for display.
         reason: String,
     },
+    /// This device asked the Pi to be added again after it could not use a
+    /// Welcome, or because it had no group at start (group-membership:
+    /// Re-add after an unusable Welcome). Only `Asked` and `LimitReached`
+    /// change what the device waits for.
+    ReaddRequested {
+        /// What the Pi answered.
+        outcome: ReaddOutcome,
+    },
     /// The connection state changed.
     Connection(ConnectionState),
+}
+
+/// The Pi's answer to `Keys.RequestReadd` (group-membership: Re-add after an
+/// unusable Welcome).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReaddOutcome {
+    /// The Pi will have this device re-added; it waits for the new Welcome.
+    Asked,
+    /// It is not in the group yet: it waits for its first add as usual.
+    NotAMember,
+    /// A Welcome for it is still on its way.
+    WelcomeQueued,
+    /// It already waits to be re-added.
+    AlreadyWaiting,
+    /// It asked too often today; it asks again at a later start.
+    LimitReached,
 }
 
 /// A user's profile (message-content: User-owned profiles).

@@ -14,7 +14,7 @@ use openmls_traits::OpenMlsProvider as _;
 
 use super::{Engine, EngineError, Reply};
 use crate::client::ClientError;
-use crate::events::{DeviceId, UserId};
+use crate::events::{DeviceId, ReaddOutcome, UserId};
 use crate::identity::certificate::credential_with_key;
 use crate::membership::{
     self, CommitPlan, StagedOwnCommit, check_fetched, device_ref, leaf_fingerprint, leaves_of_user,
@@ -61,6 +61,10 @@ pub(crate) enum Job {
     /// replace the last-resort one (weekly refresh). Every upload carries a
     /// new last-resort KeyPackage.
     UploadKeyPackages { remaining: Option<u32> },
+    /// group-membership: Re-add after an unusable Welcome. Ask the Pi to be
+    /// added again, with fresh KeyPackages: after refusing the Welcome at
+    /// `refused_seq`, or (`0`) at start with no group.
+    RequestReadd { refused_seq: u64, reason: String },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -140,6 +144,7 @@ impl Job {
             Job::CommitPiRemoves => "pi_removes".into(),
             Job::Rotate => "rotate".into(),
             Job::UploadKeyPackages { .. } => "upload_key_packages".into(),
+            Job::RequestReadd { .. } => "request_readd".into(),
         }
     }
 
@@ -210,6 +215,24 @@ impl Engine {
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::RequestReadd {
+                refused_seq,
+                reason,
+            } => {
+                if let Err(error) = self.request_readd(refused_seq, &reason).await {
+                    tracing::warn!(%error, "asking to be added again failed");
+                    if matches!(
+                        error,
+                        ClientError::Net(NetError::Connect(_)) | ClientError::Offline
+                    ) {
+                        self.push_job(Job::RequestReadd {
+                            refused_seq,
+                            reason,
+                        });
+                    }
                 }
                 Ok(())
             }
@@ -547,7 +570,9 @@ impl Engine {
                 })?;
                 Ok(Prepared::Commit(staged, Vec::new()))
             }
-            Job::CreateGroup { .. } | Job::UploadKeyPackages { .. } => Ok(Prepared::Nothing),
+            Job::CreateGroup { .. } | Job::UploadKeyPackages { .. } | Job::RequestReadd { .. } => {
+                Ok(Prepared::Nothing)
+            }
         }
     }
 
@@ -661,5 +686,90 @@ impl Engine {
         }
         tracing::info!(one_time = count, "uploaded KeyPackages");
         Ok(())
+    }
+
+    /// group-membership: Re-add after an unusable Welcome. Asks the Pi with
+    /// fresh KeyPackages, which replace the device's stored ones only if the
+    /// Pi answers `ASKED` (welcome-recovery design D2, D3).
+    async fn request_readd(&mut self, refused_seq: u64, reason: &str) -> Result<(), ClientError> {
+        if refused_seq == 0 && self.store().group()?.is_some() {
+            // Joined since the ask was queued.
+            return Ok(());
+        }
+        let session = self.session().map_err(ClientError::from)?;
+        let credential = self.credential();
+        let signer = self.keys.mls_signer();
+        let store = std::sync::Arc::clone(&self.shared.store);
+        let upload = store.transaction(|| -> Result<_, EngineError> {
+            Ok(crate::keys::new_upload(
+                store.mls(),
+                &signer,
+                &credential,
+                protocol::key_directory::ONE_TIME_KEY_PACKAGES_TARGET,
+            )?)
+        })?;
+        let response = session
+            .conn()
+            .keys()
+            .request_readd(session.request(pb::RequestReaddRequest {
+                refused_welcome_seq: refused_seq,
+                reason: protocol::group_membership::readd_reason(reason).to_owned(),
+                key_packages: upload.one_time.clone(),
+                last_resort_key_package: upload.last_resort.clone(),
+            })?)
+            .await;
+        let response = match response {
+            Ok(response) => response.into_inner(),
+            Err(status) => {
+                forget_unused(&store, &upload);
+                if status.code() == tonic::Code::Unimplemented {
+                    // A Pi from before welcome-recovery: wait as before.
+                    tracing::warn!("the Pi cannot re-add this device on request");
+                    return Ok(());
+                }
+                return Err(NetError::from(status).into());
+            }
+        };
+        let outcome = match pb::ReaddOutcome::try_from(response.outcome) {
+            Ok(pb::ReaddOutcome::Asked) => ReaddOutcome::Asked,
+            Ok(pb::ReaddOutcome::NotAMember) => ReaddOutcome::NotAMember,
+            Ok(pb::ReaddOutcome::WelcomeQueued) => ReaddOutcome::WelcomeQueued,
+            Ok(pb::ReaddOutcome::AlreadyWaiting) => ReaddOutcome::AlreadyWaiting,
+            Ok(pb::ReaddOutcome::LimitReached) => ReaddOutcome::LimitReached,
+            Ok(pb::ReaddOutcome::Unspecified) | Err(_) => {
+                forget_unused(&store, &upload);
+                return Err(NetError::Protocol("RequestReadd without an outcome".into()).into());
+            }
+        };
+        if outcome == ReaddOutcome::Asked {
+            let old = store.add_last_resort(&upload.last_resort_ref, self.now())?;
+            for hash_ref in old {
+                if let Err(error) = crate::keys::forget(store.mls(), &hash_ref) {
+                    tracing::warn!(%error, "cannot delete an old last-resort KeyPackage");
+                }
+            }
+        } else {
+            forget_unused(&store, &upload);
+        }
+        tracing::info!(refused_seq, ?outcome, "asked to be added again");
+        self.emit(crate::events::Event::ReaddRequested { outcome });
+        Ok(())
+    }
+}
+
+/// Deletes the private keys of KeyPackages the Pi did not take.
+fn forget_unused(store: &crate::store::Store, upload: &crate::keys::Upload) {
+    let forgot = store.transaction(|| -> Result<(), EngineError> {
+        for hash_ref in upload
+            .one_time_refs
+            .iter()
+            .chain(std::iter::once(&upload.last_resort_ref))
+        {
+            crate::keys::forget(store.mls(), hash_ref)?;
+        }
+        Ok(())
+    });
+    if let Err(error) = forgot {
+        tracing::warn!(%error, "cannot delete unused KeyPackages");
     }
 }

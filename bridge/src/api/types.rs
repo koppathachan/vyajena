@@ -73,6 +73,22 @@ pub enum ConnectionStatus {
     Disconnected,
 }
 
+/// The Pi's answer when this device asked to be added again
+/// (group-membership: Re-add after an unusable Welcome).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReaddAnswer {
+    /// The admin's device (or another of the user's) will re-add it.
+    Asked,
+    /// Not in the group yet: it waits for its first add.
+    NotAMember,
+    /// A Welcome for it is still on its way.
+    WelcomeQueued,
+    /// It already waits to be re-added.
+    AlreadyWaiting,
+    /// It asked too often today; it asks again at a later start.
+    LimitReached,
+}
+
 /// Which push service a token is for (device-identity: Push token
 /// registration).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,6 +186,12 @@ pub enum CoreEvent {
     CommitRefused {
         /// Why, for display.
         reason: String,
+    },
+    /// This device asked the Pi to be added again (group-membership: Re-add
+    /// after an unusable Welcome).
+    ReaddRequested {
+        /// What the Pi answered.
+        outcome: ReaddAnswer,
     },
     /// The connection state changed.
     Connection {

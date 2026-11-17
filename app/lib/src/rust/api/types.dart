@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`
 
 @freezed
 sealed class ChatBody with _$ChatBody {
@@ -218,6 +218,13 @@ sealed class CoreEvent with _$CoreEvent {
     required String reason,
   }) = CoreEvent_CommitRefused;
 
+  /// This device asked the Pi to be added again (group-membership: Re-add
+  /// after an unusable Welcome).
+  const factory CoreEvent.readdRequested({
+    /// What the Pi answered.
+    required ReaddAnswer outcome,
+  }) = CoreEvent_ReaddRequested;
+
   /// The connection state changed.
   const factory CoreEvent.connection({
     /// The new state.
@@ -342,6 +349,25 @@ enum PushPlatform {
 
   /// Apple Push Notification service (iOS).
   apns,
+}
+
+/// The Pi's answer when this device asked to be added again
+/// (group-membership: Re-add after an unusable Welcome).
+enum ReaddAnswer {
+  /// The admin's device (or another of the user's) will re-add it.
+  asked,
+
+  /// Not in the group yet: it waits for its first add.
+  notAMember,
+
+  /// A Welcome for it is still on its way.
+  welcomeQueued,
+
+  /// It already waits to be re-added.
+  alreadyWaiting,
+
+  /// It asked too often today; it asks again at a later start.
+  limitReached,
 }
 
 @freezed

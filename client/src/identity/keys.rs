@@ -11,7 +11,7 @@ use openmls_traits::signatures::{Signer, SignerError};
 use openmls_traits::types::SignatureScheme;
 use protocol::device_identity::{DeviceId, device_id};
 
-use crate::keystore::{KeyName, KeyStore, KeyStoreError, get_or_create};
+use crate::keystore::{KeyName, KeyStore, KeyStoreError, create_fresh, get_or_create};
 
 /// Length of a stored Ed25519 seed.
 const SEED_LEN: usize = 32;
@@ -51,6 +51,17 @@ impl DeviceKeys {
             auth: signing_key(&auth)?,
             mls: signing_key(&mls)?,
         }))
+    }
+
+    /// New device keys in `store`, replacing any left by an earlier install
+    /// (device-identity: Fresh keys for a new signup).
+    pub fn create_fresh(store: &dyn KeyStore) -> Result<Self, KeyStoreError> {
+        let auth = create_fresh(store, KeyName::DeviceAuthKey, SEED_LEN)?;
+        let mls = create_fresh(store, KeyName::MlsSignatureKey, SEED_LEN)?;
+        Ok(Self {
+            auth: signing_key(&auth)?,
+            mls: signing_key(&mls)?,
+        })
     }
 
     /// The device keys in `store`, created on first use.
@@ -112,8 +123,9 @@ pub fn identity_key(store: &dyn KeyStore) -> Result<Option<SigningKey>, KeyStore
         .transpose()
 }
 
-/// Creates the user identity key, or returns the existing one (a retried
-/// signup reuses it).
+/// Creates a new user identity key, replacing any left by an earlier install
+/// (device-identity: Fresh keys for a new signup; the iOS Keychain keeps
+/// items after the app is deleted).
 pub fn create_identity_key(store: &dyn KeyStore) -> Result<SigningKey, KeyStoreError> {
-    signing_key(&get_or_create(store, KeyName::IdentityKey, SEED_LEN)?)
+    signing_key(&create_fresh(store, KeyName::IdentityKey, SEED_LEN)?)
 }

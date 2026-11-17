@@ -14,6 +14,9 @@ spikes/
 .flutter-plugins-dependencies
 .packages
 build/
+# app/build is a symlink to the external drive (disk hygiene); `build/` only
+# matches real folders.
+/app/build
 .pub-cache/
 .pub/
 *.iml
@@ -53,5 +56,23 @@ AuthKey_*.p8
 
 # Push credentials and Firebase config live only in ~/.vyajena-push/ (push design D6, D8).
 google-services.json
+GoogleService-Info.plist
 fcm-service-account.json
-AuthKey_*.p8
+*.p8
+
+# Store builds: signed bundles and archives never go in git.
+*.ipa
+*.aab
+*.apk
+*.xcarchive/
+*.dSYM/
+
+# Owner-only material that must stay outside the repo: relay and push
+# secrets (~/.vyajena-relay/, ~/.vyajena-push/), Pi backups and bootstrap
+# invites (~/vyajena-pi-backups/). Ignored here too in case a copy lands in
+# the checkout.
+.vyajena-relay/
+.vyajena-push/
+.vyajena-release/
+vyajena-pi-backups/
+*bootstrap-invite*.txt
