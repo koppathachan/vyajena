@@ -145,6 +145,7 @@ void main() {
       ..messages = [
         const ChatMessage(
           id: 1,
+          chatId: 0,
           sender: bob,
           senderDevice: 'ef56',
           outgoing: false,
@@ -254,6 +255,7 @@ void main() {
       ..messages = [
         const ChatMessage(
           id: 1,
+          chatId: 0,
           sender: bob,
           senderDevice: 'cd34',
           outgoing: false,
@@ -275,6 +277,7 @@ void main() {
     final core = await aliceInChat(tester);
     final message = ChatMessage(
       id: 99,
+      chatId: 0,
       sender: bob,
       senderDevice: 'cd34',
       outgoing: false,
@@ -295,7 +298,9 @@ void main() {
     tester,
   ) async {
     final core = await aliceInChat(tester);
-    core.emit(const CoreEvent.unreadable(sender: bob, acceptedAtMs: 5));
+    core.emit(
+      const CoreEvent.unreadable(sender: bob, acceptedAtMs: 5, chatId: 0),
+    );
     await settle(tester);
     expect(
       find.text('A message from Bob (bob) could not be read.'),

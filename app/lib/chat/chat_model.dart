@@ -152,13 +152,44 @@ class _Anchored {
 /// The chat's messages and notices, kept up to date from the core.
 class ChatModel extends ChangeNotifier {
   /// Follows [core]'s events from now on; make it before the core opens.
-  ChatModel(this.core) : names = UserNames(core) {
+  /// [chatId] 0 is the main group; a DM's model (change `dms`) names its
+  /// [peer] and lives as long as its screen.
+  ChatModel(this.core, {this.chatId = 0, this.peer}) : names = UserNames(core) {
     _subscription = core.events.listen(_onEvent);
-    core.addBeforeStart(_prime);
+    if (isMain) core.addBeforeStart(_prime);
   }
 
   final CoreService core;
   final UserNames names;
+
+  /// The chat: 0 is the main group, else a DM.
+  final int chatId;
+
+  /// The DM's other user; null for the main group.
+  final UserRef? peer;
+
+  /// Whether this is the main group's chat.
+  bool get isMain => chatId == 0;
+
+  bool _closed = false;
+  bool _waiting = false;
+
+  /// The Pi closed this DM: its peer was removed (app-ui: DM screen).
+  bool get closed => _closed;
+
+  /// None of the peer's devices is in this DM yet: own messages wait
+  /// ("Waiting for Bobby's devices", app-ui: Open a DM).
+  bool get waiting => _waiting;
+
+  bool _hasDms = false;
+  int _dmUnread = 0;
+
+  /// The group's model: whether this user has any DM (the group's chat then
+  /// offers the chat list).
+  bool get hasDms => _hasDms;
+
+  /// The group's model: received DM messages not read yet, all DMs.
+  int get dmUnread => _dmUnread;
 
   List<ChatMessage> _messages = const [];
 
@@ -188,7 +219,9 @@ class ChatModel extends ChangeNotifier {
   /// the order the core listed them (the mention picker's members).
   List<UserRef> get memberUsers => [
     for (final e in _memberUsers.entries)
-      if (_members[e.key]?.isNotEmpty ?? false) e.value,
+      if ((_members[e.key]?.isNotEmpty ?? false) &&
+          (isMain || _same(e.value, peer!)))
+        e.value,
   ];
 
   /// Local ids of messages whose mention of this user is not seen yet,
@@ -238,6 +271,8 @@ class ChatModel extends ChangeNotifier {
     try {
       _groupName = await core.groupName();
       await _reloadMembers();
+      if (peer case final UserRef peer) await names.load([peer]);
+      await _reloadChat();
       await _reload();
       _lastId ??= _messages.isEmpty ? null : _messages.last.id;
     } on Object {
@@ -249,10 +284,41 @@ class ChatModel extends ChangeNotifier {
   /// Makes sure the history is loaded; the chat screen calls it on open.
   Future<void> ensureLoaded() => _prime();
 
+  /// A DM's state from the chat list: closed, or waiting for the peer. For
+  /// the group's model, whether there are DMs and their unread count.
+  Future<void> _reloadChat() async {
+    if (isMain) {
+      try {
+        final dms = [
+          for (final c in await core.chats())
+            if (c.kind is ChatKindInfo_Dm) c,
+        ];
+        _hasDms = dms.isNotEmpty;
+        _dmUnread = dms.fold(0, (sum, c) => sum + c.unread);
+        _changed();
+      } on Object {
+        // Kept as it was.
+      }
+      return;
+    }
+    try {
+      for (final chat in await core.chats()) {
+        if (chat.chatId != chatId) continue;
+        if (chat.kind case ChatKindInfo_Dm(:final closed, :final waiting)) {
+          _closed = closed;
+          _waiting = waiting;
+          _changed();
+        }
+      }
+    } on Object {
+      // Kept as it was; the next ChatsChanged reads it again.
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
-    core.removeBeforeStart(_prime);
+    if (isMain) core.removeBeforeStart(_prime);
     _subscription.cancel();
     super.dispose();
   }
@@ -271,7 +337,9 @@ class ChatModel extends ChangeNotifier {
     try {
       do {
         _again = false;
-        final messages = await core.history(historyLimit);
+        final messages = isMain
+            ? await core.history(historyLimit)
+            : await core.historyIn(chatId, historyLimit);
         await names.load(
           {
             for (final m in messages) ...{
@@ -284,7 +352,9 @@ class ChatModel extends ChangeNotifier {
           }.values,
         );
         _messages = messages;
-        _unseen = await core.unseenMentions();
+        _unseen = isMain
+            ? await core.unseenMentions()
+            : await core.unseenMentionsIn(chatId);
         _changed();
       } while (_again && !_disposed);
     } finally {
@@ -385,8 +455,31 @@ class ChatModel extends ChangeNotifier {
     _changed();
   }
 
+  /// Whether [event] is for another chat than this one (change `dms`):
+  /// a DM's messages are not the group's, and a DM shows none of the
+  /// group's membership or settings notices.
+  bool _elsewhere(CoreEvent event) => switch (event) {
+    CoreEvent_Message(:final message) => message.chatId != chatId,
+    CoreEvent_Unreadable(chatId: final id) ||
+    CoreEvent_Gap(chatId: final id) => id != chatId,
+    CoreEvent_SendStatus() ||
+    CoreEvent_ProfileChanged() ||
+    CoreEvent_IdentityKeyChanged() ||
+    CoreEvent_ChatsChanged() ||
+    CoreEvent_Connection() ||
+    CoreEvent_Other() => false,
+    _ => !isMain,
+  };
+
   void _onEvent(CoreEvent event) {
+    if (isMain && event is CoreEvent_Message && event.message.chatId != 0) {
+      _reloadChat();
+    }
+    if (_elsewhere(event)) return;
     switch (event) {
+      case CoreEvent_ChatsChanged():
+        _reloadChat();
+        _reloadMembers();
       case CoreEvent_Message(:final message):
         _lastId = message.id;
         _reload();
@@ -408,12 +501,12 @@ class ChatModel extends ChangeNotifier {
         } else {
           _changed();
         }
-      case CoreEvent_Unreadable(:final sender, :final acceptedAtMs):
+      case CoreEvent_Unreadable(:final sender, :final acceptedAtMs, chatId: _):
         if (sender != null) {
           names.load([sender]).then((_) => _changed());
         }
         _notice(UnreadableNotice(sender, acceptedAtMs));
-      case CoreEvent_Gap(:final newestExpiredAtMs):
+      case CoreEvent_Gap(:final newestExpiredAtMs, chatId: _):
         _notice(GapNotice(newestExpiredAtMs));
       case CoreEvent_RemovedForInactivity(:final missedSinceMs):
         _notice(RemovedNotice(missedSinceMs));
@@ -481,10 +574,27 @@ class ChatModel extends ChangeNotifier {
     List<MentionSpan> mentions = const [],
     int? replyTo,
   }) async {
-    _lastId = mentions.isEmpty && replyTo == null
+    _lastId = !isMain
+        ? await core.sendMessageIn(
+            chatId,
+            text,
+            mentions: mentions,
+            replyTo: replyTo,
+          )
+        : mentions.isEmpty && replyTo == null
         ? await core.sendText(text)
         : await core.sendMessage(text, mentions: mentions, replyTo: replyTo);
     await _reload();
+  }
+
+  /// The user has seen this chat up to its newest message (the unread mark
+  /// in the chat list).
+  Future<void> markRead() async {
+    try {
+      await core.markChatRead(chatId);
+    } on Object {
+      // Not important enough to show; the mark moves on next time.
+    }
   }
 
   /// The mention in message [id] was seen (on screen, or reached through

@@ -11,13 +11,23 @@ import 'package:flutter/material.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
+import 'chat_list_screen.dart';
 import 'chat_model.dart';
 import 'composer.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 
-/// The group's chat.
+/// "Waiting for Bobby's devices": a DM before the peer's first device is
+/// in it (app-ui: Open a DM).
+String dmWaitingText(String name) =>
+    "Waiting for $name's devices. Your messages go out once one is added.";
+
+/// The banner of a closed DM (app-ui: DM screen).
+String dmClosedText(String name) => '$name was removed';
+
+/// A chat: the group's, or a DM's when [chat] is a DM's model (change
+/// `dms`; app-ui: DM screen).
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
@@ -53,10 +63,23 @@ class _ChatScreenState extends State<ChatScreen> {
   /// badge's mention), what it passes on the way is not counted as seen.
   bool _jumping = false;
 
+  int? _readUpTo;
+
   @override
   void initState() {
     super.initState();
     _model.ensureLoaded();
+  }
+
+  /// The chat list's unread mark follows what this screen showed while the
+  /// app is in the foreground.
+  void _markRead(List<ChatItem> items) {
+    final last = items.whereType<MessageItem>().lastOrNull?.message.id;
+    if (last == null || last == _readUpTo) return;
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return;
+    _readUpTo = last;
+    _model.markRead();
   }
 
   @override
@@ -74,7 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
     MentionTarget_Everyone() => everyoneLabel,
   };
 
-  /// The picker's choices: the other members, then everyone.
+  /// The picker's choices: the other members, then everyone (not in a DM).
   List<MentionChoice> _choices() {
     final me = widget.core.user.value;
     return [
@@ -87,7 +110,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _model.names.short(user),
             _model.names.of(user),
           ),
-      const MentionChoice.everyone(),
+      if (_model.isMain) const MentionChoice.everyone(),
     ];
   }
 
@@ -217,14 +240,41 @@ class _ChatScreenState extends State<ChatScreen> {
     builder: (context, _) {
       final items = _model.items;
       final me = widget.core.user.value;
+      final peer = _model.peer;
+      final peerName = peer == null ? '' : _model.names.short(peer);
       _queueCheck();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _markRead(items);
+      });
       return Scaffold(
         appBar: shellAppBar(
           widget.core,
-          title: _model.groupName ?? 'Vyajena',
+          title: peer == null ? _model.groupName ?? 'Vyajena' : peerName,
           actions: [
             _mentionBadge(),
-            ChatMenu(admin: widget.admin),
+            if (_model.isMain &&
+                _model.hasDms &&
+                !Navigator.of(context).canPop())
+              IconButton(
+                key: const Key('chats'),
+                tooltip: 'Chats',
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => ChatListScreen(
+                      core: widget.core,
+                      chat: _model,
+                      admin: widget.admin,
+                    ),
+                  ),
+                ),
+                icon: Badge(
+                  isLabelVisible: _model.dmUnread > 0,
+                  label: Text('${_model.dmUnread}'),
+                  child: const Icon(Icons.forum_outlined),
+                ),
+              ),
+            // A DM shows no admin actions (app-ui: DM screen).
+            ChatMenu(admin: widget.admin && _model.isMain),
           ],
         ),
         body: Column(
@@ -282,13 +332,33 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                     ),
             ),
-            Composer(
-              core: widget.core,
-              send: _send,
-              choices: _choices,
-              reply: _reply,
-              onCancelReply: () => setState(() => _reply = null),
-            ),
+            if (_model.closed)
+              MaterialBanner(
+                key: const Key('dm-closed'),
+                content: Text(dmClosedText(peerName)),
+                actions: const [SizedBox.shrink()],
+              )
+            else ...[
+              if (_model.waiting)
+                Padding(
+                  key: const Key('dm-waiting'),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 4,
+                  ),
+                  child: Text(
+                    dmWaitingText(peerName),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              Composer(
+                core: widget.core,
+                send: _send,
+                choices: _choices,
+                reply: _reply,
+                onCancelReply: () => setState(() => _reply = null),
+              ),
+            ],
           ],
         ),
       );
