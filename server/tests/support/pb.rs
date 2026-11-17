@@ -458,7 +458,7 @@ pub mod admin_client {
 /// body. A client that decrypts a `Content` whose body it does not know (the
 /// oneof decodes as unset) shows a placeholder saying the message needs a newer
 /// app version, and does not fail.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
@@ -468,7 +468,7 @@ pub struct Content {
 }
 /// Nested message and enum types in `Content`.
 pub mod content {
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Body {
         #[prost(message, tag = "2")]
         Text(super::Text),
@@ -478,14 +478,73 @@ pub mod content {
         Profile(super::Profile),
     }
 }
-/// message-content: Text only. UTF-8 text and nothing else: no attachments, link
-/// previews or rich formatting. The client limits text to what encrypts within
+/// message-content: Text only. UTF-8 text, optional mentions and one optional
+/// reply reference, and nothing else: no attachments, link previews or rich
+/// formatting. The client limits text to what encrypts within
 /// the 65,536-byte ciphertext cap and refuses to send longer text
 /// (wire-transport: Size limits).
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+///
+/// message-content: Mentions; Replies (change `mentions`). `mentions` and
+/// `reply_to` are optional; a client that predates them ignores them as
+/// unknown fields and shows `text` alone, which still holds the typed "@Ali".
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Text {
     #[prost(string, tag = "1")]
     pub text: ::prost::alloc::string::String,
+    /// The mentions in `text`, in any order; ranges never overlap.
+    #[prost(message, repeated, tag = "2")]
+    pub mentions: ::prost::alloc::vec::Vec<Mention>,
+    /// Set when this message answers another one.
+    #[prost(message, optional, tag = "3")]
+    pub reply_to: ::core::option::Option<ReplyTo>,
+}
+/// message-content: Mentions. One mention of a user, or of everyone, over a
+/// range of `Text.text`. `start` and `length` are UTF-8 byte offsets; the range
+/// is not empty, lies inside the text and on character boundaries, and does
+/// not overlap another mention. The sending client refuses a bad range; a
+/// receiving client drops it and still shows the text. Any member may mention
+/// `everyone`. Whether a message mentions a user is read from these targets,
+/// never from the text.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Mention {
+    /// UTF-8 byte offset of the range in `Text.text`.
+    #[prost(uint32, tag = "3")]
+    pub start: u32,
+    /// UTF-8 byte length of the range.
+    #[prost(uint32, tag = "4")]
+    pub length: u32,
+    #[prost(oneof = "mention::Target", tags = "1, 2")]
+    pub target: ::core::option::Option<mention::Target>,
+}
+/// Nested message and enum types in `Mention`.
+pub mod mention {
+    /// Mentions every member of the group.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct Everyone {}
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Oneof)]
+    pub enum Target {
+        /// A user mentioned by id.
+        #[prost(message, tag = "1")]
+        User(super::UserId),
+        #[prost(message, tag = "2")]
+        Everyone(Everyone),
+    }
+}
+/// message-content: Replies. The message this one answers, and a short quote
+/// of it so a device without the original still shows what was answered.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ReplyTo {
+    /// The device that sent the original, as its envelope's `sender` named it.
+    #[prost(message, optional, tag = "1")]
+    pub sender: ::core::option::Option<DeviceRef>,
+    /// The original envelope's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub msg_id: ::prost::alloc::vec::Vec<u8>,
+    /// The original's text with whitespace folded to single spaces, at most
+    /// `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, "…" added when cut.
+    /// Receivers cut a longer quote to the limit.
+    #[prost(string, tag = "3")]
+    pub quote: ::prost::alloc::string::String,
 }
 /// message-content: Group settings travel encrypted. The group name and settings,
 /// which the Pi never sees (group-membership: Membership state on the Pi).
