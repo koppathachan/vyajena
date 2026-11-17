@@ -87,10 +87,18 @@
 
 ### D5. Protocol version 2 and old apps
 
-- **Spike S1:** a version 1 core given a Welcome for a second group would
-  replace its main group with it (`replace_old_group`, one group row).
-  That is data loss for the old app, so a version 1 device must never get a
-  DM Welcome.
+- **Spike S1 (done 2026-11-17, by reading the core at `app-v1.0.0+3` and
+  `050e355`):** a version 1 core must never see anything of a DM.
+  - **A DM Welcome:** `verify::check_welcome` requires the `0xF0A1` admin
+    extension. A DM has none, so the core refuses the Welcome.
+    `refuse_welcome` then shows "a change was refused" and queues
+    `RequestReadd`, a needless re-add of itself to the main group.
+  - **If it were accepted:** `set_group` overwrites the one `group_state`
+    row (`id = 1`), so the main group would be lost.
+  - **A DM application envelope:** the core decrypts it with its one
+    group. That fails and shows "a message could not be read".
+  - So the Pi must not queue DM envelopes, Welcomes included, for a
+    version 1 device.
 - **The rules:**
   - `PROTOCOL_VERSION = 2`; the Pi supports `[1, 2]`.
   - The Pi records each device's version from its last `Hello`.
@@ -152,8 +160,16 @@
   - A partial unique index keeps exactly one `main`.
   - Add `group_id` to `mls_members`, the commit log and queue entries. The
     existing rows get the main group's id.
-  - Key `mls_public_state` per group: OpenMLS storage keys already include
-    the group id. Spike S2 confirms this for `PublicGroup`.
+  - `mls_public_state` gains `group_id`, loaded and saved per group (S2).
+- **Spike S2 (done 2026-11-17, by reading the code):** no key clash.
+  - **Core:** `EncryptedStorage` slots are `label + serialized key`, and
+    every group-scoped key contains the `GroupId`. Two `MlsGroup`s share one
+    storage safely.
+  - **Pi:** `membership::group` loads the whole `mls_public_state` table
+    into one `MemoryStorage`, and on save deletes and rewrites all rows. So
+    the table gets a `group_id` column, and each group is loaded and saved
+    on its own: a save of one group never rewrites another. An end-to-end
+    test with two groups confirms it (task 3.1).
   - `devices.protocol_version`.
 - **Backup:** `backup.sh` and `deploy.sh` take a backup before the
   migration, as for every upgrade.
@@ -235,10 +251,8 @@ sequenceDiagram
 
 ## Spikes (before code that relies on them)
 
-- **S1:** confirm that a version 1 core loses its main group on a second
-  group's Welcome. If it doesn't, D5 is still kept as defence.
-- **S2:** two `PublicGroup`s in one OpenMLS storage on the Pi, and two
-  `MlsGroup`s in one storage on the core, with no key clash.
+- **S1:** done, see D5.
+- **S2:** done, see D8.
 
 ## Risks / Trade-offs
 

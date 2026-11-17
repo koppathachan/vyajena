@@ -1,12 +1,12 @@
 ## 0. Before starting
 
-- [ ] 0.1 `mentions` (PR #4) merged into `main`; rebase this change on it
+- [x] 0.1 `mentions` (PR #4) merged into `main` (050e355)
 - [x] 0.2 Owner approves the invariant changes (DM commit authority; "one group plus DMs"): approved 2026-11-17
 
 ## 1. Spikes
 
-- [ ] 1.1 S1: a version 1 core given a second group's Welcome (expect: main group replaced); result in design D5
-- [ ] 1.2 S2: two `PublicGroup`s in one Pi OpenMLS storage, two `MlsGroup`s in one core storage, no key clash; result in design D8
+- [x] 1.1 S1: a version 1 core given a second group's Welcome (expect: main group replaced); result in design D5
+- [x] 1.2 S2: two `PublicGroup`s in one Pi OpenMLS storage, two `MlsGroup`s in one core storage, no key clash; result in design D8
 
 ## 2. Proto and shared rules
 
