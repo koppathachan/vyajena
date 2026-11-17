@@ -45,6 +45,10 @@ pub struct IncomingMessage<'a> {
     pub accepted_at: SystemTime,
     /// Now, on the local clock.
     pub received_at: SystemTime,
+    /// Whether it mentions this device's user or everyone and comes from
+    /// another user: stored as an unseen mention (client-runtime: Unseen
+    /// mentions).
+    pub mentions_me: bool,
 }
 
 /// What [`Store::insert_incoming`] did.
@@ -313,8 +317,9 @@ impl Store {
             let id = self.db.with(|conn| {
                 conn.execute(
                     "INSERT INTO messages (sender_user, sender_device, msg_id, outgoing, content,
-                                           created_at, server_seq, accepted_at, status, kind)
-                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received', ?8)",
+                                           created_at, server_seq, accepted_at, status, kind,
+                                           mention_unseen)
+                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received', ?8, ?9)",
                     params![
                         message.sender_user,
                         message.sender_device,
@@ -324,6 +329,7 @@ impl Store {
                         server_seq,
                         unix_millis(message.accepted_at),
                         kind_of(message.content),
+                        message.mentions_me,
                     ],
                 )?;
                 Ok::<_, StoreError>(conn.last_insert_rowid())
@@ -364,6 +370,51 @@ impl Store {
         )?;
         newest_first.reverse();
         Ok(newest_first)
+    }
+
+    /// The local id of the chat message `sender_device` sent with `msg_id`,
+    /// if stored (client-runtime: Reply lookup).
+    pub fn chat_message_by_ref(
+        &self,
+        sender_device: &DeviceId,
+        msg_id: &[u8; MSG_ID_LEN],
+    ) -> Result<Option<MessageId>, StoreError> {
+        let id: Option<i64> = self.db.with(|conn| {
+            conn.query_row(
+                "SELECT local_id FROM messages
+                 WHERE sender_device = ?1 AND msg_id = ?2 AND kind = 'chat'",
+                params![sender_device, msg_id],
+                |row| row.get(0),
+            )
+            .optional()
+        })?;
+        Ok(id.map(MessageId))
+    }
+
+    /// The messages whose mention of this device's user is not seen yet, in
+    /// chat order (client-runtime: Unseen mentions).
+    pub fn unseen_mentions(&self) -> Result<Vec<MessageId>, StoreError> {
+        let ids = self.db.with(|conn| {
+            let mut statement = conn.prepare(
+                "SELECT local_id FROM messages WHERE mention_unseen = 1
+                 ORDER BY server_seq IS NULL, server_seq, local_id",
+            )?;
+            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            rows.collect::<rusqlite::Result<Vec<i64>>>()
+        })?;
+        Ok(ids.into_iter().map(MessageId).collect())
+    }
+
+    /// Marks one message's mention seen; `false` if it had none unseen.
+    pub fn mark_mention_seen(&self, id: MessageId) -> Result<bool, StoreError> {
+        let changed = self.db.with(|conn| {
+            conn.execute(
+                "UPDATE messages SET mention_unseen = 0
+                 WHERE local_id = ?1 AND mention_unseen = 1",
+                params![id.0],
+            )
+        })?;
+        Ok(changed == 1)
     }
 
     /// The highest `server_seq` of any stored message.

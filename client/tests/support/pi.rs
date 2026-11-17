@@ -2,11 +2,14 @@
 //! temporary database and keys, a manual clock, and a fixed local port so it
 //! can be restarted at the same relay address its invites name.
 
+use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use prost::Message as _;
+use server::push::{PushProvider, WakeOutcome};
 use server::runtime::{Bootstrap, Clock as _, Config, ManualClock, Pi, State};
 use tokio::sync::oneshot;
 
@@ -23,8 +26,54 @@ pub const WAIT: Duration = Duration::from_secs(20);
 /// The admin's username on test servers.
 pub const ADMIN: &str = "akhil";
 
+/// Records every wake ping the test server sends: only what the provider
+/// interface carries, the device id and its token (message-delivery:
+/// Content-free wake pings).
+#[derive(Debug, Clone, Default)]
+pub struct Pushes(Arc<Mutex<Vec<Ping>>>);
+
+/// One recorded ping: the device id and its token.
+type Ping = ([u8; 16], String);
+
+impl Pushes {
+    /// The pings so far, oldest first: device id and token.
+    pub fn sent(&self) -> Vec<Ping> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Pings sent to `device` so far.
+    pub fn count(&self, device: &[u8; 16]) -> usize {
+        self.sent().iter().filter(|(id, _)| id == device).count()
+    }
+}
+
+// What `#[async_trait]` expands to, written out: the bridge tests share this
+// file and do not depend on tonic or async-trait.
+impl PushProvider for Pushes {
+    fn wake<'life0, 'async_trait>(
+        &'life0 self,
+        device_id: [u8; 16],
+        token: server::pb::PushToken,
+    ) -> Pin<Box<dyn Future<Output = WakeOutcome> + Send + 'async_trait>>
+    where
+        'life0: 'async_trait,
+        Self: 'async_trait,
+    {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((device_id, token.token));
+        Box::pin(std::future::ready(WakeOutcome::Sent))
+    }
+}
+
 /// A running test server.
 pub struct TestPi {
+    /// Every wake ping it sent.
+    pub pushes: Pushes,
     /// Moves the server's time.
     pub clock: ManualClock,
     /// Where it listens.
@@ -74,9 +123,11 @@ impl TestPi {
         let clock = ManualClock::new(start_time());
         let addr = free_port();
         let relay = Relay::start(addr).await;
-        let pi = Pi::start(
+        let pushes = Pushes::default();
+        let pi = Pi::start_with_push(
             config(dir.path(), addr, relay.addr),
             Arc::new(clock.clone()),
+            Arc::new(pushes.clone()),
         )
         .await
         .check("server start");
@@ -87,6 +138,7 @@ impl TestPi {
         let state = pi.state().clone();
         let stop = serve(pi).await;
         Self {
+            pushes,
             clock,
             addr,
             relay,
@@ -112,7 +164,8 @@ impl TestPi {
         let mut tries = 0;
         let pi = loop {
             let config = config(self.dir.path(), self.addr, self.relay.addr);
-            match Pi::start(config, Arc::new(self.clock.clone())).await {
+            let push = Arc::new(self.pushes.clone());
+            match Pi::start_with_push(config, Arc::new(self.clock.clone()), push).await {
                 Ok(pi) => break pi,
                 Err(error) if tries < 50 => {
                     tries += 1;

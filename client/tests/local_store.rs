@@ -36,6 +36,7 @@ fn from_bob(server_seq: u64, msg_id: u8, content: &'static [u8]) -> IncomingMess
         content,
         accepted_at: support::start_time() + Duration::from_secs(server_seq),
         received_at: support::start_time() + Duration::from_secs(100 + server_seq),
+        mentions_me: false,
     }
 }
 

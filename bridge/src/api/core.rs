@@ -11,7 +11,8 @@ use tokio::sync::Mutex;
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
-    ChatMessage, CoreEvent, InviteInfo, MemberDevice, ProfileInfo, PushPlatform, UserRef,
+    ChatMessage, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo, PushPlatform,
+    UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -266,6 +267,37 @@ impl Core {
     /// [`CoreEvent::SendStatus`].
     pub fn send_text(&self, text: String) -> Result<i64, CoreError> {
         Ok(forward(self.client.send_text(&text))?.0)
+    }
+
+    /// Sends a text message with `mentions` (UTF-16 ranges of `text`),
+    /// answering the message with local id `reply_to` if set (message-content:
+    /// Mentions; Replies); returns its local id.
+    pub fn send_message(
+        &self,
+        text: String,
+        mentions: Vec<MentionSpan>,
+        reply_to: Option<i64>,
+    ) -> Result<i64, CoreError> {
+        let mentions = map::mentions(&text, &mentions)?;
+        Ok(forward(
+            self.client
+                .send_message(&text, &mentions, reply_to.map(MessageId)),
+        )?
+        .0)
+    }
+
+    /// The local ids of messages whose mention of this user is not seen yet,
+    /// in chat order (client-runtime: Unseen mentions).
+    pub fn unseen_mentions(&self) -> Result<Vec<i64>, CoreError> {
+        Ok(forward(self.client.unseen_mentions())?
+            .into_iter()
+            .map(|id| id.0)
+            .collect())
+    }
+
+    /// Marks the mention in message `id` seen; `false` if none was unseen.
+    pub fn mark_mention_seen(&self, id: i64) -> Result<bool, CoreError> {
+        forward(self.client.mark_mention_seen(MessageId(id)))
     }
 
     /// Sets this user's display name and "about" text for every member.

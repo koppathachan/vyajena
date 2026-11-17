@@ -77,6 +77,9 @@ abstract class Core implements RustOpaqueInterface {
   /// Admin: the unused invites (without text).
   Future<List<InviteInfo>> listInvites();
 
+  /// Marks the mention in message `id` seen; `false` if none was unseen.
+  Future<bool> markMentionSeen({required PlatformInt64 id});
+
   /// The group's member devices.
   Future<List<MemberDevice>> members();
 
@@ -109,6 +112,15 @@ abstract class Core implements RustOpaqueInterface {
   /// Admin: revokes an unused invite by its code.
   Future<void> revokeInvite({required String code});
 
+  /// Sends a text message with `mentions` (UTF-16 ranges of `text`),
+  /// answering the message with local id `reply_to` if set (message-content:
+  /// Mentions; Replies); returns its local id.
+  Future<PlatformInt64> sendMessage({
+    required String text,
+    required List<MentionSpan> mentions,
+    PlatformInt64? replyTo,
+  });
+
   /// Sends a text message; returns its local id. Its status arrives as
   /// [`CoreEvent::SendStatus`].
   Future<PlatformInt64> sendText({required String text});
@@ -132,6 +144,10 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Stops the engine and closes the connection.
   Future<void> stop();
+
+  /// The local ids of messages whose mention of this user is not seen yet,
+  /// in chat order (client-runtime: Unseen mentions).
+  Future<Int64List> unseenMentions();
 
   /// This device's user, once registered or linked.
   Future<UserRef?> userId();

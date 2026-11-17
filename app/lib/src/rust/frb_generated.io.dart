@@ -61,6 +61,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw);
 
   @protected
+  ReplyQuote dco_decode_box_autoadd_reply_quote(dynamic raw);
+
+  @protected
   SendState dco_decode_box_autoadd_send_state(dynamic raw);
 
   @protected
@@ -109,10 +112,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   List<MemberDevice> dco_decode_list_member_device(dynamic raw);
 
   @protected
+  List<MentionSpan> dco_decode_list_mention_span(dynamic raw);
+
+  @protected
+  Int64List dco_decode_list_prim_i_64_strict(dynamic raw);
+
+  @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
   MemberDevice dco_decode_member_device(dynamic raw);
+
+  @protected
+  MentionSpan dco_decode_mention_span(dynamic raw);
+
+  @protected
+  MentionTarget dco_decode_mention_target(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -122,6 +137,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw);
+
+  @protected
+  ReplyQuote? dco_decode_opt_box_autoadd_reply_quote(dynamic raw);
 
   @protected
   SendState? dco_decode_opt_box_autoadd_send_state(dynamic raw);
@@ -140,6 +158,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReaddAnswer dco_decode_readd_answer(dynamic raw);
+
+  @protected
+  ReplyQuote dco_decode_reply_quote(dynamic raw);
 
   @protected
   SendState dco_decode_send_state(dynamic raw);
@@ -201,6 +222,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer);
 
   @protected
+  ReplyQuote sse_decode_box_autoadd_reply_quote(SseDeserializer deserializer);
+
+  @protected
   SendState sse_decode_box_autoadd_send_state(SseDeserializer deserializer);
 
   @protected
@@ -251,10 +275,22 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  List<MentionSpan> sse_decode_list_mention_span(SseDeserializer deserializer);
+
+  @protected
+  Int64List sse_decode_list_prim_i_64_strict(SseDeserializer deserializer);
+
+  @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
   MemberDevice sse_decode_member_device(SseDeserializer deserializer);
+
+  @protected
+  MentionSpan sse_decode_mention_span(SseDeserializer deserializer);
+
+  @protected
+  MentionTarget sse_decode_mention_target(SseDeserializer deserializer);
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -266,6 +302,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer);
+
+  @protected
+  ReplyQuote? sse_decode_opt_box_autoadd_reply_quote(
+    SseDeserializer deserializer,
+  );
 
   @protected
   SendState? sse_decode_opt_box_autoadd_send_state(
@@ -286,6 +327,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReaddAnswer sse_decode_readd_answer(SseDeserializer deserializer);
+
+  @protected
+  ReplyQuote sse_decode_reply_quote(SseDeserializer deserializer);
 
   @protected
   SendState sse_decode_send_state(SseDeserializer deserializer);
@@ -360,6 +404,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_box_autoadd_reply_quote(
+    ReplyQuote self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_box_autoadd_send_state(
     SendState self,
     SseSerializer serializer,
@@ -423,6 +473,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_list_mention_span(
+    List<MentionSpan> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_prim_i_64_strict(
+    Int64List self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_prim_u_8_strict(
     Uint8List self,
     SseSerializer serializer,
@@ -430,6 +492,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_member_device(MemberDevice self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_mention_span(MentionSpan self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_mention_target(MentionTarget self, SseSerializer serializer);
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);
@@ -443,6 +511,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_opt_box_autoadd_i_64(
     PlatformInt64? self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_opt_box_autoadd_reply_quote(
+    ReplyQuote? self,
     SseSerializer serializer,
   );
 
@@ -469,6 +543,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_readd_answer(ReaddAnswer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reply_quote(ReplyQuote self, SseSerializer serializer);
 
   @protected
   void sse_encode_send_state(SendState self, SseSerializer serializer);

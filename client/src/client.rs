@@ -154,6 +154,12 @@ pub enum ClientError {
     /// (message-content: Text only).
     #[error("the message is too long")]
     TooLong,
+    /// A mention's range does not fit the text (message-content: Mentions).
+    #[error("a mention does not fit the text")]
+    InvalidMention,
+    /// No stored chat message has that id (client-runtime: Reply lookup).
+    #[error("no such message")]
+    NoSuchMessage,
     /// The Pi rejected the commit.
     #[error("the server rejected the commit: {0}")]
     Rejected(String),
@@ -803,8 +809,63 @@ impl Client {
     /// arrives as [`Event::SendStatus`]. Fails with [`ClientError::TooLong`]
     /// for text that would encrypt to more than the ciphertext cap.
     pub fn send_text(&self, text: &str) -> Result<MessageId, ClientError> {
-        let content = crate::messaging::encode_text(text, self.now()).map_err(too_long)?;
+        self.send_message(text, &[], None)
+    }
+
+    /// Sends a text message with `mentions` (UTF-8 byte ranges of `text`;
+    /// message-content: Mentions), answering the stored chat message
+    /// `reply_to` if set (message-content: Replies; client-runtime: Reply
+    /// lookup), like [`Client::send_text`]. Fails with
+    /// [`ClientError::InvalidMention`] for a range a receiver would drop,
+    /// and with [`ClientError::NoSuchMessage`] when `reply_to` is not a
+    /// stored chat message; nothing is stored then.
+    pub fn send_message(
+        &self,
+        text: &str,
+        mentions: &[crate::Mention],
+        reply_to: Option<MessageId>,
+    ) -> Result<MessageId, ClientError> {
+        let reply = reply_to.map(|id| self.reply_ref(id)).transpose()?;
+        let content = crate::messaging::encode_message(text, mentions, reply.as_ref(), self.now())
+            .map_err(too_long)?;
         self.send_content(&content)
+    }
+
+    /// The `ReplyTo` for answering the stored chat message `id`.
+    fn reply_ref(&self, id: MessageId) -> Result<crate::messaging::ReplyTo, ClientError> {
+        use crate::messaging::Decoded;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let quote = match crate::messaging::decode(&stored.content).body {
+            Decoded::Text(text) => text.text,
+            Decoded::Unsupported => String::new(),
+            Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
+                return Err(ClientError::NoSuchMessage);
+            }
+        };
+        let user =
+            crate::messaging::parse_user(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+        Ok(crate::messaging::ReplyTo {
+            user,
+            device: stored.sender_device,
+            msg_id: stored.msg_id,
+            quote,
+        })
+    }
+
+    /// The messages whose mention of this user (or everyone) is not seen
+    /// yet, in chat order (client-runtime: Unseen mentions).
+    pub fn unseen_mentions(&self) -> Result<Vec<MessageId>, ClientError> {
+        Ok(self.shared.store.unseen_mentions()?)
+    }
+
+    /// Marks the mention in message `id` seen; `false` if it had none
+    /// unseen (client-runtime: Unseen mentions).
+    pub fn mark_mention_seen(&self, id: MessageId) -> Result<bool, ClientError> {
+        Ok(self.shared.store.mark_mention_seen(id)?)
     }
 
     /// Sets this user's display name and "about" text for every member
@@ -867,7 +928,7 @@ impl Client {
             .store
             .history(limit)?
             .iter()
-            .filter_map(|stored| crate::messaging::to_message(stored, &own))
+            .filter_map(|stored| crate::messaging::to_message(&self.shared.store, stored, &own))
             .collect())
     }
 
@@ -879,7 +940,7 @@ impl Client {
             .store
             .message(id)?
             .as_ref()
-            .and_then(|stored| crate::messaging::to_message(stored, &own)))
+            .and_then(|stored| crate::messaging::to_message(&self.shared.store, stored, &own)))
     }
 
     /// This device's user, or one that matches no sender before it is
@@ -959,6 +1020,7 @@ impl Client {
 fn too_long(error: ContentError) -> ClientError {
     match error {
         ContentError::TooLong => ClientError::TooLong,
+        ContentError::InvalidMention => ClientError::InvalidMention,
     }
 }
 

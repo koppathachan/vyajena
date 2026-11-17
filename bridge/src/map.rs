@@ -4,14 +4,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use client::net::NetError;
 use client::{
-    ClientError, ConnectionState, DeviceId, Event, Member, Message, MessageBody, ReaddOutcome,
-    SendStatus, UserId,
+    ClientError, ConnectionState, DeviceId, Event, Member, Mention, Message, MessageBody,
+    ReaddOutcome, SendStatus, UserId,
 };
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatMessage, ConnectionStatus, CoreEvent, InviteInfo, MemberDevice, ReaddAnswer,
-    SendState, UserRef,
+    ChatBody, ChatMessage, ConnectionStatus, CoreEvent, InviteInfo, MemberDevice, MentionSpan,
+    MentionTarget, ReaddAnswer, ReplyQuote, SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -57,13 +57,71 @@ fn status(status: SendStatus) -> SendState {
     }
 }
 
+fn mention_target(target: &client::MentionTarget) -> MentionTarget {
+    match target {
+        client::MentionTarget::User(u) => MentionTarget::User { user: user(u) },
+        client::MentionTarget::Everyone => MentionTarget::Everyone,
+    }
+}
+
+/// The core's mentions of `text` (UTF-8 bytes) as UTF-16 spans for Dart.
+fn spans(text: &str, mentions: &[Mention]) -> Vec<MentionSpan> {
+    mentions
+        .iter()
+        .filter_map(|m| {
+            let (start, length) = crate::spans::to_utf16(text, m.start, m.len)?;
+            Some(MentionSpan {
+                target: mention_target(&m.target),
+                start,
+                length,
+            })
+        })
+        .collect()
+}
+
+/// Dart's UTF-16 spans of `text` as the core's mentions; a span that does not
+/// fall on character boundaries fails with `InvalidMention`.
+pub(crate) fn mentions(text: &str, spans: &[MentionSpan]) -> Result<Vec<Mention>, CoreError> {
+    spans
+        .iter()
+        .map(|span| {
+            let (start, len) =
+                crate::spans::to_utf8(text, span.start, span.length).ok_or_else(|| {
+                    CoreError::new(
+                        CoreErrorKind::InvalidMention,
+                        "a mention does not fit the text",
+                    )
+                })?;
+            Ok(Mention {
+                target: match &span.target {
+                    MentionTarget::User { user } => client::MentionTarget::User(user_id(user)),
+                    MentionTarget::Everyone => client::MentionTarget::Everyone,
+                },
+                start,
+                len,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn message(message: Message) -> ChatMessage {
+    let mentions = match &message.body {
+        MessageBody::Text(text) => spans(text, &message.mentions),
+        _ => Vec::new(),
+    };
     ChatMessage {
         id: message.id.0,
         sender: user(&message.sender),
         sender_device: hex(&message.sender_device),
         outgoing: message.outgoing,
         own_user: message.own_user,
+        mentions,
+        mentions_me: message.mentions_me,
+        reply: message.reply.map(|reply| ReplyQuote {
+            to: user(&reply.to),
+            quote: reply.quote,
+            original_id: reply.original.map(|id| id.0),
+        }),
         body: match message.body {
             MessageBody::Text(text) => ChatBody::Text { text },
             _ => ChatBody::Unsupported,
@@ -188,6 +246,8 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::NoKeyPackages(_) => K::NoKeyPackages,
         ClientError::TooLarge => K::TooLarge,
         ClientError::TooLong => K::TooLong,
+        ClientError::InvalidMention => K::InvalidMention,
+        ClientError::NoSuchMessage => K::NoSuchMessage,
         ClientError::Rejected(_) => K::Rejected,
         ClientError::NotYet => K::NotYet,
         _ => K::Internal,
