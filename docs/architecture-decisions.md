@@ -1,15 +1,21 @@
 # Chat App MVP — Architecture Decisions
 
-Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app), Nov 15, 2026 (relay) · @Akhil Sasidharan
+Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app), Nov 15, 2026 (relay), Nov 17, 2026 (dms) · @Akhil Sasidharan
 
 ## Scope
 
-The MVP is old-school text messaging in one admin-run group, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
+The MVP is old-school text messaging in one admin-run group plus DMs between its members, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
 
 **In**
 
 - Text messages only, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
 - One group, created and managed by the admin (Akhil)
+- DMs (change `dms`, owner 2026-11-17):
+  - each is its own MLS group holding all devices of two users
+  - any member may DM any member, with no approval
+  - the Pi knows the pair, never the text
+  - the admin has no power over DMs, and removing a user closes theirs
+  - no block, no mute per chat, no leaving a DM
 - Several devices per user, each its own MLS member
 - Invite-only signup
 - Store-and-forward through the Pi server
@@ -20,7 +26,7 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 
 **Out**
 
-- DMs, more groups, user-created groups
+- More groups, user-created groups; blocking, muting one chat, leaving a DM
 - Read receipts, presence, typing indicators
 - Media, voice, video
 - Server-side message history
@@ -102,7 +108,16 @@ flowchart TB
 - **Devices:** every MLS member is a device. Each user has one Ed25519 identity key, held by their first device, which signs a certificate for each device; the certificate is the device's MLS credential. Losing the first device means an admin-driven reset (remove the user, new invite).
 - **Credentials:** OpenMLS does not check credentials, so the core verifies every new or changed leaf's certificate against the user's pinned identity key, and that the certificate's MLS key equals the leaf's signature key.
 - **Handshakes in the clear:** Commits and Proposals are MLS `PublicMessage`, so the Pi can check them with OpenMLS `PublicGroup` (signature, sender, commit rule) without any group secret. Application messages stay `PrivateMessage`.
-- **Commit rule:** admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the Pi's inactivity Removes. The Pi and every client check the same rule.
+- **Commit rule:** in the main group, admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the Pi's inactivity Removes.
+  - **In a DM** (change `dms`, owner-approved 2026-11-17):
+    - any member device may commit its own leaf update, an Add of a device of either of the two users, a Remove of its own user's devices, and the Pi's Removes
+    - nobody has more: there is no admin, and never a third user
+  - The Pi and every client check the same rules.
+- **DMs (change `dms`):**
+  - **Group id:** random, and the Pi keeps one open DM per pair. It is not a hash of the pair: after a user reset, the new DM needs a new id.
+  - **Group context:** the DM extension `0xF0A2` names the two users; a DM has no admin extension.
+  - **Old apps kept out:** a device can join a DM only with a KeyPackage that lists `0xF0A2`, as every version 2 core's do. A 1.0.0 core would refuse a DM Welcome and ask for a needless re-add (spike S1), so the Pi hands out only such KeyPackages for a DM.
+  - **Who adds whom:** the Pi tells a DM's members (`JoinNotice` per DM) which devices of the pair are missing: the peer at creation, newly linked devices, updated apps, devices back from inactivity. It does so only once the device is in the main group.
 - **Group metadata:** the admin's user id is in the group context, which the Pi can read (it enforces it anyway). Group name and settings travel only as encrypted `GroupSettings` messages, from admin devices. After any commit that adds devices, admin devices send the current name again and every device sends its own user's `Profile` again, so a device added later learns both; an equal value changes nothing on screen (qa-fixes).
 - **Names:** the admin picks each username at invite time; it is the local part of `user@<server>` and users cannot change it. Display name and "about" travel as an encrypted `Profile`, set only by that user's devices. When a user's identity key changes (a reset), members drop the stored profile, so the new identity shows the username until it sets one.
 - **Residual risk:** the Pi could hand out a fake identity key and KeyPackage the first time a client sees a user (keys are pinned on first sight) and read new messages. Only question-and-answer verification (decision #2, its own `qa-verification` change) stops this; until then the core pins keys and warns when one changes.
@@ -122,7 +137,7 @@ The Pi is the single authority for routing, ordering and membership, and never f
 - **Queues:** per-device store-and-forward queue of application ciphertext.
 - **Push (change `push`, owner 2026-11-16):** sends a wake ping when a device with no open stream gets a new entry, at most once a minute. Android: FCM HTTP v1 with a service account of GCP project `vyajena` (Firebase added to it). iOS: APNs directly, with a `.p8` key the Pi signs its own ES256 JWT with; no Firebase SDK on iOS. Every ping is a visible notification with the one fixed text "New message" and nothing else; a new one replaces the shown one. A token the platform calls invalid is cleared; 429/5xx back off and retry. The server stays loopback-only: pings leave through `vyajena-egress.service`, a CONNECT proxy that reaches only the FCM, Google OAuth and APNs hosts on 443. Keys live only in `~/.vyajena-push/` on the Mac and `/var/lib/vyajena/push/` on the Pi. The review server only logs pings. The app registers its token through the core on every connect and asks for notification permission once, at its first connect after joining.
 
-**What it stores:** users and their identity public keys, devices with their certificates, KeyPackages, invite codes, push tokens, session token hashes, the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
+**What it stores:** users and their identity public keys, devices with their certificates, KeyPackages (each flagged DM-capable or not), invite codes, push tokens, session token hashes, for each group (the main group and each DM, with a DM's two usernames and when it was closed) the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
 
 ## Delivery and limits
 
@@ -250,10 +265,11 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 
 | Service | RPCs |
 | --- | --- |
-| `Messaging` | `Connect` (bidi stream): protocol version hello, envelopes both ways, send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage notices (`JoinNotice`: a new user's device waits for the admin's device to add it), heartbeats |
+| `Messaging` | `Connect` (bidi stream): protocol version hello (1 or 2; the Pi lists both, and 2 means it knows `Dms`), envelopes of every group both ways (one `server_seq` across groups), send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage / `DmClosed` notices (`JoinNotice`: a new user's device waits for the admin's device to add it, or a DM waits for a device), heartbeats |
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
-| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
-| `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` |
+| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices; with a DM's `group_id`, only KeyPackages that list `0xF0A2`), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
+| `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` (also closes the user's DMs) |
+| `Dms` | `CreateDm` (any member; `created = false` with the open DM's id when the peer opened it first; change `dms`) |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.
 
@@ -265,7 +281,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 
 Nothing here is built in the MVP, but the protocol leaves room for each.
 
-- DMs as 2-member MLS groups, id = hash of the sorted user pair
+- Muting one chat (the push would need an opaque per-device chat tag), leaving a DM, blocking
 - More groups, then Discord-style servers; admin-only creation at first
 - Media: client-encrypted blobs on the Pi, file key sent inside MLS
 - P2P under conditions (media, voice, video) via iroh, Pi or relay as iroh-relay

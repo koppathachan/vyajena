@@ -26,22 +26,22 @@
 
 ## 4. Core
 
-- [ ] 4.1 Store migration: `chats`, `messages.chat_id`, per-group rows; existing data goes to the main chat
-- [ ] 4.2 Engine: map of groups, routing by `group_id`, outbox, retries, rotation, acks per group; Welcome replaces only the same group; tests `direct-messages/several-groups-in-the-core`
-- [ ] 4.3 KeyPackages and leaves list `0xF0A2`, fresh upload on first run; `open_dm`, `created = false` handling, auto-add and re-add in DMs, DM checks on Welcome and commits, `DmClosed`; speaks version 1 to an old Pi; end-to-end tests for every `direct-messages` requirement
-- [ ] 4.4 Per-chat API: `chats`, `history(chat)`, `send_message(chat, …)`, unread and unseen mentions per chat, events with `ChatId`
+- [x] 4.1 Store migration: `chats`, `messages.chat_id`, per-group rows; existing data goes to the main chat
+- [x] 4.2 Engine: map of groups, routing by `group_id`, outbox, retries, rotation, acks per group; Welcome replaces only the same group; tests `direct-messages/several-groups-in-the-core`
+- [x] 4.3 KeyPackages and leaves list `0xF0A2`, fresh upload on first run; `open_dm`, `created = false` handling, auto-add and re-add in DMs, DM checks on Welcome and commits, `DmClosed`; speaks version 1 to an old Pi; end-to-end tests for every `direct-messages` requirement
+- [x] 4.4 Per-chat API: `chats`, `history(chat)`, `send_message(chat, …)`, unread and unseen mentions per chat, events with `ChatId`
 
 ## 5. Bridge
 
-- [ ] 5.1 `ChatRef`, `ChatSummary`, chat ids on calls and events; `flutter_rust_bridge_codegen generate`; bridge end-to-end test
+- [x] 5.1 `ChatRef`, `ChatSummary`, chat ids on calls and events; `flutter_rust_bridge_codegen generate`; bridge end-to-end test
 
 ## 6. App
 
-- [ ] 6.1 Chat list home; widget tests `app-ui/chat-list`
-- [ ] 6.2 "Message" on members, waiting state; widget tests `app-ui/open-a-dm`
-- [ ] 6.3 DM screen: title, no admin actions, no `everyone`, closed banner; widget tests `app-ui/dm-screen`
+- [x] 6.1 Chat list home; widget tests `app-ui/chat-list`
+- [x] 6.2 "Message" on members, waiting state; widget tests `app-ui/open-a-dm`
+- [x] 6.3 DM screen: title, no admin actions, no `everyone`, closed banner; widget tests `app-ui/dm-screen`
 
 ## 7. Docs and check
 
-- [ ] 7.1 `docs/architecture-decisions.md` (scope, DMs out of Future, commit authority, protocol v2, DM group id), `openspec/config.yaml` context, CLAUDE.md first line
+- [x] 7.1 `docs/architecture-decisions.md` (scope, DMs out of Future, commit authority, protocol v2, DM group id), `openspec/config.yaml` context, CLAUDE.md first line
 - [ ] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`, `flutter analyze`, `flutter test`, `openspec validate dms --strict`

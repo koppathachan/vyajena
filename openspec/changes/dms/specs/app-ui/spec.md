@@ -1,16 +1,25 @@
 ## ADDED Requirements
 
 ### Requirement: Chat list
-The app SHALL open on a chat list that shows the main group first, then each
-DM by the peer's display name, newest message first, each with an unread mark
-and the number of unseen mentions of the user; closed DMs SHALL be shown last
-and greyed. Tapping a chat SHALL open it.
+The app SHALL show a chat list with the main group first, then each DM by the
+peer's display name, newest message first, each with an unread mark and the
+number of unseen mentions of the user; closed DMs SHALL be shown last and
+greyed. Tapping a chat SHALL open it. When the user has at least one DM the app
+SHALL open on the chat list; with none it SHALL open on the group's chat as
+before. A DM that arrives while the group's chat is open SHALL NOT take the
+user away from it: the group's app bar SHALL offer the chat list, with the
+number of unread DM messages.
 
 #### Scenario: Two chats
 - **WHEN** Alice is in the group and has a DM with Bob, and Bob sends her "hi"
   in the DM
 - **THEN** her chat list shows the group first and "Bobby" below it with an
   unread mark
+
+#### Scenario: A DM arrives while the group is open
+- **WHEN** Alice reads the group's chat and Bob opens a DM with her and writes
+- **THEN** Alice stays in the group's chat, and its app bar shows a chats
+  button with an unread count
 
 ### Requirement: Open a DM
 The members list SHALL offer "Message" on every other member when the Pi lists

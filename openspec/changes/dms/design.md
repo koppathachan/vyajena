@@ -218,6 +218,12 @@
   - then DMs, newest message first
   - each with an unread dot and an `@ N` badge
   - closed DMs at the bottom, greyed
+  - only once the user has a DM (decided while writing the app,
+    2026-11-17). With none, home stays the group's chat: a one-item list
+    would only add a tap. A DM arriving while the group's chat is open does
+    not pull the user out of it (a half-typed message would be lost). The
+    app bar gets a chats button with the unread count instead, and the next
+    start opens on the list. The owner can reverse this.
 - **Opening a DM:** the members list and a member's sheet get a "Message"
   action. It opens the DM if one exists, else calls `open_dm`. The screen
   shows "waiting for Bob's devices" until the peer is added.
@@ -243,6 +249,30 @@
   - when the DM was created
   - envelope sizes and times per group, which it already sees for the main
     group
+
+### D13. One sequence and one cursor across groups
+
+- **Decided while writing the Pi, 2026-11-17.**
+- **One sequence:** `server_seq` stays one counter for every group.
+- **One order per device:** a device receives its entries of every group in
+  that one order.
+- **Acks:** the core processes the stream in that order (an own commit
+  holds everything after it, whatever the group). So an `Ack` in any group
+  covers the device's entries of every group up to that `server_seq`. The
+  cursor stays one per device.
+- **Why:** no per-group cursor table, and catch-up after a reconnect is
+  unchanged.
+
+### D14. Known limits (not built)
+
+- **A refused DM Welcome:** the core acks it and does not ask to be
+  re-added (`Keys.RequestReadd` is about the main group). The Pi then counts
+  that device as a member, so it is not offered again. It is rare: a
+  certificate that does not verify. Fixing it needs a DM variant of the
+  re-add request.
+- **`LowKeyPackages` after a DM fetch:** it counts all one-time
+  KeyPackages. A device with only old ones left gets no early warning, and
+  its last-resort KeyPackage covers the gap.
 
 ```mermaid
 sequenceDiagram
