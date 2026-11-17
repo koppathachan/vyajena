@@ -333,6 +333,7 @@ pub(crate) fn to_message(
     let own = stored.outgoing || sender == *own_user;
     Some(Message {
         id: stored.id,
+        chat: crate::events::ChatId(stored.chat),
         own_user: own,
         mentions_me: !own && mentions_user(&sender, &mentions, own_user),
         sender,
@@ -381,6 +382,8 @@ pub(crate) enum Received {
         sender: Option<UserId>,
         /// When the Pi accepted it.
         accepted_at: Option<SystemTime>,
+        /// The chat it was for.
+        chat: crate::events::ChatId,
     },
 }
 
@@ -396,6 +399,8 @@ pub(crate) fn receive_application(
     own_user: &UserId,
     now: SystemTime,
 ) -> Result<Received, EngineError> {
+    // change `dms`: the chat the envelope's group is (0 for the main group).
+    let chat = store.chat_of(&envelope.group_id)?;
     let seq = envelope.server_seq;
     let pi_sender = envelope.sender.as_ref().and_then(|sender| {
         let user = UserId::from_pb(sender.user_id.as_ref()?);
@@ -408,6 +413,7 @@ pub(crate) fn receive_application(
         Ok(Received::Unreadable {
             sender: pi_sender.as_ref().map(|(user, _)| user.clone()),
             accepted_at,
+            chat: crate::events::ChatId(chat),
         })
     };
     let Some((sender_user, sender_device)) = pi_sender.clone() else {
@@ -445,16 +451,19 @@ pub(crate) fn receive_application(
     let content = content.into_bytes();
     let decoded = decode(&content);
     let sender_text = sender_user.to_string();
-    let outcome = store.insert_incoming(&IncomingMessage {
-        server_seq: seq,
-        msg_id,
-        sender_user: &sender_text,
-        sender_device,
-        content: &content,
-        accepted_at: accepted_at.unwrap_or(now),
-        received_at: now,
-        mentions_me: content_mentions(&decoded, &sender_user, own_user),
-    })?;
+    let outcome = store.insert_incoming_in(
+        chat,
+        &IncomingMessage {
+            server_seq: seq,
+            msg_id,
+            sender_user: &sender_text,
+            sender_device,
+            content: &content,
+            accepted_at: accepted_at.unwrap_or(now),
+            received_at: now,
+            mentions_me: content_mentions(&decoded, &sender_user, own_user),
+        },
+    )?;
     let id = match outcome {
         InsertOutcome::Inserted(id) => id,
         InsertOutcome::Duplicate(_) => return Ok(Received::Nothing),
@@ -467,6 +476,7 @@ pub(crate) fn receive_application(
             };
             Received::Message(Message {
                 id,
+                chat: crate::events::ChatId(chat),
                 own_user: sender_user == *own_user,
                 mentions_me: mentions_user(&sender_user, &mentions, own_user),
                 sender: sender_user,

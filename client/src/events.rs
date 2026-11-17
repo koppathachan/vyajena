@@ -123,11 +123,60 @@ pub struct Reply {
     pub original: Option<MessageId>,
 }
 
+/// A chat: the main group or a DM (change `dms`). The main group is
+/// [`ChatId::MAIN`]; a DM's id is local to this device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ChatId(pub i64);
+
+impl ChatId {
+    /// The main group.
+    pub const MAIN: ChatId = ChatId(0);
+
+    /// Whether this is the main group.
+    pub fn is_main(self) -> bool {
+        self == Self::MAIN
+    }
+}
+
+/// What a chat is (app-ui: Chat list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatKind {
+    /// The one admin-run group.
+    Main,
+    /// A DM with `peer` (direct-messages).
+    Dm {
+        /// The other user.
+        peer: UserId,
+        /// None of the peer's devices is in it yet: messages wait to be sent
+        /// ("Waiting for Bobby's devices").
+        waiting: bool,
+        /// The Pi closed it: the peer was removed. History only.
+        closed: bool,
+    },
+}
+
+/// One chat in the chat list (app-ui: Chat list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chat {
+    /// Its id.
+    pub id: ChatId,
+    /// Main group or DM.
+    pub kind: ChatKind,
+    /// Received chat messages after the read mark.
+    pub unread: u32,
+    /// Mentions of this user not seen yet.
+    pub unseen_mentions: u32,
+    /// When its newest chat message was stored.
+    pub last_message_at: Option<SystemTime>,
+}
+
 /// A chat message, received or sent by this device.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
     /// Local id.
     pub id: MessageId,
+    /// The chat it is in.
+    pub chat: ChatId,
     /// The sending user.
     pub sender: UserId,
     /// The sending device.
@@ -214,13 +263,20 @@ pub enum Event {
         sender: Option<UserId>,
         /// When the Pi accepted it.
         accepted_at: Option<SystemTime>,
+        /// The chat it was for.
+        chat: ChatId,
     },
     /// Messages up to this time expired on the Pi before this device fetched
     /// them (message-delivery: Expiry and gap notice).
     Gap {
         /// `accepted_at` of the newest expired message.
         newest_expired_at: SystemTime,
+        /// The chat they were for.
+        chat: ChatId,
     },
+    /// The chat list changed (change `dms`): a DM was opened or joined, the
+    /// peer's first device was added, or the Pi closed one.
+    ChatsChanged,
     /// This device was removed for inactivity; messages since `missed_since`
     /// were not kept for it (group-membership: Automatic re-add).
     RemovedForInactivity {

@@ -65,6 +65,20 @@ pub(crate) enum Job {
     /// added again, with fresh KeyPackages: after refusing the Welcome at
     /// `refused_seq`, or (`0`) at start with no group.
     RequestReadd { refused_seq: u64, reason: String },
+    /// direct-messages: Opening a DM with `peer`.
+    OpenDm { peer: UserId, reply: Option<Reply> },
+    /// direct-messages: DM members kept complete. Add `device` of `user` to
+    /// the DM `group_id`, with the Pi's pending Remove of its old leaf.
+    AddToDm {
+        group_id: Vec<u8>,
+        user: UserId,
+        device: DeviceId,
+    },
+    /// direct-messages: Inactivity across groups. Commit the Pi's pending
+    /// Removes in the DM `group_id`.
+    CommitPiRemovesIn { group_id: Vec<u8> },
+    /// group-membership: Own leaf rotation, in the DM `group_id`.
+    RotateIn { group_id: Vec<u8> },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -112,7 +126,20 @@ impl Job {
                 | Job::CommitPiRemoves
                 | Job::Rotate
                 | Job::UploadKeyPackages { .. }
+                | Job::AddToDm { .. }
+                | Job::CommitPiRemovesIn { .. }
+                | Job::RotateIn { .. }
         )
+    }
+
+    /// The DM a job commits in; `None` for the main group (or no commit).
+    pub(crate) fn dm_group(&self) -> Option<&[u8]> {
+        match self {
+            Job::AddToDm { group_id, .. }
+            | Job::CommitPiRemovesIn { group_id }
+            | Job::RotateIn { group_id } => Some(group_id),
+            _ => None,
+        }
     }
 
     pub(crate) fn same_as(&self, other: &Job) -> bool {
@@ -123,6 +150,20 @@ impl Job {
             (Job::CommitPiRemoves, Job::CommitPiRemoves)
             | (Job::Rotate, Job::Rotate)
             | (Job::UploadKeyPackages { .. }, Job::UploadKeyPackages { .. }) => true,
+            (
+                Job::AddToDm {
+                    group_id: a,
+                    device: x,
+                    ..
+                },
+                Job::AddToDm {
+                    group_id: b,
+                    device: y,
+                    ..
+                },
+            ) => a == b && x == y,
+            (Job::CommitPiRemovesIn { group_id: a }, Job::CommitPiRemovesIn { group_id: b })
+            | (Job::RotateIn { group_id: a }, Job::RotateIn { group_id: b }) => a == b,
             _ => false,
         }
     }
@@ -145,6 +186,14 @@ impl Job {
             Job::Rotate => "rotate".into(),
             Job::UploadKeyPackages { .. } => "upload_key_packages".into(),
             Job::RequestReadd { .. } => "request_readd".into(),
+            Job::OpenDm { peer, .. } => format!("open_dm|{peer}"),
+            Job::AddToDm {
+                group_id,
+                user,
+                device,
+            } => format!("dm_add|{}|{user}|{}", hex(group_id), hex(device)),
+            Job::CommitPiRemovesIn { group_id } => format!("dm_pi_removes|{}", hex(group_id)),
+            Job::RotateIn { group_id } => format!("dm_rotate|{}", hex(group_id)),
         }
     }
 
@@ -175,6 +224,20 @@ impl Job {
             },
             ["add_linked", device] => parse_device(device).map(|device| Job::AddLinked { device }),
             ["pi_removes"] => Some(Job::CommitPiRemoves),
+            ["dm_add", group, user, device] => {
+                match (unhex(group), parse_user(user), parse_device(device)) {
+                    (Some(group_id), Some(user), Some(device)) => Some(Job::AddToDm {
+                        group_id,
+                        user,
+                        device,
+                    }),
+                    _ => None,
+                }
+            }
+            ["dm_pi_removes", group] => {
+                unhex(group).map(|group_id| Job::CommitPiRemovesIn { group_id })
+            }
+            ["dm_rotate", group] => unhex(group).map(|group_id| Job::RotateIn { group_id }),
             _ => None,
         };
         job.unwrap_or(Job::Rotate)
@@ -185,7 +248,8 @@ impl Job {
             Job::CreateGroup { reply }
             | Job::AddUser { reply, .. }
             | Job::RemoveUser { reply, .. }
-            | Job::RemoveDevice { reply, .. } => reply.take(),
+            | Job::RemoveDevice { reply, .. }
+            | Job::OpenDm { reply, .. } => reply.take(),
             _ => None,
         }
     }
@@ -212,6 +276,15 @@ impl Engine {
         match job {
             Job::CreateGroup { .. } => {
                 let result = self.create_group().await;
+                match result {
+                    Ok(()) => job.succeed(),
+                    Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::OpenDm { ref peer, .. } => {
+                let peer = peer.clone();
+                let result = self.open_dm(&peer).await;
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
@@ -309,11 +382,22 @@ impl Engine {
         Ok(())
     }
 
-    /// Stages a commit in a store transaction; reloads the group if it fails.
+    /// Stages a commit in the main group in a store transaction; reloads
+    /// the group if it fails.
     fn stage(&mut self, plan: CommitPlan) -> Result<StagedOwnCommit, ClientError> {
+        let group_id = self.main_id().ok_or(ClientError::NoGroup)?;
+        self.stage_in(&group_id, plan)
+    }
+
+    /// [`Engine::stage`] in the group `group_id` (change `dms`).
+    fn stage_in(
+        &mut self,
+        group_id: &[u8],
+        plan: CommitPlan,
+    ) -> Result<StagedOwnCommit, ClientError> {
         let store = std::sync::Arc::clone(&self.shared.store);
         let signer = self.keys.mls_signer();
-        let Some(group) = self.group.as_mut() else {
+        let Some(group) = super::group_in(&mut self.group, &mut self.dms, group_id) else {
             return Err(ClientError::NoGroup);
         };
         let staged = store.transaction(|| -> Result<StagedOwnCommit, EngineError> {
@@ -322,7 +406,7 @@ impl Engine {
         match staged {
             Ok(staged) => Ok(staged),
             Err(error) => {
-                self.reload_group().map_err(ClientError::from)?;
+                self.reload_group_in(group_id).map_err(ClientError::from)?;
                 Err(error.into())
             }
         }
@@ -334,6 +418,18 @@ impl Engine {
         user: &UserId,
         devices: &[DeviceId],
     ) -> Result<Option<pb::FetchKeyPackagesResponse>, ClientError> {
+        self.fetch_in(user, devices, &[]).await
+    }
+
+    /// [`Engine::fetch`] for the DM `group_id` (key-directory: KeyPackage
+    /// fetch, change `dms`): only KeyPackages that list `0xF0A2`. Empty
+    /// `group_id`: for the main group.
+    async fn fetch_in(
+        &self,
+        user: &UserId,
+        devices: &[DeviceId],
+        group_id: &[u8],
+    ) -> Result<Option<pb::FetchKeyPackagesResponse>, ClientError> {
         let session = self.session().map_err(ClientError::from)?;
         let response = session
             .conn()
@@ -341,7 +437,7 @@ impl Engine {
             .fetch_key_packages(session.request(pb::FetchKeyPackagesRequest {
                 user_id: Some(user.to_pb()),
                 device_ids: devices.iter().map(|d| d.to_vec()).collect(),
-                group_id: Vec::new(),
+                group_id: group_id.to_vec(),
             })?)
             .await;
         match response {
@@ -571,10 +667,167 @@ impl Engine {
                 })?;
                 Ok(Prepared::Commit(staged, Vec::new()))
             }
-            Job::CreateGroup { .. } | Job::UploadKeyPackages { .. } | Job::RequestReadd { .. } => {
-                Ok(Prepared::Nothing)
+            Job::AddToDm {
+                group_id,
+                user,
+                device,
+            } => {
+                let Some(group) = self.dms.get(group_id) else {
+                    // Closed, or not joined (yet): nothing to add to.
+                    return Ok(Prepared::Nothing);
+                };
+                let current = leaf_fingerprint(group, device);
+                let pending = pending_removals(group);
+                if let Some((leaf, _)) = &current
+                    && !pending.contains(leaf)
+                {
+                    tracing::info!("the device is in the DM already; nothing to add");
+                    return Ok(Prepared::Nothing);
+                }
+                let Some(response) = self.fetch_in(user, &[*device], group_id).await? else {
+                    return Ok(Prepared::Nothing);
+                };
+                self.check_pin(user, &response.identity_public_key)?;
+                let mut checked = None;
+                for entry in &response.devices {
+                    let (key_package, cert) = check_fetched(
+                        self.store().mls(),
+                        &response.identity_public_key,
+                        user,
+                        entry,
+                    )
+                    .map_err(|problem| ClientError::Certificate(problem.to_string()))?;
+                    if cert.device_id == *device {
+                        checked = Some((key_package, device_ref(user, device)));
+                    }
+                }
+                let Some((key_package, recipient)) = checked else {
+                    return Ok(Prepared::Nothing);
+                };
+                // The Pi's pending Remove of an old leaf goes in by
+                // reference (the stage consumes the proposal store).
+                let staged = self.stage_in(
+                    group_id,
+                    CommitPlan {
+                        adds: vec![key_package],
+                        ..Default::default()
+                    },
+                )?;
+                Ok(Prepared::Commit(staged, vec![recipient]))
             }
+            Job::CommitPiRemovesIn { group_id } => {
+                let pi = self.pi_index_in(group_id);
+                let Some(group) = self.dms.get(group_id) else {
+                    return Ok(Prepared::Nothing);
+                };
+                if !membership::has_pending_pi_removes(group, pi) {
+                    return Ok(Prepared::Nothing);
+                }
+                let staged = self.stage_in(group_id, CommitPlan::default())?;
+                Ok(Prepared::Commit(staged, Vec::new()))
+            }
+            Job::RotateIn { group_id } => {
+                let Some(dm) = self.store().dm_by_group(group_id)? else {
+                    return Ok(Prepared::Nothing);
+                };
+                if !self.dms.contains_key(group_id)
+                    || dm.state.stalled.is_some()
+                    || !crate::keys::rotation_due(dm.state.own_leaf_updated_at, self.now())
+                {
+                    return Ok(Prepared::Nothing);
+                }
+                let staged = self.stage_in(
+                    group_id,
+                    CommitPlan {
+                        force_path: true,
+                        ..Default::default()
+                    },
+                )?;
+                Ok(Prepared::Commit(staged, Vec::new()))
+            }
+            Job::CreateGroup { .. }
+            | Job::UploadKeyPackages { .. }
+            | Job::RequestReadd { .. }
+            | Job::OpenDm { .. } => Ok(Prepared::Nothing),
         }
+    }
+
+    fn pi_index_in(&self, group_id: &[u8]) -> Option<u32> {
+        self.group_ref(group_id)
+            .and_then(|g| mls_group::pi_sender_index(g.extensions(), &self.pi))
+    }
+
+    /// direct-messages: Opening a DM. The DM at epoch 0 with this device as
+    /// its only member, then `Dms.CreateDm`. When the peer opened it first,
+    /// the Pi answers with theirs: this device drops its own and waits for
+    /// the Welcome.
+    async fn open_dm(&mut self, peer: &UserId) -> Result<(), ClientError> {
+        if !self
+            .shared
+            .pi_knows_dms
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(ClientError::DmsUnavailable);
+        }
+        if *peer == self.user() {
+            return Err(ClientError::UnknownUser(peer.clone()));
+        }
+        if self.store().open_dm_with(&peer.to_string())?.is_some() {
+            return Ok(());
+        }
+        let session = self.session().map_err(ClientError::from)?;
+        let group_id = mls_group::new_group_id()?;
+        let own = self.user().to_string();
+        let other = peer.to_string();
+        let signer = self.keys.mls_signer();
+        let mut group = mls_group::create_dm(
+            self.store().mls(),
+            &signer,
+            self.credential(),
+            group_id,
+            self.pi.clone(),
+            (&own, &other),
+        )?;
+        let group_info = group
+            .export_group_info(self.store().mls().crypto(), &signer, false)
+            .map_err(|e| crate::mls::MlsError::new("exporting the GroupInfo", e))?;
+        let request = pb::CreateDmRequest {
+            peer: Some(peer.to_pb()),
+            group_id: group.group_id().as_slice().to_vec(),
+            group_info: mls_group::wire(&group_info)?,
+            ratchet_tree: group
+                .export_ratchet_tree()
+                .tls_serialize_detached()
+                .map_err(|e| crate::mls::MlsError::new("serializing the ratchet tree", e))?,
+        };
+        let answer = session
+            .conn()
+            .dms()
+            .create_dm(session.request(request)?)
+            .await;
+        let answer = match answer {
+            Ok(answer) => answer.into_inner(),
+            Err(status) => {
+                let _ = group.delete(self.store().mls().storage());
+                if status.code() == tonic::Code::NotFound {
+                    return Err(ClientError::UnknownUser(peer.clone()));
+                }
+                return Err(NetError::from(status).into());
+            }
+        };
+        let now = self.now();
+        if answer.created {
+            self.store()
+                .set_dm_joined(group.group_id().as_slice(), &other, now, 0)?;
+            tracing::info!("opened a DM");
+            self.dms.insert(group.group_id().as_slice().to_vec(), group);
+        } else {
+            let _ = group.delete(self.store().mls().storage());
+            self.store().set_dm_waiting(&answer.group_id, &other, now)?;
+            tracing::info!("the peer opened the DM first; waiting for its Welcome");
+        }
+        self.emit(crate::events::Event::ChatsChanged);
+        Ok(())
     }
 
     fn pi_index(&self) -> Option<u32> {
@@ -685,6 +938,8 @@ impl Engine {
                 tracing::warn!(%error, "cannot delete an old last-resort KeyPackage");
             }
         }
+        // direct-messages: Old apps never join a DM. These list 0xF0A2.
+        store.set_flag(super::DM_KEY_PACKAGES_FLAG, self.now())?;
         tracing::info!(one_time = count, "uploaded KeyPackages");
         Ok(())
     }

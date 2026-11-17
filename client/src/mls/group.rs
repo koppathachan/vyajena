@@ -9,7 +9,10 @@ use openmls::prelude::{
     PURE_PLAINTEXT_WIRE_FORMAT_POLICY, SignaturePublicKey, UnknownExtension,
 };
 use openmls_traits::signatures::Signer;
-use protocol::group_membership::{ADMIN_EXTENSION_TYPE, admin_extension_data};
+use protocol::group_membership::{
+    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, admin_extension_data, dm_extension_data,
+    parse_dm_extension,
+};
 
 use super::MlsProvider;
 
@@ -37,13 +40,15 @@ impl MlsError {
 
 /// Leaf capabilities of every leaf and KeyPackage this device makes: the
 /// admin group-context extension `0xF0A1` (without which it could not be
-/// added) and `LastResort` (which the last-resort KeyPackage carries).
+/// added), the DM extension `0xF0A2` (direct-messages: Old apps never join a
+/// DM) and `LastResort` (which the last-resort KeyPackage carries).
 pub fn capabilities() -> Capabilities {
     Capabilities::new(
         None,
         Some(&[CIPHERSUITE]),
         Some(&[
             ExtensionType::Unknown(ADMIN_EXTENSION_TYPE),
+            ExtensionType::Unknown(DM_EXTENSION_TYPE),
             ExtensionType::LastResort,
         ]),
         None,
@@ -108,6 +113,53 @@ pub fn create(
         .with_group_context_extensions(extensions)
         .build(provider, signer, credential)
         .map_err(|e| MlsError::new("creating the group", e))
+}
+
+/// Creates a DM at epoch 0 with this device as its only member
+/// (direct-messages: Opening a DM): the Pi as the only external sender, the
+/// `0xF0A2` extension naming `users`, no admin, handshakes as
+/// `PublicMessage`.
+pub fn create_dm(
+    provider: &MlsProvider,
+    signer: &impl Signer,
+    credential: CredentialWithKey,
+    group_id: GroupId,
+    pi: ExternalSender,
+    users: (&str, &str),
+) -> Result<MlsGroup, MlsError> {
+    let extensions = Extensions::from_vec(vec![
+        Extension::ExternalSenders(vec![pi]),
+        Extension::Unknown(
+            DM_EXTENSION_TYPE,
+            UnknownExtension(dm_extension_data(users.0, users.1)),
+        ),
+    ])
+    .map_err(|e| MlsError::new("DM group context extensions", e))?;
+    MlsGroup::builder()
+        .with_group_id(group_id)
+        .ciphersuite(CIPHERSUITE)
+        .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+        .use_ratchet_tree_extension(true)
+        .max_past_epochs(MAX_PAST_EPOCHS)
+        .with_capabilities(capabilities())
+        .with_group_context_extensions(extensions)
+        .build(provider, signer, credential)
+        .map_err(|e| MlsError::new("creating a DM", e))
+}
+
+/// The two user ids a DM's `0xF0A2` extension names, sorted; `None` for the
+/// main group (or a garbled extension).
+pub fn dm_users(
+    extensions: &Extensions<openmls::prelude::GroupContext>,
+) -> Option<(String, String)> {
+    extensions
+        .unknown(DM_EXTENSION_TYPE)
+        .and_then(|ext| parse_dm_extension(&ext.0))
+}
+
+/// Whether the group context marks a DM.
+pub fn is_dm(extensions: &Extensions<openmls::prelude::GroupContext>) -> bool {
+    extensions.unknown(DM_EXTENSION_TYPE).is_some()
 }
 
 /// The group stored under `group_id`, if any.

@@ -19,7 +19,9 @@ use std::collections::BTreeMap;
 use openmls::prelude::{
     Credential, LeafNodeIndex, MlsGroup, Proposal, Sender, SenderExtensionIndex, StagedCommit,
 };
-use protocol::group_membership::{Committer, ProposalKind, ProposalSender, check_commit_authority};
+use protocol::group_membership::{
+    Committer, ProposalKind, ProposalSender, check_commit_authority, check_dm_commit_authority,
+};
 
 use crate::events::{DeviceId, UserId};
 use crate::identity::certificate::{self, CertificateProblem, VerifiedCertificate};
@@ -259,8 +261,13 @@ pub fn review_commit(
 ) -> Result<CommitReview, LeafProblem> {
     let committer_claim = member_claim(group, committer)?;
     let committer_user = committer_claim.user().to_string();
-    let admin = super::group::admin_user_id(group.extensions())
-        .ok_or(LeafProblem::Context("no admin extension"))?;
+    // direct-messages: a DM names its two users instead of an admin.
+    let dm = super::group::dm_users(group.extensions());
+    let admin = match (&dm, super::group::admin_user_id(group.extensions())) {
+        (Some(_), None) => String::new(),
+        (None, Some(admin)) => admin,
+        _ => return Err(LeafProblem::Context("neither one admin nor a DM pair")),
+    };
 
     // The committer's new path leaf keeps its certificate and key.
     if let Some(leaf) = staged.update_path_leaf_node() {
@@ -347,11 +354,14 @@ pub fn review_commit(
         .collect();
     let rule = Committer {
         user: &committer_user,
-        is_admin: committer_user == admin,
+        is_admin: dm.is_none() && committer_user == admin,
         leaf_index: committer.u32(),
     };
-    check_commit_authority(&rule, &rule_proposals)
-        .map_err(|e| LeafProblem::Authority(e.to_string()))?;
+    match &dm {
+        None => check_commit_authority(&rule, &rule_proposals),
+        Some(users) => check_dm_commit_authority(&rule, (&users.0, &users.1), &rule_proposals),
+    }
+    .map_err(|e| LeafProblem::Authority(e.to_string()))?;
     review.self_removed = staged.self_removed();
     Ok(review)
 }
@@ -397,6 +407,46 @@ pub fn welcome_key_lookup(problem: &LeafProblem) -> Option<UserId> {
     };
     let (username, server_id) = user.split_once('@')?;
     Some(UserId::new(username, server_id))
+}
+
+/// Checks a DM Welcome's group before joining it (direct-messages: DM
+/// members): no admin extension, the DM extension names `own_user` and one
+/// other user, the Pi is an external sender, and every member's leaf belongs
+/// to one of the two and verifies. Returns the other user.
+pub fn check_dm_welcome(
+    members: impl Iterator<Item = openmls::prelude::Member>,
+    context_extensions: &openmls::prelude::Extensions<openmls::prelude::GroupContext>,
+    own_user: &UserId,
+    server_id: &str,
+    pi: &openmls::prelude::ExternalSender,
+    pinned: &dyn Fn(&UserId) -> Option<Vec<u8>>,
+) -> Result<UserId, LeafProblem> {
+    if super::group::admin_user_id(context_extensions).is_some() {
+        return Err(LeafProblem::Context("a DM with an admin"));
+    }
+    let (a, b) = super::group::dm_users(context_extensions)
+        .ok_or(LeafProblem::Context("no DM extension"))?;
+    let own = own_user.to_string();
+    let peer = match (a == own, b == own) {
+        (true, false) => b,
+        (false, true) => a,
+        _ => return Err(LeafProblem::Context("a DM that does not name this user")),
+    };
+    let (username, peer_server) = peer
+        .split_once('@')
+        .ok_or(LeafProblem::Context("a DM peer without a server id"))?;
+    let peer = UserId::new(username, peer_server);
+    if super::group::pi_sender_index(context_extensions, pi).is_none() {
+        return Err(LeafProblem::Context("the Pi is not an external sender"));
+    }
+    for member in members {
+        let claim = LeafClaim::read(&member.credential, member.signature_key.as_slice())?;
+        if *claim.user() != peer && claim.user() != own_user {
+            return Err(LeafProblem::Context("a DM leaf of a third user"));
+        }
+        claim.verify(server_id, pinned)?;
+    }
+    Ok(peer)
 }
 
 /// Checks a Welcome's group before joining it: every member's leaf, the admin

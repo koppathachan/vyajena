@@ -88,10 +88,14 @@ pub struct StoredMessage {
     pub sent_epoch: Option<u64>,
     /// Own message in flight: the exact ciphertext last sent.
     pub ciphertext: Option<Vec<u8>>,
+    /// The chat it is in: 0 is the main group, else a DM's chat id (change
+    /// `dms`).
+    pub chat: i64,
 }
 
 const COLUMNS: &str = "local_id, sender_user, sender_device, msg_id, outgoing, content, \
-                       created_at, server_seq, accepted_at, status, failure, sent_epoch, ciphertext";
+                       created_at, server_seq, accepted_at, status, failure, sent_epoch, \
+                       ciphertext, chat_id";
 
 /// The `kind` column for an encoded `Content`: `profile` and `settings`
 /// bodies change state; Text, unknown bodies and anything that does not
@@ -136,6 +140,7 @@ struct RawRow {
     failure: Option<String>,
     sent_epoch: Option<i64>,
     ciphertext: Option<Vec<u8>>,
+    chat: i64,
 }
 
 fn raw(row: &Row<'_>) -> rusqlite::Result<RawRow> {
@@ -153,6 +158,7 @@ fn raw(row: &Row<'_>) -> rusqlite::Result<RawRow> {
         failure: row.get(10)?,
         sent_epoch: row.get(11)?,
         ciphertext: row.get(12)?,
+        chat: row.get(13)?,
     })
 }
 
@@ -179,6 +185,7 @@ fn decode(row: RawRow) -> Result<StoredMessage, StoreError> {
         status,
         sent_epoch: to_u64(row.sent_epoch, "sent_epoch")?,
         ciphertext: row.ciphertext,
+        chat: row.chat,
     })
 }
 
@@ -186,11 +193,20 @@ impl Store {
     /// Stores an own message as sending, before anything is sent
     /// (client-runtime: Local message store).
     pub fn insert_outgoing(&self, message: &OutgoingMessage<'_>) -> Result<MessageId, StoreError> {
+        self.insert_outgoing_in(super::MAIN_CHAT, message)
+    }
+
+    /// [`Store::insert_outgoing`] in chat `chat` (change `dms`).
+    pub fn insert_outgoing_in(
+        &self,
+        chat: i64,
+        message: &OutgoingMessage<'_>,
+    ) -> Result<MessageId, StoreError> {
         let id = self.db.with(|conn| {
             conn.execute(
                 "INSERT INTO messages (sender_user, sender_device, msg_id, outgoing, content,
-                                       created_at, status, kind)
-                 VALUES (?1, ?2, ?3, 1, ?4, ?5, 'sending', ?6)",
+                                       created_at, status, kind, chat_id)
+                 VALUES (?1, ?2, ?3, 1, ?4, ?5, 'sending', ?6, ?7)",
                 params![
                     message.sender_user,
                     message.sender_device,
@@ -198,6 +214,7 @@ impl Store {
                     message.content,
                     unix_millis(message.created_at),
                     kind_of(message.content),
+                    chat,
                 ],
             )?;
             Ok::<_, StoreError>(conn.last_insert_rowid())
@@ -299,6 +316,15 @@ impl Store {
         &self,
         message: &IncomingMessage<'_>,
     ) -> Result<InsertOutcome, StoreError> {
+        self.insert_incoming_in(super::MAIN_CHAT, message)
+    }
+
+    /// [`Store::insert_incoming`] in chat `chat` (change `dms`).
+    pub fn insert_incoming_in(
+        &self,
+        chat: i64,
+        message: &IncomingMessage<'_>,
+    ) -> Result<InsertOutcome, StoreError> {
         let server_seq = to_i64(message.server_seq)?;
         self.transaction(|| {
             let existing: Option<i64> = self.db.with(|conn| {
@@ -318,8 +344,8 @@ impl Store {
                 conn.execute(
                     "INSERT INTO messages (sender_user, sender_device, msg_id, outgoing, content,
                                            created_at, server_seq, accepted_at, status, kind,
-                                           mention_unseen)
-                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received', ?8, ?9)",
+                                           mention_unseen, chat_id)
+                     VALUES (?1, ?2, ?3, 0, ?4, ?5, ?6, ?7, 'received', ?8, ?9, ?10)",
                     params![
                         message.sender_user,
                         message.sender_device,
@@ -330,6 +356,7 @@ impl Store {
                         unix_millis(message.accepted_at),
                         kind_of(message.content),
                         message.mentions_me,
+                        chat,
                     ],
                 )?;
                 Ok::<_, StoreError>(conn.last_insert_rowid())
@@ -359,14 +386,19 @@ impl Store {
     /// `server_seq`, then own messages the Pi has not accepted, in the order
     /// they were written.
     pub fn history(&self, limit: usize) -> Result<Vec<StoredMessage>, StoreError> {
+        self.history_in(super::MAIN_CHAT, limit)
+    }
+
+    /// [`Store::history`] of chat `chat` (change `dms`).
+    pub fn history_in(&self, chat: i64, limit: usize) -> Result<Vec<StoredMessage>, StoreError> {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut newest_first = self.query(
             &format!(
-                "SELECT {COLUMNS} FROM messages WHERE kind = 'chat'
+                "SELECT {COLUMNS} FROM messages WHERE kind = 'chat' AND chat_id = ?2
                  ORDER BY server_seq IS NULL DESC, server_seq DESC, local_id DESC
                  LIMIT ?1"
             ),
-            params![limit],
+            params![limit, chat],
         )?;
         newest_first.reverse();
         Ok(newest_first)
@@ -394,12 +426,17 @@ impl Store {
     /// The messages whose mention of this device's user is not seen yet, in
     /// chat order (client-runtime: Unseen mentions).
     pub fn unseen_mentions(&self) -> Result<Vec<MessageId>, StoreError> {
+        self.unseen_mentions_in(super::MAIN_CHAT)
+    }
+
+    /// [`Store::unseen_mentions`] in chat `chat` (change `dms`).
+    pub fn unseen_mentions_in(&self, chat: i64) -> Result<Vec<MessageId>, StoreError> {
         let ids = self.db.with(|conn| {
             let mut statement = conn.prepare(
-                "SELECT local_id FROM messages WHERE mention_unseen = 1
+                "SELECT local_id FROM messages WHERE mention_unseen = 1 AND chat_id = ?1
                  ORDER BY server_seq IS NULL, server_seq, local_id",
             )?;
-            let rows = statement.query_map([], |row| row.get::<_, i64>(0))?;
+            let rows = statement.query_map(params![chat], |row| row.get::<_, i64>(0))?;
             rows.collect::<rusqlite::Result<Vec<i64>>>()
         })?;
         Ok(ids.into_iter().map(MessageId).collect())

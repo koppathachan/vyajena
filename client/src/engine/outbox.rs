@@ -46,9 +46,11 @@ impl Engine {
             Received::Unreadable {
                 sender,
                 accepted_at,
+                chat,
             } => self.emit(Event::Unreadable {
                 sender,
                 accepted_at,
+                chat,
             }),
             Received::Nothing => {}
         }
@@ -93,15 +95,11 @@ impl Engine {
         Ok(())
     }
 
-    /// Sends the stored own messages that are not in flight, oldest first.
+    /// Sends the stored own messages that are not in flight, oldest first,
+    /// each in its chat's group (change `dms`). A chat that cannot send now
+    /// holds its later messages, so their order stays; other chats go on.
     pub(super) async fn flush_outbox(&mut self) -> Result<(), EngineError> {
         if self.link.is_none() || self.inflight.is_some() || !self.deferred.is_empty() {
-            return Ok(());
-        }
-        let Some(row) = self.store().group()? else {
-            return Ok(());
-        };
-        if row.stalled.is_some() {
             return Ok(());
         }
         let waiting: Vec<StoredMessage> = self
@@ -110,25 +108,41 @@ impl Engine {
             .into_iter()
             .filter(|m| !self.apps_in_flight.contains_key(&m.msg_id))
             .collect();
+        let mut held = std::collections::BTreeSet::new();
         for message in waiting {
-            let Some(group) = self.group.as_ref() else {
-                return Ok(());
+            if held.contains(&message.chat) {
+                continue;
+            }
+            let Some(group_id) = self.sendable_group(message.chat)? else {
+                held.insert(message.chat);
+                continue;
             };
-            let group_id = group.group_id().as_slice().to_vec();
+            let Some(group) = self.group_ref(&group_id) else {
+                held.insert(message.chat);
+                continue;
+            };
             let epoch = group.epoch().as_u64();
             let (sent_epoch, ciphertext) = match (message.sent_epoch, message.ciphertext.clone()) {
                 (Some(sent_epoch), Some(ciphertext)) => (sent_epoch, ciphertext),
                 _ => {
                     // After STALE_EPOCH, wait for the commits that moved the
                     // group on; keep the order of own messages.
-                    if epoch < self.server_epoch {
-                        return Ok(());
+                    if epoch < self.server_epochs.get(&group_id).copied().unwrap_or(0) {
+                        held.insert(message.chat);
+                        continue;
                     }
                     if group.pending_proposals().next().is_some() {
-                        self.push_job(Job::CommitPiRemoves);
-                        return Ok(());
+                        if self.dms.contains_key(&group_id) {
+                            self.push_job(Job::CommitPiRemovesIn {
+                                group_id: group_id.clone(),
+                            });
+                        } else {
+                            self.push_job(Job::CommitPiRemoves);
+                        }
+                        held.insert(message.chat);
+                        continue;
                     }
-                    match self.encrypt(&message, epoch)? {
+                    match self.encrypt(&message, &group_id, epoch)? {
                         Some(ciphertext) => (epoch, ciphertext),
                         None => continue,
                     }
@@ -149,17 +163,45 @@ impl Engine {
         Ok(())
     }
 
-    /// Encrypts `message` in the current epoch and stores the ciphertext
-    /// with it, in one transaction. `None` if it is too large to send: it is
-    /// marked failed (message-content: Text only).
+    /// The group an own message in `chat` can go out in now: the main group
+    /// unless this device stalled; a DM once it is joined, open, not
+    /// stalled, and one of the peer's devices is in it (app-ui: Open a DM,
+    /// "sent once Bob's phone is added").
+    fn sendable_group(&self, chat: i64) -> Result<Option<Vec<u8>>, EngineError> {
+        if chat == crate::store::MAIN_CHAT {
+            let Some(row) = self.store().group()? else {
+                return Ok(None);
+            };
+            return Ok(row.stalled.is_none().then_some(row.group_id));
+        }
+        let Some(dm) = self.store().dm_by_chat(chat)? else {
+            return Ok(None);
+        };
+        if !dm.joined || dm.closed_at.is_some() || dm.state.stalled.is_some() {
+            return Ok(None);
+        }
+        let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
+            return Ok(None);
+        };
+        let has_peer = self
+            .dms
+            .get(&dm.group_id)
+            .is_some_and(|g| !crate::membership::leaves_of_user(g, &peer).is_empty());
+        Ok(has_peer.then_some(dm.group_id))
+    }
+
+    /// Encrypts `message` in the current epoch of `group_id` and stores the
+    /// ciphertext with it, in one transaction. `None` if it is too large to
+    /// send: it is marked failed (message-content: Text only).
     fn encrypt(
         &mut self,
         message: &StoredMessage,
+        group_id: &[u8],
         epoch: u64,
     ) -> Result<Option<Vec<u8>>, EngineError> {
         let store = Arc::clone(&self.shared.store);
         let signer = self.keys.mls_signer();
-        let Some(group) = self.group.as_mut() else {
+        let Some(group) = super::group_in(&mut self.group, &mut self.dms, group_id) else {
             return Ok(None);
         };
         let cap = protocol::wire_transport::MAX_APPLICATION_CIPHERTEXT_BYTES;
@@ -176,7 +218,7 @@ impl Engine {
         let bytes = match encrypted {
             Ok(bytes) => bytes,
             Err(error) => {
-                self.reload_group()?;
+                self.reload_group_in(group_id)?;
                 return Err(error);
             }
         };
@@ -242,7 +284,11 @@ impl Engine {
                         "own message was stale; resending after catching up"
                     );
                     self.store().clear_sent(id)?;
-                    self.server_epoch = self.server_epoch.max(rejected.current_epoch);
+                    let chat = self.store().message(id)?.map_or(0, |m| m.chat);
+                    if let Some(group_id) = self.sendable_group(chat)? {
+                        let hint = self.server_epochs.entry(group_id).or_default();
+                        *hint = (*hint).max(rejected.current_epoch);
+                    }
                 } else {
                     tracing::warn!(
                         id = id.0,
