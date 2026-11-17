@@ -287,9 +287,11 @@ divert_invite() {
   done
 }
 
-# mode_of <path>: permission bits, on macOS or Linux.
+# mode_of <path>: permission bits, on macOS or Linux. GNU form first: on
+# Linux `stat -f` means filesystem status and succeeds with the wrong output;
+# on macOS `stat -c` fails and the BSD form answers.
 mode_of() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 # The push keys to send, one per line (pi-deployment: Push credentials):
