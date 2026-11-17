@@ -150,6 +150,8 @@ void main() {
           outgoing: false,
           ownUser: true,
           body: ChatBody.text(text: 'from the tablet'),
+          mentions: [],
+          mentionsMe: false,
           acceptedAtMs: 1,
           status: SendState.accepted(),
         ),
@@ -257,6 +259,8 @@ void main() {
           outgoing: false,
           ownUser: false,
           body: ChatBody.text(text: 'earlier'),
+          mentions: [],
+          mentionsMe: false,
           acceptedAtMs: 1,
         ),
       ];
@@ -276,6 +280,8 @@ void main() {
       outgoing: false,
       ownUser: false,
       body: const ChatBody.unsupported(),
+      mentions: const [],
+      mentionsMe: false,
       acceptedAtMs: 1,
     );
     core.messages.add(message);

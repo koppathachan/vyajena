@@ -166,6 +166,9 @@ class ChatModel extends ChangeNotifier {
   /// what a membership change is told apart by (first device, last
   /// device).
   final Map<String, Set<String>> _members = {};
+  final Map<String, UserRef> _memberUsers = {};
+  List<int> _unseen = const [];
+  final Set<int> _marking = {};
   bool _removed = false;
   Refusal? _refusal;
   ReaddAnswer? _readd;
@@ -180,6 +183,17 @@ class ChatModel extends ChangeNotifier {
   bool _loading = false;
   bool _again = false;
   bool _disposed = false;
+
+  /// The users with a device in the group, this device's user included, in
+  /// the order the core listed them (the mention picker's members).
+  List<UserRef> get memberUsers => [
+    for (final e in _memberUsers.entries)
+      if (_members[e.key]?.isNotEmpty ?? false) e.value,
+  ];
+
+  /// Local ids of messages whose mention of this user is not seen yet,
+  /// oldest first (app-ui: Mentions of me).
+  List<int> get unseenMentions => _unseen;
 
   /// The group's name, once an admin device set it.
   String? get groupName => _groupName;
@@ -260,11 +274,17 @@ class ChatModel extends ChangeNotifier {
         final messages = await core.history(historyLimit);
         await names.load(
           {
-            for (final m in messages)
-              '${m.sender.username}@${m.sender.serverId}': m.sender,
+            for (final m in messages) ...{
+              _key(m.sender): m.sender,
+              for (final span in m.mentions)
+                if (span.target case MentionTarget_User(:final user))
+                  _key(user): user,
+              if (m.reply case final ReplyQuote reply) _key(reply.to): reply.to,
+            },
           }.values,
         );
         _messages = messages;
+        _unseen = await core.unseenMentions();
         _changed();
       } while (_again && !_disposed);
     } finally {
@@ -283,7 +303,10 @@ class ChatModel extends ChangeNotifier {
     _members.clear();
     for (final d in devices) {
       _members.putIfAbsent(_key(d.user), () => {}).add(d.device);
+      _memberUsers[_key(d.user)] = d.user;
     }
+    await names.load(_memberUsers.values);
+    _changed();
   }
 
   /// The notices for one `MembersChanged`, from what the model knew before
@@ -311,6 +334,7 @@ class ChatModel extends ChangeNotifier {
     }
     for (final d in added) {
       _members.putIfAbsent(_key(d.user), () => {}).add(d.device);
+      _memberUsers[_key(d.user)] = d.user;
     }
     _members.removeWhere((_, devices) => devices.isEmpty);
 
@@ -450,11 +474,33 @@ class ChatModel extends ChangeNotifier {
   static bool _same(UserRef a, UserRef b) =>
       a.username == b.username && a.serverId == b.serverId;
 
-  /// Sends [text]; returns once the core stored it (it shows ⏳ until the
-  /// Pi accepts it).
-  Future<void> send(String text) async {
-    _lastId = await core.sendText(text);
+  /// Sends [text] with [mentions], answering message [replyTo] if set;
+  /// returns once the core stored it (it shows ⏳ until the Pi accepts it).
+  Future<void> send(
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  }) async {
+    _lastId = mentions.isEmpty && replyTo == null
+        ? await core.sendText(text)
+        : await core.sendMessage(text, mentions: mentions, replyTo: replyTo);
     await _reload();
+  }
+
+  /// The mention in message [id] was seen (on screen, or reached through
+  /// the badge): the core forgets it (client-runtime: Unseen mentions).
+  Future<void> markSeen(int id) async {
+    if (!_unseen.contains(id) || !_marking.add(id)) return;
+    try {
+      await core.markMentionSeen(id);
+      _unseen = [
+        for (final u in _unseen)
+          if (u != id) u,
+      ];
+      _changed();
+    } finally {
+      _marking.remove(id);
+    }
   }
 
   /// Admin: accepts the changed key of [notice]'s user (the core then adds

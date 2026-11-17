@@ -15,9 +15,9 @@
 
 ## 4. App
 
-- [ ] 4.1 Composer: mention picker and mention tracking; reply bar; widget tests `app-ui/mention-picker`
-- [ ] 4.2 Message tile: mention spans, highlight of mine, reply quote; chat `@` badge and seen marking; widget tests `app-ui/mentions-of-me`
-- [ ] 4.3 Swipe and long-press to reply, jump to the original; widget tests `app-ui/reply-to-a-message`
+- [x] 4.1 Composer: mention picker and mention tracking; reply bar; widget tests `app-ui/mention-picker`
+- [x] 4.2 Message tile: mention spans, highlight of mine, reply quote; chat `@` badge and seen marking; widget tests `app-ui/mentions-of-me`
+- [x] 4.3 Swipe and long-press to reply, jump to the original; widget tests `app-ui/reply-to-a-message`
 
 ## 5. Check
 

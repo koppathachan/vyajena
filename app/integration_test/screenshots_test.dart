@@ -24,6 +24,8 @@ ChatMessage text(int id, UserRef from, String body, {bool mine = false}) =>
       outgoing: mine,
       ownUser: mine,
       body: ChatBody.text(text: body),
+      mentions: const [],
+      mentionsMe: false,
       acceptedAtMs: 1,
       status: mine ? const SendState.accepted() : null,
     );
