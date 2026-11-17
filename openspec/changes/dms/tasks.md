@@ -44,4 +44,4 @@
 ## 7. Docs and check
 
 - [x] 7.1 `docs/architecture-decisions.md` (scope, DMs out of Future, commit authority, protocol v2, DM group id), `openspec/config.yaml` context, CLAUDE.md first line
-- [ ] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`, `flutter analyze`, `flutter test`, `openspec validate dms --strict`
+- [x] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`, `flutter analyze`, `flutter test`, `openspec validate dms --strict`
