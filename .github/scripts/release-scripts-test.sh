@@ -265,6 +265,39 @@ expect_fail "App Store Connect key only in the upload step" "gets the App Store 
 expect_fail "ios upload needs the API key" "ASC_KEY_ID is not set" \
   env -i PATH="$PATH" HOME="$HOME" bash -c "cd '$repo' && touch '$tmp/a.ipa' && '$here/ios-ipa.sh' upload '$tmp/a.ipa'"
 
+# --- ci.yml: each check runs only when its code changed (design D16) ---------
+c="$tmp/changes"
+git -C "$tmp" init -q -b main changes
+git -C "$c" config user.email t@example.invalid
+git -C "$c" config user.name test
+git -C "$c" config commit.gpgsign false
+echo a >"$c/README.md" && git -C "$c" add -A && git -C "$c" commit -qm base
+changes_for() { # changes_for <path> -> the detector's output for one changed file
+  (
+    cd "$c"
+    git checkout -q main
+    git checkout -q -B "try" main
+    mkdir -p "$(dirname "$1")" && echo x >>"$1" && git add -A && git commit -qm change
+    CI_BASE=main "$here/ci-changes.sh" 2>/dev/null | tr "\n" " "
+  )
+}
+expect_out() { # expect_out <name> <path> <expected>
+  local got
+  got="$(changes_for "$2")"
+  if [ "$got" = "$3" ]; then ok "$1"; else bad "$1 (got: $got)"; fi
+}
+expect_out "docs only: nothing runs" docs/x.md "proto=false rust=false flutter=false "
+expect_out "openspec only: nothing runs" openspec/changes/x/tasks.md "proto=false rust=false flutter=false "
+expect_out "release workflow only: nothing runs here" .github/workflows/release-app.yml "proto=false rust=false flutter=false "
+expect_out "server code: rust" server/src/main.rs "proto=false rust=true flutter=false "
+expect_out "Cargo.lock: rust" Cargo.lock "proto=false rust=true flutter=false "
+expect_out "deploy files: rust (server tests read them)" deploy/pi/deploy.sh "proto=false rust=true flutter=false "
+expect_out "proto: proto and rust" proto/vyajena/v1/x.proto "proto=true rust=true flutter=false "
+expect_out "app: flutter" app/lib/main.dart "proto=false rust=false flutter=true "
+expect_out "ci.yml: everything" .github/workflows/ci.yml "proto=true rust=true flutter=true "
+got="$(cd "$c" && CI_BASE=0000000000000000000000000000000000000000 "$here/ci-changes.sh" 2>/dev/null | tr "\n" " ")"
+if [ "$got" = "proto=true rust=true flutter=true " ]; then ok "no base: everything"; else bad "no base: everything (got: $got)"; fi
+
 echo
 echo "$passed passed, $failed failed"
 [ "$failed" = 0 ]

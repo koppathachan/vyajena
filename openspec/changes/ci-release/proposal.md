@@ -43,7 +43,8 @@ that alone holds the secrets.
 - `docs/ci-release.md`: the owner's step-by-step (secrets, roles, environment,
   cutting a release, undoing a leak).
 
-No `.proto` change. No change to `ci.yml`, `app/` or `deploy/`.
+No `.proto` change. No change to `app/` or `deploy/`. `ci.yml` only gains a
+"what changed" job so each check runs when its code changed (design D16).
 
 ### Open decisions this change resolves
 

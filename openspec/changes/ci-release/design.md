@@ -351,6 +351,34 @@ Not changed here (owner rule: `deploy/` untouched): `deploy/pi/build.sh` and
 `relay.conf` name Docker images by tag (`rust:1.96-bookworm`,
 `rust:1.79-bookworm`), not by digest. Same as the local build; see O5.
 
+### D16. `ci.yml` runs each check only when its code changed (owner, 2026-11-17)
+
+The owner asked for this after PR #3 (no code) went red on flaky Rust tests.
+A first job, `what changed`, runs `.github/scripts/ci-changes.sh` (plain
+`git diff --name-only <base>...HEAD`, no third-party action) and the three
+existing jobs run only when needed:
+
+| Job (required check, name unchanged) | Runs when these change |
+|---|---|
+| buf lint and breaking | `proto/`, `buf.yaml`, `buf.lock` |
+| cargo build (build + `cargo test`) | `Cargo.toml`, `Cargo.lock`, `protocol/`, `server/`, `client/`, `bridge/`, `pbgen/`, `proto/`, `deploy/` (server tests read `deploy/pi`, `deploy/relay`) |
+| flutter analyze and test | `app/` |
+| all three | `ci.yml` or `ci-changes.sh` itself; no base commit |
+
+- Base: the PR's base branch, or the push's `before` commit.
+- A job skipped by `if:` reports success, so branch protection's required
+  checks still pass. Path filters on the `on:` trigger were rejected: a
+  workflow that never starts leaves required checks waiting forever.
+- Docs, `openspec/` and the release workflows run no build or test.
+- Tests: 10 detector cases in `release-scripts-test.sh` (58 total).
+
+Known flaky tests (not fixed here; Rust test code is outside this change):
+`client/tests/support/pi.rs` `free_port()` binds port 0, drops the listener,
+then the test Pi binds that address later; a parallel test can take it first
+(`AddrInUse`, seen in `a_device_clock_ahead_of_the_pi_does_not_renew_on_every_tick`).
+And `client/tests/welcome_recovery.rs::a_member_asks_nothing_at_start` saw a
+re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
+
 ## Open items (not built)
 
 - **O1. `deploy.sh` from a release file.** `deploy/pi/deploy.sh --release

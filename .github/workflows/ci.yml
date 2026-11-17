@@ -11,8 +11,34 @@ permissions:
   contents: read
 
 jobs:
+  # ci-release design D16: each check runs only when its code changed. A
+  # skipped job counts as passed for the required checks, so the job names
+  # below stay the same.
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    outputs:
+      proto: ${{ steps.diff.outputs.proto }}
+      rust: ${{ steps.diff.outputs.rust }}
+      flutter: ${{ steps.diff.outputs.flutter }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then base="origin/$BASE_REF"; else base="$BEFORE"; fi
+          CI_BASE="$base" .github/scripts/ci-changes.sh >> "$GITHUB_OUTPUT"
+
   proto:
     name: buf lint and breaking
+    needs: changes
+    if: needs.changes.outputs.proto == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,6 +81,8 @@ jobs:
 
   rust:
     name: cargo build
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +103,8 @@ jobs:
   # been pushed.
   flutter:
     name: flutter analyze and test
+    needs: changes
+    if: needs.changes.outputs.flutter == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
