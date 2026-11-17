@@ -723,7 +723,8 @@ pub struct ReplyTo {
     #[prost(bytes = "vec", tag = "2")]
     pub msg_id: ::prost::alloc::vec::Vec<u8>,
     /// The original's text with whitespace folded to single spaces, at most
-    /// `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, "…" added when cut.
+    /// `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, the last one "…" when
+    /// cut.
     /// Receivers cut a longer quote to the limit.
     #[prost(string, tag = "3")]
     pub quote: ::prost::alloc::string::String,

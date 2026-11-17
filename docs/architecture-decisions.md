@@ -8,7 +8,7 @@ The MVP is old-school text messaging in one admin-run group, end-to-end encrypte
 
 **In**
 
-- Text messages only
+- Text messages only, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
 - One group, created and managed by the admin (Akhil)
 - Several devices per user, each its own MLS member
 - Invite-only signup
