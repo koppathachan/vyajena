@@ -200,7 +200,7 @@ The checkout uses `fetch-depth: 0` so `origin/main` and all tags are there.
   `Runner.entitlements`, export with a copy of `ios/ExportOptions.plist` set
   to manual signing and this profile, verify the IPA and that
   `aps-environment = production`, run `release-check.sh --ios-only`, upload
-  **that same IPA** with `xcrun altool --upload-app` and the App Store Connect
+  **that same IPA**, in a separate step, with `xcrun altool --upload-app` and the App Store Connect
   API key (`API_PRIVATE_KEYS_DIR` in the temp folder).
 - **API key role: Developer** (enough to upload builds). Not Admin.
   Alternative rejected: cloud-managed signing in CI
@@ -266,7 +266,7 @@ Flutter is pinned to `3.44.4` (the owner's Mac), Java to Temurin 21.
   `main` (review, green CI). Even then, the environment admits only tags.
 - `.github/scripts/release-workflows-check.sh` enforces D3, D9, D10, D11 and
   "no ssh/scp/deploy.sh" on every PR; `release-scripts-test.sh` tests the
-  checker and the guard with fixtures (38 cases).
+  checker and the guard with fixtures (48 cases).
 - Owner setting (Settings › Actions › General): "Require approval for all
   external contributors" for fork PR workflows.
 
@@ -281,6 +281,8 @@ Flutter is pinned to `3.44.4` (the owner's Mac), Java to Temurin 21.
 | T5 | **Leaked distribution certificate (.p12 + password)** | Sign apps as the team. Cannot upload without App Store Connect access. | Environment-only secret; certificate only on CI and the password manager. | developer.apple.com › Certificates › **Revoke**; make a new one + profile, update both secrets. Installed TestFlight/App Store builds keep working. |
 | T6 | **Leaked App Store Connect API key (.p8)** | Upload builds, manage TestFlight (Developer role). Ships to internal testers only together with T5. | Developer role, not Admin; environment-only secret. | App Store Connect › Users and Access › Integrations › Keys › **Revoke** (immediate); new key, new secrets. Expire rogue builds. |
 | T7 | **Compromised third-party action** | Runs inside a job, sees that job's secrets. | SHA pins (no tag moves), few actions, secret jobs use only checkout, setup-java, flutter-action, google auth; secrets only in the step that needs them. | Revert the pin; rotate the secrets of every job that ran it. |
+| T7b | **Malicious build dependency** (crate, pod, Gradle plugin, Dart package) | Runs in the build step: sees the upload keystore or distribution certificate (as on the Mac today). | No OIDC token and no App Store Connect key in build steps (D15); signing keys alone cannot ship. | Remove the dependency; T3 / T5 undo. |
+| T9 | **`release` environment missing or loosened** (never created, a rule removed) | Jobs would run without approval. | First step of every release job checks the environment (D15). | Recreate the rules (docs step 1); rerun. |
 | T8 | **Tampered server release file** | The owner deploys a bad binary. | `SHA256SUMS` + Sigstore provenance tied to `release-server.yml` and the commit; owner verifies before deploy; deploy stays manual. | Delete the release; `deploy/pi/deploy.sh --rollback`. |
 
 `google-services.json` is not secret (it ships inside every APK); it is an
@@ -312,6 +314,43 @@ changes `app-release` and `push` (owner's rule: don't edit without asking). So
 the guide is a new `docs/ci-release.md`. Once the owner agrees, one line in
 `docs/release.md` ("CI releases: see `docs/ci-release.md`") links them (Q1).
 
+### D15. Hardening after review (owner: "make sure this does not make anything vulnerable")
+
+A security pass over the first version found three gaps; all are fixed:
+
+1. **A missing environment is created unprotected.** GitHub creates
+   `release` with no rules the first time a job names it. Without secrets the
+   app jobs would fail, but `publish` (server) needs none and would have
+   published unapproved. Fix: every job in `release` first runs
+   `release-guard.sh environment release`, which reads the environment and
+   its deployment rules through the API and stops unless the owner is a
+   required reviewer, administrators cannot bypass, and the rules are exactly
+   tags `app-v*` and `server-v*`.
+2. **Build code could mint the Play token.** The `android` job has
+   `id-token: write` (for workload identity), and GitHub gives every step a
+   way to ask for the OIDC token. A malicious crate, Gradle plugin or Dart
+   package in the build could have exchanged it for Play access. Fix: the
+   build step runs under `env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u
+   ACTIONS_ID_TOKEN_REQUEST_URL`; only the auth step can ask.
+3. **The App Store Connect key was in the build step.** Fix: `ios-ipa.sh`
+   has a separate `upload` mode; the key is only in the "Upload to
+   TestFlight" step, after the build has finished.
+
+The checker enforces all three (`release-workflows-check.sh`), with tests
+(48 cases now).
+
+Still true and accepted: the build step must see the **upload keystore** (or
+the **distribution certificate**) to sign, the same as `build-aab.sh` /
+`build-ipa.sh` on the Mac today. A process started by build code could outlive
+its step until the job ends (GitHub cleans up per job); splitting signing into
+another job would need a second approval per release. Upload key and
+certificate leaks are recoverable (D12 T3, T5), and neither can ship a build
+alone.
+
+Not changed here (owner rule: `deploy/` untouched): `deploy/pi/build.sh` and
+`relay.conf` name Docker images by tag (`rust:1.96-bookworm`,
+`rust:1.79-bookworm`), not by digest. Same as the local build; see O5.
+
 ## Open items (not built)
 
 - **O1. `deploy.sh` from a release file.** `deploy/pi/deploy.sh --release
@@ -326,6 +365,9 @@ the guide is a new `docs/ci-release.md`. Once the owner agrees, one line in
   internal testing.
 - **O4. Required check:** the owner may add `release-lint` to `main`'s
   required checks.
+- **O5. Pin Docker images by digest** in `deploy/pi/build.sh` and
+  `deploy/relay/relay.conf` (`rust:…@sha256:…`), for the local and the CI
+  server build alike.
 
 ## Questions for the owner
 
@@ -360,7 +402,7 @@ the guide is a new `docs/ci-release.md`. Once the owner agrees, one line in
   declares the `xcode-27` label).
 - `shellcheck .github/scripts/*.sh`: clean.
 - `.github/scripts/release-workflows-check.sh`: pass on the real workflows.
-- `.github/scripts/release-scripts-test.sh`: 38 passed, 0 failed.
+- `.github/scripts/release-scripts-test.sh`: 48 passed, 0 failed (after D15).
 - `cargo build --workspace`, `cd app && flutter analyze`: unchanged, green.
 - Local Android dry run (`RUNNER_TEMP=<scratch> .github/scripts/android-aab.sh
   dry-run`, Flutter 3.44.4, ~13 min): throwaway PKCS12 key, Gradle `-P`

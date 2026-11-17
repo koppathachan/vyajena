@@ -27,12 +27,22 @@ release secret, signs with a release key, uploads to a store, creates a GitHub
 Release or writes an attestation; that environment requires the owner
 (`koppathachan`) as reviewer and accepts only `server-v*` and `app-v*` tags. GitHub enforces the
 approval and the tag rule; `release-workflows-check.sh` enforces that every such
-job names the environment.
+job names the environment, and each such job first runs
+`release-guard.sh environment release`, which stops the job unless the
+environment has the owner as required reviewer, no administrator bypass, and
+exactly the tag rules `app-v*` and `server-v*`.
 
 #### Scenario: Upload waits for the owner
 - **WHEN** the admin pushes tag `app-v1.0.0+5`
 - **THEN** the `android` and `ios` jobs wait for the owner's approval before
   any step runs, and nothing is uploaded until the owner approves
+
+#### Scenario: Environment missing or loose
+- **WHEN** the admin pushes `server-v0.2.0` before environment `release`
+  exists, so GitHub creates it without protection
+- **THEN** the `publish` job's first step, `release-guard.sh environment
+  release`, fails because the owner is not a required reviewer, and nothing
+  is published
 
 #### Scenario: Branch cannot deploy
 - **WHEN** a workflow run on branch `feature` names environment `release`
@@ -50,8 +60,18 @@ stored only as secrets of the `release` environment, never as repository or
 organization secrets, never in the repository, and never printed in a log.
 Scripts SHALL write secret files only under the job's `RUNNER_TEMP` with mode
 0600 and delete them when the job ends. Jobs outside the environment SHALL
-receive no release secret. GitHub enforces the scoping; the release scripts
-enforce the file handling; the owner creates the secrets.
+receive no release secret. A step that builds (and so runs third-party code)
+SHALL NOT receive a store upload credential: it cannot request the job's OIDC
+token, and the App Store Connect key reaches only the upload step. GitHub
+enforces the scoping; the release scripts enforce the file handling;
+`release-workflows-check.sh` enforces the step rules; the owner creates the
+secrets.
+
+#### Scenario: Build code cannot unlock Play
+- **WHEN** a malicious crate's build script in the `android` job's build step
+  tries to read `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
+- **THEN** the variable is not set in that step, so it cannot get the token
+  that workload identity exchanges for Play access
 
 #### Scenario: Dry run has no secrets
 - **WHEN** the admin starts `release-app` with `workflow_dispatch`

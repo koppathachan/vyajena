@@ -64,6 +64,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - run: .github/scripts/release-guard.sh environment release
       - run: echo "\${{ secrets.SOME_KEY }}"
 YML
 }
@@ -229,6 +230,40 @@ d="$(good_workflow | sed 's/      - run: echo dry/      - run: ssh pi@host true/
 expect_fail "workflow reaching the Pi is refused" "reaches the Pi or relay" "$check" "$d"
 d="$(good_workflow | sed 's|      - run: echo dry|      - run: deploy/pi/deploy.sh --no-build|' | fixture deploy)"
 expect_fail "workflow running deploy.sh is refused" "reaches the Pi or relay" "$check" "$d"
+
+# --- release-automation/owner-approval-gate: the environment is really protected
+# spec: release-automation/owner-approval-gate
+d="$(good_workflow | sed "/release-guard.sh environment release/d" | fixture noenvcheck)"
+expect_fail "release job must first check the environment" "job real must first run release-guard.sh environment release" "$check" "$d"
+env_json() { # env_json <reviewer> <admin bypass> <custom policies>
+  printf '{"name":"release","can_admins_bypass":%s,"protection_rules":[{"type":"required_reviewers","reviewers":[{"type":"User","reviewer":{"login":"%s"}}]},{"type":"branch_policy"}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":%s}}' "$2" "$1" "$3"
+}
+tags_json='{"total_count":2,"branch_policies":[{"name":"server-v*","type":"tag"},{"name":"app-v*","type":"tag"}]}'
+env_json koppathachan false true >"$tmp/env-good.json"
+printf "%s" "$tags_json" >"$tmp/pol-good.json"
+# spec: release-automation/owner-approval-gate
+expect_pass "protected environment passes" "$guard" environment-json release koppathachan "$tmp/env-good.json" "$tmp/pol-good.json"
+printf '{"name":"release","can_admins_bypass":true,"protection_rules":[],"deployment_branch_policy":null}' >"$tmp/env-new.json"
+printf '{"total_count":0,"branch_policies":[]}' >"$tmp/pol-none.json"
+expect_fail "auto-created environment is refused" "no required reviewer koppathachan" "$guard" environment-json release koppathachan "$tmp/env-new.json" "$tmp/pol-none.json"
+env_json mallory false true >"$tmp/env-other.json"
+expect_fail "another reviewer is refused" "no required reviewer koppathachan" "$guard" environment-json release koppathachan "$tmp/env-other.json" "$tmp/pol-good.json"
+env_json koppathachan true true >"$tmp/env-bypass.json"
+expect_fail "admin bypass is refused" "administrators can bypass it" "$guard" environment-json release koppathachan "$tmp/env-bypass.json" "$tmp/pol-good.json"
+printf '{"total_count":3,"branch_policies":[{"name":"server-v*","type":"tag"},{"name":"app-v*","type":"tag"},{"name":"main","type":"branch"}]}' >"$tmp/pol-branch.json"
+expect_fail "a branch rule is refused" "not exactly tags app-v* and server-v*" "$guard" environment-json release koppathachan "$tmp/env-good.json" "$tmp/pol-branch.json"
+
+# --- release-automation/release-secrets-only-in-the-release-environment: store keys away from build code
+# spec: release-automation/release-secrets-only-in-the-release-environment
+d="$(good_workflow | sed "s/      contents: write/      contents: read\n      id-token: write/; s|      - run: echo \"\${{ secrets.SOME_KEY }}\"|      - run: .github/scripts/android-aab.sh release|" | fixture oidc)"
+expect_fail "build step with id-token must not reach the OIDC token" "can ask for the OIDC token" "$check" "$d"
+d="$(good_workflow | sed "s/      contents: write/      contents: read\n      id-token: write/; s|      - run: echo \"\${{ secrets.SOME_KEY }}\"|      - run: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL .github/scripts/android-aab.sh release|" | fixture oidcok)"
+expect_pass "build step without the OIDC token passes" "$check" "$d"
+# spec: release-automation/ios-release-to-testflight
+d="$(good_workflow | sed "s|      - run: echo \"\${{ secrets.SOME_KEY }}\"|      - run: .github/scripts/ios-ipa.sh release \${{ secrets.ASC_KEY_ID }}|" | fixture asc)"
+expect_fail "App Store Connect key only in the upload step" "gets the App Store Connect key but does not only upload" "$check" "$d"
+expect_fail "ios upload needs the API key" "ASC_KEY_ID is not set" \
+  env -i PATH="$PATH" HOME="$HOME" bash -c "cd '$repo' && touch '$tmp/a.ipa' && '$here/ios-ipa.sh' upload '$tmp/a.ipa'"
 
 echo
 echo "$passed passed, $failed failed"

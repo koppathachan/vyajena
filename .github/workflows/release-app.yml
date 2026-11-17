@@ -108,6 +108,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Refuse an unprotected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-guard.sh environment release
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
@@ -124,7 +128,9 @@ jobs:
           ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
           ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_B64 }}
           RELEASE_TAG: ${{ github.ref_name }}
-        run: .github/scripts/android-aab.sh release
+        # The build runs third-party code (crates, Gradle plugins, packages):
+        # it gets no way to ask GitHub for the OIDC token that unlocks Play.
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL .github/scripts/android-aab.sh release
       # Keyless: GitHub's OIDC token for this repo's `release` environment is
       # exchanged for a short-lived token of the Play service account (D7).
       - id: google
@@ -154,6 +160,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Refuse an unprotected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-guard.sh environment release
       - name: Select Xcode
         run: sudo xcode-select -s "$XCODE_APP"
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -161,13 +171,17 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: false
-      - name: Build, check and upload
+      - name: Build, sign and check
         env:
           IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
           IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           IOS_PROFILE_B64: ${{ secrets.IOS_PROFILE_B64 }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: .github/scripts/ios-ipa.sh release
+      # The App Store Connect key only here, after the build's code has run.
+      - name: Upload to TestFlight
+        env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: .github/scripts/ios-ipa.sh release
+        run: .github/scripts/ios-ipa.sh upload app/build/ios/ipa/*.ipa

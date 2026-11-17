@@ -31,7 +31,11 @@ Rules for every step below:
 
 ## One-time setup
 
-### 1. The `release` environment
+### 1. The `release` environment (do this first, before any release tag)
+
+If a release tag is pushed before this exists, GitHub makes the environment
+itself, **without** approval. The release jobs then stop at their first step
+("Refuse an unprotected environment"), so nothing ships, but set it up first.
 
 GitHub › koppathachan/vyajena › Settings › Environments › **New environment**
 › `release`:
@@ -95,6 +99,12 @@ base64 -i ~/.vyajena-push/google-services.json | gh secret set ANDROID_GOOGLE_SE
 
 The job checks the bundle against the fingerprint in `app/store/signing.md`,
 so it must be the same upload key Play knows.
+
+**GitHub is not a backup:** a secret can be written, never read back. Keep
+`upload.jks` and both passwords in your password manager (Bitwarden: the
+`.jks` as a file attachment, which needs Premium; the passwords as fields).
+If it is ever lost anyway, Play can reset the upload key (see the table at the
+end); installed apps keep updating.
 
 ### 6. Play access without a key (workload identity)
 

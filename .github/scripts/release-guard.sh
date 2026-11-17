@@ -6,6 +6,9 @@
 #   release-guard.sh tag <tag>               the tag matches the repo's version,
 #                                            is checked out, and is on main
 #   release-guard.sh version app|server      print the repo's version
+#   release-guard.sh environment <name>      the environment is protected (needs
+#                                            GH_TOKEN, GITHUB_REPOSITORY)
+#   release-guard.sh environment-json <name> <reviewer> <env.json> <policies.json>
 #
 # Run from inside the repository. MAIN_REF (default origin/main) names main.
 set -euo pipefail
@@ -81,8 +84,48 @@ check_tag() {
   esac
 }
 
+# GitHub creates a missing environment, unprotected, the first time a job
+# names it. So every job in `release` first checks that the environment really
+# has the owner as required reviewer, no admin bypass, and only the release tag
+# rules (design D3). The two JSON documents are GitHub's answers for
+# environments/<env> and environments/<env>/deployment-branch-policies.
+check_environment_json() {
+  local env="$1" reviewer="$2" env_json="$3" policies_json="$4" problems
+  problems="$(jq -rn --arg reviewer "$reviewer" \
+    --slurpfile e "$env_json" --slurpfile p "$policies_json" '
+    ($e[0]) as $env | ($p[0]) as $pol |
+    [
+      (if ([$env.protection_rules[]? | select(.type == "required_reviewers")
+            | .reviewers[]? | .reviewer.login] | index($reviewer)) == null
+       then "no required reviewer \($reviewer)" else empty end),
+      (if $env.can_admins_bypass != false then "administrators can bypass it" else empty end),
+      (if $env.deployment_branch_policy.custom_branch_policies != true
+       then "not limited to selected tags" else empty end),
+      (if ([$pol.branch_policies[]? | "\(.type):\(.name)"] | sort)
+          != ["tag:app-v*", "tag:server-v*"]
+       then "deployment rules are not exactly tags app-v* and server-v*" else empty end)
+    ] | .[]')" || die "environment $env: cannot read GitHub's answer"
+  [ -z "$problems" ] || die "environment $env is not protected: $(echo "$problems" | paste -sd ';' -)"
+  echo "environment: $env needs $reviewer, no admin bypass, tags app-v* and server-v* only"
+}
+
+check_environment() {
+  local env="${1:-}" reviewer="${RELEASE_REVIEWER:-koppathachan}" work
+  [ -n "$env" ] && [ -n "${GITHUB_REPOSITORY:-}" ] || die "environment: needs a name and GITHUB_REPOSITORY"
+  work="$(mktemp -d)"
+  # shellcheck disable=SC2064 # expand now: the folder of this call
+  trap "rm -rf '$work'" RETURN
+  gh api "repos/$GITHUB_REPOSITORY/environments/$env" >"$work/env.json" ||
+    die "environment $env: not found"
+  gh api "repos/$GITHUB_REPOSITORY/environments/$env/deployment-branch-policies" >"$work/policies.json" ||
+    die "environment $env: cannot read its deployment rules"
+  check_environment_json "$env" "$reviewer" "$work/env.json" "$work/policies.json"
+}
+
 case "${1:-}" in
   pins) shift; check_pins "$@" ;;
+  environment) shift; check_environment "$@" ;;
+  environment-json) shift; check_environment_json "$@" ;;
   tag) shift; check_tag "$@" ;;
   version)
     case "${2:-}" in
@@ -91,5 +134,5 @@ case "${1:-}" in
       *) die "version: app or server" ;;
     esac
     ;;
-  *) sed -n '2,11p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,13p' "$0" >&2; exit 2 ;;
 esac

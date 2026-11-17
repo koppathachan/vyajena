@@ -26,6 +26,7 @@ changes (design D2, D14).
 
 - [x] 4.1 `docs/ci-release.md`: secrets, roles, environment, ruleset, WIF condition, cutting a release, dry run, undo per threat (D12, D13, D14)
 - [x] 4.2 `openspec validate ci-release --strict`, `actionlint`, `shellcheck .github/scripts/*.sh`, `release-scripts-test.sh`, `cargo build --workspace`, `cd app && flutter analyze` all pass (results in design.md "Verification")
+- [x] 4.3 Hardening (D15): environment check first in every release job; build steps get no OIDC token; App Store Connect key only in the upload step; checker rules + tests (48)
 
 ## 5. Owner only (in order, `docs/ci-release.md`)
 

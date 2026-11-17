@@ -1,32 +1,59 @@
 #!/usr/bin/env bash
-# Builds, checks and (release only) uploads the iOS app on a macOS runner
-# (ci-release design D8, D9). Mirrors app/store/build-ipa.sh, with manual
-# signing from the `release` environment instead of Xcode's account.
+# Builds, checks and uploads the iOS app on a macOS runner (ci-release design
+# D8, D9). Mirrors app/store/build-ipa.sh, with manual signing from the
+# `release` environment instead of Xcode's account.
 #
-#   ios-ipa.sh dry-run   unsigned archive + release check; nothing signed
-#   ios-ipa.sh release   signed App Store export, push entitlement check,
-#                        release check, upload to App Store Connect (TestFlight)
+#   ios-ipa.sh dry-run        unsigned archive + release check; nothing signed
+#   ios-ipa.sh release        signed App Store export, push entitlement check,
+#                             release check; leaves app/build/ios/ipa/*.ipa
+#   ios-ipa.sh upload <ipa>   uploads that IPA to App Store Connect (TestFlight)
+#
+# Separate steps on purpose: the build runs third-party code (pods, crates,
+# Flutter plugins), so the App Store Connect key is not in its environment.
 #
 # release needs (environment secrets, never printed):
 #   IOS_DIST_CERT_P12_B64, IOS_DIST_CERT_PASSWORD   Apple Distribution .p12
 #   IOS_PROFILE_B64                                  App Store profile (Push on)
-#   ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64        App Store Connect API key
 #   RELEASE_TAG                                      the pushed tag
+# upload needs: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8_B64 (App Store Connect API key)
 #
-# The certificate lives only in a temporary keychain, the profile and the API
-# key only for this job; all are removed on exit.
+# The certificate lives only in a temporary keychain and the profile and the
+# API key only in RUNNER_TEMP; each is removed when its step ends.
 set -euo pipefail
 
 readonly BUNDLE_ID="com.purplechaamba.vyajena"
 
 mode="${1:-}"
-case "$mode" in dry-run | release) ;; *) echo "usage: ios-ipa.sh dry-run|release" >&2; exit 2 ;; esac
+case "$mode" in dry-run | release | upload) ;; *) echo "usage: ios-ipa.sh dry-run|release|upload <ipa>" >&2; exit 2 ;; esac
 
 repo="$(git rev-parse --show-toplevel)"
 app="$repo/app"
 archive="$app/build/ios/archive/Runner.xcarchive"
 out="$app/build/ios/ipa"
 pb=/usr/libexec/PlistBuddy
+
+if [ "$mode" = upload ]; then
+  ipa="${2:-}"
+  [ -f "$ipa" ] || { echo "ios-ipa.sh: upload needs the IPA path" >&2; exit 2; }
+  for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_B64; do
+    [ -n "${!name:-}" ] || { echo "ios-ipa.sh: $name is not set (environment release)" >&2; exit 1; }
+  done
+  [[ "$ASC_KEY_ID" =~ ^[A-Z0-9]+$ ]] || { echo "ios-ipa.sh: ASC_KEY_ID is not a key id" >&2; exit 1; }
+  umask 077
+  keys="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/asc.XXXXXX")"
+  trap 'rm -rf "$keys"' EXIT
+  printf "%s" "$ASC_KEY_P8_B64" | base64 -D >"$keys/AuthKey_$ASC_KEY_ID.p8"
+  for try in 1 2 3; do
+    if API_PRIVATE_KEYS_DIR="$keys" xcrun altool --upload-app --type ios \
+      --file "$ipa" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"; then
+      echo "uploaded: $ipa"
+      exit 0
+    fi
+    [ "$try" -lt 3 ] || exit 1
+    echo "upload failed (try $try of 3); retrying"
+    sleep 20
+  done
+fi
 
 if [ "$mode" = dry-run ]; then
   cd "$app"
@@ -37,12 +64,9 @@ if [ "$mode" = dry-run ]; then
   exit 0
 fi
 
-for name in IOS_DIST_CERT_P12_B64 IOS_DIST_CERT_PASSWORD IOS_PROFILE_B64 \
-  ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8_B64 RELEASE_TAG; do
+for name in IOS_DIST_CERT_P12_B64 IOS_DIST_CERT_PASSWORD IOS_PROFILE_B64 RELEASE_TAG; do
   [ -n "${!name:-}" ] || { echo "ios-ipa.sh: $name is not set (environment release)" >&2; exit 1; }
 done
-[[ "$ASC_KEY_ID" =~ ^[A-Z0-9]+$ ]] || { echo "ios-ipa.sh: ASC_KEY_ID is not a key id" >&2; exit 1; }
-
 umask 077
 work="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/ios-release.XXXXXX")"
 keychain="$work/release.keychain-db"
@@ -122,19 +146,7 @@ if [[ "$entitlements" != *"<key>aps-environment</key><string>production</string>
 fi
 echo "push: aps-environment = production"
 
-# --- Release check, then upload ------------------------------------------------
+# --- Release check -------------------------------------------------------------
 git -C "$repo" tag -d "$RELEASE_TAG" >/dev/null
 "$app/store/release-check.sh" --ios-only --xcarchive "$archive"
-
-mkdir "$work/private_keys"
-printf '%s' "$ASC_KEY_P8_B64" | base64 -D >"$work/private_keys/AuthKey_$ASC_KEY_ID.p8"
-for try in 1 2 3; do
-  if API_PRIVATE_KEYS_DIR="$work/private_keys" xcrun altool --upload-app --type ios \
-    --file "$ipa" --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"; then
-    echo "uploaded: $ipa"
-    exit 0
-  fi
-  [ "$try" -lt 3 ] || exit 1
-  echo "upload failed (try $try of 3); retrying"
-  sleep 20
-done
+echo "ipa: $ipa"

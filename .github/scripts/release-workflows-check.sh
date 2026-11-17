@@ -10,6 +10,9 @@
 #   - top-level `permissions: {}`
 #   - a job that uses a secret (other than GITHUB_TOKEN) or asks for a write
 #     permission names `environment: release` and runs only on a tag push
+#   - a release job first runs release-guard.sh environment release; with
+#     id-token: write, its build steps cannot ask for the OIDC token; the
+#     App Store Connect key reaches only the upload step
 #   - a job without the environment uses no secret and asks for no write
 #   - no cache (actions/cache, rust-cache, flutter-action cache: true)
 #   - every checkout has persist-credentials: false
@@ -73,6 +76,29 @@ Dir.glob(File.join(dir, "*.{yml,yaml}")).sort.each do |path|
       cond = job["if"].to_s
       unless cond.include?("github.event_name == 'push'") && cond.include?("startsWith(github.ref, 'refs/tags/")
         problems << "#{name}: job #{job_id} (environment release) must run only on a tag push"
+      end
+      # GitHub creates a missing environment unprotected: check it first.
+      steps = job["steps"] || []
+      first = steps.reject { |s| s["uses"].to_s.start_with?("actions/checkout@") }.first || {}
+      unless first["run"].to_s.strip == ".github/scripts/release-guard.sh environment release"
+        problems << "#{name}: job #{job_id} must first run release-guard.sh environment release"
+      end
+      # Build code never gets the OIDC token that unlocks a store.
+      if writes.include?("id-token")
+        steps.each do |s|
+          run = s["run"].to_s.strip
+          next unless run =~ /(^|[\s;&|(])(\.github\/scripts\/(android-aab|ios-ipa)\.sh|flutter|cargo|\.\/gradlew|gradle|deploy\/pi\/build\.sh)(\s|$)/
+          unless run.start_with?("env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL ")
+            problems << "#{name}: job #{job_id} step #{(s['name'] || run[0, 30]).inspect} can ask for the OIDC token"
+          end
+        end
+      end
+      # The App Store Connect key only in the step that uploads.
+      steps.each do |s|
+        next unless YAML.dump(s).include?("secrets.ASC_")
+        unless s["run"].to_s.strip.start_with?(".github/scripts/ios-ipa.sh upload ")
+          problems << "#{name}: job #{job_id} step #{(s['name'] || '?').inspect} gets the App Store Connect key but does not only upload"
+        end
       end
     else
       problems << "#{name}: job #{job_id} names environment #{env.inspect}" unless env.nil?
