@@ -23,9 +23,11 @@ mentions and replies.
   - An old (version 1) app would replace its main group with any second
     group it is welcomed to (design D7), so DMs only reach devices that
     speak version 2.
-  - The Pi accepts both versions and never puts a version 1 device into a
-    DM.
-  - A device that upgrades is added to its DMs automatically.
+  - A version 2 core lists the DM extension in its KeyPackages. The Pi
+    hands out only such KeyPackages for a DM, so a version 1 device is never
+    put into one.
+  - A device that upgrades uploads new KeyPackages and is added to its DMs
+    automatically.
 - **New devices and returning devices** join their user's DMs
   automatically, the same way they join the main group today
   (`JoinNotice`, `RejoinNotice` per group).
@@ -83,16 +85,16 @@ mentions and replies.
 - `group-membership`: group creation, commit authority, membership state
   on the Pi, automatic add and re-add now per group.
 - `wire-transport`: protocol version 2 next to 1.
-- `key-directory`: KeyPackage fetch for a DM returns only version 2
-  devices.
+- `key-directory`: KeyPackage fetch for a DM returns only KeyPackages
+  that list the DM extension.
 - `app-ui`: chat list, "Message" on a member, DM screen.
 
 ## Impact
 
 - **Pi (`server/`):**
   - A store migration: many groups and their kind; the DM pair; members,
-    public state, commit log and queues keyed by group; each device's last
-    protocol version.
+    public state, commit log and queues keyed by group; a DM-capable flag
+    per KeyPackage.
   - New `dms/` module.
   - Routing, inactivity, join and re-add work per group.
 - **Core (`client/`):**

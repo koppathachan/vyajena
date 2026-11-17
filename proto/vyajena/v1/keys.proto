@@ -58,8 +58,8 @@ message FetchKeyPackagesRequest {
   // empty, the Pi returns one for every non-revoked device of the user.
   repeated bytes device_ids = 2;
   // Optional (change `dms`, key-directory: KeyPackage fetch). When set to a
-  // DM's group id, the Pi returns only devices whose last `Hello` was protocol
-  // version 2, and rejects the call with `PERMISSION_DENIED` unless the
+  // DM's group id, the Pi returns only KeyPackages whose capabilities list
+  // the DM extension `0xF0A2` (devices with none are left out), and rejects the call with `PERMISSION_DENIED` unless the
   // caller's device is a member of that DM and `user_id` is one of its two
   // users. An unknown group id is rejected with `NOT_FOUND`.
   bytes group_id = 3;

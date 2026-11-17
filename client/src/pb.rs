@@ -1087,7 +1087,8 @@ pub mod devices_client {
 /// external sender, or the extension does not name exactly the caller's user and
 /// `peer`; with `NOT_FOUND` if `peer` is not a non-revoked user; with
 /// `FAILED_PRECONDITION` if the caller's device is not a member of the main
-/// group or its last `Hello` was not protocol version 2.
+/// group or is not DM-capable (its last-resort KeyPackage does not list
+/// `0xF0A2`; direct-messages: Old apps never join a DM).
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateDmRequest {
     #[prost(message, optional, tag = "1")]
@@ -1256,8 +1257,8 @@ pub struct FetchKeyPackagesRequest {
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub device_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
     /// Optional (change `dms`, key-directory: KeyPackage fetch). When set to a
-    /// DM's group id, the Pi returns only devices whose last `Hello` was protocol
-    /// version 2, and rejects the call with `PERMISSION_DENIED` unless the
+    /// DM's group id, the Pi returns only KeyPackages whose capabilities list
+    /// the DM extension `0xF0A2` (devices with none are left out), and rejects the call with `PERMISSION_DENIED` unless the
     /// caller's device is a member of that DM and `user_id` is one of its two
     /// users. An unknown group id is rejected with `NOT_FOUND`.
     #[prost(bytes = "vec", tag = "3")]
@@ -1915,7 +1916,7 @@ pub struct RejoinNotice {
 /// sees the device is already a member and does nothing more.
 /// direct-messages: DM members kept complete. For a DM, `group_id` is the DM's
 /// and the notice goes to the DM's connected member devices, for each
-/// non-revoked, active, protocol version 2 device of either user that is not a
+/// non-revoked, active, DM-capable device of either user that is not a
 /// member; the first to receive it adds the device under the DM commit authority
 /// rule. RejoinNotice works the same way per group.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -1930,7 +1931,8 @@ pub struct JoinNotice {
 /// device of the other user that was a member of the DM, until the device sends
 /// `Ack` with this `group_id` and `server_seq` 0. The device marks the chat
 /// closed and keeps its history read-only; envelopes for it are rejected with
-/// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a protocol version 1 device.
+/// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a version 1 device, which is
+/// never in a DM.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DmClosed {
     #[prost(bytes = "vec", tag = "1")]

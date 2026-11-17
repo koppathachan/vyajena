@@ -15,10 +15,10 @@
 
 ## 3. Pi
 
-- [ ] 3.1 Store migration: many groups (`kind`, pair, `closed_at`, one `main`), `group_id` on members, commit log and queues, `devices.protocol_version`; migration test from a version-1 database
-- [ ] 3.2 `Hello` records the version; routing, acks, expiry and gap notices per group; nothing of a DM for version 1 devices; tests `direct-messages/old-apps-never-join-a-dm`, `wire-transport/protocol-version-negotiation`
+- [ ] 3.1 Store migration: many groups (`kind`, pair, `closed_at`, one `main`), `group_id` on members, commit log and queues, `key_packages.dm_capable`; migration test from a version-1 database
+- [ ] 3.2 `Hello` accepts 1 and 2; `dm_capable` recorded on upload; routing, acks, expiry and gap notices per group; nothing of a DM for version 1 devices; tests `direct-messages/old-apps-never-join-a-dm`, `wire-transport/protocol-version-negotiation`
 - [ ] 3.3 `dms/` module: `CreateDm` checks; tests `direct-messages/opening-a-dm`, `group-membership/group-creation`
-- [ ] 3.4 Commit checks per group kind; DM Adds only of the pair's version 2 devices; tests `group-membership/commit-authority`, `direct-messages/dm-members`
+- [ ] 3.4 Commit checks per group kind; DM Adds only of the pair's leaves listing `0xF0A2`; tests `group-membership/commit-authority`, `direct-messages/dm-members`
 - [ ] 3.5 `FetchKeyPackages` with `group_id`; tests `key-directory/keypackage-fetch`
 - [ ] 3.6 `JoinNotice` and `RejoinNotice` per DM; inactivity across groups; tests `direct-messages/dm-members-kept-complete`, `direct-messages/inactivity-across-groups`
 - [ ] 3.7 `RemoveUser` closes DMs, `DmClosed` until acked, `GROUP_CLOSED`; tests `direct-messages/dm-closed-on-user-removal`
@@ -28,7 +28,7 @@
 
 - [ ] 4.1 Store migration: `chats`, `messages.chat_id`, per-group rows; existing data goes to the main chat
 - [ ] 4.2 Engine: map of groups, routing by `group_id`, outbox, retries, rotation, acks per group; Welcome replaces only the same group; tests `direct-messages/several-groups-in-the-core`
-- [ ] 4.3 `open_dm`, `ALREADY_EXISTS` handling, auto-add and re-add in DMs, DM checks on Welcome and commits, `DmClosed`; speaks version 1 to an old Pi; end-to-end tests for every `direct-messages` requirement
+- [ ] 4.3 KeyPackages and leaves list `0xF0A2`, fresh upload on first run; `open_dm`, `created = false` handling, auto-add and re-add in DMs, DM checks on Welcome and commits, `DmClosed`; speaks version 1 to an old Pi; end-to-end tests for every `direct-messages` requirement
 - [ ] 4.4 Per-chat API: `chats`, `history(chat)`, `send_message(chat, …)`, unread and unseen mentions per chat, events with `ChatId`
 
 ## 5. Bridge

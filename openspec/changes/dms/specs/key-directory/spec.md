@@ -5,8 +5,9 @@
 an optional `group_id`, and return, for each non-revoked device of that user, or
 only for the listed devices when the list is given, one KeyPackage together with
 the device certificate and the user's identity public key. When `group_id` names
-a DM, the Pi SHALL return only devices whose last `Hello` was protocol version 2,
-and SHALL reject the fetch with `PERMISSION_DENIED` unless the caller's device is
+a DM, the Pi SHALL return only KeyPackages whose capabilities list the DM
+extension `0xF0A2` (a one-time one if the device has one left, else its
+last-resort one if that lists it), leave out devices with neither, and SHALL reject the fetch with `PERMISSION_DENIED` unless the caller's device is
 a member of that DM and `user_id` is one of its two users. The Pi SHALL consume
 KeyPackages only for the devices it returns. The Pi SHALL hand out each one-time
 KeyPackage at most once and SHALL fall back to the last-resort KeyPackage when
@@ -34,7 +35,7 @@ and a fetch listing a device that is not a non-revoked device of that user with
 
 #### Scenario: Fetch for a DM skips old devices
 - **WHEN** Alice's phone fetches Bob's KeyPackages with the Alice–Bob DM's
-  `group_id`, and Bob's tablet last said version 1
+  `group_id`, and Bob's tablet still runs 1.0.0
 - **THEN** the Pi returns and consumes a KeyPackage for Bob's phone only
 
 #### Scenario: Carol fetches for someone else's DM

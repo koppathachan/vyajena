@@ -65,8 +65,8 @@ the same rules and reject commits that break them.
 For each group the Pi SHALL store only the group id, its kind (main or DM), for
 a DM the two usernames and when it was closed, the current epoch, the member
 devices with their leaf positions, the public ratchet tree and group context,
-and the commit log. For each device it SHALL store the protocol version of its
-last `Hello`. It SHALL NOT store group names, settings or message content.
+and the commit log. For each KeyPackage it SHALL store whether its capabilities
+list the DM extension `0xF0A2`. It SHALL NOT store group names, settings or message content.
 
 #### Scenario: Group renamed
 - **WHEN** the admin renames the group

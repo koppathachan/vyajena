@@ -28,7 +28,8 @@ service Dms {
 // external sender, or the extension does not name exactly the caller's user and
 // `peer`; with `NOT_FOUND` if `peer` is not a non-revoked user; with
 // `FAILED_PRECONDITION` if the caller's device is not a member of the main
-// group or its last `Hello` was not protocol version 2.
+// group or is not DM-capable (its last-resort KeyPackage does not list
+// `0xF0A2`; direct-messages: Old apps never join a DM).
 message CreateDmRequest {
   UserId peer = 1;
   // The MLS group id, 16 random bytes (design D2).

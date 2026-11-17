@@ -278,7 +278,7 @@ message RejoinNotice {
 // sees the device is already a member and does nothing more.
 // direct-messages: DM members kept complete. For a DM, `group_id` is the DM's
 // and the notice goes to the DM's connected member devices, for each
-// non-revoked, active, protocol version 2 device of either user that is not a
+// non-revoked, active, DM-capable device of either user that is not a
 // member; the first to receive it adds the device under the DM commit authority
 // rule. RejoinNotice works the same way per group.
 message JoinNotice {
@@ -291,7 +291,8 @@ message JoinNotice {
 // device of the other user that was a member of the DM, until the device sends
 // `Ack` with this `group_id` and `server_seq` 0. The device marks the chat
 // closed and keeps its history read-only; envelopes for it are rejected with
-// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a protocol version 1 device.
+// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a version 1 device, which is
+// never in a DM.
 message DmClosed {
   bytes group_id = 1;
   google.protobuf.Timestamp closed_at = 2;

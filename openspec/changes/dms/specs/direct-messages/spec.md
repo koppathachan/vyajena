@@ -6,7 +6,7 @@ only member is itself, whose group context lists the Pi as external sender and
 carries the DM extension (`0xF0A2`) naming its own user and the peer, and by
 calling `Dms.CreateDm` with the peer and the epoch-0 public state. The Pi SHALL
 accept it only when the caller's device is a member of the main group and
-speaks protocol version 2, the peer is a non-revoked user other than the
+is DM-capable (Old apps never join a DM), the peer is a non-revoked user other than the
 caller's user, the extension names exactly those two users, and no open DM
 exists for that pair; otherwise it SHALL reject it (`INVALID_ARGUMENT`,
 `NOT_FOUND` or `FAILED_PRECONDITION`). When an open DM exists for the pair, the
@@ -37,8 +37,9 @@ Any member MAY open a DM with any member; no approval is needed.
 
 ### Requirement: DM members
 A DM SHALL only ever hold devices of its two users. The Pi SHALL reject a DM
-`COMMIT` that adds a device of any other user, or a device whose last `Hello`
-was protocol version 1, with `REJECTION_REASON_POLICY_VIOLATION`. Every client
+`COMMIT` that adds a device of any other user, or a device whose leaf
+capabilities do not list the DM extension `0xF0A2`, with
+`REJECTION_REASON_POLICY_VIOLATION`. Every client
 SHALL refuse a DM Welcome or commit with a leaf of a third user, and SHALL refuse
 a DM Welcome whose extension does not name its own user.
 
@@ -52,34 +53,38 @@ a DM Welcome whose extension does not name its own user.
 - **THEN** Carol's core refuses it and joins nothing
 
 ### Requirement: Old apps never join a DM
-The Pi SHALL record each device's protocol version from its last `Hello`,
-treating a device that never connected as version 1. It SHALL return
-KeyPackages only for version 2 devices when `FetchKeyPackages` names a DM in
-`group_id`, and SHALL never queue anything of a DM for a version 1 device.
+A version 2 core SHALL list the DM extension `0xF0A2` in the capabilities of
+every KeyPackage and leaf it makes, and SHALL upload a fresh set of KeyPackages,
+last-resort included, the first time it runs. The Pi SHALL record for each
+KeyPackage whether its capabilities list `0xF0A2`, and SHALL count a device as
+DM-capable when its last-resort KeyPackage does. When `FetchKeyPackages` names a
+DM in `group_id`, the Pi SHALL return only KeyPackages that list `0xF0A2`, so a
+version 1 device is never added to a DM and nothing of a DM is ever queued for
+it.
 
 #### Scenario: Bob's tablet still runs 1.0.0
-- **WHEN** Alice's phone opens a DM with Bob, whose phone runs version 2 and
-  whose tablet runs version 1
+- **WHEN** Alice's phone opens a DM with Bob, whose phone runs a version 2 app
+  and whose tablet still runs 1.0.0
 - **THEN** only Bob's phone is added, Bob's tablet keeps its main group and
   sees nothing of the DM
 
 #### Scenario: Bob updates his tablet
-- **WHEN** Bob's tablet next connects with `Hello` version 2
+- **WHEN** Bob updates his tablet's app and its core uploads KeyPackages that
+  list `0xF0A2`
 - **THEN** the Pi sends `JoinNotice` for it in the DM to the DM's connected
   member devices, and the first of them adds it
 
 ### Requirement: DM members kept complete
 For each DM, the Pi SHALL send `JoinNotice(group_id)` to the DM's connected
-member devices for every non-revoked, active, version 2 device of either user
-that is not a member: after its first KeyPackage upload, on its first version 2
-`Hello`, and each time a member device of that DM connects, until it is a
-member. The first device to receive it SHALL, without user action, verify the
+member devices for every non-revoked, active, DM-capable device of either user
+that is not a member: after it uploads a DM-capable last-resort KeyPackage, and
+each time a member device of that DM connects, until it is a member. The first device to receive it SHALL, without user action, verify the
 device's certificate, fetch a KeyPackage for that device only with the DM's
 `group_id`, and commit its Add with the Welcome in the same `COMMIT` envelope. A
 device that loses the race gets `STALE_EPOCH` and does nothing more.
 
 #### Scenario: Bob links a new phone
-- **WHEN** Bob links a new phone that speaks version 2 while Alice's phone is
+- **WHEN** Bob links a new phone with a version 2 app while Alice's phone is
   connected
 - **THEN** the new phone is added to the main group as today and to the
   Alice–Bob DM by the first member device of that DM to get the notice
