@@ -65,7 +65,7 @@ async fn snapshot_while_alice_chats_is_a_valid_private_database() {
         .check("the admin");
     assert_eq!(admin, "akhil");
     assert!(count(&db, "envelopes") >= 1);
-    assert_eq!(count(&db, "mls_group"), 1);
+    assert_eq!(count(&db, "mls_groups"), 1);
 
     // The service kept running.
     let next = stream

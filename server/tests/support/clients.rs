@@ -14,7 +14,9 @@ use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::OpenMlsProvider as _;
 use prost::Message as _;
 use protocol::device_identity::{DeviceId, device_id, sign_device_certificate};
-use protocol::group_membership::{ADMIN_EXTENSION_TYPE, admin_extension_data};
+use protocol::group_membership::{
+    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, admin_extension_data, dm_extension_data,
+};
 use protocol::wire_transport::sign_auth_challenge;
 
 use super::Check;
@@ -46,6 +48,21 @@ pub fn capabilities() -> Capabilities {
         None,
         Some(&[CIPHERSUITE]),
         Some(&[ExtensionType::Unknown(ADMIN_EXTENSION_TYPE)]),
+        None,
+        None,
+    )
+}
+
+/// Leaf capabilities of a version 2 core: the admin extension and the DM
+/// extension (direct-messages: Old apps never join a DM).
+pub fn dm_capabilities() -> Capabilities {
+    Capabilities::new(
+        None,
+        Some(&[CIPHERSUITE]),
+        Some(&[
+            ExtensionType::Unknown(ADMIN_EXTENSION_TYPE),
+            ExtensionType::Unknown(DM_EXTENSION_TYPE),
+        ]),
         None,
         None,
     )
@@ -108,6 +125,9 @@ pub struct TestDevice {
     pub certificate: pb::SignedDeviceCertificate,
     /// The device's MLS group, once it has one.
     pub group: Option<MlsGroup>,
+    /// A second group (a DM), swapped in with [`TestDevice::swap_groups`] so
+    /// every helper works on it too.
+    pub other: Option<MlsGroup>,
     /// The current session token.
     pub token: Option<String>,
 }
@@ -165,7 +185,86 @@ impl TestDevice {
             signer,
             certificate,
             group: None,
+            other: None,
             token: None,
+        }
+    }
+
+    /// Swaps [`TestDevice::group`] and [`TestDevice::other`].
+    pub fn swap_groups(&mut self) {
+        std::mem::swap(&mut self.group, &mut self.other);
+    }
+
+    /// A KeyPackage of a version 2 core: its capabilities list the DM
+    /// extension.
+    pub fn dm_key_package(&self) -> Vec<u8> {
+        KeyPackage::builder()
+            .leaf_node_capabilities(dm_capabilities())
+            .build(
+                CIPHERSUITE,
+                &self.provider,
+                &self.signer,
+                self.credential_with_key(),
+            )
+            .check("KeyPackage")
+            .key_package()
+            .tls_serialize_detached()
+            .check("KeyPackage bytes")
+    }
+
+    /// Uploads `one_time` DM-capable one-time KeyPackages plus a DM-capable
+    /// last-resort one, as a version 2 core does.
+    pub async fn upload_dm_key_packages(&self, conn: &Conn, one_time: usize) {
+        let key_packages = (0..one_time).map(|_| self.dm_key_package()).collect();
+        conn.keys()
+            .upload_key_packages(authed(
+                self.token(),
+                pb::UploadKeyPackagesRequest {
+                    key_packages,
+                    last_resort_key_package: self.dm_key_package(),
+                },
+            ))
+            .await
+            .check("UploadKeyPackages");
+    }
+
+    /// Creates a DM as a version 2 core would, as [`TestDevice::group`]
+    /// (the current group moves to [`TestDevice::other`]): the Pi as external
+    /// sender, the DM extension naming `users`, no admin. Returns the
+    /// `CreateDmRequest` for `peer`.
+    pub fn create_dm(
+        &mut self,
+        group_id: &[u8],
+        pi: &pb::ExternalSender,
+        users: (&str, &str),
+        peer: pb::UserId,
+    ) -> pb::CreateDmRequest {
+        let pi = external_sender(pi);
+        let extensions = Extensions::from_vec(vec![
+            Extension::ExternalSenders(vec![pi]),
+            Extension::Unknown(
+                DM_EXTENSION_TYPE,
+                UnknownExtension(dm_extension_data(users.0, users.1)),
+            ),
+        ])
+        .check("DM group context extensions");
+        let group = MlsGroup::builder()
+            .with_group_id(GroupId::from_slice(group_id))
+            .ciphersuite(CIPHERSUITE)
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .use_ratchet_tree_extension(true)
+            .with_capabilities(dm_capabilities())
+            .with_group_context_extensions(extensions)
+            .build(&self.provider, &self.signer, self.credential_with_key())
+            .check("DM MlsGroup");
+        self.other = self.group.take();
+        self.group = Some(group);
+        let state = self.public_state();
+        pb::CreateDmRequest {
+            peer: Some(peer),
+            group_id: state.group_id,
+            group_info: state.group_info,
+            ratchet_tree: state.ratchet_tree,
         }
     }
 

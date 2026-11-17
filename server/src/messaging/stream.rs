@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use protocol::device_identity::DeviceId;
 use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
-use protocol::wire_transport::{PROTOCOL_VERSION, STREAM_IDLE_TIMEOUT};
+use protocol::wire_transport::{STREAM_IDLE_TIMEOUT, SUPPORTED_PROTOCOL_VERSIONS};
 use tokio::sync::{mpsc, watch};
 use tonic::{Status, Streaming};
 
@@ -24,7 +24,8 @@ use super::hub::Event;
 use super::log;
 use super::write::{self, Context, Outcome};
 use crate::auth::Caller;
-use crate::membership::{inactivity, joins};
+use crate::dms;
+use crate::membership::{group, inactivity, joins};
 use crate::pb;
 use crate::pb::client_frame::Frame as In;
 use crate::pb::envelope::Kind;
@@ -126,10 +127,16 @@ impl Session {
         for frame in info.frames {
             self.send(frame).await?;
         }
-        if info.gap_sent {
+        if !info.gaps_sent.is_empty() {
             let device_id = self.caller.device_id;
-            self.store(move |conn| log::clear_gap(conn, &device_id))
-                .await?;
+            let groups = info.gaps_sent;
+            self.store(move |conn| {
+                for group_id in &groups {
+                    log::clear_gap(conn, &device_id, group_id)?;
+                }
+                Ok(())
+            })
+            .await?;
         }
         for (target, notice) in info.rejoin {
             self.state.hub.send_frame(&target, notice);
@@ -159,7 +166,14 @@ impl Session {
         let upto = ack.server_seq.min(self.sent_up_to);
         self.store(move |conn| {
             let tx = conn.transaction()?;
-            if log::group_row(&tx)?.is_some_and(|(group_id, _)| group_id == ack.group_id) {
+            // direct-messages: DM closed on user removal. `server_seq` 0
+            // acknowledges the `DmClosed` of that group.
+            if ack.server_seq == 0 {
+                dms::ack_closed(&tx, &device_id, &ack.group_id)?;
+                tx.commit()?;
+                return Ok(());
+            }
+            if group::row(&tx, &ack.group_id)?.is_some() {
                 log::ack(&tx, &device_id, upto)?;
                 tx.commit()?;
             }
@@ -203,6 +217,7 @@ impl Session {
                 server_seq,
                 accepted_at,
                 notify,
+                notices,
             } => {
                 tracing::debug!(
                     server_seq,
@@ -210,6 +225,9 @@ impl Session {
                     "accepted an envelope"
                 );
                 super::notify(&self.state, notify);
+                for (device, notice) in notices {
+                    self.state.hub.send_frame(&device, notice);
+                }
                 // message-delivery: Ordered delivery and catch-up. The
                 // committer reads every entry sequenced before its commit
                 // (in the old epoch) before it learns the commit was
@@ -257,7 +275,8 @@ fn idle_status() -> Status {
 struct ConnectInfo {
     cursor: u64,
     frames: Vec<pb::ServerFrame>,
-    gap_sent: bool,
+    /// The groups whose gap notice `frames` carries.
+    gaps_sent: Vec<Vec<u8>>,
     /// Rejoin notices for other devices, about this one.
     rejoin: Vec<(DeviceId, pb::ServerFrame)>,
 }
@@ -304,23 +323,35 @@ fn connect_info(
     let cursor = log::cursor(conn, &device_id)?;
     let mut frames = Vec::new();
     let mut rejoin = Vec::new();
-    let mut gap_sent = false;
+    let mut gaps_sent = Vec::new();
     if let Some((group_id, _)) = log::group_row(conn)? {
         if let Some(inactive) = inactivity::get(conn, &device_id)? {
             // group-membership: Automatic re-add. It was removed; the devices
-            // that can re-add it hear that it is back.
+            // that can re-add it hear that it is back. Its DMs follow once
+            // the main group has it again (direct-messages: Inactivity across
+            // groups), so it hears of its removal from each of them now.
             inactivity::mark_returned(conn, &device_id, now)?;
-            frames.push(frame(Out::RemovedNotice(pb::RemovedNotice {
-                group_id: group_id.clone(),
-                missed_since: Some(to_timestamp(inactive.missed_since)),
-            })));
+            let removed = |group_id: &[u8]| {
+                frame(Out::RemovedNotice(pb::RemovedNotice {
+                    group_id: group_id.to_vec(),
+                    missed_since: Some(to_timestamp(inactive.missed_since)),
+                }))
+            };
+            frames.push(removed(&group_id));
+            for dm in group::open_dms(conn)? {
+                if let group::GroupKind::Dm { users, .. } = &dm.kind
+                    && (users.0 == caller.username || users.1 == caller.username)
+                {
+                    frames.push(removed(&dm.group_id));
+                }
+            }
             let me = device_ref(&device_id, &caller.username, server_id);
-            for (helper, helper_user) in inactivity::active_members(conn)? {
+            for (helper, helper_user) in inactivity::active_members(conn, &group_id)? {
                 if can_readd(&helper, &helper_user, &device_id, &caller.username, admin) {
                     rejoin.push((helper, rejoin_notice(&group_id, me.clone())));
                 }
             }
-        } else if inactivity::active_members(conn)?
+        } else if inactivity::active_members(conn, &group_id)?
             .iter()
             .any(|(id, _)| *id == device_id)
         {
@@ -342,14 +373,19 @@ fn connect_info(
                     ));
                 }
             }
+            // direct-messages: DM members kept complete. The devices its DMs
+            // still need.
+            frames.extend(joins::dm_notices_for(conn, &device_id, server_id)?);
         }
-        if let Some(at) = log::gap(conn, &device_id)? {
+        for (group_id, at) in log::gaps(conn, &device_id)? {
             frames.push(frame(Out::GapNotice(pb::GapNotice {
-                group_id,
+                group_id: group_id.clone(),
                 newest_expired_at: Some(to_timestamp(at)),
             })));
-            gap_sent = true;
+            gaps_sent.push(group_id);
         }
+        // direct-messages: DM closed on user removal, until acknowledged.
+        frames.extend(dms::closed_notices(conn, &device_id)?);
     }
     // key-directory: Replenishment signal, for a count that dropped while
     // the device was away.
@@ -360,7 +396,7 @@ fn connect_info(
     Ok(ConnectInfo {
         cursor,
         frames,
-        gap_sent,
+        gaps_sent,
         rejoin,
     })
 }
@@ -403,14 +439,14 @@ pub(crate) async fn run(
     match hello {
         Ok(Some(pb::ClientFrame {
             frame: Some(In::Hello(hello)),
-        })) if hello.protocol_version == PROTOCOL_VERSION => {}
+        })) if SUPPORTED_PROTOCOL_VERSIONS.contains(&hello.protocol_version) => {}
         Ok(Some(pb::ClientFrame {
             frame: Some(In::Hello(hello)),
         })) => {
             session
                 .fail(Status::failed_precondition(format!(
-                    "protocol version {} is not supported; supported versions: {PROTOCOL_VERSION}",
-                    hello.protocol_version
+                    "protocol version {} is not supported; supported versions: {:?}",
+                    hello.protocol_version, SUPPORTED_PROTOCOL_VERSIONS
                 )))
                 .await;
             return;

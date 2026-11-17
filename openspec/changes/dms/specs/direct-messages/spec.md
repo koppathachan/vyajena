@@ -77,7 +77,7 @@ it.
 ### Requirement: DM members kept complete
 For each DM, the Pi SHALL send `JoinNotice(group_id)` to the DM's connected
 member devices for every non-revoked, active, DM-capable device of either user
-that is not a member: after it uploads a DM-capable last-resort KeyPackage, and
+that is a member of the main group but not of the DM: after it uploads a DM-capable last-resort KeyPackage, and
 each time a member device of that DM connects, until it is a member. The first device to receive it SHALL, without user action, verify the
 device's certificate, fetch a KeyPackage for that device only with the DM's
 `group_id`, and commit its Add with the Welcome in the same `COMMIT` envelope. A

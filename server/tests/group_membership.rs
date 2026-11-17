@@ -41,7 +41,7 @@ async fn submit(
         .store
         .call(move |conn| {
             let tx = conn.transaction()?;
-            let Some(mut group) = GroupState::load(&tx)? else {
+            let Some(mut group) = GroupState::load_main(&tx)? else {
                 panic!("no group");
             };
             let result = group.check_commit(&tx, &caller, "pi", &commit)?;
@@ -67,7 +67,7 @@ async fn submit_proposal(
         .store
         .call(move |conn| {
             let tx = conn.transaction()?;
-            let Some(mut group) = GroupState::load(&tx)? else {
+            let Some(mut group) = GroupState::load_main(&tx)? else {
                 panic!("no group");
             };
             let result = group.check_proposal(&tx, &caller, &proposal)?;
@@ -86,7 +86,7 @@ async fn pi_tree(pi: &TestPi) -> Vec<u8> {
     pi.state
         .store
         .call(|conn| {
-            let group = GroupState::load(conn)?.check("group");
+            let group = GroupState::load_main(conn)?.check("group");
             Ok(group
                 .public_group()
                 .export_ratchet_tree()
@@ -257,7 +257,7 @@ async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
 
     let (group_id, epoch): (Vec<u8>, i64) = pi
         .query(|db| {
-            db.query_row("SELECT group_id, epoch FROM mls_group", [], |r| {
+            db.query_row("SELECT group_id, epoch FROM mls_groups", [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })
         })
@@ -267,7 +267,7 @@ async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
     let members = pi
         .state
         .store
-        .call(|db| GroupState::members(db))
+        .call(|db| GroupState::main_members(db))
         .await
         .check("members");
     assert_eq!(members.len(), 1);
@@ -346,7 +346,7 @@ async fn group_must_list_the_pi_name_the_admin_and_match_its_id() {
     invalid(pb::CreateGroupRequest::default(), token.clone()).await;
 
     let groups: i64 = pi
-        .query(|db| db.query_row("SELECT count(*) FROM mls_group", [], |r| r.get(0)))
+        .query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
         .await;
     assert_eq!(groups, 0);
 }
@@ -754,7 +754,7 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
     let members = pi
         .state
         .store
-        .call(|db| GroupState::members(db))
+        .call(|db| GroupState::main_members(db))
         .await
         .check("members");
     assert!(members.iter().all(|m| m.username != "bob"));
@@ -972,11 +972,14 @@ async fn pi_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
             rows.collect()
         })
         .await;
-    assert_eq!(tables, vec!["mls_group", "mls_members", "mls_public_state"]);
+    assert_eq!(
+        tables,
+        vec!["mls_groups", "mls_members", "mls_public_state"]
+    );
     let columns: Vec<String> = pi
         .query(|db| {
             let mut stmt = db.prepare(
-                "SELECT name FROM pragma_table_info('mls_group')
+                "SELECT name FROM pragma_table_info('mls_groups')
                  UNION ALL SELECT name FROM pragma_table_info('mls_members')
                  UNION ALL SELECT name FROM pragma_table_info('mls_public_state')",
             )?;
@@ -993,7 +996,7 @@ async fn pi_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
     let members = pi
         .state
         .store
-        .call(|db| GroupState::members(db))
+        .call(|db| GroupState::main_members(db))
         .await
         .check("members");
     let leaves: Vec<_> = members

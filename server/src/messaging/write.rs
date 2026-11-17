@@ -28,7 +28,8 @@ use sha2::{Digest, Sha256};
 
 use super::log::{self, DedupRow, NewEnvelope};
 use crate::auth::Caller;
-use crate::membership::{AcceptedCommit, GroupState, inactivity};
+use crate::membership::group::{self, GroupKind};
+use crate::membership::{AcceptedCommit, GroupState, inactivity, joins};
 use crate::pb;
 use crate::pb::RejectionReason;
 use crate::pb::envelope::Kind;
@@ -51,6 +52,9 @@ pub(crate) enum Outcome {
         accepted_at: SystemTime,
         /// Devices that got new entries, to wake or ping.
         notify: Vec<DeviceId>,
+        /// Notices to send to connected devices (direct-messages: DM members
+        /// kept complete, after a main-group commit adds a device back).
+        notices: Vec<(DeviceId, pb::ServerFrame)>,
     },
     /// Refused; nothing stored.
     Rejected {
@@ -184,15 +188,27 @@ pub(crate) fn submit(
                 server_seq: original.server_seq,
                 accepted_at: original.accepted_at,
                 notify: Vec::new(),
+                notices: Vec::new(),
             });
         }
         return Ok(reject(RejectionReason::DuplicateMismatch));
     }
 
-    let Some((group_id, epoch)) = log::group_row(conn)? else {
+    let Some(row) = group::row(conn, &envelope.group_id)? else {
         return Ok(reject(RejectionReason::Malformed));
     };
-    if envelope.group_id != group_id || !framing_matches(envelope, kind) {
+    // direct-messages: DM closed on user removal.
+    if matches!(
+        row.kind,
+        GroupKind::Dm {
+            closed_at: Some(_),
+            ..
+        }
+    ) {
+        return Ok(reject(RejectionReason::GroupClosed));
+    }
+    let (group_id, epoch) = (row.group_id, row.epoch);
+    if !framing_matches(envelope, kind) {
         return Ok(reject(RejectionReason::Malformed));
     }
     // message-delivery: Strict epoch rule.
@@ -204,7 +220,7 @@ pub(crate) fn submit(
     }
     // Only active members send: a device removed for inactivity waits for
     // its re-add (group-membership: Inactive devices are kept out).
-    let recipients: Vec<DeviceId> = inactivity::active_members(conn)?
+    let recipients: Vec<DeviceId> = inactivity::active_members(conn, &group_id)?
         .into_iter()
         .map(|(id, _)| id)
         .collect();
@@ -220,7 +236,7 @@ pub(crate) fn submit(
     let mut accepted_commit = None;
     match kind {
         Kind::Commit => {
-            let mut state = GroupState::load(conn)?
+            let mut state = GroupState::load(conn, &group_id)?
                 .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
             let accepted =
                 match state.check_commit(conn, caller, ctx.server_id, &envelope.ciphertext)? {
@@ -239,7 +255,7 @@ pub(crate) fn submit(
             accepted_commit = Some(accepted);
         }
         Kind::Proposal => {
-            let mut state = GroupState::load(conn)?
+            let mut state = GroupState::load(conn, &group_id)?
                 .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
             if let Err(rejection) = state.check_proposal(conn, caller, &envelope.ciphertext)? {
                 return Ok(Outcome::Rejected {
@@ -259,6 +275,7 @@ pub(crate) fn submit(
         conn,
         &NewEnvelope {
             server_seq,
+            group_id: &group_id,
             msg_id: &envelope.msg_id,
             sender: Some(&caller.device_id),
             kind,
@@ -281,6 +298,7 @@ pub(crate) fn submit(
     )?;
 
     let mut notify = Vec::new();
+    let mut notices = Vec::new();
     match kind {
         Kind::Application => {
             // message-delivery: Per-device queues. A full queue never fails
@@ -294,13 +312,8 @@ pub(crate) fn submit(
                     notify.push(*recipient);
                 }
             }
-            if !full.is_empty() {
-                let mut state = GroupState::load(conn)?
-                    .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
-                for device_id in &full {
-                    notify.extend(mark_inactive(conn, ctx, &mut state, device_id)?);
-                }
-                state.save(conn)?;
+            for device_id in &full {
+                notify.extend(mark_inactive(conn, ctx, device_id)?);
             }
         }
         Kind::Proposal => {
@@ -323,7 +336,11 @@ pub(crate) fn submit(
             if let (Some(mut state), Some(accepted)) = (group, accepted_commit) {
                 for added in &accepted.added {
                     log::insert_delivery(conn, &added.device_id, server_seq, true)?;
-                    inactivity::clear(conn, &added.device_id, ctx.now)?;
+                    // Back in the main group means active again; its DMs
+                    // follow (direct-messages: Inactivity across groups).
+                    if *state.kind() == GroupKind::Main {
+                        inactivity::clear(conn, &added.device_id, ctx.now)?;
+                    }
                     notify.push(added.device_id);
                 }
                 state.save(conn)?;
@@ -331,6 +348,15 @@ pub(crate) fn submit(
                 // again (group-membership: Inactive devices are kept out).
                 notify.extend(reissue_removes(conn, ctx, &mut state)?);
                 state.save(conn)?;
+                if *state.kind() == GroupKind::Main {
+                    for added in &accepted.added {
+                        notices.extend(joins::dm_notices_about(
+                            conn,
+                            &added.device_id,
+                            ctx.server_id,
+                        )?);
+                    }
+                }
             }
         }
         Kind::Welcome | Kind::Unspecified => {}
@@ -341,17 +367,18 @@ pub(crate) fn submit(
         server_seq,
         accepted_at,
         notify,
+        notices,
     })
 }
 
 /// group-membership: Inactive devices are kept out. Marks `device_id`
-/// inactive: deletes everything queued for it and issues the Pi's external
-/// Remove proposal for its leaf, if it has one. Persist `state` afterwards.
-/// Returns the devices that got the proposal.
+/// inactive: deletes everything queued for it, in every group, and issues
+/// the Pi's external Remove proposal for its leaf in every group it is in
+/// (direct-messages: Inactivity across groups). Saves each group. Returns
+/// the devices that got a proposal.
 pub(crate) fn mark_inactive(
     conn: &Transaction<'_>,
     ctx: &Context<'_>,
-    state: &mut GroupState,
     device_id: &DeviceId,
 ) -> Result<Vec<DeviceId>, StoreError> {
     if inactivity::is_inactive(conn, device_id)? {
@@ -363,11 +390,19 @@ pub(crate) fn mark_inactive(
         device_id = %crate::runtime::server_keys::hex(device_id),
         "marked a device inactive"
     );
-    propose_remove(conn, ctx, state, device_id)
+    let mut notify = Vec::new();
+    for row in group::groups_of(conn, device_id)? {
+        let mut state = GroupState::load(conn, &row.group_id)?
+            .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
+        notify.extend(propose_remove(conn, ctx, &mut state, device_id)?);
+        state.save(conn)?;
+    }
+    Ok(notify)
 }
 
 /// Issues (or reissues) the Pi's external Remove of `device_id`'s leaf in the
-/// current epoch as a `PROPOSAL` envelope to every active member.
+/// current epoch of `state`'s group as a `PROPOSAL` envelope to every active
+/// member of that group.
 fn propose_remove(
     conn: &Transaction<'_>,
     ctx: &Context<'_>,
@@ -386,6 +421,7 @@ fn propose_remove(
         conn,
         &NewEnvelope {
             server_seq,
+            group_id: state.group_id(),
             msg_id: &msg_id,
             sender: None,
             kind: Kind::Proposal,
@@ -396,11 +432,11 @@ fn propose_remove(
         },
     )?;
     let mut notify = Vec::new();
-    for (member, _) in inactivity::active_members(conn)? {
+    for (member, _) in inactivity::active_members(conn, state.group_id())? {
         log::insert_delivery(conn, &member, server_seq, false)?;
         notify.push(member);
     }
-    inactivity::set_proposed(conn, device_id, state.epoch())?;
+    inactivity::set_proposed(conn, device_id, state.group_id(), state.epoch())?;
     tracing::info!(
         leaf,
         epoch = state.epoch(),
@@ -418,7 +454,8 @@ pub(crate) fn reissue_removes(
     state: &mut GroupState,
 ) -> Result<Vec<DeviceId>, StoreError> {
     let mut notify = Vec::new();
-    for device_id in inactivity::needing_proposal(conn, state.epoch())? {
+    let group_id = state.group_id().to_vec();
+    for device_id in inactivity::needing_proposal(conn, &group_id, state.epoch())? {
         notify.extend(propose_remove(conn, ctx, state, &device_id)?);
     }
     Ok(notify)

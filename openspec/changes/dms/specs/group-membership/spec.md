@@ -19,8 +19,9 @@ Opening a DM).
 
 #### Scenario: DMs do not count as a main group
 - **WHEN** Alice and Bob have a DM and the admin's device calls
-  `Admin.CreateGroup` on a Pi with no main group
-- **THEN** the Pi records the main group
+  `Admin.CreateGroup` again
+- **THEN** the Pi rejects it with `ALREADY_EXISTS` and still holds exactly one
+  main group next to the DM
 
 ### Requirement: Commit authority
 In the main group, the Pi SHALL accept a commit from an admin device with any

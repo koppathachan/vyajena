@@ -35,7 +35,7 @@ async fn is_member(pi: &TestPi, device: &TestDevice) -> bool {
     let id = device.device_id;
     pi.state
         .store
-        .call(|db| GroupState::members(db))
+        .call(|db| GroupState::main_members(db))
         .await
         .check("members")
         .iter()

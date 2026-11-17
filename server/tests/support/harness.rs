@@ -13,6 +13,7 @@ use tonic::transport::{Channel, Endpoint};
 
 use super::pb::admin_client::AdminClient;
 use super::pb::devices_client::DevicesClient;
+use super::pb::dms_client::DmsClient;
 use super::pb::keys_client::KeysClient;
 use super::pb::messaging_client::MessagingClient;
 use super::push::RecordingPush;
@@ -205,6 +206,11 @@ impl Conn {
     /// An `Admin` client.
     pub fn admin(&self) -> AdminClient<Channel> {
         AdminClient::new(self.channel.clone())
+    }
+
+    /// A `Dms` client.
+    pub fn dms(&self) -> DmsClient<Channel> {
+        DmsClient::new(self.channel.clone())
     }
 }
 

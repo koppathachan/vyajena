@@ -131,6 +131,8 @@
 - **`JoinNotice` for a DM:** the Pi sends `JoinNotice(group_id = dm)` to
   the DM's connected member devices for each device that:
   - is a non-revoked, DM-capable device of either user
+  - is in the main group already, so a core never gets a DM Welcome
+    before the main group's (added while writing the Pi, 2026-11-17)
   - is not a member of that DM
   - is not inactive
 - **The Pi sends it:**

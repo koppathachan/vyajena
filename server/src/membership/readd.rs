@@ -19,11 +19,13 @@ fn i64_of(n: u64) -> i64 {
     i64::try_from(n).unwrap_or(i64::MAX)
 }
 
-/// Whether `device` is a non-revoked device with a leaf in the tree.
+/// Whether `device` is a non-revoked device with a leaf in the main group's
+/// tree.
 pub fn is_member(conn: &Connection, device: &DeviceId) -> Result<bool, StoreError> {
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM mls_members m JOIN devices d ON d.device_id = m.device_id
-                        WHERE m.device_id = ?1 AND d.revoked_at IS NULL)",
+                        JOIN mls_groups g ON g.group_id = m.group_id
+                        WHERE m.device_id = ?1 AND d.revoked_at IS NULL AND g.kind = 'main')",
         params![device.as_slice()],
         |row| row.get(0),
     )?)

@@ -7,7 +7,7 @@ use protocol::device_identity::DeviceId;
 use protocol::device_identity::{PushTokenKind, push_token_problem};
 use protocol::wire_transport::{
     CHALLENGE_NONCE_LEN, CHALLENGE_TTL, MAX_APPLICATION_CIPHERTEXT_BYTES,
-    MAX_HANDSHAKE_ENVELOPE_BYTES, PROTOCOL_VERSION, verify_auth_signature,
+    MAX_HANDSHAKE_ENVELOPE_BYTES, SUPPORTED_PROTOCOL_VERSIONS, verify_auth_signature,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
@@ -88,7 +88,7 @@ impl Devices for DevicesService {
         Ok(Response::new(pb::GetServerInfoResponse {
             server_info: Some(pb::ServerInfo {
                 server_id: server_id.clone(),
-                supported_protocol_versions: vec![PROTOCOL_VERSION],
+                supported_protocol_versions: SUPPORTED_PROTOCOL_VERSIONS.to_vec(),
                 limits: Some(pb::Limits {
                     max_application_ciphertext_bytes: as_u32(MAX_APPLICATION_CIPHERTEXT_BYTES),
                     max_handshake_envelope_bytes: as_u32(MAX_HANDSHAKE_ENVELOPE_BYTES),

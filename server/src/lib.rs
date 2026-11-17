@@ -11,6 +11,7 @@
 pub mod admin;
 pub mod auth;
 pub mod devices;
+pub mod dms;
 pub mod keys;
 pub mod membership;
 pub mod messaging;

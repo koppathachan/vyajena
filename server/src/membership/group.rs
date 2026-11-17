@@ -36,8 +36,8 @@ use openmls_traits::signatures::{Signer, SignerError};
 use openmls_traits::types::SignatureScheme;
 use protocol::device_identity::DeviceId;
 use protocol::group_membership::{
-    ADMIN_EXTENSION_TYPE, Committer, ProposalKind, ProposalSender, admin_extension_data,
-    check_commit_authority,
+    ADMIN_EXTENSION_TYPE, Committer, DM_EXTENSION_TYPE, ProposalKind, ProposalSender,
+    admin_extension_data, check_commit_authority, check_dm_commit_authority, parse_dm_extension,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use tonic::Status;
@@ -82,6 +82,38 @@ pub struct MemberDevice {
     pub device_id: DeviceId,
     /// Its leaf index in the ratchet tree.
     pub leaf_index: u32,
+}
+
+/// What a group is (change `dms`, design D1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GroupKind {
+    /// The one admin-run group.
+    Main,
+    /// A DM between two users (direct-messages).
+    Dm {
+        /// The two usernames, sorted.
+        users: (String, String),
+        /// When the Pi closed it (direct-messages: DM closed on user removal).
+        closed_at: Option<std::time::SystemTime>,
+    },
+}
+
+impl GroupKind {
+    /// Whether this is a DM.
+    pub fn is_dm(&self) -> bool {
+        matches!(self, Self::Dm { .. })
+    }
+}
+
+/// One `mls_groups` row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupRow {
+    /// The MLS group id.
+    pub group_id: Vec<u8>,
+    /// The current epoch.
+    pub epoch: u64,
+    /// Main group or DM.
+    pub kind: GroupKind,
 }
 
 /// Why a handshake envelope was refused; maps to `RejectionReason`.
@@ -189,6 +221,7 @@ pub struct GroupState {
     storage: MemoryStorage,
     group: PublicGroup,
     pi_sender_index: u32,
+    kind: GroupKind,
 }
 
 impl std::fmt::Debug for GroupState {
@@ -212,21 +245,29 @@ fn parse_exact<T: openmls::prelude::tls_codec::Deserialize>(bytes: &[u8]) -> Opt
 }
 
 impl GroupState {
-    /// The group, if one was created.
-    pub fn load(conn: &Connection) -> Result<Option<Self>, StoreError> {
-        let row: Option<(Vec<u8>, i64)> = conn
-            .query_row(
-                "SELECT group_id, pi_sender_index FROM mls_group WHERE id = 1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let Some((group_id, pi_sender_index)) = row else {
+    /// The group `group_id`, if the Pi holds it (a closed DM has no state).
+    pub fn load(conn: &Connection, group_id: &[u8]) -> Result<Option<Self>, StoreError> {
+        let Some(row) = row(conn, group_id)? else {
             return Ok(None);
         };
+        if matches!(
+            row.kind,
+            GroupKind::Dm {
+                closed_at: Some(_),
+                ..
+            }
+        ) {
+            return Ok(None);
+        }
+        let pi_sender_index: i64 = conn.query_row(
+            "SELECT pi_sender_index FROM mls_groups WHERE group_id = ?1",
+            params![group_id],
+            |row| row.get(0),
+        )?;
         let mut values = HashMap::new();
-        let mut stmt = conn.prepare("SELECT key, value FROM mls_public_state")?;
-        let rows = stmt.query_map([], |row| {
+        let mut stmt =
+            conn.prepare("SELECT key, value FROM mls_public_state WHERE group_id = ?1")?;
+        let rows = stmt.query_map(params![group_id], |row| {
             Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
         })?;
         for row in rows {
@@ -236,7 +277,7 @@ impl GroupState {
         let storage = MemoryStorage {
             values: RwLock::new(values),
         };
-        let group = PublicGroup::load(&storage, &GroupId::from_slice(&group_id))
+        let group = PublicGroup::load(&storage, &GroupId::from_slice(group_id))
             .map_err(storage_error("load"))?
             .ok_or_else(|| StoreError::Inconsistent("MLS group state is missing".into()))?;
         Ok(Some(Self {
@@ -245,26 +286,29 @@ impl GroupState {
             group,
             pi_sender_index: u32::try_from(pi_sender_index)
                 .map_err(|_| StoreError::Inconsistent("bad pi_sender_index".into()))?,
+            kind: row.kind,
         }))
     }
 
-    /// Whether a group exists.
-    pub fn exists(conn: &Connection) -> Result<bool, StoreError> {
-        Ok(conn
-            .query_row("SELECT 1 FROM mls_group WHERE id = 1", [], |_| Ok(()))
-            .optional()?
-            .is_some())
+    /// The main group, if one was created.
+    pub fn load_main(conn: &Connection) -> Result<Option<Self>, StoreError> {
+        match main_row(conn)? {
+            Some(row) => Self::load(conn, &row.group_id),
+            None => Ok(None),
+        }
     }
 
-    /// `Admin.CreateGroup` (Group creation): builds the group from its epoch-0
-    /// GroupInfo (without the ratchet tree extension) and ratchet tree, checks
-    /// it and stores it in `tx`.
+    /// Whether a main group exists.
+    pub fn exists(conn: &Connection) -> Result<bool, StoreError> {
+        Ok(main_row(conn)?.is_some())
+    }
+
+    /// `Admin.CreateGroup` (Group creation): builds the main group from its
+    /// epoch-0 GroupInfo (without the ratchet tree extension) and ratchet
+    /// tree, checks it and stores it in `tx`.
     ///
-    /// Checks: the GroupInfo and tree parse and verify (OpenMLS), `group_id`
-    /// matches, epoch 0, our ciphersuite, the Pi's [`external_sender`] is in
-    /// `external_senders`, the [`ADMIN_EXTENSION_TYPE`] extension names
-    /// `admin_user_id`, and the only member is `caller`'s device with its
-    /// registered certificate and MLS key.
+    /// Checks: those of [`GroupState::from_epoch_zero`], and the
+    /// [`ADMIN_EXTENSION_TYPE`] extension names `admin_user_id`.
     pub fn create(
         tx: &Transaction<'_>,
         caller: &Caller,
@@ -276,15 +320,123 @@ impl GroupState {
         if Self::exists(tx)? {
             return Err(CreateGroupError::AlreadyExists);
         }
+        let mut state = Self::from_epoch_zero(
+            tx,
+            caller,
+            pi,
+            &request.group_id,
+            &request.group_info,
+            &request.ratchet_tree,
+        )?;
+        let names_admin = state
+            .group
+            .group_context()
+            .extensions()
+            .unknown(ADMIN_EXTENSION_TYPE)
+            .is_some_and(|ext| ext.0 == admin_extension_data(admin_user_id));
+        if !names_admin {
+            return Err(invalid("the group context does not name the admin"));
+        }
+        state.kind = GroupKind::Main;
+        tx.execute(
+            "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+             VALUES (?1, 'main', 0, ?2, ?3)",
+            params![request.group_id, state.pi_sender_index, unix_millis(now)],
+        )
+        .map_err(StoreError::from)?;
+        state.save(tx)?;
+        Ok(state)
+    }
+
+    /// `Dms.CreateDm` (direct-messages: Opening a DM): builds a DM between
+    /// `caller`'s user and `peer` (usernames) from its epoch-0 state, checks
+    /// it and stores it in `tx`. The caller checks who may open it and that no
+    /// open DM exists for the pair.
+    ///
+    /// Checks: those of [`GroupState::from_epoch_zero`], no
+    /// [`ADMIN_EXTENSION_TYPE`] extension, and the [`DM_EXTENSION_TYPE`]
+    /// extension names exactly the caller's user and `peer`.
+    pub fn create_dm(
+        tx: &Transaction<'_>,
+        caller: &Caller,
+        peer: &str,
+        server_id: &str,
+        pi: &ExternalSender,
+        request: &pb::CreateDmRequest,
+        now: std::time::SystemTime,
+    ) -> Result<Self, CreateGroupError> {
+        let mut state = Self::from_epoch_zero(
+            tx,
+            caller,
+            pi,
+            &request.group_id,
+            &request.group_info,
+            &request.ratchet_tree,
+        )?;
+        let extensions = state.group.group_context().extensions();
+        if extensions.unknown(ADMIN_EXTENSION_TYPE).is_some() {
+            return Err(invalid("a DM must not name an admin"));
+        }
+        let named = extensions
+            .unknown(DM_EXTENSION_TYPE)
+            .and_then(|ext| parse_dm_extension(&ext.0));
+        let users = sorted(caller.username.clone(), peer.to_owned());
+        let expected = (
+            format!("{}@{server_id}", users.0),
+            format!("{}@{server_id}", users.1),
+        );
+        if named.as_ref() != Some(&expected) {
+            return Err(invalid(
+                "the DM extension does not name the caller's user and the peer",
+            ));
+        }
+        tx.execute(
+            "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at,
+                                     dm_user_a, dm_user_b)
+             VALUES (?1, 'dm', 0, ?2, ?3, ?4, ?5)",
+            params![
+                request.group_id,
+                state.pi_sender_index,
+                unix_millis(now),
+                users.0,
+                users.1
+            ],
+        )
+        .map_err(StoreError::from)?;
+        state.kind = GroupKind::Dm {
+            users,
+            closed_at: None,
+        };
+        state.save(tx)?;
+        Ok(state)
+    }
+
+    /// The public state of a new group at epoch 0, not stored.
+    ///
+    /// Checks: the GroupInfo and tree parse and verify (OpenMLS), `group_id`
+    /// matches and is new, epoch 0, our ciphersuite, the Pi's
+    /// [`external_sender`] is in `external_senders`, and the only member is
+    /// `caller`'s device with its registered certificate and MLS key.
+    fn from_epoch_zero(
+        tx: &Transaction<'_>,
+        caller: &Caller,
+        pi: &ExternalSender,
+        group_id: &[u8],
+        group_info: &[u8],
+        ratchet_tree: &[u8],
+    ) -> Result<Self, CreateGroupError> {
         let message: MlsMessageIn =
-            parse_exact(&request.group_info).ok_or_else(|| invalid("group_info does not parse"))?;
+            parse_exact(group_info).ok_or_else(|| invalid("group_info does not parse"))?;
         let MlsMessageBodyIn::GroupInfo(group_info) = message.extract() else {
             return Err(invalid("group_info is not a GroupInfo"));
         };
-        let tree: RatchetTreeIn = parse_exact(&request.ratchet_tree)
-            .ok_or_else(|| invalid("ratchet_tree does not parse"))?;
-        if group_info.group_id().as_slice() != request.group_id.as_slice() {
+        let tree: RatchetTreeIn =
+            parse_exact(ratchet_tree).ok_or_else(|| invalid("ratchet_tree does not parse"))?;
+        if group_info.group_id().as_slice() != group_id {
             return Err(invalid("group_id does not match the GroupInfo"));
+        }
+        if row(tx, group_id)?.is_some() {
+            return Err(invalid("a group with this id exists"));
         }
 
         let crypto = RustCrypto::default();
@@ -309,13 +461,6 @@ impl GroupState {
             .ok_or_else(|| invalid("external_senders does not list the Pi"))?;
         let pi_sender_index =
             u32::try_from(pi_sender_index).map_err(|_| invalid("too many external senders"))?;
-        let names_admin = context
-            .extensions()
-            .unknown(ADMIN_EXTENSION_TYPE)
-            .is_some_and(|ext| ext.0 == admin_extension_data(admin_user_id));
-        if !names_admin {
-            return Err(invalid("the group context does not name the admin"));
-        }
 
         let members: Vec<_> = group.members().collect();
         let [member] = members.as_slice() else {
@@ -328,60 +473,70 @@ impl GroupState {
                 "leaf certificate or key differs".into(),
             ));
         }
-
-        tx.execute(
-            "INSERT INTO mls_group (id, group_id, epoch, pi_sender_index, created_at)
-             VALUES (1, ?1, 0, ?2, ?3)",
-            params![request.group_id, pi_sender_index, unix_millis(now)],
-        )
-        .map_err(StoreError::from)?;
-        let state = Self {
+        Ok(Self {
             crypto,
             storage,
             group,
             pi_sender_index,
-        };
-        state.save(tx)?;
-        Ok(state)
+            kind: GroupKind::Main,
+        })
     }
 
     /// Writes the state to `tx`: the OpenMLS store, the epoch and the member
     /// devices with their leaves.
     pub fn save(&self, tx: &Transaction<'_>) -> Result<(), StoreError> {
-        tx.execute("DELETE FROM mls_public_state", [])?;
+        let group_id = self.group_id().to_vec();
+        tx.execute(
+            "DELETE FROM mls_public_state WHERE group_id = ?1",
+            params![group_id],
+        )?;
         {
             let values = self
                 .storage
                 .values
                 .read()
                 .map_err(|_| StoreError::Inconsistent("MLS state lock poisoned".into()))?;
-            let mut insert =
-                tx.prepare("INSERT INTO mls_public_state (key, value) VALUES (?1, ?2)")?;
+            let mut insert = tx.prepare(
+                "INSERT INTO mls_public_state (group_id, key, value) VALUES (?1, ?2, ?3)",
+            )?;
             for (key, value) in values.iter() {
-                insert.execute(params![key, value])?;
+                insert.execute(params![group_id, key, value])?;
             }
         }
         tx.execute(
-            "UPDATE mls_group SET epoch = ?1 WHERE id = 1",
-            params![i64::try_from(self.epoch()).unwrap_or(i64::MAX)],
+            "UPDATE mls_groups SET epoch = ?2 WHERE group_id = ?1",
+            params![group_id, i64::try_from(self.epoch()).unwrap_or(i64::MAX)],
         )?;
-        tx.execute("DELETE FROM mls_members", [])?;
-        let mut insert =
-            tx.prepare("INSERT INTO mls_members (leaf_index, device_id) VALUES (?1, ?2)")?;
+        tx.execute(
+            "DELETE FROM mls_members WHERE group_id = ?1",
+            params![group_id],
+        )?;
+        let mut insert = tx.prepare(
+            "INSERT INTO mls_members (group_id, leaf_index, device_id) VALUES (?1, ?2, ?3)",
+        )?;
         for member in self.group.members() {
             let device_id = certificate::from_credential(&member.credential)
                 .as_ref()
                 .and_then(claimed_device_id)
                 .ok_or_else(|| StoreError::Inconsistent("member leaf without a device".into()))?;
-            insert.execute(params![member.index.u32(), device_id.as_slice()])?;
+            insert.execute(params![group_id, member.index.u32(), device_id.as_slice()])?;
         }
-        // group-membership: Automatic add of new users: a member is never
-        // announced again.
+        // A leaf that left the tree needs no more Pi Removes.
         tx.execute(
-            "UPDATE devices SET was_member = 1
-             WHERE was_member = 0 AND device_id IN (SELECT device_id FROM mls_members)",
-            [],
+            "DELETE FROM pi_removes WHERE group_id = ?1
+               AND device_id NOT IN (SELECT device_id FROM mls_members WHERE group_id = ?1)",
+            params![group_id],
         )?;
+        if self.kind == GroupKind::Main {
+            // group-membership: Automatic add of new users: a member is never
+            // announced again.
+            tx.execute(
+                "UPDATE devices SET was_member = 1
+                 WHERE was_member = 0 AND device_id IN
+                     (SELECT device_id FROM mls_members WHERE group_id = ?1)",
+                params![group_id],
+            )?;
+        }
         Ok(())
     }
 
@@ -400,18 +555,32 @@ impl GroupState {
         self.pi_sender_index
     }
 
+    /// Main group or DM.
+    pub fn kind(&self) -> &GroupKind {
+        &self.kind
+    }
+
     /// The OpenMLS public group (read only).
     pub fn public_group(&self) -> &PublicGroup {
         &self.group
     }
 
-    /// The member devices and their leaves, as last saved.
-    pub fn members(conn: &Connection) -> Result<Vec<MemberDevice>, StoreError> {
+    /// The member devices of the main group and their leaves, as last saved.
+    pub fn main_members(conn: &Connection) -> Result<Vec<MemberDevice>, StoreError> {
+        match main_row(conn)? {
+            Some(row) => Self::members(conn, &row.group_id),
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// The member devices of `group_id` and their leaves, as last saved.
+    pub fn members(conn: &Connection, group_id: &[u8]) -> Result<Vec<MemberDevice>, StoreError> {
         let mut stmt = conn.prepare(
             "SELECT m.leaf_index, m.device_id, d.username FROM mls_members m
-             JOIN devices d ON d.device_id = m.device_id ORDER BY m.leaf_index",
+             JOIN devices d ON d.device_id = m.device_id
+             WHERE m.group_id = ?1 ORDER BY m.leaf_index",
         )?;
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map(params![group_id], |row| {
             Ok((
                 row.get::<_, u32>(0)?,
                 row.get::<_, Vec<u8>>(1)?,
@@ -501,7 +670,17 @@ impl GroupState {
             is_admin: caller.is_admin,
             leaf_index: committer_leaf,
         };
-        if let Err(error) = check_commit_authority(&rule, &proposals) {
+        let checked = match &self.kind {
+            GroupKind::Main => check_commit_authority(&rule, &proposals),
+            GroupKind::Dm { users, .. } => {
+                let pair = (
+                    format!("{}@{server_id}", users.0),
+                    format!("{}@{server_id}", users.1),
+                );
+                check_dm_commit_authority(&rule, (&pair.0, &pair.1), &proposals)
+            }
+        };
+        if let Err(error) = checked {
             return Ok(Err(policy(error.to_string())));
         }
 
@@ -616,8 +795,8 @@ impl GroupState {
     ) -> Result<Option<u32>, StoreError> {
         Ok(conn
             .query_row(
-                "SELECT leaf_index FROM mls_members WHERE device_id = ?1",
-                params![device_id.as_slice()],
+                "SELECT leaf_index FROM mls_members WHERE group_id = ?1 AND device_id = ?2",
+                params![self.group_id(), device_id.as_slice()],
                 |row| row.get(0),
             )
             .optional()?)
@@ -628,8 +807,9 @@ impl GroupState {
         let row: Option<(Vec<u8>, String)> = conn
             .query_row(
                 "SELECT m.device_id, d.username FROM mls_members m
-                 JOIN devices d ON d.device_id = m.device_id WHERE m.leaf_index = ?1",
-                params![leaf],
+                 JOIN devices d ON d.device_id = m.device_id
+                 WHERE m.group_id = ?1 AND m.leaf_index = ?2",
+                params![self.group_id(), leaf],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()?;
@@ -827,6 +1007,18 @@ impl GroupState {
         let Some(device) = records::device(conn, &device_id)? else {
             return Ok(Err(policy("an added device is not registered")));
         };
+        // direct-messages: DM members. Only a version 2 core's leaf can join
+        // a DM (Old apps never join a DM).
+        if self.kind.is_dm()
+            && !leaf
+                .capabilities()
+                .extensions()
+                .contains(&openmls::prelude::ExtensionType::Unknown(DM_EXTENSION_TYPE))
+        {
+            return Ok(Err(policy(
+                "an added leaf does not list the DM extension 0xF0A2",
+            )));
+        }
         if device.revoked {
             return Ok(Err(policy("an added device is revoked")));
         }
@@ -918,4 +1110,134 @@ impl Signer for PiSigner<'_> {
     fn signature_scheme(&self) -> SignatureScheme {
         SignatureScheme::ED25519
     }
+}
+
+fn sorted(a: String, b: String) -> (String, String) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+type RawRow = (
+    Vec<u8>,
+    String,
+    i64,
+    Option<String>,
+    Option<String>,
+    Option<i64>,
+);
+
+fn finish_row(
+    (group_id, kind, epoch, user_a, user_b, closed_at): RawRow,
+) -> Result<GroupRow, StoreError> {
+    let kind = match (kind.as_str(), user_a, user_b) {
+        ("main", None, None) => GroupKind::Main,
+        ("dm", Some(a), Some(b)) => GroupKind::Dm {
+            users: (a, b),
+            closed_at: closed_at.map(crate::runtime::clock::from_unix_millis),
+        },
+        _ => return Err(StoreError::Inconsistent("bad mls_groups row".into())),
+    };
+    Ok(GroupRow {
+        group_id,
+        epoch: u64::try_from(epoch).unwrap_or(0),
+        kind,
+    })
+}
+
+const ROW_COLUMNS: &str = "group_id, kind, epoch, dm_user_a, dm_user_b, closed_at";
+
+fn raw_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
+/// The `mls_groups` row of `group_id`.
+pub fn row(conn: &Connection, group_id: &[u8]) -> Result<Option<GroupRow>, StoreError> {
+    conn.query_row(
+        &format!("SELECT {ROW_COLUMNS} FROM mls_groups WHERE group_id = ?1"),
+        params![group_id],
+        raw_row,
+    )
+    .optional()?
+    .map(finish_row)
+    .transpose()
+}
+
+/// The main group's row, if it was created.
+pub fn main_row(conn: &Connection) -> Result<Option<GroupRow>, StoreError> {
+    conn.query_row(
+        &format!("SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = 'main'"),
+        [],
+        raw_row,
+    )
+    .optional()?
+    .map(finish_row)
+    .transpose()
+}
+
+/// Every open group `device_id` has a leaf in, main group first.
+pub fn groups_of(conn: &Connection, device_id: &DeviceId) -> Result<Vec<GroupRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {} FROM mls_groups g
+         JOIN mls_members m ON m.group_id = g.group_id
+         WHERE m.device_id = ?1 AND g.closed_at IS NULL
+         ORDER BY g.kind DESC, g.created_at, g.group_id",
+        ROW_COLUMNS
+            .split(", ")
+            .map(|c| format!("g.{c}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))?;
+    let rows = stmt.query_map(params![device_id.as_slice()], raw_row)?;
+    let mut groups = Vec::new();
+    for row in rows {
+        groups.push(finish_row(row?)?);
+    }
+    Ok(groups)
+}
+
+/// Every open group: the main group, then the open DMs, oldest first.
+pub fn open_groups(conn: &Connection) -> Result<Vec<GroupRow>, StoreError> {
+    let mut groups: Vec<GroupRow> = main_row(conn)?.into_iter().collect();
+    groups.extend(open_dms(conn)?);
+    Ok(groups)
+}
+
+/// Every open DM, oldest first.
+pub fn open_dms(conn: &Connection) -> Result<Vec<GroupRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = 'dm' AND closed_at IS NULL
+         ORDER BY created_at, group_id"
+    ))?;
+    let rows = stmt.query_map([], raw_row)?;
+    let mut groups = Vec::new();
+    for row in rows {
+        groups.push(finish_row(row?)?);
+    }
+    Ok(groups)
+}
+
+/// The open DM between two usernames, if any.
+pub fn open_dm_between(
+    conn: &Connection,
+    a: &str,
+    b: &str,
+) -> Result<Option<GroupRow>, StoreError> {
+    let (a, b) = sorted(a.to_owned(), b.to_owned());
+    conn.query_row(
+        &format!(
+            "SELECT {ROW_COLUMNS} FROM mls_groups
+             WHERE kind = 'dm' AND closed_at IS NULL AND dm_user_a = ?1 AND dm_user_b = ?2"
+        ),
+        params![a, b],
+        raw_row,
+    )
+    .optional()?
+    .map(finish_row)
+    .transpose()
 }

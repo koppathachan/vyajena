@@ -15,14 +15,14 @@
 
 ## 3. Pi
 
-- [ ] 3.1 Store migration: many groups (`kind`, pair, `closed_at`, one `main`), `group_id` on members, commit log and queues, `key_packages.dm_capable`; migration test from a version-1 database
-- [ ] 3.2 `Hello` accepts 1 and 2; `dm_capable` recorded on upload; routing, acks, expiry and gap notices per group; nothing of a DM for version 1 devices; tests `direct-messages/old-apps-never-join-a-dm`, `wire-transport/protocol-version-negotiation`
-- [ ] 3.3 `dms/` module: `CreateDm` checks; tests `direct-messages/opening-a-dm`, `group-membership/group-creation`
-- [ ] 3.4 Commit checks per group kind; DM Adds only of the pair's leaves listing `0xF0A2`; tests `group-membership/commit-authority`, `direct-messages/dm-members`
-- [ ] 3.5 `FetchKeyPackages` with `group_id`; tests `key-directory/keypackage-fetch`
-- [ ] 3.6 `JoinNotice` and `RejoinNotice` per DM; inactivity across groups; tests `direct-messages/dm-members-kept-complete`, `direct-messages/inactivity-across-groups`
-- [ ] 3.7 `RemoveUser` closes DMs, `DmClosed` until acked, `GROUP_CLOSED`; tests `direct-messages/dm-closed-on-user-removal`
-- [ ] 3.8 `membership-state-on-the-pi` test for a DM; the push ping unchanged for DM traffic (`direct-messages/dm-content-stays-encrypted`)
+- [x] 3.1 Store migration: many groups (`kind`, pair, `closed_at`, one `main`), `group_id` on members, commit log and queues, `key_packages.dm_capable`; migration test from a version-1 database
+- [x] 3.2 `Hello` accepts 1 and 2; `dm_capable` recorded on upload; routing, acks, expiry and gap notices per group; nothing of a DM for version 1 devices; tests `direct-messages/old-apps-never-join-a-dm`, `wire-transport/protocol-version-negotiation`
+- [x] 3.3 `dms/` module: `CreateDm` checks; tests `direct-messages/opening-a-dm`, `group-membership/group-creation`
+- [x] 3.4 Commit checks per group kind; DM Adds only of the pair's leaves listing `0xF0A2`; tests `group-membership/commit-authority`, `direct-messages/dm-members`
+- [x] 3.5 `FetchKeyPackages` with `group_id`; tests `key-directory/keypackage-fetch`
+- [x] 3.6 `JoinNotice` and `RejoinNotice` per DM; inactivity across groups; tests `direct-messages/dm-members-kept-complete`, `direct-messages/inactivity-across-groups`
+- [x] 3.7 `RemoveUser` closes DMs, `DmClosed` until acked, `GROUP_CLOSED`; tests `direct-messages/dm-closed-on-user-removal`
+- [x] 3.8 `membership-state-on-the-pi` test for a DM; the push ping unchanged for DM traffic (`direct-messages/dm-content-stays-encrypted`)
 
 ## 4. Core
 
