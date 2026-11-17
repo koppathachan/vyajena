@@ -1,0 +1,35 @@
+# Checks the release workflows and scripts on pull requests (ci-release design
+# D11). Read-only token, no secrets, no environment; builds nothing.
+name: release-lint
+
+on:
+  pull_request:
+    paths:
+      - ".github/**"
+      - "app/store/release-check.sh"
+  push:
+    branches: [main]
+    paths:
+      - ".github/**"
+      - "app/store/release-check.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: release workflows and scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: shellcheck
+        run: shellcheck .github/scripts/*.sh
+
+      - name: workflow rules
+        run: .github/scripts/release-workflows-check.sh
+
+      - name: script tests
+        run: .github/scripts/release-scripts-test.sh

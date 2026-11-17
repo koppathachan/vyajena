@@ -1,0 +1,120 @@
+# Server release (ci-release design D4, D6, D10). Tag server-v<version> builds
+# the arm64 Pi server and rathole with deploy/pi/build.sh; after the owner
+# approves (environment `release`), publishes them as a GitHub Release with
+# SHA256SUMS and build provenance. workflow_dispatch is a dry run: build only.
+# The files hold no config, pin, invite or key; Pi deploys stay manual.
+name: release-server
+
+on:
+  push:
+    tags: ["server-v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-server
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build arm64 server and rathole
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          .github/scripts/release-guard.sh pins .github/workflows/release-server.yml
+          if [ "$EVENT" = push ]; then
+            .github/scripts/release-guard.sh tag "$TAG"
+          else
+            echo "dry run: server $(.github/scripts/release-guard.sh version server) at $(git rev-parse HEAD)"
+          fi
+
+      # Same container build as on the Mac (pi-deployment D2, relay D3). The
+      # container runs as root; target/pi is made first so the copy out works.
+      - name: Build (deploy/pi/build.sh)
+        run: |
+          mkdir -p target/pi
+          deploy/pi/build.sh
+
+      - name: Package
+        run: |
+          mkdir dist
+          install -m 0755 target/pi/vyajena-server target/pi/rathole dist/
+          (cd dist && sha256sum vyajena-server rathole > SHA256SUMS && cat SHA256SUMS)
+          # Exactly these three files: nothing else from the build goes out.
+          [ "$(find dist -mindepth 1 -printf "%P\n" | sort | tr "\n" " ")" = "SHA256SUMS rathole vyajena-server " ]
+          file dist/vyajena-server dist/rathole | tee /dev/stderr | grep -c 'ARM aarch64' | grep -qx 2
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pi-server
+          path: dist/
+          if-no-files-found: error
+          retention-days: 3
+
+  publish:
+    name: publish GitHub Release (owner approves)
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/server-v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Refuse an unprotected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-guard.sh environment release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: pi-server
+          path: dist
+
+      - name: Check sums and file list
+        working-directory: dist
+        run: |
+          [ "$(find . -mindepth 1 -printf "%P\n" | sort | tr "\n" " ")" = "SHA256SUMS rathole vyajena-server " ]
+          sha256sum -c SHA256SUMS
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/vyajena-server
+            dist/rathole
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          cat > notes.md <<NOTES
+          Pi server and rathole for linux/arm64, built by \`deploy/pi/build.sh\`
+          from commit $SHA. No config, pin, invite or key inside:
+          \`deploy/pi/deploy.sh\` writes those on the Pi.
+
+          Verify before deploying:
+
+              sha256sum -c SHA256SUMS
+              gh attestation verify vyajena-server --repo $REPO
+              gh attestation verify rathole --repo $REPO
+          NOTES
+          gh release create "$TAG" dist/vyajena-server dist/rathole dist/SHA256SUMS \
+            --repo "$REPO" --verify-tag --title "$TAG" --notes-file notes.md

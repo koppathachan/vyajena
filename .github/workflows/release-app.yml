@@ -1,0 +1,187 @@
+# App release (ci-release design D3, D5, D7, D8, D9). Tag app-v<name>+<build>
+# (equal to app/pubspec.yaml) builds, after the owner approves (environment
+# `release`), the signed App Bundle for the Play internal track and the signed
+# IPA for TestFlight. workflow_dispatch is a dry run: no environment, no
+# secret, no upload (Android signed with a throwaway key, iOS unsigned).
+name: release-app
+
+on:
+  push:
+    tags: ["app-v*"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-app
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: "3.44.4"
+  JAVA_VERSION: "21"
+  XCODE_APP: /Applications/Xcode_27.2.app
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Pins, tag and version
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          .github/scripts/release-guard.sh pins .github/workflows/release-app.yml
+          if [ "$EVENT" = push ]; then
+            .github/scripts/release-guard.sh tag "$TAG"
+          else
+            echo "dry run: app $(.github/scripts/release-guard.sh version app) at $(git rev-parse HEAD)"
+          fi
+
+  # --- Dry run (workflow_dispatch): no environment, no secrets, no upload -------
+
+  android-dry-run:
+    name: android (dry run)
+    needs: guard
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: false
+      - name: Build and check (throwaway key)
+        run: .github/scripts/android-aab.sh dry-run
+
+  ios-dry-run:
+    name: ios (dry run)
+    needs: guard
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: xcode-27
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: false
+      - name: Build and check (unsigned)
+        run: .github/scripts/ios-ipa.sh dry-run
+
+  # --- Release (tag): environment `release`, owner approves --------------------
+
+  android:
+    name: android → Play internal (owner approves)
+    needs: guard
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse an unprotected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-guard.sh environment release
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: false
+      - name: Build and check (upload key)
+        env:
+          ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_GOOGLE_SERVICES_JSON_B64: ${{ secrets.ANDROID_GOOGLE_SERVICES_JSON_B64 }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        # The build runs third-party code (crates, Gradle plugins, packages):
+        # it gets no way to ask GitHub for the OIDC token that unlocks Play.
+        run: env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL .github/scripts/android-aab.sh release
+      # Keyless: GitHub's OIDC token for this repo's `release` environment is
+      # exchanged for a short-lived token of the Play service account (D7).
+      - id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ secrets.PLAY_WIF_PROVIDER }}
+          service_account: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          access_token_lifetime: 900s
+          create_credentials_file: false
+      - name: Upload to the internal track
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: .github/scripts/play-upload.sh app/build/app/outputs/bundle/release/app-release.aab
+
+  ios:
+    name: ios → TestFlight (owner approves)
+    needs: guard
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/app-v')
+    runs-on: xcode-27
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Refuse an unprotected environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/release-guard.sh environment release
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_APP"
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: false
+      - name: Build, sign and check
+        env:
+          IOS_DIST_CERT_P12_B64: ${{ secrets.IOS_DIST_CERT_P12_B64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROFILE_B64: ${{ secrets.IOS_PROFILE_B64 }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: .github/scripts/ios-ipa.sh release
+      # The App Store Connect key only here, after the build's code has run.
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_B64: ${{ secrets.ASC_KEY_P8_B64 }}
+        run: .github/scripts/ios-ipa.sh upload app/build/ios/ipa/*.ipa
