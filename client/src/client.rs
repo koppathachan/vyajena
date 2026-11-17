@@ -1073,6 +1073,7 @@ impl Client {
     }
 
     fn send_content(&self, content: &[u8]) -> Result<MessageId, ClientError> {
+        self.account()?;
         if self.shared.store.group()?.is_none() {
             return Err(ClientError::NoGroup);
         }
