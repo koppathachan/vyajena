@@ -53,7 +53,7 @@ mentions and replies.
 - DM group id: random, not "hash of the sorted user pair" as the
   architecture doc sketched (design D2).
 
-## Invariants changed (owner approval needed at review)
+## Invariants changed (approved by the owner, 2026-11-17)
 
 - **Commit authority** gains a DM rule (design D4). The main-group rule does
   not change. `docs/architecture-decisions.md` and

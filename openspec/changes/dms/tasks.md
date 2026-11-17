@@ -1,7 +1,7 @@
 ## 0. Before starting
 
 - [ ] 0.1 `mentions` (PR #4) merged into `main`; rebase this change on it
-- [ ] 0.2 Owner approves the invariant changes (DM commit authority; "one group plus DMs") at proposal review
+- [x] 0.2 Owner approves the invariant changes (DM commit authority; "one group plus DMs"): approved 2026-11-17
 
 ## 1. Spikes
 
