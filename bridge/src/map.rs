@@ -10,8 +10,8 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatMessage, ConnectionStatus, CoreEvent, InviteInfo, MemberDevice, MentionSpan,
-    MentionTarget, ReaddAnswer, ReplyQuote, SendState, UserRef,
+    ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, InviteInfo,
+    MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote, SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -111,6 +111,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
     };
     ChatMessage {
         id: message.id.0,
+        chat_id: message.chat.0,
         sender: user(&message.sender),
         sender_device: hex(&message.sender_device),
         outgoing: message.outgoing,
@@ -129,6 +130,27 @@ pub(crate) fn message(message: Message) -> ChatMessage {
         sent_at_ms: message.sent_at.map(millis),
         accepted_at_ms: message.accepted_at.map(millis),
         status: message.status.map(status),
+    }
+}
+
+pub(crate) fn chat(chat: client::Chat) -> ChatSummary {
+    ChatSummary {
+        chat_id: chat.id.0,
+        kind: match chat.kind {
+            client::ChatKind::Main => ChatKindInfo::Main,
+            client::ChatKind::Dm {
+                peer,
+                waiting,
+                closed,
+            } => ChatKindInfo::Dm {
+                peer: user(&peer),
+                waiting,
+                closed,
+            },
+        },
+        unread: chat.unread,
+        unseen_mentions: chat.unseen_mentions,
+        last_message_at_ms: chat.last_message_at.map(millis),
     }
 }
 
@@ -174,13 +196,20 @@ pub(crate) fn event(event: Event) -> CoreEvent {
         Event::Unreadable {
             sender,
             accepted_at,
+            chat,
         } => CoreEvent::Unreadable {
             sender: sender.as_ref().map(user),
             accepted_at_ms: accepted_at.map(millis),
+            chat_id: chat.0,
         },
-        Event::Gap { newest_expired_at } => CoreEvent::Gap {
+        Event::Gap {
+            newest_expired_at,
+            chat,
+        } => CoreEvent::Gap {
             newest_expired_at_ms: millis(newest_expired_at),
+            chat_id: chat.0,
         },
+        Event::ChatsChanged => CoreEvent::ChatsChanged,
         Event::RemovedForInactivity { missed_since } => CoreEvent::RemovedForInactivity {
             missed_since_ms: millis(missed_since),
         },
@@ -250,6 +279,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::NoSuchMessage => K::NoSuchMessage,
         ClientError::Rejected(_) => K::Rejected,
         ClientError::NotYet => K::NotYet,
+        ClientError::NoSuchChat => K::NoSuchChat,
+        ClientError::ChatClosed => K::ChatClosed,
+        ClientError::DmsUnavailable => K::DmsUnavailable,
         _ => K::Internal,
     };
     CoreError::new(kind, error.to_string())

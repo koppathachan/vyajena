@@ -5,14 +5,14 @@
 //! one runtime per app process, spike 1.3) or its thread pool.
 
 use client::keystore::{KeyStoreConfig, open_key_store};
-use client::{Client, ClientConfig, EventStream, MessageId};
+use client::{ChatId, Client, ClientConfig, EventStream, MessageId};
 use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
-    ChatMessage, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo, PushPlatform,
-    UserRef,
+    ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo,
+    PushPlatform, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -356,5 +356,66 @@ impl Core {
     /// The group's epoch on this device, once in the group.
     pub fn epoch(&self) -> Result<Option<u64>, CoreError> {
         forward(self.client.epoch())
+    }
+
+    // --- Chats (direct-messages; app-ui: Chat list, change `dms`) ---
+
+    /// Whether the Pi knows DMs: the app offers "Message" only then.
+    pub fn dms_available(&self) -> bool {
+        self.client.dms_available()
+    }
+
+    /// The chats: the main group first, then DMs, newest first, closed last.
+    pub fn chats(&self) -> Result<Vec<ChatSummary>, CoreError> {
+        Ok(forward(self.client.chats())?
+            .into_iter()
+            .map(map::chat)
+            .collect())
+    }
+
+    /// The open DM with `user`, opened first if there is none; its chat id.
+    pub async fn open_dm(&self, user: UserRef) -> Result<i64, CoreError> {
+        Ok(forward(self.client.open_dm(&map::user_id(&user)).await)?.0)
+    }
+
+    /// The newest `limit` messages of chat `chat_id`, oldest first.
+    pub fn history_in(&self, chat_id: i64, limit: u32) -> Result<Vec<ChatMessage>, CoreError> {
+        Ok(
+            forward(self.client.history_in(ChatId(chat_id), limit as usize))?
+                .into_iter()
+                .map(map::message)
+                .collect(),
+        )
+    }
+
+    /// [`Core::send_message`] in chat `chat_id`.
+    pub fn send_message_in(
+        &self,
+        chat_id: i64,
+        text: String,
+        mentions: Vec<MentionSpan>,
+        reply_to: Option<i64>,
+    ) -> Result<i64, CoreError> {
+        let mentions = map::mentions(&text, &mentions)?;
+        Ok(forward(self.client.send_message_in(
+            ChatId(chat_id),
+            &text,
+            &mentions,
+            reply_to.map(MessageId),
+        ))?
+        .0)
+    }
+
+    /// [`Core::unseen_mentions`] in chat `chat_id`.
+    pub fn unseen_mentions_in(&self, chat_id: i64) -> Result<Vec<i64>, CoreError> {
+        Ok(forward(self.client.unseen_mentions_in(ChatId(chat_id)))?
+            .into_iter()
+            .map(|id| id.0)
+            .collect())
+    }
+
+    /// The user has seen chat `chat_id` up to its newest message.
+    pub fn mark_chat_read(&self, chat_id: i64) -> Result<(), CoreError> {
+        forward(self.client.mark_chat_read(ChatId(chat_id)))
     }
 }

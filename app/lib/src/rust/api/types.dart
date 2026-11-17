@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 @freezed
 sealed class ChatBody with _$ChatBody {
@@ -25,10 +25,33 @@ sealed class ChatBody with _$ChatBody {
   const factory ChatBody.unsupported() = ChatBody_Unsupported;
 }
 
+@freezed
+sealed class ChatKindInfo with _$ChatKindInfo {
+  const ChatKindInfo._();
+
+  /// The one admin-run group.
+  const factory ChatKindInfo.main() = ChatKindInfo_Main;
+
+  /// A DM with `peer`.
+  const factory ChatKindInfo.dm({
+    /// The other user.
+    required UserRef peer,
+
+    /// None of the peer's devices is in it yet: own messages wait.
+    required bool waiting,
+
+    /// The peer was removed: history only.
+    required bool closed,
+  }) = ChatKindInfo_Dm;
+}
+
 /// A chat message, received or sent by this device.
 class ChatMessage {
   /// The core's local id.
   final PlatformInt64 id;
+
+  /// The chat it is in: 0 is the main group, else a DM (change `dms`).
+  final PlatformInt64 chatId;
 
   /// The sending user.
   final UserRef sender;
@@ -67,6 +90,7 @@ class ChatMessage {
 
   const ChatMessage({
     required this.id,
+    required this.chatId,
     required this.sender,
     required this.senderDevice,
     required this.outgoing,
@@ -83,6 +107,7 @@ class ChatMessage {
   @override
   int get hashCode =>
       id.hashCode ^
+      chatId.hashCode ^
       sender.hashCode ^
       senderDevice.hashCode ^
       outgoing.hashCode ^
@@ -101,6 +126,7 @@ class ChatMessage {
       other is ChatMessage &&
           runtimeType == other.runtimeType &&
           id == other.id &&
+          chatId == other.chatId &&
           sender == other.sender &&
           senderDevice == other.senderDevice &&
           outgoing == other.outgoing &&
@@ -112,6 +138,51 @@ class ChatMessage {
           sentAtMs == other.sentAtMs &&
           acceptedAtMs == other.acceptedAtMs &&
           status == other.status;
+}
+
+/// One chat in the chat list (app-ui: Chat list).
+class ChatSummary {
+  /// Its id: 0 is the main group.
+  final PlatformInt64 chatId;
+
+  /// Main group or DM.
+  final ChatKindInfo kind;
+
+  /// Received messages after the read mark.
+  final int unread;
+
+  /// Mentions of this user not seen yet.
+  final int unseenMentions;
+
+  /// When its newest message was stored.
+  final PlatformInt64? lastMessageAtMs;
+
+  const ChatSummary({
+    required this.chatId,
+    required this.kind,
+    required this.unread,
+    required this.unseenMentions,
+    this.lastMessageAtMs,
+  });
+
+  @override
+  int get hashCode =>
+      chatId.hashCode ^
+      kind.hashCode ^
+      unread.hashCode ^
+      unseenMentions.hashCode ^
+      lastMessageAtMs.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ChatSummary &&
+          runtimeType == other.runtimeType &&
+          chatId == other.chatId &&
+          kind == other.kind &&
+          unread == other.unread &&
+          unseenMentions == other.unseenMentions &&
+          lastMessageAtMs == other.lastMessageAtMs;
 }
 
 /// The connection to the Pi.
@@ -179,13 +250,23 @@ sealed class CoreEvent with _$CoreEvent {
 
     /// When the Pi accepted it.
     PlatformInt64? acceptedAtMs,
+
+    /// The chat it was for.
+    required PlatformInt64 chatId,
   }) = CoreEvent_Unreadable;
 
   /// Messages up to this time expired before this device fetched them.
   const factory CoreEvent.gap({
     /// `accepted_at` of the newest expired message.
     required PlatformInt64 newestExpiredAtMs,
+
+    /// The chat they were for.
+    required PlatformInt64 chatId,
   }) = CoreEvent_Gap;
+
+  /// The chat list changed: a DM was opened, joined, got its peer's first
+  /// device, or was closed (change `dms`).
+  const factory CoreEvent.chatsChanged() = CoreEvent_ChatsChanged;
 
   /// This device was removed for inactivity; messages since then were not
   /// kept for it.
