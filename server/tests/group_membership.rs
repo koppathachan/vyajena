@@ -115,6 +115,7 @@ async fn fetch_all(conn: &Conn, caller: &TestDevice, user: &TestUser) -> Vec<Vec
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user.pb_user_id()),
                 device_ids: vec![],
+                group_id: Vec::new(),
             },
         ))
         .await
@@ -139,6 +140,7 @@ async fn fetch_for(
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user.pb_user_id()),
                 device_ids: vec![device.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await
@@ -822,6 +824,7 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
             pb::FetchKeyPackagesRequest {
                 user_id: Some(new_bob.pb_user_id()),
                 device_ids: vec![],
+                group_id: Vec::new(),
             },
         ))
         .await

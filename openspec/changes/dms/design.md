@@ -51,8 +51,10 @@
 - **The Pi stores the pair** (two usernames, sorted). It keeps
   `UNIQUE(user_a, user_b) WHERE closed_at IS NULL`.
 - **Race:** Alice and Bob both open the DM at once.
-  - The second `Dms.CreateDm` gets `ALREADY_EXISTS`, carrying the open DM's
-    group id.
+  - The second `Dms.CreateDm` gets `created = false` and the open DM's
+    group id. A plain response field, because gRPC error details are
+    awkward to carry (changed from `ALREADY_EXISTS` while writing the
+    proto).
   - That core drops its epoch-0 group and waits. The automatic add (D6)
     brings its devices in.
 

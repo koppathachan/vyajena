@@ -1,0 +1,50 @@
+// Dms service: opening a DM, a 2-user MLS group next to the main group
+// (direct-messages, change `dms`).
+//
+// Every RPC requires a session token (wire-transport: Session authentication).
+// Any member may call it; the admin has no extra power here (owner,
+// 2026-11-17).
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "vyajena/v1/common.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs.
+service Dms {
+  // direct-messages: Opening a DM.
+  rpc CreateDm(CreateDmRequest) returns (CreateDmResponse);
+}
+
+// direct-messages: Opening a DM. The calling device has created an MLS group
+// whose only member is itself, whose group context lists the Pi as external
+// sender and carries the DM extension (`0xF0A2`, protocol::group_membership)
+// naming its own user and `peer`, and sends its epoch-0 public state.
+//
+// The Pi rejects the call with `INVALID_ARGUMENT` if `peer` is the caller's own
+// user, the state does not parse, its group id is not `group_id`, it is not at
+// epoch 0 with the caller's device as the only member, the Pi is not an
+// external sender, or the extension does not name exactly the caller's user and
+// `peer`; with `NOT_FOUND` if `peer` is not a non-revoked user; with
+// `FAILED_PRECONDITION` if the caller's device is not a member of the main
+// group or its last `Hello` was not protocol version 2.
+message CreateDmRequest {
+  UserId peer = 1;
+  // The MLS group id, 16 random bytes (design D2).
+  bytes group_id = 2;
+  // TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+  // ratchet tree extension.
+  bytes group_info = 3;
+  // TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+  bytes ratchet_tree = 4;
+}
+
+// When an open DM already exists for the pair (both opened it at once),
+// `created` is false and `group_id` is that DM's: the caller drops its own
+// epoch-0 group and is added to the open one (direct-messages: DM members kept
+// complete).
+message CreateDmResponse {
+  bool created = 1;
+  bytes group_id = 2;
+}

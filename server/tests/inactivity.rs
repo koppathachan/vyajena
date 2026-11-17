@@ -176,6 +176,7 @@ async fn fetch_phone(
             pb::FetchKeyPackagesRequest {
                 user_id: Some(w_bob.pb_user_id()),
                 device_ids: vec![phone.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await

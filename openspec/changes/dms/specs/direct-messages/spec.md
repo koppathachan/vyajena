@@ -9,8 +9,9 @@ accept it only when the caller's device is a member of the main group and
 speaks protocol version 2, the peer is a non-revoked user other than the
 caller's user, the extension names exactly those two users, and no open DM
 exists for that pair; otherwise it SHALL reject it (`INVALID_ARGUMENT`,
-`FAILED_PRECONDITION`, or `ALREADY_EXISTS` with the open DM's group id). Any
-member MAY open a DM with any member; no approval is needed.
+`NOT_FOUND` or `FAILED_PRECONDITION`). When an open DM exists for the pair, the
+Pi SHALL record nothing and answer `created = false` with that DM's group id.
+Any member MAY open a DM with any member; no approval is needed.
 
 #### Scenario: Alice opens a DM with Bob
 - **WHEN** Alice's phone calls `Dms.CreateDm` with peer `bob@pi` and valid
@@ -21,9 +22,9 @@ member MAY open a DM with any member; no approval is needed.
 #### Scenario: Both open at once
 - **WHEN** Bob's phone calls `Dms.CreateDm` for the same pair after Alice's call
   was accepted
-- **THEN** the Pi rejects it with `ALREADY_EXISTS` and the open DM's group id,
-  Bob's core drops its own epoch-0 group, and Bob's phone joins Alice's DM from
-  its Welcome
+- **THEN** the Pi answers `created = false` with the open DM's group id, Bob's
+  core drops its own epoch-0 group, and Bob's phone joins Alice's DM from its
+  Welcome
 
 #### Scenario: DM with yourself
 - **WHEN** Alice's phone calls `Dms.CreateDm` with peer `alice@pi`

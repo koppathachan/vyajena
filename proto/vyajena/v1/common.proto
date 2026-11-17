@@ -113,4 +113,8 @@ enum RejectionReason {
   // authenticated device's leaf (group-membership: Commit authority;
   // group-membership: Pi validates handshakes without group secrets).
   REJECTION_REASON_POLICY_VIOLATION = 5;
+  // The envelope is for a DM that the Pi closed because one of its two users
+  // was removed (direct-messages: DM closed on user removal). Nothing is
+  // stored.
+  REJECTION_REASON_GROUP_CLOSED = 6;
 }

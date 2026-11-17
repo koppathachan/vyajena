@@ -675,6 +675,9 @@ impl Engine {
         match frame.frame {
             Some(In::Envelope(envelope)) => self.on_envelope(envelope).await,
             Some(In::SendResult(result)) => self.on_send_result(result).await,
+            // direct-messages: DM closed on user removal. A core that is in
+            // no DM yet has nothing to close.
+            Some(In::DmClosed(_)) => Ok(()),
             Some(In::GapNotice(notice)) => {
                 if let Some(at) = notice.newest_expired_at.as_ref() {
                     self.emit(Event::Gap {

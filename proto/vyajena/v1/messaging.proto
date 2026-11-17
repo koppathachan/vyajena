@@ -64,6 +64,7 @@ message ServerFrame {
     // The Pi's reply to a client `Heartbeat`.
     Heartbeat heartbeat = 7;
     JoinNotice join_notice = 8;
+    DmClosed dm_closed = 9;
   }
 }
 
@@ -209,6 +210,8 @@ message SendResult {
 // durably processed in `group_id`; cumulative. The Pi then deletes that device's
 // queue entries up to it, advances its commit-log cursor and does not redeliver
 // them.
+// With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
+// `dms`).
 message Ack {
   bytes group_id = 1;
   uint64 server_seq = 2;
@@ -273,8 +276,23 @@ message RejoinNotice {
 // accept it), and commits its Add with the Welcome in the same `COMMIT`
 // envelope. A device that loses the race gets `REJECTION_REASON_STALE_EPOCH`,
 // sees the device is already a member and does nothing more.
+// direct-messages: DM members kept complete. For a DM, `group_id` is the DM's
+// and the notice goes to the DM's connected member devices, for each
+// non-revoked, active, protocol version 2 device of either user that is not a
+// member; the first to receive it adds the device under the DM commit authority
+// rule. RejoinNotice works the same way per group.
 message JoinNotice {
   bytes group_id = 1;
   // The device to add.
   DeviceRef device = 2;
+}
+
+// direct-messages: DM closed on user removal. Sent on every connect to each
+// device of the other user that was a member of the DM, until the device sends
+// `Ack` with this `group_id` and `server_seq` 0. The device marks the chat
+// closed and keeps its history read-only; envelopes for it are rejected with
+// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a protocol version 1 device.
+message DmClosed {
+  bytes group_id = 1;
+  google.protobuf.Timestamp closed_at = 2;
 }

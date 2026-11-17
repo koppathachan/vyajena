@@ -94,6 +94,7 @@ async fn fetch_one(
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user.pb_user_id()),
                 device_ids: vec![device.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await

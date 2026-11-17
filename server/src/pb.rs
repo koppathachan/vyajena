@@ -118,6 +118,10 @@ pub enum RejectionReason {
     /// authenticated device's leaf (group-membership: Commit authority;
     /// group-membership: Pi validates handshakes without group secrets).
     PolicyViolation = 5,
+    /// The envelope is for a DM that the Pi closed because one of its two users
+    /// was removed (direct-messages: DM closed on user removal). Nothing is
+    /// stored.
+    GroupClosed = 6,
 }
 impl RejectionReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -132,6 +136,7 @@ impl RejectionReason {
             Self::Malformed => "REJECTION_REASON_MALFORMED",
             Self::DuplicateMismatch => "REJECTION_REASON_DUPLICATE_MISMATCH",
             Self::PolicyViolation => "REJECTION_REASON_POLICY_VIOLATION",
+            Self::GroupClosed => "REJECTION_REASON_GROUP_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -143,6 +148,7 @@ impl RejectionReason {
             "REJECTION_REASON_MALFORMED" => Some(Self::Malformed),
             "REJECTION_REASON_DUPLICATE_MISMATCH" => Some(Self::DuplicateMismatch),
             "REJECTION_REASON_POLICY_VIOLATION" => Some(Self::PolicyViolation),
+            "REJECTION_REASON_GROUP_CLOSED" => Some(Self::GroupClosed),
             _ => None,
         }
     }
@@ -1517,6 +1523,227 @@ pub mod devices_server {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
+/// direct-messages: Opening a DM. The calling device has created an MLS group
+/// whose only member is itself, whose group context lists the Pi as external
+/// sender and carries the DM extension (`0xF0A2`, protocol::group_membership)
+/// naming its own user and `peer`, and sends its epoch-0 public state.
+///
+/// The Pi rejects the call with `INVALID_ARGUMENT` if `peer` is the caller's own
+/// user, the state does not parse, its group id is not `group_id`, it is not at
+/// epoch 0 with the caller's device as the only member, the Pi is not an
+/// external sender, or the extension does not name exactly the caller's user and
+/// `peer`; with `NOT_FOUND` if `peer` is not a non-revoked user; with
+/// `FAILED_PRECONDITION` if the caller's device is not a member of the main
+/// group or its last `Hello` was not protocol version 2.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateDmRequest {
+    #[prost(message, optional, tag = "1")]
+    pub peer: ::core::option::Option<UserId>,
+    /// The MLS group id, 16 random bytes (design D2).
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+    /// ratchet tree extension.
+    #[prost(bytes = "vec", tag = "3")]
+    pub group_info: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+    #[prost(bytes = "vec", tag = "4")]
+    pub ratchet_tree: ::prost::alloc::vec::Vec<u8>,
+}
+/// When an open DM already exists for the pair (both opened it at once),
+/// `created` is false and `group_id` is that DM's: the caller drops its own
+/// epoch-0 group and is added to the open one (direct-messages: DM members kept
+/// complete).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateDmResponse {
+    #[prost(bool, tag = "1")]
+    pub created: bool,
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+}
+/// Generated server implementations.
+pub mod dms_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with DmsServer.
+    #[async_trait]
+    pub trait Dms: std::marker::Send + std::marker::Sync + 'static {
+        /// direct-messages: Opening a DM.
+        async fn create_dm(
+            &self,
+            request: tonic::Request<super::CreateDmRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateDmResponse>,
+            tonic::Status,
+        >;
+    }
+    /// buf:lint:ignore SERVICE_SUFFIX
+    /// Service name as used in the specs.
+    #[derive(Debug)]
+    pub struct DmsServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> DmsServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for DmsServer<T>
+    where
+        T: Dms,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/vyajena.v1.Dms/CreateDm" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateDmSvc<T: Dms>(pub Arc<T>);
+                    impl<T: Dms> tonic::server::UnaryService<super::CreateDmRequest>
+                    for CreateDmSvc<T> {
+                        type Response = super::CreateDmResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CreateDmRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Dms>::create_dm(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CreateDmSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for DmsServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "vyajena.v1.Dms";
+    impl<T> tonic::server::NamedService for DmsServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
 /// key-directory: KeyPackage upload. One-time KeyPackages plus exactly one
 /// last-resort KeyPackage. A device keeps 20 one-time KeyPackages on the Pi and
 /// uploads more when told its count dropped below 5 (design D10;
@@ -1552,6 +1779,13 @@ pub struct FetchKeyPackagesRequest {
     /// empty, the Pi returns one for every non-revoked device of the user.
     #[prost(bytes = "vec", repeated, tag = "2")]
     pub device_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// Optional (change `dms`, key-directory: KeyPackage fetch). When set to a
+    /// DM's group id, the Pi returns only devices whose last `Hello` was protocol
+    /// version 2, and rejects the call with `PERMISSION_DENIED` unless the
+    /// caller's device is a member of that DM and `user_id` is one of its two
+    /// users. An unknown group id is rejected with `NOT_FOUND`.
+    #[prost(bytes = "vec", tag = "3")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// key-directory: KeyPackage fetch. One entry per requested device: every
 /// non-revoked device of the user, or only those in
@@ -2059,7 +2293,7 @@ pub mod client_frame {
 /// A frame from the Pi to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8")]
+    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -2084,6 +2318,8 @@ pub mod server_frame {
         Heartbeat(super::Heartbeat),
         #[prost(message, tag = "8")]
         JoinNotice(super::JoinNotice),
+        #[prost(message, tag = "9")]
+        DmClosed(super::DmClosed),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2284,6 +2520,8 @@ pub mod send_result {
 /// durably processed in `group_id`; cumulative. The Pi then deletes that device's
 /// queue entries up to it, advances its commit-log cursor and does not redeliver
 /// them.
+/// With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
+/// `dms`).
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Ack {
     #[prost(bytes = "vec", tag = "1")]
@@ -2357,6 +2595,11 @@ pub struct RejoinNotice {
 /// accept it), and commits its Add with the Welcome in the same `COMMIT`
 /// envelope. A device that loses the race gets `REJECTION_REASON_STALE_EPOCH`,
 /// sees the device is already a member and does nothing more.
+/// direct-messages: DM members kept complete. For a DM, `group_id` is the DM's
+/// and the notice goes to the DM's connected member devices, for each
+/// non-revoked, active, protocol version 2 device of either user that is not a
+/// member; the first to receive it adds the device under the DM commit authority
+/// rule. RejoinNotice works the same way per group.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct JoinNotice {
     #[prost(bytes = "vec", tag = "1")]
@@ -2364,6 +2607,18 @@ pub struct JoinNotice {
     /// The device to add.
     #[prost(message, optional, tag = "2")]
     pub device: ::core::option::Option<DeviceRef>,
+}
+/// direct-messages: DM closed on user removal. Sent on every connect to each
+/// device of the other user that was a member of the DM, until the device sends
+/// `Ack` with this `group_id` and `server_seq` 0. The device marks the chat
+/// closed and keeps its history read-only; envelopes for it are rejected with
+/// `REJECTION_REASON_GROUP_CLOSED`. Never sent to a protocol version 1 device.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DmClosed {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub closed_at: ::core::option::Option<::prost_types::Timestamp>,
 }
 /// Generated server implementations.
 pub mod messaging_server {

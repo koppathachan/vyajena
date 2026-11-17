@@ -480,6 +480,7 @@ async fn conn_fetch_device(w: &World, device: &TestDevice) -> Vec<Vec<u8>> {
             pb::FetchKeyPackagesRequest {
                 user_id: Some(w.alice.pb_user_id()),
                 device_ids: vec![device.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await

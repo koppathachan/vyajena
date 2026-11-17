@@ -264,6 +264,7 @@ async fn signed_certificate_round_trips_as_opaque_bytes() {
             pb::FetchKeyPackagesRequest {
                 user_id: Some(alice.pb_user_id()),
                 device_ids: vec![],
+                group_id: Vec::new(),
             },
         ))
         .await

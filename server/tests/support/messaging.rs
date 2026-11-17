@@ -346,6 +346,7 @@ pub async fn fetch(conn: &Conn, caller: &TestDevice, user: &TestUser) -> Vec<Vec
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user.pb_user_id()),
                 device_ids: vec![],
+                group_id: Vec::new(),
             },
         ))
         .await

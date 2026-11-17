@@ -341,6 +341,7 @@ impl Engine {
             .fetch_key_packages(session.request(pb::FetchKeyPackagesRequest {
                 user_id: Some(user.to_pb()),
                 device_ids: devices.iter().map(|d| d.to_vec()).collect(),
+                group_id: Vec::new(),
             })?)
             .await;
         match response {
