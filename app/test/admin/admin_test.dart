@@ -62,6 +62,8 @@ void main() {
     expect(find.byKey(const Key('composer')), findsNothing);
     await tap(tester, find.text('Create the group'));
     expect(core.calls, contains('createGroup'));
+    // The group now exists; the app lands on the chat list, so open the chat.
+    await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
 

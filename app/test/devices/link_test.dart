@@ -26,7 +26,9 @@ void main() {
     await tap(tester, find.widgetWithText(FilledButton, 'Link'));
     expect(tablet.args['completeLink'], 'vyajena-approval:approval');
     expect(tablet.state.value, CoreState.ready);
-    // Back on the home screen, in the group as Alice's second device.
+    // The app lands on the chat list; open the group chat.
+    await enterGroup(tester);
+    // In the group as Alice's second device.
     expect(find.byKey(const Key('composer')), findsOneWidget);
     expect(find.text('alice@pi'), findsOneWidget);
   });

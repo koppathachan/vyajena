@@ -28,6 +28,8 @@ void main() {
     expect(core.calls, containsAllInOrder(['parseInvite', 'register']));
     expect(core.args['register'], 'vyajena-invite:bob');
     expect(core.state.value, CoreState.ready);
+    // The app lands on the chat list; open the group to reach its chat.
+    await enterGroup(tester);
     // The chat, with its composer.
     expect(find.byKey(const Key('composer')), findsOneWidget);
     expect(find.text('No messages yet'), findsOneWidget);
@@ -49,6 +51,7 @@ void main() {
     core.emit(const CoreEvent.joinedGroup());
     await settle(tester);
     expect(find.text(waitingText), findsNothing);
+    await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
 
@@ -85,6 +88,7 @@ void main() {
     core.emit(const CoreEvent.joinedGroup());
     await settle(tester);
     expect(find.byKey(const Key('refusal')), findsNothing);
+    await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
 
@@ -126,6 +130,7 @@ void main() {
     core.emit(const CoreEvent.joinedGroup());
     await settle(tester);
     expect(find.byKey(const Key('refusal')), findsNothing);
+    await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
 

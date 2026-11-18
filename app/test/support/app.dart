@@ -49,6 +49,14 @@ Future<FakeCoreService> openHome(
   return fake;
 }
 
+/// Opens the group's chat from the chat list, for a test where the device
+/// becomes in-group mid-test: home is the chat list now (app-ui: Create
+/// affordance), so the group chat is one tap away rather than where the app
+/// lands.
+Future<void> enterGroup(WidgetTester tester) async {
+  await tap(tester, find.byKey(const ValueKey('chat-main')));
+}
+
 /// Taps [finder] and settles.
 Future<void> tap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);

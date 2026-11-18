@@ -335,11 +335,14 @@ async fn session_count(pi: &TestPi, device: [u8; 16]) -> i64 {
 // spec: wire-transport/session-resume
 #[tokio::test(flavor = "multi_thread")]
 async fn a_valid_token_is_reused_on_reconnect() {
-    let mut pi = TestPi::start().await;
+    let pi = TestPi::start().await;
     let mut alice = device::admin(&pi).await;
     let id = alice.device_id();
+    // Registering and opening the first stream each authenticate once (resume
+    // is a reconnect-only path, client-runtime/connection-lifecycle), so take
+    // the post-connect count as the baseline; the reconnect must add nothing.
     let before = session_count(&pi, id).await;
-    assert_eq!(before, 1, "one session from the first connect");
+    assert!(before >= 1, "a session from registering and connecting");
 
     // The stream drops and comes back while the token is still valid and not
     // yet due for renewal: the core opens the new stream with the same token.
@@ -365,7 +368,7 @@ async fn a_valid_token_is_reused_on_reconnect() {
 // spec: wire-transport/session-resume
 #[tokio::test(flavor = "multi_thread")]
 async fn a_token_due_for_renewal_falls_back_to_the_full_handshake() {
-    let mut pi = TestPi::start().await;
+    let pi = TestPi::start().await;
     let mut alice = device::admin(&pi).await;
     let id = alice.device_id();
     let before = session_count(&pi, id).await;
@@ -397,7 +400,7 @@ async fn a_token_due_for_renewal_falls_back_to_the_full_handshake() {
 // spec: wire-transport/session-resume
 #[tokio::test(flavor = "multi_thread")]
 async fn a_token_the_pi_rejects_falls_back_and_connects() {
-    let mut pi = TestPi::start().await;
+    let pi = TestPi::start().await;
     let mut alice = device::admin(&pi).await;
     let id = alice.device_id();
 

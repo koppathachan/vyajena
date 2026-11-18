@@ -25,9 +25,11 @@ final fab = find.byKey(const Key('new-chat-fab'));
 /// Taps the `+` without `ensureVisible` (it is not in a scrollable), after
 /// flushing any route-transition frames so the tap is not absorbed.
 Future<void> tapFab(WidgetTester tester) async {
-  await tester.pumpAndSettle();
+  // Not `pumpAndSettle`: the app bar's connecting indicator pulses forever
+  // (connect-feedback), so a finite settle is the only safe flush.
+  await settle(tester);
   await tester.tap(fab);
-  await tester.pumpAndSettle();
+  await settle(tester);
 }
 
 void main() {
