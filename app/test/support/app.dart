@@ -1,5 +1,6 @@
 // Opening the app over the fake core in widget tests.
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
 import 'package:vyajena/core/core_service.dart';
@@ -18,8 +19,26 @@ Future<void> settle(WidgetTester tester) async {
   }
 }
 
-/// Opens the app over [core] and lets it settle.
+/// Opens the app over [core], lets it settle, and lands in the main chat.
+///
+/// The app now always opens on the chat list (app-ui: Chat list); this helper
+/// then opens the group's chat when there is no DM, so the many tests that
+/// exercise the group chat land where they expect. Use [openHome] to stay on
+/// the chat list.
 Future<FakeCoreService> openApp(
+  WidgetTester tester, [
+  FakeCoreService? core,
+]) async {
+  final fake = await openHome(tester, core);
+  if (fake.dmChats.isEmpty) {
+    final group = find.byKey(const ValueKey('chat-main'));
+    if (group.evaluate().isNotEmpty) await tap(tester, group);
+  }
+  return fake;
+}
+
+/// Opens the app over [core] and lets it settle, staying on the chat list.
+Future<FakeCoreService> openHome(
   WidgetTester tester, [
   FakeCoreService? core,
 ]) async {

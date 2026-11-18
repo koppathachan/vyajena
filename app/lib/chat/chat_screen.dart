@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
-import 'chat_list_screen.dart';
 import 'chat_model.dart';
 import 'composer.dart';
 import 'mentions.dart';
@@ -345,27 +344,6 @@ class _ChatScreenState extends State<ChatScreen> {
           title: peer == null ? _model.groupName ?? 'Vyajena' : peerName,
           actions: [
             _mentionBadge(),
-            if (_model.isMain &&
-                _model.hasDms &&
-                !Navigator.of(context).canPop())
-              IconButton(
-                key: const Key('chats'),
-                tooltip: 'Chats',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => ChatListScreen(
-                      core: widget.core,
-                      chat: _model,
-                      admin: widget.admin,
-                    ),
-                  ),
-                ),
-                icon: Badge(
-                  isLabelVisible: _model.dmUnread > 0,
-                  label: Text('${_model.dmUnread}'),
-                  child: const Icon(Icons.forum_outlined),
-                ),
-              ),
             // A DM shows no admin actions (app-ui: DM screen).
             ChatMenu(admin: widget.admin && _model.isMain),
           ],

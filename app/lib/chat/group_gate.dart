@@ -11,7 +11,6 @@ import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import 'chat_list_screen.dart';
 import 'chat_model.dart';
-import 'chat_screen.dart';
 import 'time_text.dart';
 
 /// What this device waits for before the chat.
@@ -55,11 +54,6 @@ class GroupGate extends StatefulWidget {
 class _GroupGateState extends State<GroupGate> {
   bool? _admin;
   bool? _inGroup;
-
-  /// Whether the user had a DM when the gate last looked: home is then the
-  /// chat list (app-ui: Chat list). A DM that arrives later does not move
-  /// the user away from the group's chat; its app bar offers the list.
-  bool _hasDms = false;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -84,21 +78,10 @@ class _GroupGateState extends State<GroupGate> {
   Future<void> _check() async {
     final admin = await widget.core.isAdmin();
     final inGroup = await widget.core.epoch() != null;
-    var hasDms = _hasDms;
-    if (inGroup && !hasDms) {
-      try {
-        hasDms = (await widget.core.chats()).any(
-          (c) => c.kind is ChatKindInfo_Dm,
-        );
-      } on Object {
-        hasDms = false;
-      }
-    }
     if (!mounted) return;
     setState(() {
       _admin = admin;
       _inGroup = inGroup;
-      _hasDms = hasDms;
     });
   }
 
@@ -109,15 +92,14 @@ class _GroupGateState extends State<GroupGate> {
     if (admin == null || inGroup == null) {
       return Scaffold(appBar: shellAppBar(widget.core));
     }
+    // The chat list is always the home once this device is in the group
+    // (app-ui: Chat list); the group's chat opens on top of it.
     if (inGroup) {
-      if (_hasDms) {
-        return ChatListScreen(
-          core: widget.core,
-          chat: widget.chat,
-          admin: admin,
-        );
-      }
-      return ChatScreen(core: widget.core, chat: widget.chat, admin: admin);
+      return ChatListScreen(
+        core: widget.core,
+        chat: widget.chat,
+        admin: admin,
+      );
     }
     if (admin) return CreateGroupScreen(core: widget.core, onCreated: _check);
     return Scaffold(
