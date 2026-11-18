@@ -399,6 +399,16 @@ re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
 
 ## Questions for the owner
 
+**Answered by the owner on 2026-11-18** (all three as recommended):
+
+| # | Answer | What follows |
+|---|---|---|
+| Q1 | (b) **archive `app-release` first**, then a MODIFIED delta of its "Release signing keys stay with the owner" requirement in `ci-release` before `ci-release` is archived | `app-release` files stay as they are until then |
+| Q2 | **Workload identity** (keyless), reusing `github-pool` | docs step 6; no JSON key anywhere |
+| Q3 | **Second Apple Distribution certificate** for CI + App Store Connect API key with the **Developer** role | docs steps 7–8; no Admin key, no cloud signing in CI |
+
+The original questions:
+
 - **Q1. app-release says "no key is given to CI".** This change reverses
   that (D2). Options: (a) edit `app-release`'s requirement and D3 now (and
   `signing.md`, the Gradle message, `docs/release.md` link) in a small
