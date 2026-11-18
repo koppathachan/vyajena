@@ -146,6 +146,20 @@ impl Conn {
             renew_at: now + lifetime.saturating_sub(TOKEN_RENEW_BEFORE),
         })
     }
+
+    /// Binds a token kept from an earlier connection to this one, so the stream
+    /// can open with it and no `GetChallenge`/`Authenticate` is sent
+    /// (wire-transport: Session resume). The token's expiry and renewal point
+    /// are carried over unchanged; the Pi accepts it on this connection because
+    /// a token is not tied to the connection that minted it (design D1).
+    pub fn resume(&self, resume: &ResumeToken) -> Session {
+        Session {
+            conn: self.clone(),
+            token: resume.token.clone(),
+            expires_at: resume.expires_at,
+            renew_at: resume.renew_at,
+        }
+    }
 }
 
 /// An authenticated connection: the channel and a session token.
@@ -193,5 +207,43 @@ impl Session {
             .metadata_mut()
             .insert(AUTHORIZATION_METADATA_KEY, value);
         Ok(request)
+    }
+
+    /// The token and its timing, to keep across a reconnect and resume with
+    /// (wire-transport: Session resume; client-runtime: Connection lifecycle).
+    pub fn to_resume(&self) -> ResumeToken {
+        ResumeToken {
+            token: self.token.clone(),
+            expires_at: self.expires_at,
+            renew_at: self.renew_at,
+        }
+    }
+}
+
+/// A session token kept across a reconnect so the core can open the next
+/// `Connect` stream without `GetChallenge`/`Authenticate` (wire-transport:
+/// Session resume). It is independent of the connection that minted it: the Pi
+/// authenticates `Connect` from the token alone (design D1).
+#[derive(Clone)]
+pub struct ResumeToken {
+    token: String,
+    expires_at: SystemTime,
+    renew_at: SystemTime,
+}
+
+impl std::fmt::Debug for ResumeToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResumeToken")
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
+}
+
+impl ResumeToken {
+    /// Whether this token is worth resuming with at `now`: still before its
+    /// renewal point, so a resumed session does not land already due for
+    /// renewal (design D2).
+    pub fn usable(&self, now: SystemTime) -> bool {
+        now < self.renew_at
     }
 }

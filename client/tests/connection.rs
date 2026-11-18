@@ -314,6 +314,122 @@ async fn a_revoked_device_is_told_by_authenticate() {
     assert!(!pi.is_connected(&bob.device_id()));
 }
 
+/// How many session rows the Pi holds for `device`: one per `Authenticate`, so
+/// a resumed reconnect adds none and a full handshake adds one.
+async fn session_count(pi: &TestPi, device: [u8; 16]) -> i64 {
+    let state = pi.state.clone();
+    state
+        .store
+        .call(move |conn| {
+            Ok(conn.query_row(
+                "SELECT count(*) FROM sessions WHERE device_id = ?1",
+                [device.as_slice()],
+                |row| row.get::<_, i64>(0),
+            )?)
+        })
+        .await
+        .check("sessions")
+}
+
+// spec: client-runtime/connection-lifecycle
+// spec: wire-transport/session-resume
+#[tokio::test(flavor = "multi_thread")]
+async fn a_valid_token_is_reused_on_reconnect() {
+    let mut pi = TestPi::start().await;
+    let mut alice = device::admin(&pi).await;
+    let id = alice.device_id();
+    let before = session_count(&pi, id).await;
+    assert_eq!(before, 1, "one session from the first connect");
+
+    // The stream drops and comes back while the token is still valid and not
+    // yet due for renewal: the core opens the new stream with the same token.
+    pi.relay.cut();
+    alice
+        .wait_event("the drop", |e| {
+            matches!(e, Event::Connection(ConnectionState::Connecting))
+        })
+        .await;
+    pi.relay.restore();
+    alice.wait_connected().await;
+    pi.wait_connected(&id).await;
+
+    // No new `Authenticate`: the Pi issued no second session.
+    assert_eq!(
+        session_count(&pi, id).await,
+        before,
+        "resume must not re-authenticate"
+    );
+}
+
+// spec: client-runtime/connection-lifecycle
+// spec: wire-transport/session-resume
+#[tokio::test(flavor = "multi_thread")]
+async fn a_token_due_for_renewal_falls_back_to_the_full_handshake() {
+    let mut pi = TestPi::start().await;
+    let mut alice = device::admin(&pi).await;
+    let id = alice.device_id();
+    let before = session_count(&pi, id).await;
+
+    // The stream drops, and on the device's clock the hour-long token reaches
+    // its renewal point (55 min in) while it is away.
+    pi.relay.cut();
+    alice
+        .wait_event("the drop", |e| {
+            matches!(e, Event::Connection(ConnectionState::Connecting))
+        })
+        .await;
+    alice.clock.advance(Duration::from_secs(56 * 60));
+    pi.relay.restore();
+    alice.wait_connected().await;
+
+    // The core ran the full handshake and the Pi minted a fresh session.
+    let deadline = tokio::time::Instant::now() + support::device::WAIT;
+    while session_count(&pi, id).await <= before {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "no fresh session from the full handshake"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+// spec: client-runtime/connection-lifecycle
+// spec: wire-transport/session-resume
+#[tokio::test(flavor = "multi_thread")]
+async fn a_token_the_pi_rejects_falls_back_and_connects() {
+    let mut pi = TestPi::start().await;
+    let mut alice = device::admin(&pi).await;
+    let id = alice.device_id();
+
+    // The stream drops. The Pi forgets the token (as an eviction would) while
+    // the device still believes it valid, so the resume attempt is refused.
+    pi.relay.cut();
+    alice
+        .wait_event("the drop", |e| {
+            matches!(e, Event::Connection(ConnectionState::Connecting))
+        })
+        .await;
+    let state = pi.state.clone();
+    state
+        .store
+        .call(move |conn| {
+            Ok(conn.execute("DELETE FROM sessions WHERE device_id = ?1", [id.as_slice()])?)
+        })
+        .await
+        .check("forget the session");
+
+    pi.relay.restore();
+    // Connecting at all proves the core fell back to the full handshake after
+    // the resume was rejected; otherwise the stream open would keep failing.
+    alice.wait_connected().await;
+    pi.wait_connected(&id).await;
+    assert_eq!(
+        session_count(&pi, id).await,
+        1,
+        "the full handshake minted one fresh session"
+    );
+}
+
 // spec: client-runtime/connection-lifecycle
 #[tokio::test(flavor = "multi_thread")]
 async fn reconnect_now_skips_the_backoff_wait() {

@@ -17,7 +17,7 @@ pub mod conn;
 pub mod tls;
 
 pub use backoff::Backoff;
-pub use conn::{Conn, Session};
+pub use conn::{Conn, ResumeToken, Session};
 
 /// Why talking to the Pi failed.
 #[derive(Debug, Clone, thiserror::Error)]

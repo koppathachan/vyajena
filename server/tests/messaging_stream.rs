@@ -6,6 +6,7 @@ mod support;
 
 use std::time::Duration;
 
+use protocol::wire_transport::{PROTOCOL_VERSION, SESSION_TOKEN_MAX_LIFETIME};
 use support::Check;
 use support::harness::authed;
 use support::messaging::{Stream, commit_envelope, envelope, wait_offline, world};
@@ -268,4 +269,50 @@ async fn revoked_devices_open_stream_closes() {
         w.phone_stream.ended().await.err().map(|s| s.code()),
         Some(Code::PermissionDenied)
     );
+}
+
+// A session token is not tied to the connection that minted it: the device
+// core reuses it to open the next `Connect` stream after a reconnect without a
+// fresh challenge (wire-transport: Session resume).
+
+// spec: wire-transport/session-resume
+#[tokio::test]
+async fn a_token_minted_on_one_connection_opens_connect_on_another() {
+    let mut w = world().await;
+    // A fresh TLS connection, as a reconnect makes; its exporter differs.
+    let second = w.pi.connect().await;
+    assert_ne!(w.conn.exporter, second.exporter);
+
+    // The phone's token was obtained on `w.conn`. Opening the phone's stream on
+    // `second` with that same token is accepted.
+    let mut stream = Stream::open(&second, &w.phone).await;
+    // One stream per device: the first is aborted, the new one serves.
+    assert_eq!(
+        w.phone_stream.ended().await.err().map(|s| s.code()),
+        Some(Code::Aborted)
+    );
+    stream.send(In::Heartbeat(pb::Heartbeat {})).await;
+    assert!(matches!(stream.next().await, Out::Heartbeat(_)));
+}
+
+// spec: wire-transport/session-resume
+#[tokio::test]
+async fn connect_with_an_expired_token_is_unauthenticated() {
+    let w = world().await;
+    // The hour-long token ages out.
+    w.pi.clock
+        .advance(SESSION_TOKEN_MAX_LIFETIME + Duration::from_secs(1));
+    let hello = pb::ClientFrame {
+        frame: Some(In::Hello(pb::Hello {
+            protocol_version: PROTOCOL_VERSION,
+        })),
+    };
+    // The Pi refuses the stream, whether at the open or as its first status.
+    match Stream::open_with(&w.conn, w.phone.token(), Some(hello)).await {
+        Err(status) => assert_eq!(status.code(), Code::Unauthenticated),
+        Ok(mut stream) => {
+            let status = stream.ended().await.err().check("an error status");
+            assert_eq!(status.code(), Code::Unauthenticated);
+        }
+    }
 }

@@ -171,6 +171,11 @@ pub(crate) struct Engine {
     /// The DMs this device has MLS state for, by group id (change `dms`).
     dms: BTreeMap<Vec<u8>, MlsGroup>,
     link: Option<Link>,
+    /// The session token to resume with on the next reconnect, kept across a
+    /// dropped link (wire-transport: Session resume; client-runtime:
+    /// Connection lifecycle). Set when a token is obtained or renewed, cleared
+    /// only when the device is removed.
+    resume: Option<crate::net::ResumeToken>,
     backoff: Backoff,
     next_attempt: Instant,
     /// A pin mismatch or a revoked device stops connecting until the client
@@ -292,6 +297,7 @@ impl Engine {
             group,
             dms,
             link: None,
+            resume: None,
             backoff: Backoff::new(),
             next_attempt: Instant::now(),
             halted: false,
@@ -533,6 +539,9 @@ impl Engine {
             Ok(Ok(link)) => {
                 self.backoff.reset();
                 *self.shared.session.lock() = Some(link.session.clone());
+                // Keep the token to resume the next reconnect with (wire-transport:
+                // Session resume).
+                self.resume = Some(link.session.to_resume());
                 self.link = Some(link);
                 self.quiet_since = Instant::now();
                 self.last_rotation_check = None;
@@ -575,6 +584,7 @@ impl Engine {
         self.halted = true;
         self.link = None;
         *self.shared.session.lock() = None;
+        self.resume = None;
         self.deferred.clear();
         self.apps_in_flight.clear();
         if let Some(inflight) = self.inflight.as_mut() {
@@ -593,7 +603,11 @@ impl Engine {
         }
     }
 
-    /// Pinned TLS, challenge auth, then `Connect` with `Hello`.
+    /// Pinned TLS, then the `Connect` stream. On reconnect this reuses a
+    /// still-valid session token to open the stream directly, skipping
+    /// `GetChallenge`/`Authenticate`; otherwise, and when the Pi rejects the
+    /// token, it runs the full challenge/auth handshake (wire-transport:
+    /// Session resume; client-runtime: Connection lifecycle).
     async fn open_link(&self) -> Result<Link, NetError> {
         let conn = Conn::open(&self.account.relay_address, self.account.tls_pin).await?;
         // wire-transport: Protocol version negotiation. Version 2 with a Pi
@@ -609,18 +623,41 @@ impl Engine {
             protocol::wire_transport::pi_knows_dms(&info.supported_protocol_versions),
             std::sync::atomic::Ordering::Relaxed,
         );
+        // wire-transport: Session resume. A token kept from the last connection
+        // and not yet due for renewal opens the stream with no round trips for
+        // the challenge and `Authenticate`. The Pi rejecting it on the stream
+        // (`UNAUTHENTICATED`: evicted, clock skew, or revoked) falls through to
+        // the full handshake, which is also where a revoked device meets
+        // `PERMISSION_DENIED` (design D2).
+        if let Some(resume) = self.resume.as_ref().filter(|r| r.usable(self.now())) {
+            match Self::open_stream(conn.resume(resume), protocol_version).await {
+                Ok(link) => return Ok(link),
+                Err(NetError::Rpc(status)) if status.code() == tonic::Code::Unauthenticated => {
+                    tracing::debug!("the resume token was rejected; full handshake");
+                }
+                Err(other) => return Err(other),
+            }
+        }
         let session = conn
             .authenticate(&self.keys, self.device_ref(), self.now())
             .await?;
+        Self::open_stream(session, protocol_version).await
+    }
+
+    /// Opens the `Connect` stream on `session`'s connection, with `Hello` as
+    /// the first frame.
+    async fn open_stream(session: Session, protocol_version: u32) -> Result<Link, NetError> {
         let (tx, frames) = mpsc::channel(64);
         tx.send(pb::ClientFrame {
             frame: Some(Out::Hello(pb::Hello { protocol_version })),
         })
         .await
         .map_err(|_| NetError::Connect("stream closed".into()))?;
-        let rx = conn
+        let request = session.request(ReceiverStream::new(frames))?;
+        let rx = session
+            .conn()
             .messaging()
-            .connect(session.request(ReceiverStream::new(frames))?)
+            .connect(request)
             .await?
             .into_inner();
         Ok(Link {
@@ -698,6 +735,8 @@ impl Engine {
             {
                 Ok(session) => {
                     *self.shared.session.lock() = Some(session.clone());
+                    // Resume the next reconnect with the renewed token.
+                    self.resume = Some(session.to_resume());
                     if let Some(link) = self.link.as_mut() {
                         link.session = session;
                     }
