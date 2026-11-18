@@ -244,35 +244,41 @@ class _ChatListScreenState extends State<ChatListScreen> {
               child: const Icon(Icons.add),
             )
           : null,
-      body: ListView(
-        children: [
-          for (final chat in _chats)
-            switch (chat.kind) {
-              ChatKindInfo_Main() => ListTile(
-                key: const ValueKey('chat-main'),
-                leading: const Icon(Icons.groups_outlined),
-                title: Text(widget.chat.groupName ?? 'Group'),
-                trailing: _trailing(chat),
-                onTap: () => _open(chat),
-              ),
-              ChatKindInfo_Dm(:final peer, :final closed) => ListTile(
-                key: ValueKey('chat-${chat.chatId}'),
-                leading: const Icon(Icons.person_outline),
-                enabled: true,
-                title: Text(
-                  _names.of(peer),
-                  style: closed
-                      ? TextStyle(color: Theme.of(context).disabledColor)
-                      : null,
+      // Pull down to retry the connection at once (connect-feedback D2);
+      // the core makes it a no-op when already connected.
+      body: RefreshIndicator(
+        onRefresh: () => widget.core.reconnectNow(),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            for (final chat in _chats)
+              switch (chat.kind) {
+                ChatKindInfo_Main() => ListTile(
+                  key: const ValueKey('chat-main'),
+                  leading: const Icon(Icons.groups_outlined),
+                  title: Text(widget.chat.groupName ?? 'Group'),
+                  trailing: _trailing(chat),
+                  onTap: () => _open(chat),
                 ),
-                subtitle: closed
-                    ? Text(dmClosedText(_names.short(peer)))
-                    : null,
-                trailing: _trailing(chat),
-                onTap: () => _open(chat),
-              ),
-            },
-        ],
+                ChatKindInfo_Dm(:final peer, :final closed) => ListTile(
+                  key: ValueKey('chat-${chat.chatId}'),
+                  leading: const Icon(Icons.person_outline),
+                  enabled: true,
+                  title: Text(
+                    _names.of(peer),
+                    style: closed
+                        ? TextStyle(color: Theme.of(context).disabledColor)
+                        : null,
+                  ),
+                  subtitle: closed
+                      ? Text(dmClosedText(_names.short(peer)))
+                      : null,
+                  trailing: _trailing(chat),
+                  onTap: () => _open(chat),
+                ),
+              },
+          ],
+        ),
       ),
     ),
   );
