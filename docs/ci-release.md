@@ -15,7 +15,7 @@ flowchart LR
 
 | Tag | Workflow | Result |
 |---|---|---|
-| `app-v1.0.0+5` | `release-app` | Play **internal** track + **TestFlight** |
+| `app-v1.1.0+5` | `release-app` | Play **internal** track + **TestFlight** |
 | `server-v0.2.0` | `release-server` | GitHub Release: `vyajena-server`, `rathole`, `SHA256SUMS`, provenance |
 | Run workflow (Actions tab) | either | **dry run**: builds, checks, uploads nothing, needs no secret |
 
@@ -58,6 +58,10 @@ Settings › Rules › Rulesets › New ruleset › **New tag ruleset**:
   deletions**, **Block force pushes**.
 
 A tag then cannot be moved after you approved it.
+
+(Done 2026-11-17 as **two** rulesets: "release tags: only admin creates"
+(Restrict creations, admin bypass) and "release tags: never moved or deleted"
+(update, deletion, force push; **no** bypass, so not even you can move one).)
 
 ### 3. Fork pull requests
 
@@ -244,19 +248,26 @@ secrets** (D13 in `openspec/changes/ci-release/design.md`) and Settings ›
 Secrets and variables › Actions › Repository secrets should show **none** of
 them.
 
+A dry run uses **none** of these secrets (throwaway key, no upload), so the
+first real `app-v*` release is their first test. Keep
+`~/.vyajena-release/ci/` until that release is green (a wrong secret is then a
+one-line fix), then delete it.
+
+Steps 5–8 were done on 2026-11-18 (design: "Setup log").
+
 ## Cutting an app release
 
-1. In a PR: raise the build number in `app/pubspec.yaml` (`1.0.0+4` →
-   `1.0.0+5`; it only goes up, shared by both stores). Merge it.
+1. In a PR: raise the build number in `app/pubspec.yaml` (`1.1.0+4` →
+   `1.1.0+5`; it only goes up, shared by both stores). Merge it.
 2. Optional: dry run on `main` (step 4).
 3. Tag the merged commit and push **only the tag**:
 
    ```bash
-   git fetch origin && git tag -s app-v1.0.0+5 origin/main -m "app 1.0.0 (5)"
+   git fetch origin && git tag -s app-v1.1.0+5 origin/main -m "app 1.1.0 (5)"
    ```
 
    ```bash
-   git push origin refs/tags/app-v1.0.0+5
+   git push origin refs/tags/app-v1.1.0+5
    ```
 
 4. Actions › release-app: `guard` runs, then `android` and `ios` show

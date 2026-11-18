@@ -379,6 +379,29 @@ then the test Pi binds that address later; a parallel test can take it first
 And `client/tests/welcome_recovery.rs::a_member_asks_nothing_at_start` saw a
 re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
 
+### Setup log (2026-11-18, docs steps 5–8, owner present)
+
+- **Workload identity** (GCP project `vyajena`, owner yes to the commands):
+  the existing provider in `github-pool` trusted `repository_owner ==
+  'chaamba'` (the old org). Now: mapping `repository_id`, `environment`,
+  `ref`; condition repo id + environment `release` + `refs/tags/app-v*`.
+  The Play service account's `workloadIdentityUser` binding moved from
+  `attribute.repository/chaamba/vyajena` to this repo's id. It has no
+  user-managed keys and no project roles. Credentials/STS/Publisher APIs
+  were already on. Cost: none.
+- **Play Console** (owner yes): the service account had "Release apps to
+  testing tracks" **account-wide** (all 3 apps). Now nothing account-wide;
+  `com.purplechaamba.vyajena` only: view app information, release to testing
+  tracks, manage testing tracks (plus view app quality, which Play adds).
+- **Apple:** second Apple Distribution certificate (expires 2027-11-18), App
+  Store profile `vyajena CI App Store` (team, app id, `aps-environment =
+  production`, no devices, that certificate; expires 2027-11-18). App Store
+  Connect API access was requested and granted, team key `vyajena-ci`, role
+  Developer. All made by the owner.
+- **Secrets:** all 12 (D13) in environment `release`, set by the owner from
+  files and the Keychain; none at repository level.
+  `release-guard.sh environment release`: pass.
+
 ## Open items (not built)
 
 - **O1. `deploy.sh` from a release file.** `deploy/pi/deploy.sh --release
@@ -398,6 +421,16 @@ re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
   server build alike.
 
 ## Questions for the owner
+
+**Answered by the owner on 2026-11-18** (all three as recommended):
+
+| # | Answer | What follows |
+|---|---|---|
+| Q1 | (b) **archive `app-release` first**, then a MODIFIED delta of its "Release signing keys stay with the owner" requirement in `ci-release` before `ci-release` is archived | `app-release` files stay as they are until then |
+| Q2 | **Workload identity** (keyless), reusing `github-pool` | docs step 6; no JSON key anywhere |
+| Q3 | **Second Apple Distribution certificate** for CI + App Store Connect API key with the **Developer** role | docs steps 7–8; no Admin key, no cloud signing in CI |
+
+The original questions:
 
 - **Q1. app-release says "no key is given to CI".** This change reverses
   that (D2). Options: (a) edit `app-release`'s requirement and D3 now (and
