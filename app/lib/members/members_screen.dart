@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
 import '../app/names.dart';
+import '../chat/dm_screen.dart';
 import '../core/core_service.dart';
 
 /// A member user and their devices in the group.
@@ -43,6 +44,9 @@ class _MembersScreenState extends State<MembersScreen> {
   late final UserNames _names = UserNames(widget.core);
   List<MemberUser>? _members;
   String? _error;
+
+  /// Whether the Pi knows DMs: only then "Message" (app-ui: Open a DM).
+  bool _dms = false;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -69,11 +73,30 @@ class _MembersScreenState extends State<MembersScreen> {
     try {
       final members = byUser(await widget.core.members());
       await _names.load(members.map((m) => m.user));
-      if (mounted) setState(() => _members = members);
+      final dms = await widget.core.dmsAvailable();
+      if (mounted) {
+        setState(() {
+          _members = members;
+          _dms = dms;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
     }
   }
+
+  Widget _tile(MemberUser m, bool isMe) => ListTile(
+    leading: const Icon(Icons.person_outline),
+    title: Text(isMe ? '${_names.of(m.user)} · you' : _names.of(m.user)),
+    subtitle: Text(devicesText(m.devices.length)),
+    trailing: _dms && !isMe
+        ? TextButton(
+            key: ValueKey('message-${m.user.username}'),
+            onPressed: () => messageUser(context, widget.core, m.user),
+            child: const Text('Message'),
+          )
+        : null,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -87,16 +110,11 @@ class _MembersScreenState extends State<MembersScreen> {
         (final List<MemberUser> members, _) => ListView(
           children: [
             for (final m in members)
-              ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: Text(
-                  me != null &&
-                          me.username == m.user.username &&
-                          me.serverId == m.user.serverId
-                      ? '${_names.of(m.user)} · you'
-                      : _names.of(m.user),
-                ),
-                subtitle: Text(devicesText(m.devices.length)),
+              _tile(
+                m,
+                me != null &&
+                    me.username == m.user.username &&
+                    me.serverId == m.user.serverId,
               ),
           ],
         ),

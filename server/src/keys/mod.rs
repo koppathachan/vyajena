@@ -8,13 +8,13 @@ use openmls::prelude::tls_codec::Deserialize as _;
 use openmls::prelude::{ExtensionType, KeyPackageIn, ProtocolVersion};
 use openmls_rust_crypto::RustCrypto;
 use protocol::device_identity::DeviceId;
-use protocol::group_membership::{ADMIN_EXTENSION_TYPE, MAX_READD_REASON_BYTES};
+use protocol::group_membership::{ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, MAX_READD_REASON_BYTES};
 use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
 use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
 
 use crate::auth::caller;
-use crate::membership::{CIPHERSUITE, GroupState, certificate, inactivity, joins, readd};
+use crate::membership::{CIPHERSUITE, certificate, group, inactivity, joins, readd};
 use crate::messaging;
 use crate::pb;
 use crate::pb::keys_server::{Keys, KeysServer};
@@ -39,8 +39,13 @@ pub struct KeysService {
 /// (key-directory: KeyPackage upload): it parses and verifies, uses the one
 /// ciphersuite, its credential carries exactly the device's registered
 /// certificate, its leaf signature key is the certificate's MLS key, and its
-/// capabilities list [`ADMIN_EXTENSION_TYPE`].
-fn check_key_package(crypto: &RustCrypto, bytes: &[u8], device: &DeviceRow) -> Result<(), Status> {
+/// capabilities list [`ADMIN_EXTENSION_TYPE`]. Returns whether they also list
+/// [`DM_EXTENSION_TYPE`] (direct-messages: Old apps never join a DM).
+fn check_key_package(
+    crypto: &RustCrypto,
+    bytes: &[u8],
+    device: &DeviceRow,
+) -> Result<bool, Status> {
     let key_package = KeyPackageIn::tls_deserialize_exact(bytes)
         .map_err(|_| Status::invalid_argument("a KeyPackage does not parse"))?
         .validate(crypto, ProtocolVersion::Mls10)
@@ -77,7 +82,25 @@ fn check_key_package(crypto: &RustCrypto, bytes: &[u8], device: &DeviceRow) -> R
             "a KeyPackage's signature key is not the certificate's MLS key",
         ));
     }
-    Ok(())
+    Ok(leaf
+        .capabilities()
+        .extensions()
+        .contains(&ExtensionType::Unknown(DM_EXTENSION_TYPE)))
+}
+
+/// Checks every KeyPackage of an upload; one bad one fails it all. Returns
+/// the DM-capable flag of each one-time KeyPackage and of the last-resort one.
+fn check_upload(
+    crypto: &RustCrypto,
+    one_time: &[Vec<u8>],
+    last_resort: &[u8],
+    device: &DeviceRow,
+) -> Result<(Vec<bool>, bool), Status> {
+    let mut flags = Vec::with_capacity(one_time.len());
+    for bytes in one_time {
+        flags.push(check_key_package(crypto, bytes, device)?);
+    }
+    Ok((flags, check_key_package(crypto, last_resort, device)?))
 }
 
 fn store_key_packages(
@@ -85,18 +108,20 @@ fn store_key_packages(
     device_id: &DeviceId,
     one_time: &[Vec<u8>],
     last_resort: &[u8],
+    flags: &(Vec<bool>, bool),
     now: SystemTime,
 ) -> Result<(), StoreError> {
     let mut insert = tx.prepare(
-        "INSERT INTO key_packages (device_id, key_package, last_resort, uploaded_at)
-         VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO key_packages (device_id, key_package, last_resort, uploaded_at, dm_capable)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
-    for key_package in one_time {
+    for (key_package, dm_capable) in one_time.iter().zip(&flags.0) {
         insert.execute(params![
             device_id.as_slice(),
             key_package,
             false,
-            unix_millis(now)
+            unix_millis(now),
+            dm_capable
         ])?;
     }
     // The new last-resort KeyPackage replaces the old one.
@@ -108,24 +133,28 @@ fn store_key_packages(
         device_id.as_slice(),
         last_resort,
         true,
-        unix_millis(now)
+        unix_millis(now),
+        flags.1
     ])?;
     Ok(())
 }
 
 /// Takes one KeyPackage of `device_id`: the oldest one-time one, which is
-/// deleted, or else the last-resort one, which stays.
+/// deleted, or else the last-resort one, which stays. With `dm_only`, only a
+/// DM-capable one (key-directory: KeyPackage fetch, change `dms`).
 fn take_key_package(
     tx: &Transaction<'_>,
     device_id: &DeviceId,
+    dm_only: bool,
 ) -> Result<Option<Vec<u8>>, StoreError> {
     let one_time: Option<Vec<u8>> = tx
         .query_row(
             "DELETE FROM key_packages WHERE id = (
                  SELECT id FROM key_packages WHERE device_id = ?1 AND last_resort = 0
+                   AND (?2 = 0 OR dm_capable = 1)
                  ORDER BY id LIMIT 1)
              RETURNING key_package",
-            params![device_id.as_slice()],
+            params![device_id.as_slice(), dm_only],
             |row| row.get(0),
         )
         .optional()?;
@@ -134,8 +163,9 @@ fn take_key_package(
     }
     Ok(tx
         .query_row(
-            "SELECT key_package FROM key_packages WHERE device_id = ?1 AND last_resort = 1",
-            params![device_id.as_slice()],
+            "SELECT key_package FROM key_packages WHERE device_id = ?1 AND last_resort = 1
+               AND (?2 = 0 OR dm_capable = 1)",
+            params![device_id.as_slice(), dm_only],
             |row| row.get(0),
         )
         .optional()?)
@@ -167,23 +197,25 @@ impl Keys for KeysService {
                     .ok_or_else(|| StoreError::Inconsistent("caller's device is missing".into()))?;
                 let crypto = RustCrypto::default();
                 // One bad KeyPackage fails the whole upload.
-                for bytes in request
-                    .key_packages
-                    .iter()
-                    .chain(std::iter::once(&request.last_resort_key_package))
-                {
-                    if let Err(status) = check_key_package(&crypto, bytes, &device) {
-                        return Ok(Err(status));
-                    }
-                }
+                let flags = match check_upload(
+                    &crypto,
+                    &request.key_packages,
+                    &request.last_resort_key_package,
+                    &device,
+                ) {
+                    Ok(flags) => flags,
+                    Err(status) => return Ok(Err(status)),
+                };
                 store_key_packages(
                     &tx,
                     &caller.device_id,
                     &request.key_packages,
                     &request.last_resort_key_package,
+                    &flags,
                     now,
                 )?;
-                // group-membership: Automatic add of new users.
+                // group-membership: Automatic add of new users;
+                // direct-messages: DM members kept complete.
                 let announce = joins::after_upload(&tx, &caller.device_id, &admin, &server_id)?;
                 tx.commit()?;
                 Ok(Ok(announce))
@@ -234,15 +266,15 @@ impl Keys for KeysService {
                 let device = records::device(&tx, &caller.device_id)?
                     .ok_or_else(|| StoreError::Inconsistent("caller's device is missing".into()))?;
                 let crypto = RustCrypto::default();
-                for bytes in request
-                    .key_packages
-                    .iter()
-                    .chain(std::iter::once(&request.last_resort_key_package))
-                {
-                    if let Err(status) = check_key_package(&crypto, bytes, &device) {
-                        return Ok(Err(status));
-                    }
-                }
+                let flags = match check_upload(
+                    &crypto,
+                    &request.key_packages,
+                    &request.last_resort_key_package,
+                    &device,
+                ) {
+                    Ok(flags) => flags,
+                    Err(status) => return Ok(Err(status)),
+                };
                 let outcome = if !readd::is_member(&tx, &caller.device_id)? {
                     pb::ReaddOutcome::NotAMember
                 } else if inactivity::is_inactive(&tx, &caller.device_id)? {
@@ -268,20 +300,18 @@ impl Keys for KeysService {
                     &caller.device_id,
                     &request.key_packages,
                     &request.last_resort_key_package,
+                    &flags,
                     now,
                 )?;
-                let mut state = GroupState::load(&tx)?
-                    .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
                 let ctx = messaging::Context {
                     server_id: &server_id,
                     keys: &keys,
                     now,
                 };
-                let notify = messaging::mark_inactive(&tx, &ctx, &mut state, &caller.device_id)?;
-                state.save(&tx)?;
+                let notify = messaging::mark_inactive(&tx, &ctx, &caller.device_id)?;
                 inactivity::mark_returned(&tx, &caller.device_id, now)?;
                 let me = messaging::device_ref(&caller.device_id, &caller.username, &server_id);
-                let rejoin = inactivity::active_members(&tx)?
+                let rejoin = inactivity::active_members(&tx, &group_id)?
                     .into_iter()
                     .filter(|(helper, helper_user)| {
                         messaging::can_readd(
@@ -324,8 +354,9 @@ impl Keys for KeysService {
         &self,
         request: Request<pb::FetchKeyPackagesRequest>,
     ) -> Result<Response<pb::FetchKeyPackagesResponse>, Status> {
-        caller(&request)?;
+        let fetcher = caller(&request)?.device_id;
         let request = request.into_inner();
+        let dm_group_id = request.group_id.clone();
         let user_id = request
             .user_id
             .ok_or_else(|| Status::invalid_argument("user_id is required"))?;
@@ -348,6 +379,39 @@ impl Keys for KeysService {
                 let Some(user) = records::user(&tx, &user_id.username)? else {
                     return Ok(Err(Status::not_found("unknown user")));
                 };
+                // key-directory: KeyPackage fetch, for a DM (change `dms`).
+                let dm_only = !dm_group_id.is_empty();
+                if dm_only {
+                    match group::row(&tx, &dm_group_id)? {
+                        Some(group::GroupRow {
+                            group_id,
+                            kind:
+                                group::GroupKind::Dm {
+                                    users,
+                                    closed_at: None,
+                                },
+                            ..
+                        }) => {
+                            let member: bool = tx.query_row(
+                                "SELECT EXISTS (SELECT 1 FROM mls_members
+                                                WHERE group_id = ?1 AND device_id = ?2)",
+                                params![group_id, fetcher.as_slice()],
+                                |row| row.get(0),
+                            )?;
+                            if !member || (users.0 != user.username && users.1 != user.username) {
+                                return Ok(Err(Status::permission_denied(
+                                    "only a member of this DM fetches for its two users",
+                                )));
+                            }
+                        }
+                        Some(_) => {
+                            return Ok(Err(Status::permission_denied(
+                                "group_id does not name an open DM",
+                            )));
+                        }
+                        None => return Ok(Err(Status::not_found("unknown group"))),
+                    }
+                }
                 let mut devices = records::active_devices(&tx, &user.username)?;
                 if !wanted.is_empty() {
                     if wanted
@@ -366,7 +430,7 @@ impl Keys for KeysService {
                     let before = records::one_time_key_packages(&tx, &device.device_id)?;
                     // A device that never uploaded KeyPackages cannot be added
                     // yet and is left out.
-                    if let Some(key_package) = take_key_package(&tx, &device.device_id)? {
+                    if let Some(key_package) = take_key_package(&tx, &device.device_id, dm_only)? {
                         let remaining = before.saturating_sub(1);
                         if before > 0 && (remaining as usize) < KEY_PACKAGES_LOW_WATER_MARK {
                             low.push(KeyPackagesLow {

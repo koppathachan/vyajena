@@ -76,7 +76,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChatBody dco_decode_chat_body(dynamic raw);
 
   @protected
+  ChatKindInfo dco_decode_chat_kind_info(dynamic raw);
+
+  @protected
   ChatMessage dco_decode_chat_message(dynamic raw);
+
+  @protected
+  ChatSummary dco_decode_chat_summary(dynamic raw);
 
   @protected
   ConnectionStatus dco_decode_connection_status(dynamic raw);
@@ -104,6 +110,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ChatMessage> dco_decode_list_chat_message(dynamic raw);
+
+  @protected
+  List<ChatSummary> dco_decode_list_chat_summary(dynamic raw);
 
   @protected
   List<InviteInfo> dco_decode_list_invite_info(dynamic raw);
@@ -237,7 +246,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ChatBody sse_decode_chat_body(SseDeserializer deserializer);
 
   @protected
+  ChatKindInfo sse_decode_chat_kind_info(SseDeserializer deserializer);
+
+  @protected
   ChatMessage sse_decode_chat_message(SseDeserializer deserializer);
+
+  @protected
+  ChatSummary sse_decode_chat_summary(SseDeserializer deserializer);
 
   @protected
   ConnectionStatus sse_decode_connection_status(SseDeserializer deserializer);
@@ -265,6 +280,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<ChatMessage> sse_decode_list_chat_message(SseDeserializer deserializer);
+
+  @protected
+  List<ChatSummary> sse_decode_list_chat_summary(SseDeserializer deserializer);
 
   @protected
   List<InviteInfo> sse_decode_list_invite_info(SseDeserializer deserializer);
@@ -425,7 +443,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_chat_body(ChatBody self, SseSerializer serializer);
 
   @protected
+  void sse_encode_chat_kind_info(ChatKindInfo self, SseSerializer serializer);
+
+  @protected
   void sse_encode_chat_message(ChatMessage self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_chat_summary(ChatSummary self, SseSerializer serializer);
 
   @protected
   void sse_encode_connection_status(
@@ -457,6 +481,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_chat_message(
     List<ChatMessage> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_chat_summary(
+    List<ChatSummary> self,
     SseSerializer serializer,
   );
 

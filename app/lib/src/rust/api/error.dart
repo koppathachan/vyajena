@@ -116,6 +116,15 @@ enum CoreErrorKind {
   /// Not possible yet; the core retries.
   notYet,
 
+  /// No chat with that id (change `dms`).
+  noSuchChat,
+
+  /// The DM is closed: its peer was removed.
+  chatClosed,
+
+  /// The Pi does not support DMs yet.
+  dmsUnavailable,
+
   /// The one event stream was already taken.
   eventsTaken,
 

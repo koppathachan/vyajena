@@ -3,10 +3,12 @@
 ### Requirement: Protocol version negotiation
 `Devices.GetServerInfo` SHALL return the server id, the supported protocol
 versions, the size limits and the Pi's external sender public key. The Pi SHALL
-support protocol versions 1 and 2; version 2 adds DMs (direct-messages). The
+support protocol versions 1 and 2, which behave the same on the stream; a Pi
+that lists version 2 knows `Dms` (direct-messages). The
 first frame a client sends on `Connect` SHALL state its protocol version, and the
 Pi SHALL close the stream with `FAILED_PRECONDITION` if it does not support that
-version. A version 2 client SHALL offer DMs only when the Pi lists version 2.
+version. A version 2 client SHALL connect with version 2 when the Pi lists it,
+else with version 1, and SHALL offer DMs only when the Pi lists version 2.
 
 #### Scenario: Unsupported client version
 - **WHEN** a client opens `Connect` with a protocol version the Pi does not support

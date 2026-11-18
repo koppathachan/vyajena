@@ -19,6 +19,7 @@ const me = UserRef(username: 'akhil', serverId: 'home');
 ChatMessage text(int id, UserRef from, String body, {bool mine = false}) =>
     ChatMessage(
       id: id,
+      chatId: 0,
       sender: from,
       senderDevice: mine ? 'aa11' : 'bb${id}2',
       outgoing: mine,

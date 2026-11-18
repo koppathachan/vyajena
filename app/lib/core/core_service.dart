@@ -231,6 +231,35 @@ abstract class CoreService {
   /// Marks the mention in message [id] seen.
   Future<bool> markMentionSeen(int id);
 
+  // --- Chats (direct-messages; app-ui: Chat list, change `dms`) ---
+
+  /// Whether the Pi knows DMs: "Message" is offered only then.
+  Future<bool> dmsAvailable();
+
+  /// The chats: the main group (chat 0) first, then DMs, newest first,
+  /// closed ones last.
+  Future<List<ChatSummary>> chats();
+
+  /// The open DM with [user], opened first if there is none; its chat id.
+  Future<int> openDm(UserRef user);
+
+  /// The newest [limit] messages of chat [chatId], oldest first.
+  Future<List<ChatMessage>> historyIn(int chatId, int limit);
+
+  /// [sendMessage] in chat [chatId].
+  Future<int> sendMessageIn(
+    int chatId,
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  });
+
+  /// [unseenMentions] in chat [chatId].
+  Future<List<int>> unseenMentionsIn(int chatId);
+
+  /// The user has seen chat [chatId] up to its newest message.
+  Future<void> markChatRead(int chatId);
+
   /// How to show [user]: "Ali (alice)", or the username alone.
   Future<String> displayName(UserRef user);
 

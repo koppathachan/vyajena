@@ -110,10 +110,31 @@ async fn unsupported_version_is_failed_precondition_listing_supported_versions()
     let status = stream.ended().await.err().check("an error status");
     assert_eq!(status.code(), Code::FailedPrecondition);
     assert!(
-        status.message().contains("supported versions: 1"),
+        status.message().contains("supported versions: [1, 2]"),
         "{}",
         status.message()
     );
+}
+
+// spec: wire-transport/protocol-version-negotiation
+#[tokio::test]
+async fn an_old_app_says_version_1_and_is_served() {
+    let w = world().await;
+    for version in [1, 2] {
+        let hello = pb::ClientFrame {
+            frame: Some(In::Hello(pb::Hello {
+                protocol_version: version,
+            })),
+        };
+        let mut stream = Stream::open_with(&w.conn, w.phone.token(), Some(hello))
+            .await
+            .check("Connect");
+        stream.send(In::Heartbeat(pb::Heartbeat {})).await;
+        assert!(
+            matches!(stream.next().await, Out::Heartbeat(_)),
+            "version {version}"
+        );
+    }
 }
 
 // spec: wire-transport/protocol-version-negotiation

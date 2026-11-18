@@ -440,7 +440,7 @@ async fn racing_commits_first_wins_second_is_stale() {
     assert_eq!(rejected.current_epoch, epoch + 1);
     w.phone.abort();
     let group_epoch: i64 =
-        w.pi.query(|db| db.query_row("SELECT epoch FROM mls_group", [], |r| r.get(0)))
+        w.pi.query(|db| db.query_row("SELECT epoch FROM mls_groups", [], |r| r.get(0)))
             .await;
     assert_eq!(group_epoch as u64, epoch + 1);
 }
@@ -480,6 +480,7 @@ async fn conn_fetch_device(w: &World, device: &TestDevice) -> Vec<Vec<u8>> {
             pb::FetchKeyPackagesRequest {
                 user_id: Some(w.alice.pb_user_id()),
                 device_ids: vec![device.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await
@@ -559,7 +560,7 @@ async fn full_queue_accepts_for_everyone_else_and_marks_the_device_inactive() {
     let members =
         w.pi.state
             .store
-            .call(|db| server::membership::GroupState::members(db))
+            .call(|db| server::membership::GroupState::main_members(db))
             .await
             .check("members");
     assert!(members.iter().all(|m| m.device_id != w.phone.device_id));

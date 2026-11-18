@@ -13,7 +13,7 @@ use rusqlite::Transaction;
 
 use super::log;
 use super::write::{self, Context};
-use crate::membership::{GroupState, inactivity};
+use crate::membership::{GroupState, group, inactivity};
 use crate::pb;
 use crate::runtime::State;
 use crate::runtime::clock::to_timestamp;
@@ -44,22 +44,23 @@ fn sweep_in(
     }
     let mut notify = Vec::new();
     let mut gaps = Vec::new();
-    if let Some((group_id, epoch)) = log::group_row(conn)? {
-        let stale = inactivity::stale_members(conn, before(now, INACTIVITY_TIMEOUT), connected)?;
-        if !stale.is_empty() || !inactivity::needing_proposal(conn, epoch)?.is_empty() {
-            let mut state = GroupState::load(conn)?
-                .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
-            for device_id in &stale {
-                notify.extend(write::mark_inactive(conn, ctx, &mut state, device_id)?);
-            }
-            notify.extend(write::reissue_removes(conn, ctx, &mut state)?);
-            state.save(conn)?;
+    let stale = inactivity::stale_members(conn, before(now, INACTIVITY_TIMEOUT), connected)?;
+    for device_id in &stale {
+        notify.extend(write::mark_inactive(conn, ctx, device_id)?);
+    }
+    for row in group::open_groups(conn)? {
+        if inactivity::needing_proposal(conn, &row.group_id, row.epoch)?.is_empty() {
+            continue;
         }
-        for device_id in log::expire(conn, before(now, QUEUE_ENTRY_TTL))? {
-            if connected.contains(&device_id)
-                && let Some(at) = log::gap(conn, &device_id)?
-            {
-                gaps.push((device_id, at, group_id.clone()));
+        let mut state = GroupState::load(conn, &row.group_id)?
+            .ok_or_else(|| StoreError::Inconsistent("group row without state".into()))?;
+        notify.extend(write::reissue_removes(conn, ctx, &mut state)?);
+        state.save(conn)?;
+    }
+    for device_id in log::expire(conn, before(now, QUEUE_ENTRY_TTL))? {
+        if connected.contains(&device_id) {
+            for (group_id, at) in log::gaps(conn, &device_id)? {
+                gaps.push((device_id, at, group_id));
             }
         }
     }
@@ -101,14 +102,14 @@ pub async fn sweep(state: &State) -> Result<(), StoreError> {
     for (device_id, at, group_id) in swept.gaps {
         let frame = pb::ServerFrame {
             frame: Some(pb::server_frame::Frame::GapNotice(pb::GapNotice {
-                group_id,
+                group_id: group_id.clone(),
                 newest_expired_at: Some(to_timestamp(at)),
             })),
         };
         if state.hub.send_frame(&device_id, frame) {
             state
                 .store
-                .call(move |conn| log::clear_gap(conn, &device_id))
+                .call(move |conn| log::clear_gap(conn, &device_id, &group_id))
                 .await?;
         }
     }

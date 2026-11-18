@@ -43,6 +43,27 @@ pub fn envelope(kind: Kind, epoch: u64, ciphertext: Vec<u8>) -> pb::Envelope {
     }
 }
 
+/// An envelope for `group_id` (a DM) as a client builds it.
+pub fn envelope_in(group_id: &[u8], kind: Kind, epoch: u64, ciphertext: Vec<u8>) -> pb::Envelope {
+    pb::Envelope {
+        group_id: group_id.to_vec(),
+        ..envelope(kind, epoch, ciphertext)
+    }
+}
+
+/// A `COMMIT` envelope for `group_id` with the Welcome for `joiners`.
+pub fn commit_envelope_in(
+    group_id: &[u8],
+    epoch: u64,
+    commit: Vec<u8>,
+    welcome: Option<(Vec<u8>, &[&TestDevice])>,
+) -> pb::Envelope {
+    pb::Envelope {
+        group_id: group_id.to_vec(),
+        ..commit_envelope(epoch, commit, welcome)
+    }
+}
+
 /// A `COMMIT` envelope with the Welcome for `joiners`.
 pub fn commit_envelope(
     epoch: u64,
@@ -184,6 +205,15 @@ impl Stream {
     pub async fn ack(&self, server_seq: u64) {
         self.send(In::Ack(pb::Ack {
             group_id: GROUP_ID.to_vec(),
+            server_seq,
+        }))
+        .await;
+    }
+
+    /// Sends an ack in `group_id`; `server_seq` 0 acknowledges a `DmClosed`.
+    pub async fn ack_in(&self, group_id: &[u8], server_seq: u64) {
+        self.send(In::Ack(pb::Ack {
+            group_id: group_id.to_vec(),
             server_seq,
         }))
         .await;
@@ -346,6 +376,7 @@ pub async fn fetch(conn: &Conn, caller: &TestDevice, user: &TestUser) -> Vec<Vec
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user.pb_user_id()),
                 device_ids: vec![],
+                group_id: Vec::new(),
             },
         ))
         .await

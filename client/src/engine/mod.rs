@@ -47,7 +47,10 @@ use openmls::prelude::{
 use openmls_traits::OpenMlsProvider as _;
 use parking_lot::Mutex;
 use prost::Message as _;
-use protocol::wire_transport::{HEARTBEAT_INTERVAL, PROTOCOL_VERSION, STREAM_IDLE_TIMEOUT};
+use protocol::wire_transport::{
+    HEARTBEAT_INTERVAL, STREAM_IDLE_TIMEOUT, SUPPORTED_PROTOCOL_VERSIONS,
+    negotiate_protocol_version,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
@@ -102,6 +105,9 @@ pub(crate) struct Shared {
     pub(crate) events: EventSender,
     /// The engine's current session, for the client's unary calls.
     pub(crate) session: Mutex<Option<Session>>,
+    /// Whether the Pi last connected to lists protocol version 2, so knows
+    /// DMs (wire-transport: Protocol version negotiation, change `dms`).
+    pub(crate) pi_knows_dms: std::sync::atomic::AtomicBool,
 }
 
 /// A reply to a job.
@@ -120,6 +126,8 @@ struct Link {
 struct InFlight {
     row: OutgoingCommitRow,
     job: Job,
+    /// The group the commit is for (change `dms`).
+    group_id: Vec<u8>,
     /// Whether it went out on the current link.
     sent: bool,
     /// `Accepted` arrived with this `server_seq`; merged once the held
@@ -158,7 +166,10 @@ pub(crate) struct Engine {
     account: AccountRow,
     pi: ExternalSender,
     commands: mpsc::Receiver<Command>,
+    /// The main group.
     group: Option<MlsGroup>,
+    /// The DMs this device has MLS state for, by group id (change `dms`).
+    dms: BTreeMap<Vec<u8>, MlsGroup>,
     link: Option<Link>,
     backoff: Backoff,
     next_attempt: Instant,
@@ -175,8 +186,8 @@ pub(crate) struct Engine {
     /// Own application messages sent on the current link and waiting for
     /// their result, by msg_id.
     apps_in_flight: BTreeMap<[u8; 16], MessageId>,
-    /// The epoch the Pi said the group is at (from `STALE_EPOCH`).
-    server_epoch: u64,
+    /// The epoch the Pi said each group is at (from `STALE_EPOCH`).
+    server_epochs: BTreeMap<Vec<u8>, u64>,
     quiet_since: Instant,
     last_rotation_check: Option<SystemTime>,
     rotation_at: Option<SystemTime>,
@@ -227,6 +238,23 @@ fn automatic_changes(
     Ok(automatic)
 }
 
+/// The [`Store::flag`] set once this core uploaded KeyPackages that list the
+/// DM extension.
+pub(crate) const DM_KEY_PACKAGES_FLAG: &str = "dm_key_packages";
+
+/// The group with id `group_id` among the main group and the DMs, mutably;
+/// borrows only those two fields, so other engine fields stay usable.
+fn group_in<'a>(
+    main: &'a mut Option<MlsGroup>,
+    dms: &'a mut BTreeMap<Vec<u8>, MlsGroup>,
+    group_id: &[u8],
+) -> Option<&'a mut MlsGroup> {
+    match main {
+        Some(group) if group.group_id().as_slice() == group_id => Some(group),
+        _ => dms.get_mut(group_id),
+    }
+}
+
 fn pending_forever<T>() -> std::future::Pending<T> {
     std::future::pending()
 }
@@ -246,6 +274,15 @@ impl Engine {
             Some(row) => mls_group::load(shared.store.mls(), &row.group_id)?,
             None => None,
         };
+        let mut dms = BTreeMap::new();
+        for dm in shared.store.dms()? {
+            if dm.joined
+                && dm.closed_at.is_none()
+                && let Some(group) = mls_group::load(shared.store.mls(), &dm.group_id)?
+            {
+                dms.insert(dm.group_id, group);
+            }
+        }
         let mut engine = Self {
             shared,
             keys,
@@ -253,6 +290,7 @@ impl Engine {
             pi,
             commands,
             group,
+            dms,
             link: None,
             backoff: Backoff::new(),
             next_attempt: Instant::now(),
@@ -262,16 +300,18 @@ impl Engine {
             deferred: VecDeque::new(),
             draining: false,
             apps_in_flight: BTreeMap::new(),
-            server_epoch: 0,
+            server_epochs: BTreeMap::new(),
             quiet_since: Instant::now(),
             last_rotation_check: None,
             rotation_at: None,
             last_link_poll: Instant::now(),
         };
         if let Some(row) = engine.shared.store.outgoing_commit()? {
+            let group_id = pb::Envelope::decode(row.envelope.as_slice())
+                .map(|e| e.group_id)
+                .unwrap_or_default();
             let pending = engine
-                .group
-                .as_ref()
+                .group_ref(&group_id)
                 .is_some_and(|g| g.pending_commit().is_some());
             if pending {
                 tracing::info!("resending the own commit left in flight");
@@ -279,6 +319,7 @@ impl Engine {
                 engine.inflight = Some(InFlight {
                     row,
                     job,
+                    group_id,
                     sent: false,
                     accepted: None,
                 });
@@ -286,7 +327,11 @@ impl Engine {
                 engine.shared.store.clear_outgoing_commit()?;
             }
         }
-        if engine.shared.store.last_resort_uploaded_at()?.is_none() {
+        // direct-messages: Old apps never join a DM. A version 2 core uploads
+        // a fresh set of KeyPackages that list 0xF0A2 the first time it runs.
+        if engine.shared.store.last_resort_uploaded_at()?.is_none()
+            || !engine.shared.store.flag(DM_KEY_PACKAGES_FLAG)?
+        {
             engine.push_job(Job::UploadKeyPackages { remaining: Some(0) });
         }
         // group-membership: Re-add after an unusable Welcome. A device with
@@ -309,6 +354,67 @@ impl Engine {
 
     fn store(&self) -> &Store {
         &self.shared.store
+    }
+
+    // --- Groups (change `dms`: the main group and the DMs) ---
+
+    /// The group with id `group_id`: the main group or a DM.
+    fn group_ref(&self, group_id: &[u8]) -> Option<&MlsGroup> {
+        match &self.group {
+            Some(group) if group.group_id().as_slice() == group_id => Some(group),
+            _ => self.dms.get(group_id),
+        }
+    }
+
+    /// The group with id `group_id`, mutably.
+    fn group_mut(&mut self, group_id: &[u8]) -> Option<&mut MlsGroup> {
+        group_in(&mut self.group, &mut self.dms, group_id)
+    }
+
+    /// Takes the group with id `group_id` out, to work on it while calling
+    /// other engine methods; put it back with [`Engine::put_group`].
+    fn take_group(&mut self, group_id: &[u8]) -> Option<MlsGroup> {
+        if self
+            .group
+            .as_ref()
+            .is_some_and(|g| g.group_id().as_slice() == group_id)
+        {
+            return self.group.take();
+        }
+        self.dms.remove(group_id)
+    }
+
+    /// Puts a group back where it belongs: a DM by its context, else the
+    /// main group.
+    fn put_group(&mut self, group: MlsGroup) {
+        if mls_group::is_dm(group.extensions()) {
+            self.dms.insert(group.group_id().as_slice().to_vec(), group);
+        } else {
+            self.group = Some(group);
+        }
+    }
+
+    /// The main group's id, once it has one.
+    fn main_id(&self) -> Option<Vec<u8>> {
+        self.group
+            .as_ref()
+            .map(|g| g.group_id().as_slice().to_vec())
+    }
+
+    /// Reloads `group_id` from the store after a failed transaction.
+    fn reload_group_in(&mut self, group_id: &[u8]) -> Result<(), EngineError> {
+        if self.store().is_main(group_id)? || self.main_id().as_deref() == Some(group_id) {
+            return self.reload_group();
+        }
+        match mls_group::load(self.store().mls(), group_id)? {
+            Some(group) => {
+                self.dms.insert(group_id.to_vec(), group);
+            }
+            None => {
+                self.dms.remove(group_id);
+            }
+        }
+        Ok(())
     }
 
     fn emit(&self, event: Event) {
@@ -490,14 +596,25 @@ impl Engine {
     /// Pinned TLS, challenge auth, then `Connect` with `Hello`.
     async fn open_link(&self) -> Result<Link, NetError> {
         let conn = Conn::open(&self.account.relay_address, self.account.tls_pin).await?;
+        // wire-transport: Protocol version negotiation. Version 2 with a Pi
+        // that knows DMs, version 1 with an older one.
+        let info = conn.server_info().await?;
+        let protocol_version = negotiate_protocol_version(&info.supported_protocol_versions)
+            .ok_or_else(|| {
+                NetError::Protocol(format!(
+                    "the Pi speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
+                ))
+            })?;
+        self.shared.pi_knows_dms.store(
+            protocol::wire_transport::pi_knows_dms(&info.supported_protocol_versions),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         let session = conn
             .authenticate(&self.keys, self.device_ref(), self.now())
             .await?;
         let (tx, frames) = mpsc::channel(64);
         tx.send(pb::ClientFrame {
-            frame: Some(Out::Hello(pb::Hello {
-                protocol_version: PROTOCOL_VERSION,
-            })),
+            frame: Some(Out::Hello(pb::Hello { protocol_version })),
         })
         .await
         .map_err(|_| NetError::Connect("stream closed".into()))?;
@@ -633,6 +750,28 @@ impl Engine {
             {
                 self.push_job(Job::CommitPiRemoves);
             }
+            // change `dms`: the same upkeep in each DM. Any member commits a
+            // DM's pending Pi Removes; no admin is in a DM.
+            for dm in self.store().dms()? {
+                if !dm.joined || dm.closed_at.is_some() || dm.state.stalled.is_some() {
+                    continue;
+                }
+                if crate::keys::rotation_due(dm.state.own_leaf_updated_at, now) {
+                    self.push_job(Job::RotateIn {
+                        group_id: dm.group_id.clone(),
+                    });
+                }
+                if self.dms.get(&dm.group_id).is_some_and(|g| {
+                    crate::membership::has_pending_pi_removes(
+                        g,
+                        mls_group::pi_sender_index(g.extensions(), &self.pi),
+                    )
+                }) {
+                    self.push_job(Job::CommitPiRemovesIn {
+                        group_id: dm.group_id,
+                    });
+                }
+            }
         }
         if let Some(at) = self.rotation_at
             && now >= at
@@ -658,15 +797,18 @@ impl Engine {
         if !self.idle() || self.jobs.is_empty() {
             return false;
         }
-        // After STALE_EPOCH, wait for the commits that moved the group on.
-        let epoch = self.group.as_ref().map_or(0, |g| g.epoch().as_u64());
-        epoch >= self.server_epoch
-            || self
-                .store()
-                .group()
-                .ok()
-                .flatten()
-                .is_some_and(|r| r.stalled.is_some())
+        // After STALE_EPOCH, wait for the commits that moved each group on
+        // (unless this device stopped following it).
+        self.server_epochs.iter().all(|(group_id, hint)| {
+            self.group_ref(group_id)
+                .is_none_or(|g| g.epoch().as_u64() >= *hint)
+                || self
+                    .store()
+                    .group_for(group_id)
+                    .ok()
+                    .flatten()
+                    .is_none_or(|r| r.stalled.is_some())
+        })
     }
 
     // --- Frames ---
@@ -675,10 +817,13 @@ impl Engine {
         match frame.frame {
             Some(In::Envelope(envelope)) => self.on_envelope(envelope).await,
             Some(In::SendResult(result)) => self.on_send_result(result).await,
+            Some(In::DmClosed(notice)) => self.on_dm_closed(notice).await,
             Some(In::GapNotice(notice)) => {
                 if let Some(at) = notice.newest_expired_at.as_ref() {
+                    let chat = crate::events::ChatId(self.store().chat_of(&notice.group_id)?);
                     self.emit(Event::Gap {
                         newest_expired_at: crate::identity::certificate::from_timestamp(at),
+                        chat,
                     });
                 }
                 Ok(())
@@ -691,6 +836,16 @@ impl Engine {
                 Ok(())
             }
             Some(In::RemovedNotice(notice)) => {
+                // direct-messages: Inactivity across groups. Its leaf in the
+                // DM is stale: it stops following the DM until the Welcome
+                // that re-adds it (a fresh start), and sends nothing there.
+                if let Some(dm) = self.store().dm_by_group(&notice.group_id)? {
+                    if dm.joined && dm.closed_at.is_none() {
+                        self.store()
+                            .set_stalled_in(&dm.group_id, "removed for inactivity")?;
+                    }
+                    return Ok(());
+                }
                 // group-membership: Automatic re-add. This device waits on
                 // the stream for the Welcome that re-adds it. A device in no
                 // group (it asked to be re-added after an unusable Welcome)
@@ -710,7 +865,11 @@ impl Engine {
                 Ok(())
             }
             Some(In::JoinNotice(notice)) => {
-                self.on_join_notice(notice);
+                if self.dms.contains_key(&notice.group_id) {
+                    self.on_dm_join_notice(notice);
+                } else {
+                    self.on_join_notice(notice);
+                }
                 Ok(())
             }
             Some(In::Heartbeat(_)) | None => Ok(()),
@@ -777,6 +936,63 @@ impl Engine {
         });
     }
 
+    /// direct-messages: DM members kept complete. A device of either user
+    /// waits to be added to this DM (its peer at first, a new or upgraded
+    /// device, or one back from inactivity): add it with no user action.
+    fn on_dm_join_notice(&mut self, notice: pb::JoinNotice) {
+        let Some(device) = notice.device else {
+            return;
+        };
+        let Some(user) = device.user_id.as_ref().map(UserId::from_pb) else {
+            return;
+        };
+        let Ok(device_id) = DeviceId::try_from(device.device_id.as_slice()) else {
+            return;
+        };
+        if device_id == self.account.device_id {
+            return;
+        }
+        tracing::info!(user = %user, "DM join notice; adding the device");
+        self.push_job(Job::AddToDm {
+            group_id: notice.group_id,
+            user,
+            device: device_id,
+        });
+    }
+
+    /// direct-messages: DM closed on user removal. The peer was removed: the
+    /// chat keeps its history, read-only; own messages still sending there
+    /// fail. Acknowledged with `server_seq` 0 so the Pi stops telling.
+    async fn on_dm_closed(&mut self, notice: pb::DmClosed) -> Result<(), EngineError> {
+        if let Some(dm) = self.store().dm_by_group(&notice.group_id)?
+            && dm.closed_at.is_none()
+        {
+            let at = notice
+                .closed_at
+                .as_ref()
+                .map(crate::identity::certificate::from_timestamp)
+                .unwrap_or_else(|| self.now());
+            self.store().close_dm(&notice.group_id, at)?;
+            if let Some(mut group) = self.dms.remove(&notice.group_id) {
+                let _ = group.delete(self.store().mls().storage());
+            }
+            for message in self.store().outgoing_in_flight()? {
+                if message.chat == dm.chat {
+                    self.store().mark_failed(message.id, "the DM was closed")?;
+                    self.emit(Event::SendStatus {
+                        id: message.id,
+                        status: crate::events::SendStatus::Failed {
+                            reason: "the DM was closed".into(),
+                        },
+                    });
+                }
+            }
+            tracing::info!("a DM was closed: its peer was removed");
+            self.emit(Event::ChatsChanged);
+        }
+        self.ack(&notice.group_id, 0).await
+    }
+
     async fn on_envelope(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
         let kind = Kind::try_from(envelope.kind).unwrap_or(Kind::Unspecified);
         let waiting = self.inflight.as_ref().is_some_and(|f| f.accepted.is_none());
@@ -789,7 +1005,7 @@ impl Engine {
             // re-add. A real re-add's Welcome always comes later.
             if self
                 .store()
-                .group()?
+                .group_for(&envelope.group_id)?
                 .is_some_and(|row| envelope.server_seq <= row.processed_seq)
             {
                 return self.ack(&envelope.group_id, envelope.server_seq).await;
@@ -800,8 +1016,8 @@ impl Engine {
             }
             return self.on_welcome(envelope).await;
         }
-        let Some(row) = self.store().group()? else {
-            // Not in the group yet: nothing here is for this device.
+        let Some(row) = self.store().group_for(&envelope.group_id)? else {
+            // Not in that group (yet): nothing here is for this device.
             return self.ack(&envelope.group_id, envelope.server_seq).await;
         };
         if envelope.server_seq <= row.processed_seq {
@@ -821,7 +1037,8 @@ impl Engine {
             return Ok(());
         }
         if row.stalled.is_some() {
-            self.store().set_processed_seq(envelope.server_seq)?;
+            self.store()
+                .set_processed_seq_in(&envelope.group_id, envelope.server_seq)?;
             return self.ack(&envelope.group_id, envelope.server_seq).await;
         }
         match kind {
@@ -829,7 +1046,8 @@ impl Engine {
             Kind::Proposal => self.on_proposal(envelope).await,
             Kind::Application => self.on_application(envelope).await,
             Kind::Welcome | Kind::Unspecified => {
-                self.store().set_processed_seq(envelope.server_seq)?;
+                self.store()
+                    .set_processed_seq_in(&envelope.group_id, envelope.server_seq)?;
                 self.ack(&envelope.group_id, envelope.server_seq).await
             }
         }
@@ -875,8 +1093,9 @@ impl Engine {
     async fn stall(&mut self, envelope: &pb::Envelope, why: String) -> Result<(), EngineError> {
         tracing::warn!(server_seq = envelope.server_seq, why = %why, "refused a commit");
         self.store().transaction(|| {
-            self.store().set_stalled(&why)?;
-            self.store().set_processed_seq(envelope.server_seq)
+            self.store().set_stalled_in(&envelope.group_id, &why)?;
+            self.store()
+                .set_processed_seq_in(&envelope.group_id, envelope.server_seq)
         })?;
         self.emit(Event::CommitRefused { reason: why });
         self.ack(&envelope.group_id, envelope.server_seq).await
@@ -884,14 +1103,14 @@ impl Engine {
 
     /// A commit from another member: check it, then merge it.
     async fn on_commit(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
-        let Some(mut group) = self.group.take() else {
+        let Some(mut group) = self.take_group(&envelope.group_id) else {
             return self
                 .stall(&envelope, "a commit arrived but no group is loaded".into())
                 .await;
         };
         let result = self.on_commit_in(&mut group, &envelope).await;
-        if self.group.is_none() {
-            self.group = Some(group);
+        if self.group_ref(&envelope.group_id).is_none() {
+            self.put_group(group);
         }
         result
     }
@@ -983,13 +1202,15 @@ impl Engine {
                 group
                     .merge_staged_commit(self.store().mls(), *staged)
                     .map_err(|e| MlsError::new("merging a commit", e))?;
-                self.store().set_processed_seq(seq)?;
+                self.store().set_processed_seq_in(&envelope.group_id, seq)?;
                 Ok(automatic_changes(self.store(), &review, now)?)
             });
         let automatic = match merged {
             Ok(automatic) => automatic,
             Err(error) => {
-                self.reload_group()?;
+                if let Some(reloaded) = mls_group::load(self.store().mls(), &envelope.group_id)? {
+                    *group = reloaded;
+                }
                 return Err(error);
             }
         };
@@ -1003,7 +1224,13 @@ impl Engine {
             removed = review.removed.len(),
             "merged a commit"
         );
-        self.members_changed(&review, by, automatic);
+        if mls_group::is_dm(group.extensions()) {
+            if !review.added.is_empty() || !review.removed.is_empty() {
+                self.emit(Event::ChatsChanged);
+            }
+        } else {
+            self.members_changed(&review, by, automatic);
+        }
         self.ack(&envelope.group_id, seq).await
     }
 
@@ -1013,7 +1240,8 @@ impl Engine {
         let seq = envelope.server_seq;
         let pi = self.pi.clone();
         let is_admin = self.account.is_admin;
-        let Some(group) = self.group.as_mut() else {
+        let is_dm = self.dms.contains_key(&envelope.group_id);
+        let Some(group) = group_in(&mut self.group, &mut self.dms, &envelope.group_id) else {
             return self.ack(&envelope.group_id, seq).await;
         };
         let store = Arc::clone(&self.shared.store);
@@ -1038,17 +1266,23 @@ impl Engine {
                     Err(error) => tracing::debug!(%error, "skipped a proposal"),
                 }
             }
-            store.set_processed_seq(seq)?;
+            store.set_processed_seq_in(&envelope.group_id, seq)?;
             Ok(from_pi)
         });
         let from_pi = match outcome {
             Ok(from_pi) => from_pi,
             Err(error) => {
-                self.reload_group()?;
+                self.reload_group_in(&envelope.group_id)?;
                 return Err(error);
             }
         };
-        if from_pi && is_admin {
+        if from_pi && is_dm {
+            // direct-messages: Inactivity across groups. No admin is in a
+            // DM, so its members commit the Pi's Removes.
+            self.push_job(Job::CommitPiRemovesIn {
+                group_id: envelope.group_id.clone(),
+            });
+        } else if from_pi && is_admin {
             // group-membership: Inactive devices are kept out. Admin devices
             // commit the Pi's pending Removes.
             self.push_job(Job::CommitPiRemoves);
@@ -1060,16 +1294,16 @@ impl Engine {
     /// tell the UI (client-runtime: Local message store; Events in order).
     async fn on_application(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
         let seq = envelope.server_seq;
-        let Some(group) = self.group.as_mut() else {
-            return self.ack(&envelope.group_id, seq).await;
-        };
-        let admin = mls_group::admin_user_id(group.extensions());
         let store = Arc::clone(&self.shared.store);
         let now = self.shared.clock.now();
         let own_user = UserId::new(
             self.account.username.clone(),
             self.account.server_id.clone(),
         );
+        let Some(group) = group_in(&mut self.group, &mut self.dms, &envelope.group_id) else {
+            return self.ack(&envelope.group_id, seq).await;
+        };
+        let admin = mls_group::admin_user_id(group.extensions());
         let result = store.transaction(|| -> Result<_, EngineError> {
             let received = crate::messaging::receive_application(
                 &store,
@@ -1079,13 +1313,13 @@ impl Engine {
                 &own_user,
                 now,
             )?;
-            store.set_processed_seq(seq)?;
+            store.set_processed_seq_in(&envelope.group_id, seq)?;
             Ok(received)
         });
         let received = match result {
             Ok(received) => received,
             Err(error) => {
-                self.reload_group()?;
+                self.reload_group_in(&envelope.group_id)?;
                 return Err(error);
             }
         };
@@ -1120,6 +1354,10 @@ impl Engine {
                 return self.refuse_welcome(&envelope.group_id, seq, reason).await;
             }
         };
+        // change `dms`: a DM's Welcome names its two users instead of an
+        // admin.
+        let is_dm = mls_group::is_dm(staged.group_context().extensions());
+        let dm_peer: Option<UserId>;
         let needed = verify::users_in_welcome(staged.members());
         let mut pinned = self.resolve_users(needed.into_keys()).await?;
         // key-directory: Clients verify the identity chain. A leaf that does
@@ -1129,15 +1367,32 @@ impl Engine {
         // first sees in a Welcome anyway (owner 2026-11-11, task 6.4).
         let mut repinned: Vec<(UserId, Vec<u8>)> = Vec::new();
         loop {
-            let checked = verify::check_welcome(
-                staged.members(),
-                staged.group_context().extensions(),
-                &self.account.server_id,
-                &self.pi,
-                &|user| pinned.get(user).cloned(),
-            );
-            let Err(problem) = checked else {
-                break;
+            let checked = if is_dm {
+                verify::check_dm_welcome(
+                    staged.members(),
+                    staged.group_context().extensions(),
+                    &self.user(),
+                    &self.account.server_id,
+                    &self.pi,
+                    &|user| pinned.get(user).cloned(),
+                )
+                .map(Some)
+            } else {
+                verify::check_welcome(
+                    staged.members(),
+                    staged.group_context().extensions(),
+                    &self.account.server_id,
+                    &self.pi,
+                    &|user| pinned.get(user).cloned(),
+                )
+                .map(|()| None)
+            };
+            let problem = match checked {
+                Ok(peer) => {
+                    dm_peer = peer;
+                    break;
+                }
+                Err(problem) => problem,
             };
             let user = verify::welcome_key_lookup(&problem)
                 .filter(|user| !repinned.iter().any(|(done, _)| done == user));
@@ -1151,6 +1406,11 @@ impl Engine {
             let Some((user, key)) = new_key else {
                 self.note_key_change(&problem).await;
                 tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
+                if is_dm {
+                    // Nothing to ask the Pi for: the DM is not worth a
+                    // re-add of this device to the main group.
+                    return self.ack(&envelope.group_id, seq).await;
+                }
                 return self
                     .refuse_welcome(&envelope.group_id, seq, problem.to_string())
                     .await;
@@ -1158,6 +1418,9 @@ impl Engine {
             tracing::info!(user = %user, "a Welcome uses a new identity key; checking it");
             pinned.insert(user.clone(), key.clone());
             repinned.push((user, key));
+        }
+        if let Some(peer) = dm_peer {
+            return self.join_dm(&envelope, staged, peer, repinned).await;
         }
         let rejoined = self.store().group()?.is_some();
         let now = self.now();
@@ -1203,6 +1466,48 @@ impl Engine {
             by: None,
             automatic: Vec::new(),
         });
+        self.ack(&envelope.group_id, seq).await
+    }
+
+    /// Joins a DM from its checked Welcome (direct-messages: Several groups
+    /// in the core): only this DM's state changes, the main group's stays.
+    async fn join_dm(
+        &mut self,
+        envelope: &pb::Envelope,
+        staged: StagedWelcome,
+        peer: UserId,
+        repinned: Vec<(UserId, Vec<u8>)>,
+    ) -> Result<(), EngineError> {
+        let seq = envelope.server_seq;
+        let now = self.now();
+        let store = Arc::clone(&self.shared.store);
+        let joined = store.transaction(|| -> Result<MlsGroup, EngineError> {
+            for (user, key) in &repinned {
+                store.repin_identity_key(&user.to_string(), key, now)?;
+            }
+            let group = staged
+                .into_group(store.mls())
+                .map_err(|e| MlsError::new("joining a DM from a Welcome", e))?;
+            store.set_dm_joined(group.group_id().as_slice(), &peer.to_string(), now, seq)?;
+            Ok(group)
+        });
+        let group = match joined {
+            Ok(group) => group,
+            Err(error) => {
+                self.reload_group_in(&envelope.group_id)?;
+                return Err(error);
+            }
+        };
+        tracing::info!(
+            server_seq = seq,
+            epoch = group.epoch().as_u64(),
+            "joined a DM"
+        );
+        self.dms.insert(group.group_id().as_slice().to_vec(), group);
+        for (user, _) in repinned {
+            self.identity_key_changed(user);
+        }
+        self.emit(Event::ChatsChanged);
         self.ack(&envelope.group_id, seq).await
     }
 
@@ -1330,25 +1635,31 @@ impl Engine {
         staged: crate::membership::StagedOwnCommit,
         recipients: Vec<pb::DeviceRef>,
     ) -> Result<(), EngineError> {
-        let Some(group) = self.group.as_ref() else {
+        let group_id = match job.dm_group() {
+            Some(group_id) => group_id.to_vec(),
+            None => match self.main_id() {
+                Some(group_id) => group_id,
+                None => {
+                    job.fail(ClientError::NoGroup);
+                    return Ok(());
+                }
+            },
+        };
+        if self.group_ref(&group_id).is_none() {
             job.fail(ClientError::NoGroup);
             return Ok(());
-        };
+        }
         let msg_id = random_msg_id()?;
         let epoch = staged.epoch;
-        let encoded = match crate::membership::commit_envelope(
-            msg_id,
-            group.group_id().as_slice(),
-            staged,
-            recipients,
-        ) {
-            Ok(encoded) => encoded,
-            Err(error) => {
-                self.clear_pending()?;
-                job.fail(error);
-                return Ok(());
-            }
-        };
+        let encoded =
+            match crate::membership::commit_envelope(msg_id, &group_id, staged, recipients) {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    self.clear_pending_in(&group_id)?;
+                    job.fail(error);
+                    return Ok(());
+                }
+            };
         let row = OutgoingCommitRow {
             msg_id,
             envelope: encoded,
@@ -1359,6 +1670,7 @@ impl Engine {
         self.inflight = Some(InFlight {
             row,
             job,
+            group_id,
             sent: false,
             accepted: None,
         });
@@ -1385,9 +1697,9 @@ impl Engine {
         Ok(())
     }
 
-    fn clear_pending(&mut self) -> Result<(), EngineError> {
+    fn clear_pending_in(&mut self, group_id: &[u8]) -> Result<(), EngineError> {
         let store = Arc::clone(&self.shared.store);
-        if let Some(group) = self.group.as_mut() {
+        if let Some(group) = self.group_mut(group_id) {
             store.transaction(|| -> Result<(), EngineError> {
                 group
                     .clear_pending_commit(store.mls().storage())
@@ -1425,7 +1737,12 @@ impl Engine {
                 self.process_deferred().await
             }
             Some(pb::send_result::Result::Rejected(rejected)) => {
-                self.clear_pending()?;
+                let group_id = self
+                    .inflight
+                    .as_ref()
+                    .map(|f| f.group_id.clone())
+                    .unwrap_or_default();
+                self.clear_pending_in(&group_id)?;
                 let Some(inflight) = self.inflight.take() else {
                     return Ok(());
                 };
@@ -1438,7 +1755,8 @@ impl Engine {
                         current_epoch = rejected.current_epoch,
                         "commit was stale; retrying after catching up"
                     );
-                    self.server_epoch = self.server_epoch.max(rejected.current_epoch);
+                    let hint = self.server_epochs.entry(group_id).or_default();
+                    *hint = (*hint).max(rejected.current_epoch);
                     self.jobs.push_front(inflight.job);
                 } else {
                     tracing::warn!(reason = reason.as_str_name(), "commit rejected");
@@ -1460,7 +1778,9 @@ impl Engine {
         let now = self.now();
         let store = Arc::clone(&self.shared.store);
         let pi = self.pi.clone();
-        let merged = match self.group.as_mut() {
+        let group_id = inflight.group_id.clone();
+        let is_dm = self.dms.contains_key(&group_id);
+        let merged = match self.group_mut(&group_id) {
             Some(group) => store.transaction(|| -> Result<_, EngineError> {
                 let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
                 let review = group
@@ -1475,7 +1795,7 @@ impl Engine {
                     .map_err(|e| MlsError::new("merging the own commit", e))?;
                 store.clear_outgoing_commit()?;
                 if had_path {
-                    store.set_own_leaf_updated(now)?;
+                    store.set_own_leaf_updated_in(&group_id, now)?;
                 }
                 let automatic = automatic_changes(&store, &review, now)?;
                 Ok((review, automatic))
@@ -1485,15 +1805,21 @@ impl Engine {
         let (review, automatic) = match merged {
             Ok(merged) => merged,
             Err(error) => {
-                self.reload_group()?;
+                self.reload_group_in(&group_id)?;
                 inflight.job.fail(ClientError::from(error));
                 return Ok(());
             }
         };
-        if let Some(group) = self.group.as_ref() {
+        if let Some(group) = self.group_ref(&group_id) {
             tracing::info!(epoch = group.epoch().as_u64(), "own commit merged");
         }
-        self.members_changed(&review, Some(self.user()), automatic);
+        if is_dm {
+            if !review.added.is_empty() || !review.removed.is_empty() {
+                self.emit(Event::ChatsChanged);
+            }
+        } else {
+            self.members_changed(&review, Some(self.user()), automatic);
+        }
         self.finish(inflight.job).await;
         Ok(())
     }

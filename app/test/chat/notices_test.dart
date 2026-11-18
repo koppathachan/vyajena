@@ -59,7 +59,7 @@ void main() {
   testWidgets('a gap notice for expired messages', (tester) async {
     final core = FakeCoreService(storedUser: bob);
     await openApp(tester, core);
-    core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince));
+    core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince, chatId: 0));
     await settle(tester);
     final context = tester.element(find.byType(Scaffold).first);
     expect(
@@ -126,6 +126,7 @@ void main() {
       ..messages = [
         const ChatMessage(
           id: 1,
+          chatId: 0,
           sender: akhil,
           senderDevice: 'cd34',
           outgoing: false,
@@ -180,7 +181,7 @@ void main() {
     final core = FakeCoreService(storedUser: bob);
     await openApp(tester, core);
     core.receive(akhil, 'first');
-    core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince));
+    core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince, chatId: 0));
     await settle(tester);
 
     // Members is on top of the chat while a notice comes.

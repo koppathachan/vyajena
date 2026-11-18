@@ -78,6 +78,8 @@ pub enum SendState {
 pub struct ChatMessage {
     /// The core's local id.
     pub id: i64,
+    /// The chat it is in: 0 is the main group, else a DM (change `dms`).
+    pub chat_id: i64,
     /// The sending user.
     pub sender: UserRef,
     /// The sending device, hex.
@@ -102,6 +104,37 @@ pub struct ChatMessage {
     pub accepted_at_ms: Option<i64>,
     /// For own messages, where it stands; unset for received ones.
     pub status: Option<SendState>,
+}
+
+/// What a chat is (app-ui: Chat list, change `dms`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChatKindInfo {
+    /// The one admin-run group.
+    Main,
+    /// A DM with `peer`.
+    Dm {
+        /// The other user.
+        peer: UserRef,
+        /// None of the peer's devices is in it yet: own messages wait.
+        waiting: bool,
+        /// The peer was removed: history only.
+        closed: bool,
+    },
+}
+
+/// One chat in the chat list (app-ui: Chat list).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChatSummary {
+    /// Its id: 0 is the main group.
+    pub chat_id: i64,
+    /// Main group or DM.
+    pub kind: ChatKindInfo,
+    /// Received messages after the read mark.
+    pub unread: u32,
+    /// Mentions of this user not seen yet.
+    pub unseen_mentions: u32,
+    /// When its newest message was stored.
+    pub last_message_at_ms: Option<i64>,
 }
 
 /// The connection to the Pi.
@@ -184,12 +217,19 @@ pub enum CoreEvent {
         sender: Option<UserRef>,
         /// When the Pi accepted it.
         accepted_at_ms: Option<i64>,
+        /// The chat it was for.
+        chat_id: i64,
     },
     /// Messages up to this time expired before this device fetched them.
     Gap {
         /// `accepted_at` of the newest expired message.
         newest_expired_at_ms: i64,
+        /// The chat they were for.
+        chat_id: i64,
     },
+    /// The chat list changed: a DM was opened, joined, got its peer's first
+    /// device, or was closed (change `dms`).
+    ChatsChanged,
     /// This device was removed for inactivity; messages since then were not
     /// kept for it.
     RemovedForInactivity {

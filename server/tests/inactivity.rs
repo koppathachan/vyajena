@@ -35,7 +35,7 @@ async fn is_member(pi: &TestPi, device: &TestDevice) -> bool {
     let id = device.device_id;
     pi.state
         .store
-        .call(|db| GroupState::members(db))
+        .call(|db| GroupState::main_members(db))
         .await
         .check("members")
         .iter()
@@ -176,6 +176,7 @@ async fn fetch_phone(
             pb::FetchKeyPackagesRequest {
                 user_id: Some(w_bob.pb_user_id()),
                 device_ids: vec![phone.device_id.to_vec()],
+                group_id: Vec::new(),
             },
         ))
         .await

@@ -621,6 +621,7 @@ async fn a_message_whose_mls_sender_is_not_the_named_device_is_shown_as_unreadab
     let Event::Unreadable {
         sender,
         accepted_at,
+        ..
     } = unreadable
     else {
         unreachable!()
@@ -698,20 +699,17 @@ async fn a_gap_notice_reaches_the_ui_before_newer_messages() {
     .await;
     pi.sweep().await;
     let expired_at: i64 = pi
-        .query(|db| {
-            db.query_row(
-                "SELECT gap_expired_at FROM cursors WHERE gap_expired_at IS NOT NULL",
-                [],
-                |row| row.get(0),
-            )
-        })
+        .query(|db| db.query_row("SELECT newest_expired_at FROM gaps", [], |row| row.get(0)))
         .await;
 
     bob.client.start().await.check("start bob");
     let gap = bob
         .wait_event("the gap notice", |e| matches!(e, Event::Gap { .. }))
         .await;
-    let Event::Gap { newest_expired_at } = gap else {
+    let Event::Gap {
+        newest_expired_at, ..
+    } = gap
+    else {
         unreachable!()
     };
     let millis = newest_expired_at

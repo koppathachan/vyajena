@@ -16,14 +16,14 @@ use std::sync::Arc;
 use std::time::SystemTime;
 
 use parking_lot::Mutex;
-use protocol::wire_transport::PROTOCOL_VERSION;
+use protocol::wire_transport::{SUPPORTED_PROTOCOL_VERSIONS, negotiate_protocol_version};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
-    self, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member, Message, MessageId,
-    Profile, PushPlatform, PushToken, UserId,
+    self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member,
+    Message, MessageId, Profile, PushPlatform, PushToken, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -166,6 +166,19 @@ pub enum ClientError {
     /// Not possible yet; retried later.
     #[error("not possible yet")]
     NotYet,
+
+    /// No chat with that id (change `dms`).
+    #[error("no such chat")]
+    NoSuchChat,
+
+    /// The Pi closed this DM: its peer was removed (direct-messages: DM
+    /// closed on user removal).
+    #[error("this DM is closed")]
+    ChatClosed,
+
+    /// The Pi does not know DMs yet (it lists no protocol version 2).
+    #[error("the server does not support DMs yet")]
+    DmsUnavailable,
 }
 
 struct Running {
@@ -215,9 +228,9 @@ async fn checked_server_info(conn: &Conn, server_id: &str) -> Result<pb::ServerI
             info.server_id
         )));
     }
-    if !info.supported_protocol_versions.contains(&PROTOCOL_VERSION) {
+    if negotiate_protocol_version(&info.supported_protocol_versions).is_none() {
         return Err(ClientError::ServerMismatch(format!(
-            "it does not speak protocol version {PROTOCOL_VERSION}"
+            "it speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
         )));
     }
     Ok(info)
@@ -247,6 +260,7 @@ impl Client {
                 clock,
                 events,
                 session: Mutex::new(None),
+                pi_knows_dms: std::sync::atomic::AtomicBool::new(false),
             }),
             stream: Some(stream),
             running: Mutex::new(None),
@@ -568,6 +582,9 @@ impl Client {
             .await
             .map_err(NetError::from)?;
         store.add_last_resort(&upload.last_resort_ref, now)?;
+        // direct-messages: Old apps never join a DM. These list 0xF0A2
+        // already, so the first start needs no second upload.
+        store.set_flag(crate::engine::DM_KEY_PACKAGES_FLAG, now)?;
         Ok(())
     }
 
@@ -856,10 +873,169 @@ impl Client {
         })
     }
 
-    /// The messages whose mention of this user (or everyone) is not seen
-    /// yet, in chat order (client-runtime: Unseen mentions).
+    /// The messages in the main group whose mention of this user (or
+    /// everyone) is not seen yet, in chat order (client-runtime: Unseen
+    /// mentions).
     pub fn unseen_mentions(&self) -> Result<Vec<MessageId>, ClientError> {
         Ok(self.shared.store.unseen_mentions()?)
+    }
+
+    /// [`Client::unseen_mentions`] in chat `chat` (change `dms`).
+    pub fn unseen_mentions_in(&self, chat: ChatId) -> Result<Vec<MessageId>, ClientError> {
+        Ok(self.shared.store.unseen_mentions_in(chat.0)?)
+    }
+
+    // --- Chats (direct-messages; app-ui: Chat list) ---
+
+    /// Whether the Pi this device last connected to knows DMs (it lists
+    /// protocol version 2); the app offers "Message" only then.
+    pub fn dms_available(&self) -> bool {
+        self.shared
+            .pi_knows_dms
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The chats: the main group first, then the DMs, newest message first,
+    /// closed DMs last.
+    pub fn chats(&self) -> Result<Vec<Chat>, ClientError> {
+        let store = &self.shared.store;
+        let summary = |id: ChatId, kind: ChatKind| -> Result<Chat, ClientError> {
+            Ok(Chat {
+                id,
+                kind,
+                unread: store.unread_in(id.0)?,
+                unseen_mentions: u32::try_from(store.unseen_mentions_in(id.0)?.len())
+                    .unwrap_or(u32::MAX),
+                last_message_at: store.last_message_at(id.0)?,
+            })
+        };
+        let mut chats = Vec::new();
+        if store.group()?.is_some() {
+            chats.push(summary(ChatId::MAIN, ChatKind::Main)?);
+        }
+        let mut dms = Vec::new();
+        for dm in store.dms()? {
+            let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
+                continue;
+            };
+            let closed = dm.closed_at.is_some();
+            let waiting = !closed && !self.dm_has_peer(&dm.group_id, &peer)?;
+            dms.push(summary(
+                ChatId(dm.chat),
+                ChatKind::Dm {
+                    peer,
+                    waiting,
+                    closed,
+                },
+            )?);
+        }
+        dms.sort_by(|a, b| {
+            let closed = |c: &Chat| matches!(c.kind, ChatKind::Dm { closed: true, .. });
+            closed(a)
+                .cmp(&closed(b))
+                .then(b.last_message_at.cmp(&a.last_message_at))
+                .then(a.id.cmp(&b.id))
+        });
+        chats.extend(dms);
+        Ok(chats)
+    }
+
+    /// Whether one of `peer`'s devices is in the DM `group_id` on this
+    /// device.
+    fn dm_has_peer(&self, group_id: &[u8], peer: &UserId) -> Result<bool, ClientError> {
+        let store = &self.shared.store;
+        let group = store.transaction(|| -> Result<_, ClientError> {
+            Ok(crate::mls::group::load(store.mls(), group_id)?)
+        })?;
+        Ok(group.is_some_and(|g| !crate::membership::leaves_of_user(&g, peer).is_empty()))
+    }
+
+    /// The open DM with `user`, opening it first if there is none
+    /// (direct-messages: Opening a DM). It can be written to at once; its
+    /// messages go out once one of the peer's devices is in it.
+    pub async fn open_dm(&self, user: &UserId) -> Result<ChatId, ClientError> {
+        let peer = user.to_string();
+        if let Some(dm) = self.shared.store.open_dm_with(&peer)? {
+            return Ok(ChatId(dm.chat));
+        }
+        let wanted = user.clone();
+        self.job(|reply| Job::OpenDm {
+            peer: wanted,
+            reply,
+        })
+        .await?;
+        self.shared
+            .store
+            .open_dm_with(&peer)?
+            .map(|dm| ChatId(dm.chat))
+            .ok_or(ClientError::NoSuchChat)
+    }
+
+    /// The peer of DM `chat`; `None` for the main group.
+    pub fn dm_peer(&self, chat: ChatId) -> Result<Option<UserId>, ClientError> {
+        if chat.is_main() {
+            return Ok(None);
+        }
+        let dm = self
+            .shared
+            .store
+            .dm_by_chat(chat.0)?
+            .ok_or(ClientError::NoSuchChat)?;
+        Ok(crate::messaging::parse_user(&dm.peer))
+    }
+
+    /// The user has seen chat `chat` up to its newest message (app-ui: Chat
+    /// list, the unread mark).
+    pub fn mark_chat_read(&self, chat: ChatId) -> Result<(), ClientError> {
+        let newest = self
+            .shared
+            .store
+            .history_in(chat.0, 1)?
+            .last()
+            .map(|m| m.id.0);
+        if let Some(up_to) = newest {
+            self.shared.store.mark_chat_read(chat.0, up_to)?;
+        }
+        Ok(())
+    }
+
+    /// [`Client::send_message`] in chat `chat` (change `dms`). Fails with
+    /// [`ClientError::NoSuchChat`] or [`ClientError::ChatClosed`] for a DM it
+    /// cannot write to.
+    pub fn send_message_in(
+        &self,
+        chat: ChatId,
+        text: &str,
+        mentions: &[crate::Mention],
+        reply_to: Option<MessageId>,
+    ) -> Result<MessageId, ClientError> {
+        if chat.is_main() {
+            return self.send_message(text, mentions, reply_to);
+        }
+        let dm = self
+            .shared
+            .store
+            .dm_by_chat(chat.0)?
+            .ok_or(ClientError::NoSuchChat)?;
+        if dm.closed_at.is_some() {
+            return Err(ClientError::ChatClosed);
+        }
+        let reply = reply_to.map(|id| self.reply_ref(id)).transpose()?;
+        let content = crate::messaging::encode_message(text, mentions, reply.as_ref(), self.now())
+            .map_err(too_long)?;
+        self.queue_content(chat.0, &content)
+    }
+
+    /// [`Client::history`] of chat `chat` (change `dms`).
+    pub fn history_in(&self, chat: ChatId, limit: usize) -> Result<Vec<Message>, ClientError> {
+        let own = self.own_user()?;
+        Ok(self
+            .shared
+            .store
+            .history_in(chat.0, limit)?
+            .iter()
+            .filter_map(|stored| crate::messaging::to_message(&self.shared.store, stored, &own))
+            .collect())
     }
 
     /// Marks the mention in message `id` seen; `false` if it had none
@@ -897,21 +1073,30 @@ impl Client {
     }
 
     fn send_content(&self, content: &[u8]) -> Result<MessageId, ClientError> {
-        let account = self.account()?;
+        self.account()?;
         if self.shared.store.group()?.is_none() {
             return Err(ClientError::NoGroup);
         }
+        self.queue_content(crate::store::MAIN_CHAT, content)
+    }
+
+    /// Stores an own message in chat `chat` as sending and wakes the engine.
+    fn queue_content(&self, chat: i64, content: &[u8]) -> Result<MessageId, ClientError> {
+        let account = self.account()?;
         let mut msg_id = [0u8; 16];
         getrandom::fill(&mut msg_id)
             .map_err(|e| ClientError::Mls(MlsError::new("randomness", e)))?;
         let user = UserId::new(account.username, account.server_id).to_string();
-        let id = self.shared.store.insert_outgoing(&OutgoingMessage {
-            msg_id,
-            sender_user: &user,
-            sender_device: account.device_id,
-            content,
-            created_at: self.now(),
-        })?;
+        let id = self.shared.store.insert_outgoing_in(
+            chat,
+            &OutgoingMessage {
+                msg_id,
+                sender_user: &user,
+                sender_device: account.device_id,
+                content,
+                created_at: self.now(),
+            },
+        )?;
         if let Some(running) = self.running.lock().as_ref() {
             // A full queue means the engine is busy and flushes anyway.
             let _ = running.commands.try_send(Command::Outbox);

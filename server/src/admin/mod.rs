@@ -184,7 +184,7 @@ impl Admin for AdminService {
             return Err(Status::failed_precondition("the admin cannot be removed"));
         }
         let now = self.state.clock.now();
-        let (revoked, invites) = self
+        let revoked = self
             .state
             .store
             .call(move |conn| {
@@ -201,15 +201,23 @@ impl Admin for AdminService {
                     rusqlite::params![user_id.username, unix_millis(now)],
                 )?;
                 let invites = invites::revoke_unused_for(&tx, &user_id.username, now)?;
+                // direct-messages: DM closed on user removal.
+                let owed = crate::dms::close_dms_of(&tx, &user_id.username, now)?;
+                let closed = crate::dms::open_notices(&tx, &owed)?;
                 tx.commit()?;
                 Ok(Ok((
                     devices.into_iter().map(|d| d.device_id).collect::<Vec<_>>(),
                     invites,
+                    closed,
                 )))
             })
             .await??;
+        let (revoked, invites, closed) = (revoked.0, revoked.1, revoked.2);
         for device_id in &revoked {
             let _ = self.state.revocations.send(*device_id);
+        }
+        for (device_id, notice) in closed {
+            self.state.hub.send_frame(&device_id, notice);
         }
         tracing::info!(devices = revoked.len(), invites, "removed a user");
         Ok(Response::new(pb::RemoveUserResponse {}))

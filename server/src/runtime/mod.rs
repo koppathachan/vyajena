@@ -243,6 +243,7 @@ pub fn routes(state: &State) -> Routes {
         .add_service(crate::devices::service(state))
         .add_service(crate::keys::service(state))
         .add_service(crate::admin::service(state))
+        .add_service(crate::dms::service(state))
         .add_service(crate::messaging::service(state))
 }
 

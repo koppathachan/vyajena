@@ -118,6 +118,40 @@ class RustCoreService extends CoreService {
   Future<bool> markMentionSeen(int id) => _c.markMentionSeen(id: id);
 
   @override
+  Future<bool> dmsAvailable() => _c.dmsAvailable();
+
+  @override
+  Future<List<ChatSummary>> chats() => _c.chats();
+
+  @override
+  Future<int> openDm(UserRef user) => _c.openDm(user: user);
+
+  @override
+  Future<List<ChatMessage>> historyIn(int chatId, int limit) =>
+      _c.historyIn(chatId: chatId, limit: limit);
+
+  @override
+  Future<int> sendMessageIn(
+    int chatId,
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  }) => _c.sendMessageIn(
+    chatId: chatId,
+    text: text,
+    mentions: mentions,
+    replyTo: replyTo,
+  );
+
+  @override
+  Future<List<int>> unseenMentionsIn(int chatId) async => [
+    for (final id in await _c.unseenMentionsIn(chatId: chatId)) id.toInt(),
+  ];
+
+  @override
+  Future<void> markChatRead(int chatId) => _c.markChatRead(chatId: chatId);
+
+  @override
   Future<String> displayName(UserRef user) => _c.displayName(user: user);
 
   @override

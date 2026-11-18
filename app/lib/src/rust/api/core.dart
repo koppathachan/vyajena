@@ -30,6 +30,9 @@ abstract class Core implements RustOpaqueInterface {
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
 
+  /// The chats: the main group first, then DMs, newest first, closed last.
+  Future<List<ChatSummary>> chats();
+
   /// Clears this device's push token on the Pi: no more wake pings
   /// (notifications not allowed).
   Future<void> clearPushToken();
@@ -50,6 +53,9 @@ abstract class Core implements RustOpaqueInterface {
   /// How to show `user`: "Ali (alice)", or the username alone.
   Future<String> displayName({required UserRef user});
 
+  /// Whether the Pi knows DMs: the app offers "Message" only then.
+  Future<bool> dmsAvailable();
+
   /// The group's epoch on this device, once in the group.
   Future<BigInt?> epoch();
 
@@ -64,6 +70,12 @@ abstract class Core implements RustOpaqueInterface {
   /// The newest `limit` messages, oldest first.
   Future<List<ChatMessage>> history({required int limit});
 
+  /// The newest `limit` messages of chat `chat_id`, oldest first.
+  Future<List<ChatMessage>> historyIn({
+    required PlatformInt64 chatId,
+    required int limit,
+  });
+
   /// Whether this device's user is the admin.
   Future<bool> isAdmin();
 
@@ -76,6 +88,9 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Admin: the unused invites (without text).
   Future<List<InviteInfo>> listInvites();
+
+  /// The user has seen chat `chat_id` up to its newest message.
+  Future<void> markChatRead({required PlatformInt64 chatId});
 
   /// Marks the mention in message `id` seen; `false` if none was unseen.
   Future<bool> markMentionSeen({required PlatformInt64 id});
@@ -90,6 +105,9 @@ abstract class Core implements RustOpaqueInterface {
   /// storage) and the keys in the OS key store.
   static Future<Core> open({required String dataDir}) =>
       RustLib.instance.api.crateApiCoreCoreOpen(dataDir: dataDir);
+
+  /// The open DM with `user`, opened first if there is none; its chat id.
+  Future<PlatformInt64> openDm({required UserRef user});
 
   /// `user`'s profile.
   Future<ProfileInfo> profile({required UserRef user});
@@ -116,6 +134,14 @@ abstract class Core implements RustOpaqueInterface {
   /// answering the message with local id `reply_to` if set (message-content:
   /// Mentions; Replies); returns its local id.
   Future<PlatformInt64> sendMessage({
+    required String text,
+    required List<MentionSpan> mentions,
+    PlatformInt64? replyTo,
+  });
+
+  /// [`Core::send_message`] in chat `chat_id`.
+  Future<PlatformInt64> sendMessageIn({
+    required PlatformInt64 chatId,
     required String text,
     required List<MentionSpan> mentions,
     PlatformInt64? replyTo,
@@ -148,6 +174,9 @@ abstract class Core implements RustOpaqueInterface {
   /// The local ids of messages whose mention of this user is not seen yet,
   /// in chat order (client-runtime: Unseen mentions).
   Future<Int64List> unseenMentions();
+
+  /// [`Core::unseen_mentions`] in chat `chat_id`.
+  Future<Int64List> unseenMentionsIn({required PlatformInt64 chatId});
 
   /// This device's user, once registered or linked.
   Future<UserRef?> userId();

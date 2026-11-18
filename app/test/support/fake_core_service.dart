@@ -92,9 +92,11 @@ class FakeCoreService extends CoreService {
     bool mentionsMe = false,
     ReplyQuote? reply,
     bool emitEvent = true,
+    int chatId = 0,
   }) {
     final message = ChatMessage(
       id: _newId(),
+      chatId: chatId,
       sender: sender,
       senderDevice: 'cd34',
       outgoing: false,
@@ -118,6 +120,7 @@ class FakeCoreService extends CoreService {
         if (m.id == id)
           ChatMessage(
             id: m.id,
+            chatId: m.chatId,
             sender: m.sender,
             senderDevice: m.senderDevice,
             outgoing: m.outgoing,
@@ -215,9 +218,16 @@ class FakeCoreService extends CoreService {
   Future<void> clearPushToken() async => _call('clearPushToken');
 
   @override
-  Future<List<ChatMessage>> history(int limit) async {
-    final start = messages.length > limit ? messages.length - limit : 0;
-    return messages.sublist(start);
+  Future<List<ChatMessage>> history(int limit) => historyIn(0, limit);
+
+  @override
+  Future<List<ChatMessage>> historyIn(int chatId, int limit) async {
+    final inChat = [
+      for (final m in messages)
+        if (m.chatId == chatId) m,
+    ];
+    final start = inChat.length > limit ? inChat.length - limit : 0;
+    return inChat.sublist(start);
   }
 
   @override
@@ -231,7 +241,7 @@ class FakeCoreService extends CoreService {
   @override
   Future<int> sendText(String text) async {
     _call('sendText', text);
-    return _storeOwn(text, const [], null);
+    return _storeOwn(text, const [], null, 0);
   }
 
   @override
@@ -257,15 +267,32 @@ class FakeCoreService extends CoreService {
         originalId: original.id,
       );
     }
-    return _storeOwn(text, mentions, reply);
+    return _storeOwn(text, mentions, reply, 0);
   }
 
-  int _storeOwn(String text, List<MentionSpan> mentions, ReplyQuote? reply) {
+  @override
+  Future<int> sendMessageIn(
+    int chatId,
+    String text, {
+    List<MentionSpan> mentions = const [],
+    int? replyTo,
+  }) async {
+    _call('sendMessageIn', (chatId: chatId, text: text, mentions: mentions));
+    return _storeOwn(text, mentions, null, chatId);
+  }
+
+  int _storeOwn(
+    String text,
+    List<MentionSpan> mentions,
+    ReplyQuote? reply,
+    int chatId,
+  ) {
     sent.add(text);
     final id = _newId();
     messages.add(
       ChatMessage(
         id: id,
+        chatId: chatId,
         sender: storedUser ?? newUser,
         senderDevice: 'ab12',
         outgoing: true,
@@ -282,7 +309,60 @@ class FakeCoreService extends CoreService {
   }
 
   @override
-  Future<List<int>> unseenMentions() async => List.of(unseen);
+  Future<List<int>> unseenMentions() => unseenMentionsIn(0);
+
+  @override
+  Future<List<int>> unseenMentionsIn(int chatId) async => [
+    for (final m in messages)
+      if (m.chatId == chatId && unseen.contains(m.id)) m.id,
+  ];
+
+  /// What [dmsAvailable] returns.
+  bool dms = true;
+
+  /// The DMs [chats] lists after the group, as the core lists them.
+  List<ChatSummary> dmChats = [];
+
+  @override
+  Future<bool> dmsAvailable() async => dms;
+
+  @override
+  Future<List<ChatSummary>> chats() async => [
+    if (epochValue != null)
+      ChatSummary(
+        chatId: 0,
+        kind: const ChatKindInfo.main(),
+        unread: 0,
+        unseenMentions: (await unseenMentionsIn(0)).length,
+      ),
+    ...dmChats,
+  ];
+
+  @override
+  Future<int> openDm(UserRef user) async {
+    _call('openDm', user);
+    for (final c in dmChats) {
+      if (c.kind case ChatKindInfo_Dm(
+        :final peer,
+      ) when peer.username == user.username && peer.serverId == user.serverId) {
+        return c.chatId;
+      }
+    }
+    final chatId = dmChats.length + 1;
+    dmChats.add(
+      ChatSummary(
+        chatId: chatId,
+        kind: ChatKindInfo.dm(peer: user, waiting: true, closed: false),
+        unread: 0,
+        unseenMentions: 0,
+      ),
+    );
+    emit(const CoreEvent.chatsChanged());
+    return chatId;
+  }
+
+  @override
+  Future<void> markChatRead(int chatId) async => _call('markChatRead', chatId);
 
   @override
   Future<bool> markMentionSeen(int id) async {

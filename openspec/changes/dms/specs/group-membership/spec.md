@@ -19,8 +19,9 @@ Opening a DM).
 
 #### Scenario: DMs do not count as a main group
 - **WHEN** Alice and Bob have a DM and the admin's device calls
-  `Admin.CreateGroup` on a Pi with no main group
-- **THEN** the Pi records the main group
+  `Admin.CreateGroup` again
+- **THEN** the Pi rejects it with `ALREADY_EXISTS` and still holds exactly one
+  main group next to the DM
 
 ### Requirement: Commit authority
 In the main group, the Pi SHALL accept a commit from an admin device with any
@@ -65,8 +66,8 @@ the same rules and reject commits that break them.
 For each group the Pi SHALL store only the group id, its kind (main or DM), for
 a DM the two usernames and when it was closed, the current epoch, the member
 devices with their leaf positions, the public ratchet tree and group context,
-and the commit log. For each device it SHALL store the protocol version of its
-last `Hello`. It SHALL NOT store group names, settings or message content.
+and the commit log. For each KeyPackage it SHALL store whether its capabilities
+list the DM extension `0xF0A2`. It SHALL NOT store group names, settings or message content.
 
 #### Scenario: Group renamed
 - **WHEN** the admin renames the group

@@ -59,6 +59,12 @@ pub enum CoreErrorKind {
     Rejected,
     /// Not possible yet; the core retries.
     NotYet,
+    /// No chat with that id (change `dms`).
+    NoSuchChat,
+    /// The DM is closed: its peer was removed.
+    ChatClosed,
+    /// The Pi does not support DMs yet.
+    DmsUnavailable,
     /// The one event stream was already taken.
     EventsTaken,
     /// Anything else (an internal failure of the core).

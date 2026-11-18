@@ -435,3 +435,117 @@ fn a_non_admin_commit_with_a_changed_key_is_refused_without_a_lookup() {
     let refused = review_with_lookup(&mut setup, &commit, &users, &new_keys);
     assert_eq!(refused, Err(LeafProblem::Unverified("alice@pi".into())));
 }
+
+/// Alice's DM with Bob, with Bob's device in it, as Alice's device has it.
+fn dm_of_alice_and_bob() -> (BTreeMap<UserId, Vec<u8>>, Member, ExternalSender) {
+    let (alice_user, bob_user) = (User::new("alice"), User::new("bob"));
+    let mut alice = alice_user.device();
+    let bob = bob_user.device();
+    let pi = pi();
+    alice.group = Some(
+        mls_group::create_dm(
+            alice.store.mls(),
+            &alice.keys.mls_signer(),
+            alice.credential(),
+            mls_group::new_group_id().check("group id"),
+            pi.clone(),
+            ("alice@pi", "bob@pi"),
+        )
+        .check("create a DM"),
+    );
+    alice.add(vec![bob.key_package()]);
+    let users = [&alice_user, &bob_user]
+        .iter()
+        .map(|u| (u.id.clone(), u.public()))
+        .collect();
+    (users, alice, pi)
+}
+
+// spec: direct-messages/dm-members
+#[test]
+fn a_dm_welcome_names_its_two_users_and_nobody_else_joins_it() {
+    let (users, alice, pi) = dm_of_alice_and_bob();
+    let group = alice.group.as_ref().check("group");
+    let pinned = |user: &UserId| users.get(user).cloned();
+    // Bob's core finds itself in it, with Alice as the peer.
+    let peer = verify::check_dm_welcome(
+        group.members(),
+        group.extensions(),
+        &UserId::new("bob", SERVER),
+        SERVER,
+        &pi,
+        &pinned,
+    )
+    .check("Bob checks the DM");
+    assert_eq!(peer, UserId::new("alice", SERVER));
+    // Carol's core refuses a Welcome to a DM that does not name her.
+    let refused = verify::check_dm_welcome(
+        group.members(),
+        group.extensions(),
+        &UserId::new("carol", SERVER),
+        SERVER,
+        &pi,
+        &pinned,
+    );
+    assert!(matches!(refused, Err(LeafProblem::Context(_))));
+    // And a main-group check refuses a DM's context (no admin extension).
+    assert!(matches!(
+        verify::check_welcome(group.members(), group.extensions(), SERVER, &pi, &pinned),
+        Err(LeafProblem::Context(_))
+    ));
+}
+
+// spec: group-membership/commit-authority
+#[test]
+fn in_a_dm_a_member_adds_the_peers_device_but_removes_only_its_own() {
+    use openmls_traits::OpenMlsProvider as _;
+    let (mut users, mut alice, pi) = dm_of_alice_and_bob();
+    // Bob, reset since, now certifies devices with a new key.
+    let bob_user = User::new("bob");
+    users.insert(bob_user.id.clone(), bob_user.public());
+    // Alice adds a device of Bob: allowed.
+    let tablet = bob_user.device();
+    let signer = alice.keys.mls_signer();
+    let provider = alice.store.mls();
+    let group = alice.group.as_mut().check("group");
+    let (commit, welcome, _) = group
+        .add_members(provider, &signer, &[tablet.key_package()])
+        .check("add Bob's tablet");
+    let _ = (wire(&commit), wire(&welcome));
+    let staged = group.pending_commit().check("pending");
+    let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
+    let review = verify::review_commit(
+        group,
+        staged,
+        group.own_leaf_index(),
+        SERVER,
+        pi_index,
+        &|user| users.get(user).cloned(),
+    );
+    assert!(review.is_ok(), "{review:?}");
+    group
+        .clear_pending_commit(provider.storage())
+        .check("clear");
+    // Alice removes Bob's device: refused, only Bob may.
+    let bobs_leaf = verify::members(group)
+        .into_iter()
+        .find(|(_, claim)| claim.claimed.user.username == "bob")
+        .map(|(leaf, _)| openmls::prelude::LeafNodeIndex::new(leaf))
+        .check("Bob's leaf");
+    group
+        .remove_members(provider, &signer, &[bobs_leaf])
+        .check("remove Bob");
+    let staged = group.pending_commit().check("pending");
+    let review = verify::review_commit(
+        group,
+        staged,
+        group.own_leaf_index(),
+        SERVER,
+        pi_index,
+        &|user| users.get(user).cloned(),
+    );
+    assert!(
+        matches!(review, Err(LeafProblem::Authority(_))),
+        "{review:?}"
+    );
+}

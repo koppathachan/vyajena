@@ -25,7 +25,7 @@ async fn the_admin_creates_the_group_with_the_pi_as_external_sender() {
     let (epoch, members): (i64, i64) = pi
         .query(|conn| {
             conn.query_row(
-                "SELECT (SELECT epoch FROM mls_group), (SELECT count(*) FROM mls_members)",
+                "SELECT (SELECT epoch FROM mls_groups), (SELECT count(*) FROM mls_members)",
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )

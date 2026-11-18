@@ -71,6 +71,32 @@ pub fn admin_extension_data(admin_user_id: &str) -> Vec<u8> {
     admin_user_id.as_bytes().to_vec()
 }
 
+/// MLS extension type of the group context extension that marks a DM and
+/// names its two users (direct-messages: Opening a DM, change `dms` design D3).
+/// Its `extension_data` is [`dm_extension_data`]. A DM carries no
+/// [`ADMIN_EXTENSION_TYPE`] extension. A version 2 core lists this type in the
+/// capabilities of every KeyPackage and leaf; a KeyPackage that lists it is
+/// DM-capable (direct-messages: Old apps never join a DM).
+pub const DM_EXTENSION_TYPE: u16 = 0xF0A2;
+
+/// The `extension_data` of the [`DM_EXTENSION_TYPE`] extension: the two user
+/// ids in their textual form, sorted, joined by a newline, as UTF-8. The same
+/// for either order of `a` and `b`.
+pub fn dm_extension_data(a: &str, b: &str) -> Vec<u8> {
+    let (first, second) = if a <= b { (a, b) } else { (b, a) };
+    format!("{first}\n{second}").into_bytes()
+}
+
+/// The two user ids a [`DM_EXTENSION_TYPE`] extension names, sorted, or `None`
+/// if `data` is not exactly two different, non-empty user ids without
+/// whitespace, in sorted order, joined by one newline.
+pub fn parse_dm_extension(data: &[u8]) -> Option<(String, String)> {
+    let text = std::str::from_utf8(data).ok()?;
+    let (first, second) = text.split_once('\n')?;
+    let valid = |user: &str| !user.is_empty() && !user.chars().any(char::is_whitespace);
+    (valid(first) && valid(second) && first < second).then(|| (first.to_owned(), second.to_owned()))
+}
+
 /// The device that sent a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Committer<'a> {
@@ -135,7 +161,8 @@ pub struct Proposal<'a> {
 /// Why a proposal breaks the commit authority rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Violation {
-    /// A non-admin added a device certified for another user.
+    /// A non-admin added a device certified for another user; in a DM, for a
+    /// user outside the pair.
     AddForAnotherUser,
     /// A non-admin removed another user's device, and the Pi did not propose it.
     RemoveOfAnotherUser,
@@ -201,4 +228,45 @@ fn member_violation(committer: &Committer<'_>, proposal: &Proposal<'_>) -> Optio
             (target_user != committer.user).then_some(Violation::RemoveOfAnotherUser)
         }
     }
+}
+
+/// The DM commit authority rule (group-membership: Commit authority, change
+/// `dms` design D4).
+///
+/// A member device of a DM between `users` may commit only proposals that are
+/// each one of:
+///
+/// - an Update of the committer's own leaf (a commit with no proposals is
+///   always allowed);
+/// - an Add of a device certified for either of the two users;
+/// - a Remove of a device of the committer's own user;
+/// - a Remove the Pi issued as external sender, whatever its target.
+///
+/// No device has more power in a DM: `committer.is_admin` is ignored. A
+/// committer who is not one of the two users breaks the rule with its first
+/// proposal, or with [`Violation::NotAllowed`] at index 0 for an empty commit.
+pub fn check_dm_commit_authority(
+    committer: &Committer<'_>,
+    users: (&str, &str),
+    proposals: &[Proposal<'_>],
+) -> Result<(), CommitAuthorityError> {
+    let in_pair = |user: &str| user == users.0 || user == users.1;
+    if !in_pair(committer.user) {
+        return Err(CommitAuthorityError {
+            index: 0,
+            violation: Violation::NotAllowed,
+        });
+    }
+    for (index, proposal) in proposals.iter().enumerate() {
+        let violation = match (proposal.sender, proposal.kind) {
+            (ProposalSender::Member { .. }, ProposalKind::Add { target_user }) => {
+                (!in_pair(target_user)).then_some(Violation::AddForAnotherUser)
+            }
+            _ => member_violation(committer, proposal),
+        };
+        if let Some(violation) = violation {
+            return Err(CommitAuthorityError { index, violation });
+        }
+    }
+    Ok(())
 }

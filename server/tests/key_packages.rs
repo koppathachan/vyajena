@@ -56,6 +56,7 @@ async fn fetch(
             pb::FetchKeyPackagesRequest {
                 user_id: Some(user),
                 device_ids: device_ids.iter().map(|id| id.to_vec()).collect(),
+                group_id: Vec::new(),
             },
         ))
         .await?
@@ -262,6 +263,7 @@ async fn exhausted_device_falls_back_to_its_last_resort_keypackage() {
                     pb::FetchKeyPackagesRequest {
                         user_id: Some(user),
                         device_ids: vec![],
+                        group_id: Vec::new(),
                     },
                 ))
                 .await

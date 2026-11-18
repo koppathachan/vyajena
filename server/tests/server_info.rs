@@ -4,7 +4,7 @@
 mod support;
 
 use protocol::wire_transport::{
-    MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES, PROTOCOL_VERSION,
+    MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES, SUPPORTED_PROTOCOL_VERSIONS,
 };
 use support::Check;
 use support::harness::TestPi;
@@ -25,7 +25,10 @@ async fn server_info_lists_id_versions_limits_and_external_sender() {
         .server_info
         .check("server_info");
     assert_eq!(info.server_id, "pi");
-    assert_eq!(info.supported_protocol_versions, vec![PROTOCOL_VERSION]);
+    assert_eq!(
+        info.supported_protocol_versions,
+        SUPPORTED_PROTOCOL_VERSIONS.to_vec()
+    );
     let sender = info.external_sender.check("external_sender");
     assert_eq!(
         sender.signature_public_key,

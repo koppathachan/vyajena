@@ -51,8 +51,10 @@
 - **The Pi stores the pair** (two usernames, sorted). It keeps
   `UNIQUE(user_a, user_b) WHERE closed_at IS NULL`.
 - **Race:** Alice and Bob both open the DM at once.
-  - The second `Dms.CreateDm` gets `ALREADY_EXISTS`, carrying the open DM's
-    group id.
+  - The second `Dms.CreateDm` gets `created = false` and the open DM's
+    group id. A plain response field, because gRPC error details are
+    awkward to carry (changed from `ALREADY_EXISTS` while writing the
+    proto).
   - That core drops its epoch-0 group and waits. The automatic add (D6)
     brings its devices in.
 
@@ -87,33 +89,55 @@
 
 ### D5. Protocol version 2 and old apps
 
-- **Spike S1:** a version 1 core given a Welcome for a second group would
-  replace its main group with it (`replace_old_group`, one group row).
-  That is data loss for the old app, so a version 1 device must never get a
-  DM Welcome.
+- **Spike S1 (done 2026-11-17, by reading the core at `app-v1.0.0+3` and
+  `050e355`):** a version 1 core must never see anything of a DM.
+  - **A DM Welcome:** `verify::check_welcome` requires the `0xF0A1` admin
+    extension. A DM has none, so the core refuses the Welcome.
+    `refuse_welcome` then shows "a change was refused" and queues
+    `RequestReadd`, a needless re-add of itself to the main group.
+  - **If it were accepted:** `set_group` overwrites the one `group_state`
+    row (`id = 1`), so the main group would be lost.
+  - **A DM application envelope:** the core decrypts it with its one
+    group. That fails and shows "a message could not be read".
+  - So the Pi must not queue DM envelopes, Welcomes included, for a
+    version 1 device.
 - **The rules:**
-  - `PROTOCOL_VERSION = 2`; the Pi supports `[1, 2]`.
-  - The Pi records each device's version from its last `Hello`.
-  - A device that never connected counts as version 1.
+  - `PROTOCOL_VERSION = 2`; the Pi supports `[1, 2]`. Both behave the same
+    on the stream. Version 2 in `GetServerInfo` tells the app that the Pi
+    knows `Dms`.
+  - **DM-capable comes from the KeyPackages, not from `Hello`** (changed
+    while writing `protocol/`, 2026-11-17).
+    - MLS requires every member to list each group-context extension in its
+      leaf capabilities, so OpenMLS itself refuses to add a 1.0.0
+      KeyPackage to a DM, and the key is the real proof.
+    - A version 2 core lists `0xF0A2` in every KeyPackage and leaf. On its
+      first run it uploads a fresh set, last-resort included.
+    - The Pi stores a `dm_capable` flag per KeyPackage. A device is
+      DM-capable when its last-resort KeyPackage is.
+    - This drops the need to record the `Hello` version: a device that last
+      said version 2 could still have only 1.0.0 KeyPackages on the Pi.
 - **The Pi enforces:**
-  - `FetchKeyPackages` with `group_id` set to a DM returns only version 2
-    devices of the pair.
-  - A DM `COMMIT` that adds a version 1 device is rejected with
+  - `FetchKeyPackages` with `group_id` set to a DM returns only DM-capable
+    KeyPackages of the pair.
+  - A DM `COMMIT` that adds a leaf without `0xF0A2` is rejected with
     `POLICY_VIOLATION`.
-  - Nothing of a DM is ever queued for a version 1 device.
-- **On upgrade:** a version 1 device that connects with version 2 becomes
-  eligible, and D6 adds it.
+  - Every DM member is therefore a version 2 device, and nothing of a DM
+    reaches a version 1 device.
+- **On upgrade:** the core's first upload makes the device DM-capable, and
+  D6 adds it.
 
 ### D6. Automatic add and re-add per group
 
 - **`JoinNotice` for a DM:** the Pi sends `JoinNotice(group_id = dm)` to
   the DM's connected member devices for each device that:
-  - is a non-revoked, version 2 device of either user
+  - is a non-revoked, DM-capable device of either user
+  - is in the main group already, so a core never gets a DM Welcome
+    before the main group's (added while writing the Pi, 2026-11-17)
   - is not a member of that DM
   - is not inactive
 - **The Pi sends it:**
   - after the device's first KeyPackage upload
-  - on its first version 2 `Hello`
+  - when it uploads a DM-capable last-resort KeyPackage
   - each time a member device of that DM connects
 - **The first receiver adds it.** The race is the same as today:
   `STALE_EPOCH`, then it sees the device is a member and does nothing.
@@ -152,9 +176,17 @@
   - A partial unique index keeps exactly one `main`.
   - Add `group_id` to `mls_members`, the commit log and queue entries. The
     existing rows get the main group's id.
-  - Key `mls_public_state` per group: OpenMLS storage keys already include
-    the group id. Spike S2 confirms this for `PublicGroup`.
-  - `devices.protocol_version`.
+  - `mls_public_state` gains `group_id`, loaded and saved per group (S2).
+- **Spike S2 (done 2026-11-17, by reading the code):** no key clash.
+  - **Core:** `EncryptedStorage` slots are `label + serialized key`, and
+    every group-scoped key contains the `GroupId`. Two `MlsGroup`s share one
+    storage safely.
+  - **Pi:** `membership::group` loads the whole `mls_public_state` table
+    into one `MemoryStorage`, and on save deletes and rewrites all rows. So
+    the table gets a `group_id` column, and each group is loaded and saved
+    on its own: a save of one group never rewrites another. An end-to-end
+    test with two groups confirms it (task 3.1).
+  - `key_packages.dm_capable`.
 - **Backup:** `backup.sh` and `deploy.sh` take a backup before the
   migration, as for every upgrade.
 
@@ -186,6 +218,12 @@
   - then DMs, newest message first
   - each with an unread dot and an `@ N` badge
   - closed DMs at the bottom, greyed
+  - only once the user has a DM (decided while writing the app,
+    2026-11-17). With none, home stays the group's chat: a one-item list
+    would only add a tap. A DM arriving while the group's chat is open does
+    not pull the user out of it (a half-typed message would be lost). The
+    app bar gets a chats button with the unread count instead, and the next
+    start opens on the list. The owner can reverse this.
 - **Opening a DM:** the members list and a member's sheet get a "Message"
   action. It opens the DM if one exists, else calls `open_dm`. The screen
   shows "waiting for Bob's devices" until the peer is added.
@@ -212,6 +250,30 @@
   - envelope sizes and times per group, which it already sees for the main
     group
 
+### D13. One sequence and one cursor across groups
+
+- **Decided while writing the Pi, 2026-11-17.**
+- **One sequence:** `server_seq` stays one counter for every group.
+- **One order per device:** a device receives its entries of every group in
+  that one order.
+- **Acks:** the core processes the stream in that order (an own commit
+  holds everything after it, whatever the group). So an `Ack` in any group
+  covers the device's entries of every group up to that `server_seq`. The
+  cursor stays one per device.
+- **Why:** no per-group cursor table, and catch-up after a reconnect is
+  unchanged.
+
+### D14. Known limits (not built)
+
+- **A refused DM Welcome:** the core acks it and does not ask to be
+  re-added (`Keys.RequestReadd` is about the main group). The Pi then counts
+  that device as a member, so it is not offered again. It is rare: a
+  certificate that does not verify. Fixing it needs a DM variant of the
+  re-add request.
+- **`LowKeyPackages` after a DM fetch:** it counts all one-time
+  KeyPackages. A device with only old ones left gets no early warning, and
+  its last-resort KeyPackage covers the gap.
+
 ```mermaid
 sequenceDiagram
     participant A as Alice's phone (v2)
@@ -222,12 +284,12 @@ sequenceDiagram
     A->>Pi: Dms.CreateDm(peer bob, GroupInfo, tree)
     Pi-->>A: ok (pair recorded, epoch 0)
     A->>Pi: Keys.FetchKeyPackages(bob, group_id = dm)
-    Pi-->>A: Bob's phone only (tablet is v1)
+    Pi-->>A: Bob's phone only (tablet's KeyPackages lack 0xF0A2)
     A->>Pi: COMMIT Add(Bob's phone) + Welcome
     Pi-->>A: accepted
     Pi->>B: WELCOME (dm)
     Note over T: never gets the DM
-    T->>Pi: Hello v2 (after app update)
+    T->>Pi: UploadKeyPackages (0xF0A2 listed, after app update)
     Pi->>A: JoinNotice(dm, Bob's tablet)
     A->>Pi: COMMIT Add(Bob's tablet) + Welcome
     Pi->>T: WELCOME (dm)
@@ -235,10 +297,8 @@ sequenceDiagram
 
 ## Spikes (before code that relies on them)
 
-- **S1:** confirm that a version 1 core loses its main group on a second
-  group's Welcome. If it doesn't, D5 is still kept as defence.
-- **S2:** two `PublicGroup`s in one OpenMLS storage on the Pi, and two
-  `MlsGroup`s in one storage on the core, with no key clash.
+- **S1:** done, see D5.
+- **S2:** done, see D8.
 
 ## Risks / Trade-offs
 
