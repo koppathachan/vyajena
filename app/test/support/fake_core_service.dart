@@ -361,8 +361,25 @@ class FakeCoreService extends CoreService {
     return chatId;
   }
 
+  /// The read mark per chat, as `mark_chat_read` keeps it: the newest
+  /// message id read in that chat. Tests preset it to open a chat with
+  /// earlier messages already read.
+  final Map<int, int> readMarks = {};
+
   @override
-  Future<void> markChatRead(int chatId) async => _call('markChatRead', chatId);
+  Future<void> markChatRead(int chatId) async {
+    _call('markChatRead', chatId);
+    final inChat = [
+      for (final m in messages)
+        if (m.chatId == chatId) m.id,
+    ];
+    if (inChat.isNotEmpty) {
+      readMarks[chatId] = inChat.reduce((a, b) => a > b ? a : b);
+    }
+  }
+
+  @override
+  Future<int> chatReadMark(int chatId) async => readMarks[chatId] ?? 0;
 
   @override
   Future<bool> markMentionSeen(int id) async {

@@ -30,6 +30,11 @@ abstract class Core implements RustOpaqueInterface {
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
 
+  /// The read mark of chat `chat_id`: the local id of the newest message
+  /// read last, or 0 when it was never read. The app reads it when a chat
+  /// opens to place the "New messages" divider (app-ui: Unread divider).
+  Future<PlatformInt64> chatReadMark({required PlatformInt64 chatId});
+
   /// The chats: the main group first, then DMs, newest first, closed last.
   Future<List<ChatSummary>> chats();
 

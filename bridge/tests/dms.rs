@@ -78,3 +78,41 @@ async fn alice_opens_a_dm_with_bob_through_the_bridge() {
         Some(CoreErrorKind::NoSuchChat)
     );
 }
+
+// spec: app-ui/read-mark
+#[tokio::test(flavor = "multi_thread")]
+async fn the_read_mark_is_the_newest_read_message() {
+    let pi = TestPi::start().await;
+    let admin = device::admin_with_group(&pi).await;
+    let mut alice = device::member_of_group(&admin, "alice").await;
+    let mut bob = device::member_of_group(&admin, "bob").await;
+    alice
+        .wait_until("alice sees bob", |c| {
+            c.members()
+                .is_ok_and(|m| m.iter().any(|d| d.user == user("bob")))
+        })
+        .await;
+
+    // Never read: the mark is 0.
+    assert_eq!(bob.core.chat_read_mark(0).check("read mark"), 0);
+
+    // Alice sends "one"; Bob receives it and reads up to it.
+    let one = alice.core.send_text("one".into()).check("send one");
+    wait_accepted(&mut alice, one).await;
+    let one_at_bob = wait_text(&mut bob, "one").await;
+    bob.core.mark_chat_read(0).check("read");
+    assert_eq!(bob.core.chat_read_mark(0).check("read mark"), one_at_bob.id);
+    assert_eq!(bob.core.chats().check("chats")[0].unread, 0);
+
+    // Alice sends "two"; Bob receives it but does not read again. The mark
+    // stays at "one" (the divider would pin here), and "two" is unread.
+    let two = alice.core.send_text("two".into()).check("send two");
+    wait_accepted(&mut alice, two).await;
+    let two_at_bob = wait_text(&mut bob, "two").await;
+    assert_eq!(bob.core.chat_read_mark(0).check("read mark"), one_at_bob.id);
+    assert_eq!(bob.core.chats().check("chats")[0].unread, 1);
+
+    // Reading again moves the mark to "two".
+    bob.core.mark_chat_read(0).check("read");
+    assert_eq!(bob.core.chat_read_mark(0).check("read mark"), two_at_bob.id);
+}

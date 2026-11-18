@@ -265,6 +265,21 @@ impl Store {
         Ok(())
     }
 
+    /// The read mark of `chat`: the local id of the newest message the user
+    /// had read (as [`Store::mark_chat_read`] last set it), or 0 when the
+    /// chat was never read. Only reads; never advances the mark.
+    pub fn chat_read_mark(&self, chat: i64) -> Result<i64, StoreError> {
+        let up_to: Option<i64> = self.db.with(|conn| {
+            conn.query_row(
+                "SELECT read_up_to FROM chat_reads WHERE chat_id = ?1",
+                params![chat],
+                |row| row.get(0),
+            )
+            .optional()
+        })?;
+        Ok(up_to.unwrap_or(0))
+    }
+
     /// Received chat messages in `chat` after its read mark.
     pub fn unread_in(&self, chat: i64) -> Result<u32, StoreError> {
         let count: i64 = self.db.with(|conn| {

@@ -999,6 +999,13 @@ impl Client {
         Ok(())
     }
 
+    /// The read mark of chat `chat`: the local id of the newest message read
+    /// last, or [`MessageId`] 0 when it was never read (app-ui: the unread
+    /// divider's snapshot). Only reads; never advances the mark.
+    pub fn read_mark(&self, chat: ChatId) -> Result<MessageId, ClientError> {
+        Ok(MessageId(self.shared.store.chat_read_mark(chat.0)?))
+    }
+
     /// [`Client::send_message`] in chat `chat` (change `dms`). Fails with
     /// [`ClientError::NoSuchChat`] or [`ClientError::ChatClosed`] for a DM it
     /// cannot write to.

@@ -65,15 +65,75 @@ class _ChatScreenState extends State<ChatScreen> {
 
   int? _readUpTo;
 
+  /// The read mark as it stood when this screen opened: the "New messages"
+  /// divider pins to it, so it stays put while the stored mark advances
+  /// (app-ui: Unread divider). Null until [_snapshotLoaded].
+  int? _openMark;
+  bool _snapshotLoaded = false;
+
+  /// Whether the open-time scroll (to the first unread message, else the
+  /// bottom) has run.
+  bool _openPositioned = false;
+
+  /// Whether the list is at (or near) the newest message: the
+  /// scroll-to-bottom button shows only when it is not.
+  bool _atBottom = true;
+
+  /// How far from offset 0 (the newest message, the list is reversed) still
+  /// counts as "at the bottom".
+  static const _bottomThreshold = 80.0;
+
   @override
   void initState() {
     super.initState();
     _model.ensureLoaded();
+    _loadSnapshot();
+    _scroll.addListener(_onScroll);
+  }
+
+  /// Reads the read mark once, before [_markRead] advances it, so the
+  /// divider pins to where the user was (app-ui: Unread divider).
+  Future<void> _loadSnapshot() async {
+    int mark;
+    try {
+      mark = await widget.core.chatReadMark(_model.chatId);
+    } on Object {
+      mark = 0;
+    }
+    if (!mounted) return;
+    setState(() {
+      _openMark = mark;
+      _snapshotLoaded = true;
+    });
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final atBottom = _scroll.offset <= _bottomThreshold;
+    if (atBottom != _atBottom) setState(() => _atBottom = atBottom);
+  }
+
+  void _toBottom() => _scroll.animateTo(
+    0,
+    duration: const Duration(milliseconds: 250),
+    curve: Curves.easeOut,
+  );
+
+  /// On open, lands on the first unread message (else stays at the bottom),
+  /// once the read mark and the history are both loaded.
+  void _positionOnOpen(int? firstUnreadId, List<ChatItem> items) {
+    if (_openPositioned || !_snapshotLoaded) return;
+    if (!items.any((item) => item is MessageItem)) return;
+    _openPositioned = true;
+    if (firstUnreadId != null) _jumpTo(firstUnreadId);
   }
 
   /// The chat list's unread mark follows what this screen showed while the
   /// app is in the foreground.
   void _markRead(List<ChatItem> items) {
+    // Hold off until the divider has snapshotted the old mark (app-ui:
+    // Unread divider), so reading it always wins the race with this write.
+    if (!_snapshotLoaded) return;
     final last = items.whereType<MessageItem>().lastOrNull?.message.id;
     if (last == null || last == _readUpTo) return;
     final state = WidgetsBinding.instance.lifecycleState;
@@ -84,6 +144,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _scroll.removeListener(_onScroll);
     _scroll.dispose();
     super.dispose();
   }
@@ -91,6 +152,16 @@ class _ChatScreenState extends State<ChatScreen> {
   String _name(Object user) => _model.names.of(user as UserRef);
 
   GlobalKey _tileKey(int id) => _tiles.putIfAbsent(id, GlobalKey.new);
+
+  /// Draws the "New messages" divider above [tile] when [id] is the first
+  /// unread message (app-ui: Unread divider).
+  Widget _withDivider(int id, int? dividerBeforeId, Widget tile) =>
+      id == dividerBeforeId
+      ? Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [const _NewMessagesDivider(), tile],
+        )
+      : tile;
 
   String _mentionLabel(MentionTarget target) => switch (target) {
     MentionTarget_User(:final user) => _model.names.short(user),
@@ -242,9 +313,31 @@ class _ChatScreenState extends State<ChatScreen> {
       final me = widget.core.user.value;
       final peer = _model.peer;
       final peerName = peer == null ? '' : _model.names.short(peer);
+      // The unread divider pins to the read mark as it was on open: the
+      // first received message past it is the first unread; the divider sits
+      // above it unless it is the oldest message shown (app-ui: Unread
+      // divider).
+      final snapshot = _openMark;
+      int? firstUnreadId;
+      int? dividerBeforeId;
+      if (snapshot != null) {
+        var sawMessage = false;
+        for (final item in items) {
+          if (item is! MessageItem) continue;
+          final message = item.message;
+          if (!message.ownUser && message.id > snapshot) {
+            firstUnreadId = message.id;
+            if (sawMessage) dividerBeforeId = message.id;
+            break;
+          }
+          sawMessage = true;
+        }
+      }
       _queueCheck();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _markRead(items);
+        if (!mounted) return;
+        _positionOnOpen(firstUnreadId, items);
+        _markRead(items);
       });
       return Scaffold(
         appBar: shellAppBar(
@@ -280,9 +373,12 @@ class _ChatScreenState extends State<ChatScreen> {
         body: Column(
           children: [
             Expanded(
-              child: items.isEmpty
-                  ? const Center(child: Text('No messages yet'))
-                  : NotificationListener<ScrollNotification>(
+              child: Stack(
+                children: [
+                  if (items.isEmpty)
+                    const Center(child: Text('No messages yet'))
+                  else
+                    NotificationListener<ScrollNotification>(
                       onNotification: (_) {
                         _queueCheck();
                         return false;
@@ -296,25 +392,30 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, index) {
                           final item = items[items.length - 1 - index];
                           return switch (item) {
-                            MessageItem(:final message) => KeyedSubtree(
-                              key: _tileKey(message.id),
-                              child: MessageTile(
-                                key: ValueKey('message-${message.id}'),
-                                message: message,
-                                sender: _model.names.of(message.sender),
-                                mentionLabel: _mentionLabel,
-                                me: me,
-                                replyTo: switch (message.reply) {
-                                  final ReplyQuote r => _model.names.of(r.to),
-                                  null => null,
-                                },
-                                onReply: widget.core.removed.value
-                                    ? null
-                                    : () => _startReply(message),
-                                onQuoteTap: switch (message.reply) {
-                                  final ReplyQuote r => () => _openOriginal(r),
-                                  null => null,
-                                },
+                            MessageItem(:final message) => _withDivider(
+                              message.id,
+                              dividerBeforeId,
+                              KeyedSubtree(
+                                key: _tileKey(message.id),
+                                child: MessageTile(
+                                  key: ValueKey('message-${message.id}'),
+                                  message: message,
+                                  sender: _model.names.of(message.sender),
+                                  mentionLabel: _mentionLabel,
+                                  me: me,
+                                  replyTo: switch (message.reply) {
+                                    final ReplyQuote r => _model.names.of(r.to),
+                                    null => null,
+                                  },
+                                  onReply: widget.core.removed.value
+                                      ? null
+                                      : () => _startReply(message),
+                                  onQuoteTap: switch (message.reply) {
+                                    final ReplyQuote r => () =>
+                                        _openOriginal(r),
+                                    null => null,
+                                  },
+                                ),
                               ),
                             ),
                             NoticeItem(:final notice) => NoticeTile(
@@ -331,6 +432,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         },
                       ),
                     ),
+                  if (items.isNotEmpty && !_atBottom)
+                    Positioned(
+                      right: 16,
+                      bottom: 16,
+                      child: FloatingActionButton.small(
+                        key: const Key('scroll-to-bottom'),
+                        tooltip: 'Scroll to latest',
+                        onPressed: _toBottom,
+                        child: const Icon(Icons.arrow_downward),
+                      ),
+                    ),
+                ],
+              ),
             ),
             if (_model.closed)
               MaterialBanner(
@@ -364,6 +478,37 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     },
   );
+}
+
+/// The "New messages" line above the first unread message (app-ui: Unread
+/// divider).
+class _NewMessagesDivider extends StatelessWidget {
+  const _NewMessagesDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      key: const Key('unread-divider'),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: scheme.primary)),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'New messages',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: scheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(child: Divider(color: scheme.primary)),
+        ],
+      ),
+    );
+  }
 }
 
 /// The chat's menu entries.
