@@ -35,8 +35,8 @@ changes (design D2, D14).
 - [x] 5.2 Push branch `ci-release`, open the PR, merge after green CI (the owner says yes to the exact commits first)
 - [x] 5.3 Environment `release` (reviewer, tag rules, no admin bypass); tag ruleset for `server-v*` and `app-v*`; fork PR approval setting
 - [x] 5.4 Dry runs: Actions › release-app › Run workflow (main); Actions › release-server › Run workflow (main); both green
-- [ ] 5.5 Android secrets; Play service account + workload identity condition; Play permissions for testing tracks only
-- [ ] 5.6 Apple Distribution certificate (.p12), App Store profile with Push, App Store Connect API key (Developer); iOS secrets
+- [x] 5.5 Android secrets; Play service account + workload identity condition; Play permissions for testing tracks only
+- [x] 5.6 Apple Distribution certificate (.p12), App Store profile with Push, App Store Connect API key (Developer); iOS secrets
 - [ ] 5.7 First server release: bump `server/Cargo.toml`, tag `server-v…`, approve, verify sums + attestation
 - [ ] 5.8 First app release: raise the build number, tag `app-v…`, approve; check Play internal and TestFlight on a phone
 - [ ] 5.9 Resolve Q1 (app-release requirement) before archiving either change; then archive `ci-release`

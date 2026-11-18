@@ -248,6 +248,13 @@ secrets** (D13 in `openspec/changes/ci-release/design.md`) and Settings ›
 Secrets and variables › Actions › Repository secrets should show **none** of
 them.
 
+A dry run uses **none** of these secrets (throwaway key, no upload), so the
+first real `app-v*` release is their first test. Keep
+`~/.vyajena-release/ci/` until that release is green (a wrong secret is then a
+one-line fix), then delete it.
+
+Steps 5–8 were done on 2026-11-18 (design: "Setup log").
+
 ## Cutting an app release
 
 1. In a PR: raise the build number in `app/pubspec.yaml` (`1.1.0+4` →
