@@ -36,7 +36,9 @@ help: ## List the targets
 pi: ## Local Pi on 127.0.0.1:8443 (server/local.toml); the invite prints on first start only
 	cargo run -p server -- --config server/local.toml
 
-$(RELAYED_DIR)/pi.toml: Makefile
+# Rewritten on every run, so PI_PORT and RELAY_PORT overrides take effect.
+.PHONY: $(RELAYED_DIR)/pi.toml
+$(RELAYED_DIR)/pi.toml:
 	mkdir -p $(RELAYED_DIR)
 	printf '%s\n' \
 	  'server_id = "pi"' \
@@ -71,7 +73,8 @@ emulators: ## flutter emulators (ids for ANDROID_EMULATOR=)
 	cd app && flutter emulators
 
 ios-sim:
-	@open -a Simulator
+	@xcrun simctl list devices booted | grep -q Booted || open -a Simulator \
+	  || open "$$(xcode-select -p)/Applications/Simulator.app"
 	@for _ in $$(seq 1 90); do xcrun simctl list devices booted | grep -q Booted && exit 0; sleep 1; done; \
 	  echo "no iOS Simulator booted; open one in Simulator" >&2; exit 1
 
