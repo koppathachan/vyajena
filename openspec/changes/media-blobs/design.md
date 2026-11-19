@@ -86,8 +86,8 @@ the owner's "reuses the mentions mechanism" literally. Open to the owner (D3).
 ### D2. `blobs.proto`: a new `Blobs` service
 
 A blob is too large for the `Connect` stream (its envelopes cap at 64 KB /
-256 KB), so it needs its own RPCs. The recommended shape is a small unary
-service; see D4 for the owner decision on shape and authorization.
+256 KB), so it needs its own RPCs. It is a small unary service; the shape and
+authorization are settled in D4 and the storage behind it in D8.
 
 ```proto
 // Blobs service: encrypted image blobs, stored on the Pi, never seen in the
@@ -135,21 +135,20 @@ message AckBlobResponse {}
 `buf breaking` passes: `content.proto` adds a oneof field and a message,
 `blobs.proto` is new. `cargo run -p pbgen` regenerates both `pb.rs` files.
 
-### D3. The caption reuses mentions; length is the owner's call
+### D3. The caption reuses mentions and the text-message length limit (decided, owner 2026-11-19)
 
 `Image.caption` is optional UTF-8 with `caption_mentions`, the same `Mention`
-message and span rules as `Text` (message-content: Mentions). The recommended
-limit is the text-message limit: a caption plus a tiny image reference encrypts
-well within the 65,536-byte application cap, so reusing
+message and span rules as `Text` (message-content: Mentions). The length limit
+is the text-message limit (owner, 2026-11-19): a caption plus a tiny image
+reference encrypts well within the 65,536-byte application cap, so reusing
 `protocol::message_content` (the text length rule) keeps one limit to reason
-about. A smaller cap is possible if the owner wants captions kept short.
-**Owner decision (Open Question 1).** The sending core refuses an over-limit
-caption and refuses invalid mention spans (`InvalidCaption`); a receiver drops
-invalid spans and still shows the caption.
+about. The sending core refuses an over-limit caption and refuses invalid
+mention spans (`InvalidCaption`); a receiver drops invalid spans and still shows
+the caption.
 
-### D4. Blob-store API shape and authorization — owner decision
+### D4. Blob-store API shape and authorization (decided, owner 2026-11-19)
 
-The owner must choose the shape. The recommendation, encoded above:
+The owner chose the recommended shape, encoded above:
 
 - **A new `Blobs` service** (not an extension of `Messaging` or `Keys`): blobs
   are large, on a different storage device, and optional (the feature degrades
@@ -176,9 +175,11 @@ Alternatives for the owner:
 
 Streaming buys resumability for a flaky home tunnel; the anonymous model is
 simpler but loses ack-delete (blobs then always live the full 7 days) and lets
-any member of any group fetch a blob whose id leaks. **Owner decision (Open
-Question 2).** The rest of this design assumes the recommended shape; if the
-owner picks another, the spec deltas for `blob-store` change accordingly.
+any member of any group fetch a blob whose id leaks. **Decided (owner
+2026-11-19): the new `Blobs` service, unary with a 2 MB cap, group-bound with
+per-blob ack-delete.** The storage behind the service is a pluggable backend
+(D8), so this wire shape stays the same whether the bytes land on a drive or in
+a bucket.
 
 ### D5. The WebP pipeline runs in the core
 
@@ -257,34 +258,49 @@ sequenceDiagram
   B->>P: Blobs.AckBlob(group, blob_id)
 ```
 
-### D8. Pi storage: an external thumb drive; graceful degradation — owner decision on at-rest
+### D8. Pluggable storage backend; the default is the local filesystem (decided, owner 2026-11-19)
 
-Blobs live under a new config `blob_dir` on an external USB thumb drive (ext4,
-mounted by UUID), owned by the service user, mode 0700. The database and keys
-stay in `/var/lib/vyajena` on the Pi's main storage (invariant and pi-runtime:
-Durable storage unchanged). Blobs are not backed up (`backup.sh` keeps covering
-DB + keys only); losing them loses at most 7 days of re-sendable images (owner).
+The blob store is not tied to the Pi (owner, 2026-11-19). The server writes blob
+bytes through a `BlobStore` backend trait — `put`, `get`, `delete` and `exists`
+by `blob_id`, returning opaque ciphertext — so a future backend (an
+object-storage bucket, other cheap media) drops in without touching the wire
+protocol or the specs. The **MVP ships one backend, the local filesystem**; the
+trait is the seam for the rest.
 
-Degrade gracefully: if `blob_dir` is unset the blob feature is off and the
-`Blobs` RPCs return `UNAVAILABLE`; text messaging is unaffected. If `blob_dir`
-is set but its mount is absent or not writable at start, the server still starts
-and serves text, and `Blobs` RPCs return `UNAVAILABLE` until the mount is back —
-the server checks the mount is present (not the bare mountpoint directory on the
-root filesystem) before using it, so a blob is never written to the SD card by
-mistake.
+What stays in the Pi, independent of the backend: the blob *metadata* (id, group,
+size, `uploaded_at`, `expires_at`, ack set) lives in the Pi's SQLite, and so does
+all authorization, expiry and ack-delete logic (D4, D9). The backend only stores
+and returns opaque bytes by key; it never decides who may read a blob or when it
+dies. So group-bound authorization and ack-delete work the same whether the bytes
+sit on a drive or in a bucket.
 
-All mount and storage mechanics go through `deploy/pi/` only (CLAUDE.md). The
-service unit gains `RequiresMountsFor=`/`ReadWritePaths=` for `blob_dir` (today
-only `StateDirectory` is writable under `ProtectSystem=strict`). `check.sh`
-verifies the mount, ownership and mode; `deploy.sh` sets up the fstab-by-UUID
-`nofail` entry (or a systemd `.mount` unit) and creates `blob_dir`.
+The filesystem backend writes under one **stable, configured path**, the same on
+every start (owner: the drive is auto-mounted at a fixed path). Config is a
+`[blob_store]` table — `backend = "filesystem"` and, for it, `path = "…"`; when
+the table is absent the feature is off. The database and keys stay in
+`/var/lib/vyajena` on the Pi's main storage (invariant; pi-runtime: Durable
+storage unchanged). Blobs are not backed up (`backup.sh` keeps covering DB + keys
+only); losing them loses at most 7 days of re-sendable images (owner).
 
-**Owner decision (Open Question 3):** at-rest encryption of the thumb drive.
-Recommended: plain ext4 — the blobs are already client-side ciphertext and the
-decryption keys never reach the Pi, so LUKS adds little and a headless Pi would
-need its passphrase at boot. The owner may still want LUKS for defense in depth;
-and the mount mechanism (fstab `nofail` by UUID vs a `.mount` unit) and the
-exact `blob_dir` path are the owner's to confirm.
+**No extra at-rest encryption layer (owner, 2026-11-19):** blobs are already
+client-side ciphertext and the decryption key never reaches the server, so a LUKS
+or encrypted-volume layer would cost real complexity (a headless Pi needing a
+passphrase at boot) for almost no gain. Each backend relies on whatever at-rest
+protection it natively has — none extra for the filesystem; a bucket brings its
+own.
+
+**Degrade gracefully when the backend is unavailable** (the drive not mounted, a
+bucket unreachable): the server still starts and serves all text messaging, and
+`Blobs` RPCs return `UNAVAILABLE` until the backend is back. The filesystem
+backend checks its path is the real mounted store, not a bare directory on the
+root filesystem, so a blob is never written to the SD card by mistake.
+
+Deployment of the default backend goes through `deploy/pi/` only (CLAUDE.md): the
+drive auto-mounts at the stable path (the owner's setup, not scripted by us);
+`deploy.sh` ensures the directory exists, owned by `vyajena` mode 0700; the
+service unit gets a writable path for it (today only `StateDirectory` is writable
+under `ProtectSystem=strict`); `check.sh` verifies the path, ownership and mode
+and warns, without failing, when the store is absent.
 
 ### D9. Expiry, ack-delete and "media expired — resend"
 
@@ -335,8 +351,8 @@ an opaque ciphertext of known size; it carries no content and no push.
   already routes and sizes that group's envelopes; the blob content and key stay
   encrypted. The anonymous model (D4) would hide the group at the cost of
   ack-delete.
-- [The thumb drive fills or is pulled] → the feature degrades to `UNAVAILABLE`
-  (D8) and text keeps working; `check.sh` flags a missing or full mount.
+- [The storage backend fills or is gone] → the feature degrades to `UNAVAILABLE`
+  (D8) and text keeps working; `check.sh` flags a missing or full store.
 - [HEIC/odd inputs fail to decode on some platforms] → the core refuses with a
   clear error (D5); the app tells the user rather than sending a broken image.
 - [EXIF orientation lost on strip] → the core bakes orientation into the pixels
@@ -352,20 +368,22 @@ an opaque ciphertext of known size; it carries no content and no push.
   column defaults keep existing text messages valid. No change to how text is
   stored.
 - Pi: a schema migration adds blob metadata (blob_id, group_id, size,
-  `uploaded_at`, `expires_at`, ack set). The blob bytes live as files under
-  `blob_dir`, not in SQLite.
-- Deploy: `deploy/pi/` adds the mount setup; the first deploy that turns the
-  feature on must have the thumb drive attached. Until then the feature is off
-  and text is unaffected (D8). No data migration; no re-join.
+  `uploaded_at`, `expires_at`, ack set). The blob bytes live in the storage
+  backend (files under the filesystem path), not in SQLite.
+- Deploy: `deploy/pi/` wires the filesystem backend at the stable path; the
+  first deploy that turns the feature on needs the drive auto-mounted there.
+  Until then the feature is off and text is unaffected (D8). No data migration;
+  no re-join.
 
-## Open Questions
+## Resolved (owner, 2026-11-19)
 
-1. **Caption length (D3):** reuse the text-message limit (recommended) or a
-   smaller cap? Affects `protocol::blob_store` / `message_content`.
-2. **Blob-store API shape and authorization (D4):** new `Blobs` service, unary,
-   group-bound + ack-delete (recommended) vs extending `Messaging`, vs
-   streaming, vs an anonymous `blob_id`-capability model. Affects `blobs.proto`
-   and the whole `blob-store` spec.
-3. **Thumb-drive at-rest encryption and mount mechanics (D8):** plain ext4
-   (recommended) vs LUKS; fstab `nofail` by UUID vs a `.mount` unit; the
-   `blob_dir` path. Affects `deploy/pi/` only.
+1. **Caption length (D3):** reuse the text-message limit.
+2. **Blob-store API shape and authorization (D4):** a new `Blobs` service, unary
+   with a 2 MB cap, group-bound with per-blob ack-delete.
+3. **Storage backend (D8):** a pluggable `BlobStore` trait; the MVP ships the
+   local filesystem backend only, at one stable configured path; no extra
+   at-rest encryption layer (blobs are already ciphertext); the feature degrades
+   gracefully when the backend is unavailable. The drive is auto-mounted at a
+   fixed path (owner's setup).
+
+No open questions remain for this change.

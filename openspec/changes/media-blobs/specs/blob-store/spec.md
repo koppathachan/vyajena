@@ -72,20 +72,36 @@ it. The Pi enforces this.
 - **WHEN** a member device never acks a blob and 7 days pass
 - **THEN** the Pi deletes it and later downloads get `NOT_FOUND`
 
+### Requirement: Pluggable storage backend
+The Pi SHALL store blob bytes through a storage backend that stores and returns
+opaque ciphertext by `blob_id` and nothing else; the MVP backend is the local
+filesystem at a stable configured path. The blob metadata (id, group, size,
+upload and expiry times, ack set) and all authorization, expiry and ack-delete
+logic SHALL stay in the Pi's SQLite, independent of the backend, so swapping the
+backend changes neither the wire protocol nor who may read a blob or when it
+dies. The backend SHALL never hold a decryption key. The Pi enforces this.
+
+#### Scenario: Backend stores opaque bytes
+- **WHEN** Alice's blob is stored and later downloaded
+- **THEN** the backend returns the exact ciphertext by `blob_id`, and the Pi
+  decided membership and expiry from its own SQLite, not from the backend
+
 ### Requirement: Blob storage and graceful degradation
-The Pi SHALL store blob bytes as files under the configured `blob_dir` on its
-external mount, not in the SQLite database, and SHALL keep the database and keys
-on its main storage. When `blob_dir` is unset, or its mount is absent or not
-writable, the Pi SHALL still start and serve all messaging, and SHALL answer
+The Pi SHALL store blob bytes only through the configured storage backend, never
+in the SQLite database or on the main storage, and SHALL keep the database and
+keys on its main storage. When no backend is configured, or the configured
+backend is unavailable (its path not mounted or not writable, or a remote store
+unreachable), the Pi SHALL still start and serve all messaging, and SHALL answer
 every `Blobs` RPC with `UNAVAILABLE`; it SHALL NOT write a blob to the main
 storage. The Pi enforces this.
 
-#### Scenario: Mount missing at start
-- **WHEN** the Pi starts with `blob_dir` set but the thumb drive not mounted
+#### Scenario: Backend unavailable at start
+- **WHEN** the Pi starts with the filesystem backend configured but its drive
+  not mounted at the stable path
 - **THEN** it serves text messaging and answers `Blobs` RPCs with `UNAVAILABLE`,
   writing no blob to the SD card
 
 #### Scenario: Feature off
-- **WHEN** the Pi runs with no `blob_dir` configured
+- **WHEN** the Pi runs with no blob-store backend configured
 - **THEN** `Blobs.UploadBlob` and `Blobs.DownloadBlob` return `UNAVAILABLE` and
   text messaging works normally

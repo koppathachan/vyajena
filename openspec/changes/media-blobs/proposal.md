@@ -18,12 +18,15 @@ ciphertext only.
   strips EXIF, downscales to at most 2048 px on the long edge, and encodes WebP
   at quality ~80 within a 2 MB cap. No other format travels; the Pi stores
   opaque ciphertext.
-- **Blob store on the Pi (proto, Pi, deploy):** a new `Blobs` service stores,
-  serves and expires encrypted blobs. Blobs live on an external thumb drive
-  (ext4, mounted by UUID); the service depends on the mount and degrades
-  gracefully (blob RPCs return `UNAVAILABLE`, text messaging is unaffected) when
-  it is absent. The database and keys stay on the Pi's main storage. Blobs are
-  not backed up.
+- **Blob store (proto, Pi, deploy):** a new `Blobs` service stores, serves and
+  expires encrypted blobs, writing bytes through a pluggable `BlobStore` backend
+  so storage is not tied to the Pi (a bucket or other cheap store can replace it
+  later without touching the wire or the specs). The MVP ships one backend, the
+  local filesystem, at one stable path (the owner's auto-mounted drive). All
+  metadata, authorization, expiry and ack-delete stay in the Pi's SQLite,
+  independent of the backend. The service degrades gracefully (blob RPCs return
+  `UNAVAILABLE`, text messaging is unaffected) when the backend is unavailable.
+  The database and keys stay on the Pi's main storage. Blobs are not backed up.
 - **Blob crypto (core):** a fresh 256-bit key per blob, XChaCha20-Poly1305,
   random 16-byte blob id, no dedup. The key travels only inside the MLS
   ciphertext. Upload is idempotent on the blob id; a resent message reuses its
@@ -59,21 +62,17 @@ ciphertext only.
   resend" placeholder (owner).
 - Scope: one static image per message, optional caption reusing mentions
   (owner).
-- Pi storage: blobs on an external thumb drive (ext4, mount by UUID), service
-  depends on the mount and degrades gracefully; DB + keys on main storage; not
-  backed up (owner). Mount changes go through `deploy/pi/` only.
-
-## Open decisions for the owner (see design.md "Open Questions")
-
-- **Blob-store API shape:** a new `Blobs` gRPC service (recommended) versus
-  extending `Messaging`; unary versus streaming upload/download; group-bound
-  authorization with per-blob acks (recommended) versus an anonymous
-  capability model keyed on the blob id. Design D4.
-- **Thumb-drive at-rest encryption and mount mechanics:** plain ext4 (recommended;
-  blobs are already client-side ciphertext) versus LUKS; mount path; fstab
-  `nofail` by UUID versus a systemd `.mount` unit. Design D8.
-- **Caption length:** reuse the text-message limit (recommended) versus a
-  smaller cap. Design D3.
+- Pi storage: blobs through a pluggable `BlobStore` backend; the MVP backend is
+  the local filesystem at a stable path (the owner's auto-mounted drive); DB +
+  keys on main storage; not backed up (owner). Backend deployment goes through
+  `deploy/pi/` only.
+- Blob-store API: a new `Blobs` gRPC service, unary with a 2 MB cap, group-bound
+  authorization with per-blob ack-delete (owner, 2026-11-19). Design D4.
+- Storage backend: pluggable `BlobStore` trait, filesystem backend only for the
+  MVP, one stable path, no extra at-rest encryption layer (blobs are already
+  ciphertext), graceful degradation when the backend is absent (owner,
+  2026-11-19). Design D8.
+- Caption length: reuse the text-message limit (owner, 2026-11-19). Design D3.
 
 ## Proto files touched
 
@@ -88,8 +87,9 @@ ciphertext only.
 ### New Capabilities
 
 - `blob-store`: the Pi's encrypted blob service — upload, download, per-blob
-  ack and deletion, 7-day expiry, who may upload and download, size limits,
-  storage on the external mount and graceful degradation when it is absent.
+  ack and deletion, 7-day expiry, who may upload and download, size limits, a
+  pluggable storage backend (filesystem for the MVP) with the metadata and
+  policy kept in SQLite, and graceful degradation when the backend is absent.
 
 ### Modified Capabilities
 
@@ -103,11 +103,11 @@ ciphertext only.
 - `app-ui`: pick and send an image with an optional caption; the image bubble
   (ThumbHash blur → full image on tap), the download/expired states, and the
   caption with mentions.
-- `pi-runtime`: a new `blob_dir` setting on the external mount; the server
-  degrades gracefully when the mount is absent.
-- `pi-deployment`: the thumb-drive mount (ext4 by UUID, `nofail`), the service
-  depending on the mount, a writable path for `blob_dir`, `check.sh` verifying
-  it, and blobs excluded from backup.
+- `pi-runtime`: a new `[blob_store]` backend setting (filesystem `path` for the
+  MVP backend); the server degrades gracefully when the backend is absent.
+- `pi-deployment`: the filesystem backend's stable path (owned by `vyajena`,
+  mode 0700, on the owner's auto-mounted drive), a writable path for it on the
+  service, `check.sh` verifying it, and blobs excluded from backup.
 
 ## Impact
 
@@ -115,9 +115,10 @@ ciphertext only.
 - `protocol/src/blob_store.rs` (new): `MAX_BLOB_BYTES`, `MAX_IMAGE_BYTES`,
   `MAX_IMAGE_EDGE`, `WEBP_QUALITY`, `BLOB_ID_LEN`, `BLOB_KEY_LEN`,
   `MAX_THUMBHASH_BYTES`, `BLOB_TTL`.
-- `server/`: a new `blobs` feature (the `Blobs` service), blob storage on the
-  mount, expiry and ack-delete, a schema migration for blob metadata, config
-  `blob_dir`, graceful degradation.
+- `server/`: a new `blobs` feature (the `Blobs` service), a `BlobStore` backend
+  trait with a filesystem implementation, expiry and ack-delete, a schema
+  migration for blob metadata, a `[blob_store]` config section, graceful
+  degradation.
 - `client/`: a new `media` feature (WebP transcode, EXIF strip, downscale,
   ThumbHash, blob crypto, upload/download, device media cache), `send_image`,
   `download_image`, image fields on `Message`, a store migration.
@@ -125,5 +126,6 @@ ciphertext only.
   (`flutter_rust_bridge_codegen generate`).
 - `app/`: image picker, the image bubble and viewer, caption composer with
   mentions, the fake core.
-- `deploy/pi/`: the thumb-drive mount setup, service dependency on the mount,
-  `ReadWritePaths` for `blob_dir`, `check.sh`, `backup.sh` (blobs excluded).
+- `deploy/pi/`: the filesystem backend's stable path (directory, ownership,
+  mode), a writable path for it on the service, `config.toml` `[blob_store]`,
+  `check.sh`, `backup.sh` (blobs excluded).
