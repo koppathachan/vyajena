@@ -936,11 +936,27 @@ fn run_deploy_function(
 // spec: pi-deployment/blob-store-deployment
 #[test]
 fn images_are_off_until_the_owner_names_the_drives_path() {
-    // As committed: no path, so no [blob_store] and the Pi is as before.
+    // As committed: the owner's drive (mounted at /mnt/vyajena through fstab),
+    // so the server's config names that folder.
     let conf = read("deploy/pi/pi.conf");
-    assert!(conf.lines().any(|l| l == "BLOB_DIR="), "off by default");
+    assert!(
+        conf.lines().any(|l| l == "BLOB_DIR=/mnt/vyajena/blobs"),
+        "the committed pi.conf names the owner's drive"
+    );
     let sandbox = Sandbox::new().with_secrets();
     let config = Config::from_toml(&sandbox.render("pi-config"), Path::new("/")).check("config");
+    assert_eq!(
+        config.blob_store,
+        Some(server::runtime::config::BlobStoreConfig::Filesystem {
+            path: "/mnt/vyajena/blobs".into()
+        })
+    );
+
+    // With no path: no [blob_store], and the Pi is as before (images off).
+    let out = render_pi_config(&sandbox, "");
+    assert!(out.status.success(), "{}", text(&out));
+    let rendered = String::from_utf8(out.stdout).check("utf-8");
+    let config = Config::from_toml(&rendered, Path::new("/")).check("config");
     assert_eq!(config.blob_store, None);
 
     // With a path: the server's config names exactly it.
