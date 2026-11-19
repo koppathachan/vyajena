@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../chat/chat_model.dart';
 import '../chat/group_gate.dart';
+import '../chat/picture_picker.dart';
 import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../push/push_platform.dart';
@@ -23,9 +24,14 @@ class VyajenaApp extends StatefulWidget {
     required this.core,
     this.networkChanges,
     this.push,
+    this.pictures = const GalleryPicker(),
   });
 
   final CoreService core;
+
+  /// Where a picture to send comes from (app-ui: Send an image); the
+  /// gallery, or a fake in widget tests.
+  final PicturePicker pictures;
 
   /// The phone's network changes (see [CoreLifecycle.networkChanges]).
   final Stream<bool>? networkChanges;
@@ -63,16 +69,19 @@ class _VyajenaAppState extends State<VyajenaApp> {
     core: widget.core,
     networkChanges: widget.networkChanges,
     push: widget.push,
-    child: MaterialApp(
-      title: 'Vyajena',
-      // Never the debug banner, also in profile builds and screenshots
-      // (app-release design D7).
-      debugShowCheckedModeBanner: false,
-      theme: lightTheme,
-      darkTheme: darkTheme,
-      themeMode: themeMode,
-      home: HomeScreen(core: widget.core, chat: _chat),
-      routes: appRoutes(widget.core),
+    child: PicturePickerScope(
+      picker: widget.pictures,
+      child: MaterialApp(
+        title: 'Vyajena',
+        // Never the debug banner, also in profile builds and screenshots
+        // (app-release design D7).
+        debugShowCheckedModeBanner: false,
+        theme: lightTheme,
+        darkTheme: darkTheme,
+        themeMode: themeMode,
+        home: HomeScreen(core: widget.core, chat: _chat),
+        routes: appRoutes(widget.core),
+      ),
     ),
   );
 }

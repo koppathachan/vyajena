@@ -15,6 +15,7 @@ use support::pi::{ADMIN, TestPi};
 fn text_of(message: &ChatMessage) -> &str {
     match &message.body {
         ChatBody::Text { text } => text,
+        ChatBody::Image { .. } => "<image>",
         ChatBody::Unsupported => "<unsupported>",
     }
 }

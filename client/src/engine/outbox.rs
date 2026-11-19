@@ -117,6 +117,13 @@ impl Engine {
                 held.insert(message.chat);
                 continue;
             };
+            // A queued image: its blob goes up first, in a task of its own, and
+            // nothing of its chat goes out until the Pi has it.
+            if self.store().is_blob_pending(message.id)? {
+                held.insert(message.chat);
+                self.start_upload(&message, group_id)?;
+                continue;
+            }
             let Some(group) = self.group_ref(&group_id) else {
                 held.insert(message.chat);
                 continue;
@@ -234,7 +241,7 @@ impl Engine {
         Ok(Some(bytes))
     }
 
-    fn fail(&self, id: MessageId, reason: &str) -> Result<(), EngineError> {
+    pub(super) fn fail(&self, id: MessageId, reason: &str) -> Result<(), EngineError> {
         self.store().mark_failed(id, reason)?;
         self.emit(Event::SendStatus {
             id,

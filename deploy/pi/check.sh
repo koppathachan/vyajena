@@ -184,6 +184,43 @@ remote_checks() {
   compgen -G "$pdir/AuthKey_*.p8" >/dev/null || warn push-apns "no APNs key on the Pi: iPhone pings are only logged"
   if [ -e /var/lib/vyajena-review/push ]; then fail "review push keys" "/var/lib/vyajena-review/push exists"; else ok "review has no push keys"; fi
 
+  # The blob store (pi-deployment: Blob store deployment): off unless the
+  # server's config names a path. Then the path must be on a mount of its own
+  # (never the SD card), the service user's with mode 700, and writable by the
+  # running service. A drive that is absent is a warning: the Pi boots and
+  # serves text without it.
+  local blob_dir blob_mount bpid buid bgid
+  blob_dir="$(sed -n '/^\[blob_store\]/,/^\[/s/^path = "\(.*\)"$/\1/p' /etc/vyajena/config.toml)"
+  if [ -z "$blob_dir" ]; then
+    ok "blob-store off (no [blob_store] in the config)"
+  elif [ ! -d "$blob_dir" ]; then
+    warn blob-store "$blob_dir is not there (drive not mounted?): images are unavailable, text works"
+  else
+    blob_mount="$(findmnt -n -o TARGET -T "$blob_dir" 2>/dev/null || true)"
+    if [ -z "$blob_mount" ] || [ "$blob_mount" = / ]; then
+      fail "blob-store mount" "$blob_dir is on the main storage; blobs must be on a mount of their own"
+    else
+      ok "blob-store mount $blob_mount"
+    fi
+    m="$(mode_of "$blob_dir")"
+    if [ "$m" = "700 vyajena" ]; then ok "file-mode $blob_dir"; else fail "file-mode $blob_dir" "is '$m', want '700 vyajena'"; fi
+    if systemctl show -p ReadWritePaths --value vyajena.service | tr ' ' '\n' | grep -qx -- "-$blob_dir\|$blob_dir"; then
+      ok "blob-store sandbox ReadWritePaths"
+    else
+      fail "blob-store sandbox ReadWritePaths" "vyajena.service does not list $blob_dir (run deploy.sh)"
+    fi
+    bpid="$(systemctl show -p MainPID --value vyajena.service)"
+    buid="$(id -u vyajena 2>/dev/null || echo 65534)"
+    bgid="$(id -g vyajena 2>/dev/null || echo 65534)"
+    if [ -n "$bpid" ] && [ "$bpid" != 0 ] &&
+      nsenter -t "$bpid" -m -U -S "$buid" -G "$bgid" \
+        sh -c "touch $blob_dir/.vyajena-check-$$ && rm $blob_dir/.vyajena-check-$$" 2>/dev/null; then
+      ok "blob-store service can write"
+    else
+      fail "blob-store service writes" "the running service cannot write $blob_dir (drive mounted after it started? restart vyajena.service)"
+    fi
+  fi
+
   # The tunnel (relay design D5): sandboxed, dynamic user, only loopback and
   # the relay, attached.
   local relay_ip

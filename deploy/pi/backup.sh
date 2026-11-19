@@ -7,6 +7,11 @@
 # BACKUP_ROOT overrides ~/vyajena-pi-backups; PI=user@host overrides the Pi.
 # Everything is owner-only (0700 folders, 0600 files). Never into the repo:
 # the keys are the server's private keys.
+#
+# Image blobs are not backed up (pi-deployment: Backup to the Mac): they are
+# encrypted, live 7 days and can be sent again. They sit outside
+# /var/lib/vyajena, the only folder this copies (deploy refuses a BLOB_DIR
+# inside it).
 set -euo pipefail
 
 PI="${PI:-vyajan@192.168.1.8}"

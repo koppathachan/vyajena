@@ -17,6 +17,7 @@ use crate::identity::DeviceKeys;
 use crate::identity::certificate::from_timestamp;
 use crate::pb;
 use crate::pb::admin_client::AdminClient;
+use crate::pb::blobs_client::BlobsClient;
 use crate::pb::devices_client::DevicesClient;
 use crate::pb::dms_client::DmsClient;
 use crate::pb::keys_client::KeysClient;
@@ -77,6 +78,11 @@ impl Conn {
     /// An `Admin` client.
     pub fn admin(&self) -> AdminClient<Channel> {
         AdminClient::new(self.channel.clone())
+    }
+
+    /// A `Blobs` client (change `media-blobs`).
+    pub fn blobs(&self) -> BlobsClient<Channel> {
+        BlobsClient::new(self.channel.clone())
     }
 
     /// A `Dms` client (change `dms`).

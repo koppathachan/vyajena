@@ -587,6 +587,29 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Sends the picked picture [picked] with an optional [caption] and its
+  /// [mentions] (app-ui: Send an image); returns once the core uploaded it
+  /// and stored the message.
+  Future<void> sendImage(
+    Uint8List picked, {
+    String? caption,
+    List<MentionSpan> mentions = const [],
+  }) async {
+    _lastId = await core.sendImage(
+      picked,
+      chatId: chatId,
+      caption: caption,
+      mentions: mentions,
+    );
+    await _reload();
+  }
+
+  /// Sends the picture of own message [id] again, as a new message.
+  Future<void> resendImage(int id) async {
+    _lastId = await core.resendImage(id);
+    await _reload();
+  }
+
   /// The user has seen this chat up to its newest message (the unread mark
   /// in the chat list).
   Future<void> markRead() async {

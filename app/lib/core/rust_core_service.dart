@@ -118,6 +118,33 @@ class RustCoreService extends CoreService {
   Future<bool> markMentionSeen(int id) => _c.markMentionSeen(id: id);
 
   @override
+  Future<int> sendImage(
+    Uint8List picked, {
+    int chatId = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
+  }) async => (await _c.sendImageIn(
+    chatId: chatId,
+    picked: picked,
+    caption: caption,
+    mentions: mentions,
+  )).toInt();
+
+  @override
+  Future<Uint8List> downloadImage(int id) => _c.downloadImage(id: id);
+
+  @override
+  Future<Uint8List?> cachedImage(int id) => _c.cachedImage(id: id);
+
+  @override
+  Future<int> resendImage(int id) async =>
+      (await _c.resendImage(id: id)).toInt();
+
+  @override
+  Uint8List? thumbhashPreview(Uint8List thumbhash) =>
+      rust.thumbhashPreview(thumbhash: thumbhash);
+
+  @override
   Future<bool> dmsAvailable() => _c.dmsAvailable();
 
   @override

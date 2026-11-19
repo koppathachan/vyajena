@@ -22,6 +22,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::service::Routes;
 
 use crate::auth::AuthLayer;
+use crate::blobs::BlobStore;
 use crate::membership::readd::ReaddAsks;
 use crate::messaging::Hub;
 use crate::push::{LoggingProvider, PushProvider};
@@ -113,6 +114,9 @@ pub struct State {
     /// Recent `Keys.RequestReadd` asks per device (group-membership: Re-add
     /// after an unusable Welcome).
     pub readd_asks: Arc<ReaddAsks>,
+    /// Where image blobs are kept; `None` when the server stores none
+    /// (blob-store: Pluggable storage backend).
+    pub blobs: Option<Arc<dyn BlobStore>>,
 }
 
 /// A started server: keys loaded, database open, port bound.
@@ -137,6 +141,18 @@ impl Pi {
         clock: Arc<dyn Clock>,
         push: Arc<dyn PushProvider>,
     ) -> Result<Self, StartError> {
+        let blobs = crate::blobs::backend_for(&config);
+        Self::start_with_blobs(config, clock, push, blobs).await
+    }
+
+    /// [`Pi::start_with_push`] with a given blob-store backend instead of the
+    /// one the config names (blob-store: Pluggable storage backend).
+    pub async fn start_with_blobs(
+        config: Config,
+        clock: Arc<dyn Clock>,
+        push: Arc<dyn PushProvider>,
+        blobs: Option<Arc<dyn BlobStore>>,
+    ) -> Result<Self, StartError> {
         let keys = ServerKeys::load_or_create(&config.key_dir)?;
         if keys.created() {
             tracing::info!(key_dir = %config.key_dir.display(), "first start: created the TLS and MLS external sender keys");
@@ -148,6 +164,7 @@ impl Pi {
 
         let store = Store::open(&config.database_path)?;
         check_server_id(&store, &config.server_id).await?;
+        log_blob_store(blobs.as_deref()).await;
 
         let bootstrap = bootstrap::ensure_bootstrap_invite(
             &store,
@@ -180,6 +197,7 @@ impl Pi {
                 hub: Arc::new(Hub::new()),
                 push,
                 readd_asks: Arc::new(ReaddAsks::default()),
+                blobs,
             },
             listener,
             local_addr,
@@ -215,7 +233,8 @@ impl Pi {
             self.state.config.clone(),
             self.state.clock.clone(),
         );
-        let background = crate::messaging::background(&self.state);
+        let mut background = crate::messaging::background(&self.state);
+        background.extend(crate::blobs::background(&self.state));
         let hub = self.state.hub.clone();
         let shutdown = async move {
             shutdown.await;
@@ -247,6 +266,7 @@ pub fn routes(state: &State) -> Routes {
         .add_service(crate::keys::service(state))
         .add_service(crate::admin::service(state))
         .add_service(crate::dms::service(state))
+        .add_service(crate::blobs::service(state))
         .add_service(crate::messaging::service(state))
 }
 
@@ -279,6 +299,23 @@ async fn check_server_id(store: &Store, configured: &str) -> Result<(), StartErr
             stored,
         }),
         _ => Ok(()),
+    }
+}
+
+/// Says at start whether images are on and usable. An unusable backend does
+/// not stop the server: messaging runs and the `Blobs` RPCs answer
+/// `UNAVAILABLE` until it is back (blob-store: Blob storage and graceful
+/// degradation).
+async fn log_blob_store(blobs: Option<&dyn BlobStore>) {
+    match blobs {
+        None => tracing::info!("no blob store configured: images are off"),
+        Some(backend) => match backend.check().await {
+            Ok(()) => tracing::info!("blob store ready"),
+            Err(error) => tracing::warn!(
+                %error,
+                "blob store configured but unavailable: image RPCs answer UNAVAILABLE until it is back and the server restarts"
+            ),
+        },
     }
 }
 

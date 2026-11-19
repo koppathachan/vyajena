@@ -17,6 +17,12 @@ import 'types.dart';
 bool textFits({required String text}) =>
     RustLib.instance.api.crateApiCoreTextFits(text: text);
 
+/// The blur a ThumbHash stands for, as a small PNG, or `None` for bytes that
+/// are not a ThumbHash. The core decodes it so the app has no second ThumbHash
+/// implementation.
+Uint8List? thumbhashPreview({required List<int> thumbhash}) =>
+    RustLib.instance.api.crateApiCoreThumbhashPreview(thumbhash: thumbhash);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>>
 abstract class Core implements RustOpaqueInterface {
   /// The admin accepted `user`'s changed identity key (app-ui: Notices in
@@ -29,6 +35,10 @@ abstract class Core implements RustOpaqueInterface {
   /// Identity device: approves a link request text and returns the
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
+
+  /// The picture of image message `id` if this device has it cached; never
+  /// uses the network.
+  Future<Uint8List?> cachedImage({required PlatformInt64 id});
 
   /// The read mark of chat `chat_id`: the local id of the newest message
   /// read last, or 0 when it was never read. The app reads it when a chat
@@ -60,6 +70,12 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Whether the Pi knows DMs: the app offers "Message" only then.
   Future<bool> dmsAvailable();
+
+  /// The picture of image message `id` as WebP bytes: from this device's
+  /// cache, else downloaded, decrypted and cached (client-runtime: Image
+  /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
+  /// the Pi no longer has it.
+  Future<Uint8List> downloadImage({required PlatformInt64 id});
 
   /// The group's epoch on this device, once in the group.
   Future<BigInt?> epoch();
@@ -107,7 +123,10 @@ abstract class Core implements RustOpaqueInterface {
   Future<ChatMessage?> message({required PlatformInt64 id});
 
   /// Opens the core: the database in `data_dir` (the app's private
-  /// storage) and the keys in the OS key store.
+  /// storage) and the keys in the OS key store. The decrypted pictures
+  /// are cached in `data_dir/media`: `data_dir` is the folder the platform
+  /// keeps out of backups and encrypts at rest (app-ui: Data on the phone),
+  /// so the cache is too.
   static Future<Core> open({required String dataDir}) =>
       RustLib.instance.api.crateApiCoreCoreOpen(dataDir: dataDir);
 
@@ -129,11 +148,36 @@ abstract class Core implements RustOpaqueInterface {
   /// Admin: removes `user` from the group and the Pi.
   Future<void> removeUser({required UserRef user});
 
+  /// Resends the picture of the own image message `id` as a new message
+  /// with a new blob, when the first one expired (client-runtime: Expired
+  /// media); returns the new message's local id.
+  Future<PlatformInt64> resendImage({required PlatformInt64 id});
+
   /// Revokes another device of this user (hex id).
   Future<void> revokeDevice({required String device});
 
   /// Admin: revokes an unused invite by its code.
   Future<void> revokeInvite({required String code});
+
+  /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the
+  /// main group with an optional caption and `mentions` (UTF-16 ranges of
+  /// the caption); returns its local id. The core makes the WebP and queues
+  /// the message at once, connected or not, like a text; it uploads the
+  /// picture and sends the message when it can (message-content: Image
+  /// messages; client-runtime: Blob crypto and send order).
+  Future<PlatformInt64> sendImage({
+    required List<int> picked,
+    String? caption,
+    required List<MentionSpan> mentions,
+  });
+
+  /// [`Core::send_image`] in chat `chat_id`.
+  Future<PlatformInt64> sendImageIn({
+    required PlatformInt64 chatId,
+    required List<int> picked,
+    String? caption,
+    required List<MentionSpan> mentions,
+  });
 
   /// Sends a text message with `mentions` (UTF-16 ranges of `text`),
   /// answering the message with local id `reply_to` if set (message-content:

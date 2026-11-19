@@ -65,6 +65,15 @@ pub enum CoreErrorKind {
     ChatClosed,
     /// The Pi does not support DMs yet.
     DmsUnavailable,
+    /// The picked file is not an image the app can send (JPEG, PNG, GIF or
+    /// WebP).
+    ImageUnsupported,
+    /// The image cannot be made small enough to send.
+    ImageTooLarge,
+    /// The Pi no longer has the picture (client-runtime: Expired media).
+    MediaExpired,
+    /// This device no longer has the picture to resend.
+    MediaNotOnDevice,
     /// The one event stream was already taken.
     EventsTaken,
     /// Anything else (an internal failure of the core).

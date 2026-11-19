@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  vyajena2: end-to-end encrypted, text-only chat for one admin-run group plus DMs
+  vyajena2: end-to-end encrypted chat (text, and one picture per message) for one admin-run group plus DMs
   between its members (change `dms`; admin and
   owner: Akhil). Flutter UI (view only, never opens a connection) -> Rust core on
   each device (OpenMLS RFC 9420, networking, SQLite, keys in the OS key store, via
@@ -14,8 +14,8 @@ context: |
   the architecture doc and belong to the owner.
 
   Invariants (changed only by an owner-approved change):
-  - Keys never leave the Rust core. Decrypted text reaches Dart only to be
-    shown; Dart never stores, logs or sends it. Nothing logs content. The relay
+  - Keys never leave the Rust core. Decrypted text and pictures reach Dart only to be
+    shown; Dart never stores, logs or sends them. Nothing logs content. The relay
     and the Pi see ciphertext only.
   - The Pi is the authority for routing, ordering and membership, never history.
     Group settings and profiles travel only inside encrypted messages.

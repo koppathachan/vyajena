@@ -3,10 +3,10 @@
 End-to-end encrypted, old-school text messaging for one admin-run group.
 Successor to the original `vyajena` learning experiment.
 
-The MVP is invite-only and text-only, end-to-end encrypted with
+The MVP is invite-only, text and pictures, end-to-end encrypted with
 [OpenMLS](https://openmls.tech/) (RFC 9420), and store-and-forward through a
 self-hosted Raspberry Pi server. Keys never leave the Rust core on each device;
-decrypted text reaches the Flutter UI only to be shown, never stored, logged or
+decrypted text and pictures reach the Flutter UI only to be shown, never stored, logged or
 sent from there. The relay and the server see only ciphertext.
 
 ## Architecture
@@ -105,18 +105,69 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
   later runs reuse that phone. A clean slate (`rm -rf server/.pi-local`)
   deletes the local Pi's users and group.
 
+**Shortcuts:** the steps above are in the `Makefile` (`make help` lists them),
+one terminal each:
+
+```bash
+make rust-targets     # once
+make pi               # local Pi (or: make pi-relayed, plus make relay)
+make ios              # booted iOS Simulator
+make android ANDROID_EMULATOR=<id>   # ids: make emulators; adb reverse included
+```
+
+**Reset the data** (a clean slate: new Pi keys, a new bootstrap invite, phones
+join again). Stop the Pi and quit the app runs first, then reset both sides
+together. A phone that kept its old identity will not connect to a Pi with new
+keys (the TLS pin changes), and the other way round.
+
+```bash
+make pi-reset           # the Pi from `make pi`        (server/.pi-local/)
+make pi-relayed-reset   # the Pi from `make pi-relayed` (server/.pi-local/relayed/)
+make reset-ios          # uninstalls the app from the booted simulator
+make reset-android      # uninstalls the app from the emulator
+```
+
+Then start the Pi again, copy the new bootstrap invite from its log (printed
+once), and `make ios` / `make android` reinstall the app fresh. With several
+simulators booted, pick one with `IOS_DEVICE=<id>` (`make devices`); a second
+Android emulator is `ANDROID_DEVICE=<id>`. By hand: `rm -rf server/.pi-local`,
+`xcrun simctl uninstall <simulator id> com.purplechaamba.vyajena`,
+`adb uninstall com.purplechaamba.vyajena`, or Erase All Content and Settings in
+the Simulator. `make pi-reset` keeps the relayed Pi's data and the other way
+round; the real Pi is never touched (its reset is `deploy/pi/deploy.sh --reset`,
+which backs up first).
+
+`make relay` is a plain TCP passthrough on 127.0.0.1:9443 to the Pi, for use
+with `make pi-relayed` (its own data in `server/.pi-local/relayed/`; its
+invites name port 9443, and a picture store in `server/.pi-local/relayed/blobs`,
+so pictures work there; `make pi` has none, so pictures stay off). It stands in
+for the real relay's path, not for rathole.
+
 App tests never touch your local Pi or its invite:
 
 ```bash
 cd app && flutter analyze && flutter test        # widget tests, a fake core
-app/integration_test/run.sh <device id>          # the real app on a simulator
+app/integration_test/run.sh <device id> [chat|images]   # the real app on a device
 ```
 
 `run.sh` starts its own temporary Pi on a free port in a temp folder (never
 `server/local.toml`), plays the admin's device on the Mac through the core
-(`bridge/tests/app_peer.rs`), and runs `app/integration_test/` on the device
-as Bob: join, added automatically, "hi" ⏳ → ✓, "hey" received. It stops the
-Pi and removes the folder when done.
+(`bridge/tests/app_peer.rs`, or `app_peer_images.rs` for `images`), and runs
+`app/integration_test/` on the device as Bob. `chat`: join, added
+automatically, "hi" ⏳ → ✓, "hey" received. `images`: send a picture, open the
+admin's (blur, download, viewer), send one while offline (it queues, uploads,
+then sends), "Resend picture". It stops the Pi and removes the folder when
+done.
+
+**No screenshots, no tapping:** `make test-ios` and `make test-android` run the
+`images` scenario (`SCENARIO=chat` for the other) on scratch devices, a
+simulator "Vyajena Test" and the emulator AVD `vyajena_test`, which the script
+creates or starts if needed. The test clears the app's data on its device,
+which is why it never uses the phones you chat on. About 10 s per run once the
+app is built. The first run of a freshly built Mac-side peer can take about a
+minute: macOS scans every new binary on its first start (the script waits
+up to four minutes for it). `make test-bridge` runs the same pictures through
+the bridge without a device.
 
 ## Run on the Pi
 

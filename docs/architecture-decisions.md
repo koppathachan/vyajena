@@ -1,14 +1,15 @@
 # Chat App MVP — Architecture Decisions
 
-Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app), Nov 15, 2026 (relay), Nov 17, 2026 (dms) · @Akhil Sasidharan
+Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-app), Nov 15, 2026 (relay), Nov 17, 2026 (dms), Nov 19, 2026 (media-blobs) · @Akhil Sasidharan
 
 ## Scope
 
-The MVP is old-school text messaging in one admin-run group plus DMs between its members, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
+The MVP is old-school messaging, text and one picture at a time, in one admin-run group plus DMs between its members, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
 
 **In**
 
-- Text messages only, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
+- Text messages, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
+- Picture messages (change `media-blobs`, owner 2026-11-19): one static image per message with an optional caption (which takes mentions). The core turns every picture into a WebP of at most 2048 px and 2 MB with no metadata; it travels as an encrypted blob on the Pi and the MLS message carries only its id, key, size and a ThumbHash blur. The full picture downloads on tap and is cached on the device; the Pi keeps a blob 7 days or until every member device has it
 - One group, created and managed by the admin (Akhil)
 - DMs (change `dms`, owner 2026-11-17):
   - each is its own MLS group holding all devices of two users
@@ -28,14 +29,14 @@ The MVP is old-school text messaging in one admin-run group plus DMs between its
 
 - More groups, user-created groups; blocking, muting one chat, leaving a DM
 - Read receipts, presence, typing indicators
-- Media, voice, video
+- Voice, video; albums, GIFs and animated images; stickers, cutouts and picture editing (the next media changes)
 - Server-side message history
 - Encryption at rest (no SQLCipher)
 
 ## Architecture
 
 Four components. Keys never leave the Rust core on each device. Decrypted text
-reaches the Flutter UI only to be shown: Dart never stores, logs or sends it
+and pictures reach the Flutter UI only to be shown: Dart never stores, logs or sends them
 (owner-approved wording, 2026-11-11: a UI that shows messages cannot keep the
 old "plaintext never leaves the core" literally). The relay and the Pi see
 ciphertext only.
@@ -72,10 +73,10 @@ flowchart LR
   push -.->|"&quot;New message&quot;; tap opens the app"| core
 ```
 
-- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
+- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. Pictures are made, encrypted, uploaded and decrypted by the core, which keeps them in its own cache; Dart is handed the picked file going in and WebP bytes to draw coming out (change `media-blobs`). The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
 - **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
-- **Pi server:** routes, orders and queues ciphertext; dispatches wake pings.
+- **Pi server:** routes, orders and queues ciphertext; stores encrypted picture blobs; dispatches wake pings.
 
 ## Encryption
 
@@ -84,7 +85,7 @@ OpenMLS (RFC 9420) runs inside the Rust core on every device, so the relay and t
 | Party | Sees | Cannot see |
 | --- | --- | --- |
 | GCP relay | TLS bytes, client IPs, timing | Anything inside TLS |
-| Pi server | Group id, member devices and their public leaf keys, admin id, epoch, sender, time, size, membership changes | Message content, group name and settings, profiles |
+| Pi server | Group id, member devices and their public leaf keys, admin id, epoch, sender, time, size, membership changes; for a picture, the group it was uploaded for, its size and when | Message content, group name and settings, profiles, a picture or its key |
 | Apple / Google | When a device gets a wake ping (its push token, the fixed text "New message") | Content, sender, group, count |
 
 Each layer of a message on the wire, and who can open it:
@@ -135,9 +136,10 @@ The Pi is the single authority for routing, ordering and membership, and never f
 - **New users join on their own (flutter-app, owner 2026-11-12):** the admin inviting a user is the consent, so nobody taps "add". Once a new user's device uploads its first KeyPackages, the Pi sends a `JoinNotice` to the admin's connected devices, and again on every admin connect until that device is a member. The first admin device fetches that device's KeyPackage, checks its certificate (pinning the user's key on first sight) and commits the Add with its Welcome; a race loser gets `STALE_EPOCH` and does nothing. A changed identity key waits for the admin to accept it, and the accept is the add.
 - **Ordering:** checks the epoch on every envelope, gives each accepted one the next `server_seq` for the group, and appends Commits and Proposals to the commit log.
 - **Queues:** per-device store-and-forward queue of application ciphertext.
+- **Blobs (change `media-blobs`, owner 2026-11-19):** the `Blobs` service stores a picture as opaque XChaCha20-Poly1305 ciphertext the sending device made under a fresh key that travels only inside MLS. Upload and download are checked against group membership; a blob is deleted when every member device has acked it or after 7 days. The bytes go through a pluggable backend, so a bucket or other cheap storage can replace the first one, the local filesystem at one stable path (the owner's auto-mounted drive); the metadata, access rules and expiry stay in the Pi's SQLite whatever the backend. With no backend, or one that is absent, `Blobs` answers `UNAVAILABLE` and messaging goes on.
 - **Push (change `push`, owner 2026-11-16):** sends a wake ping when a device with no open stream gets a new entry, at most once a minute. Android: FCM HTTP v1 with a service account of GCP project `vyajena` (Firebase added to it). iOS: APNs directly, with a `.p8` key the Pi signs its own ES256 JWT with; no Firebase SDK on iOS. Every ping is a visible notification with the one fixed text "New message" and nothing else; a new one replaces the shown one. A token the platform calls invalid is cleared; 429/5xx back off and retry. The server stays loopback-only: pings leave through `vyajena-egress.service`, a CONNECT proxy that reaches only the FCM, Google OAuth and APNs hosts on 443. Keys live only in `~/.vyajena-push/` on the Mac and `/var/lib/vyajena/push/` on the Pi. The review server only logs pings. The app registers its token through the core on every connect and asks for notification permission once, at its first connect after joining.
 
-**What it stores:** users and their identity public keys, devices with their certificates, KeyPackages (each flagged DM-capable or not), invite codes, push tokens, session token hashes, for each group (the main group and each DM, with a DM's two usernames and when it was closed) the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days. Nothing else.
+**What it stores:** users and their identity public keys, devices with their certificates, KeyPackages (each flagged DM-capable or not), invite codes, push tokens, session token hashes, for each group (the main group and each DM, with a DM's two usernames and when it was closed) the group id + epoch + member devices + public ratchet tree and group context, the commit log with a cursor per device, pending ciphertext, and dedup records (sender device, `msg_id`) for 7 days; and, for each picture blob, its id, group, uploader, size, ciphertext hash and times (the ciphertext itself is in the blob backend, not the database). Nothing else.
 
 ## Delivery and limits
 
@@ -168,6 +170,8 @@ stateDiagram-v2
 | Queue cap | 1,000 application messages per recipient device |
 | Inactivity | A device offline 7 days, or whose queue reaches 1,000, is removed and re-added automatically when it returns |
 | Max message size | 64 KB of application ciphertext |
+| Picture | At most 2048 px on the long edge, at most 2 MB of WebP; its blob is at most that plus 40 bytes |
+| Blob lifetime | 7 days from upload, or until every member device has acked it |
 | Handshake size | 256 KB per Commit or Proposal envelope, a Commit's Welcome included |
 | Commits, Proposals and Welcomes | Exempt from expiry and cap; deleted once every device that must receive them has acknowledged |
 
@@ -242,7 +246,15 @@ Messages are not encrypted at rest; keys live in the OS key store and every mach
   keys in `/var/lib/vyajena`, mode `700`, files `600`.
 - systemd sandboxing: `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
   `PrivateTmp`, no capabilities, a system call filter; writable only
-  `/var/lib/vyajena`. It stops cleanly on `SIGTERM`.
+  `/var/lib/vyajena`, plus the blob path when one is configured. It stops
+  cleanly on `SIGTERM`.
+- Picture blobs (change `media-blobs`): `BLOB_DIR` in `deploy/pi/pi.conf`, empty
+  (images off) until the owner names the path their drive is mounted at.
+  Deploy never mounts or makes it: it gives the path to the service only if it
+  is on a mount of its own, so a missing drive can never turn the SD card into
+  the blob store. The Pi boots and serves text without the drive. Blobs are
+  ciphertext with no key on the Pi, so there is no encryption layer of its own,
+  and they are not backed up: they are short-lived and can be sent again.
 - Unattended security updates, never an automatic reboot (the hardening check
   reports a pending one); nothing but SSH and the server listens (mDNS off).
 - Built on the Mac in an arm64 container; no toolchain on the Pi. Deploy,
@@ -269,6 +281,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
 | `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices; with a DM's `group_id`, only KeyPackages that list `0xF0A2`), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
 | `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` (also closes the user's DMs) |
+| `Blobs` | `UploadBlob`, `DownloadBlob`, `AckBlob` (change `media-blobs`): unary, a blob up to 2 MB, only for a member device of the blob's group; `UNAVAILABLE` while the blob backend is absent or off |
 | `Dms` | `CreateDm` (any member; `created = false` with the open DM's id when the peer opened it first; change `dms`) |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the Pi: `sender` · `server_seq` · `accepted_at`.
@@ -283,7 +296,8 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 
 - Muting one chat (the push would need an opaque per-device chat tag), leaving a DM, blocking
 - More groups, then Discord-style servers; admin-only creation at first
-- Media: client-encrypted blobs on the Pi, file key sent inside MLS
+- More media on the blob store built in `media-blobs`: picture transforms and stickers (the next two changes), albums, voice, video, thumbnails
+- A second blob backend (an object-storage bucket) behind the same trait
 - P2P under conditions (media, voice, video) via iroh, Pi or relay as iroh-relay
 - Encrypted per-user history store on the Pi, which also gives new devices history
 - Federation between servers using `user@<server>` ids

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
+import 'package:vyajena/chat/picture_picker.dart';
 import 'package:vyajena/core/core_service.dart';
 
 import 'fake_core_service.dart';
@@ -35,6 +36,41 @@ Future<FakeCoreService> openApp(
     if (group.evaluate().isNotEmpty) await tap(tester, group);
   }
   return fake;
+}
+
+/// A gallery that gives what a test sets: [next] the first time, then nothing.
+class FakePicker extends PicturePicker {
+  FakePicker([this.next]);
+
+  /// What the user picks next; null is "chose nothing".
+  Uint8List? next;
+
+  /// How many times the gallery was opened.
+  int opened = 0;
+
+  @override
+  Future<Uint8List?> pick() async {
+    opened++;
+    final picked = next;
+    next = null;
+    return picked;
+  }
+}
+
+/// [openApp] with [pictures] as the gallery (app-ui: Send an image).
+Future<FakeCoreService> openAppWithPictures(
+  WidgetTester tester,
+  FakeCoreService core,
+  PicturePicker pictures,
+) async {
+  await tester.pumpWidget(VyajenaApp(core: core, pictures: pictures));
+  await core.open();
+  await settle(tester);
+  final group = find.byKey(const ValueKey('chat-main'));
+  if (core.dmChats.isEmpty && group.evaluate().isNotEmpty) {
+    await tap(tester, group);
+  }
+  return core;
 }
 
 /// Opens the app over [core] and lets it settle, staying on the chat list.

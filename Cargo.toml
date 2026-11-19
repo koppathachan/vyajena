@@ -15,3 +15,24 @@ publish = false
 opt-level = 3
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+
+# The image pipeline's tests (media-blobs) decode, scale and encode multi-megapixel
+# pictures; unoptimised the codecs take tens of seconds.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.libwebp-sys]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.moxcms]
+opt-level = 3
+[profile.dev.package.image-webp]
+opt-level = 3

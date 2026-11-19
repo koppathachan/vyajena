@@ -52,6 +52,13 @@ chacha20poly1305 = "0.10"
 hmac = "0.12"
 sha2 = "0.10"
 
+# Images (media-blobs design D5): decode, orient, scale and lossy-encode WebP,
+# and the ThumbHash placeholder. libwebp is C: built for each target by its cc
+# step, as the native key stores already are.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+webp = { version = "0.3", default-features = false }
+thumbhash = "0.1"
+
 thiserror = "2"
 # Logging: ids, epochs, sizes; never content.
 tracing = "0.1"

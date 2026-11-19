@@ -13,6 +13,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
+import 'image_bubble.dart';
 import 'mentions.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -29,6 +30,12 @@ String statusText(SendState status) => switch (status) {
 /// What the long-press sheet's reply entry says.
 const replyLabel = 'Reply';
 
+/// What a reply to a picture without a caption quotes.
+const pictureQuote = 'Picture';
+
+/// What the long-press sheet's entry for sending a picture again says.
+const resendPictureLabel = 'Resend picture';
+
 /// One message row.
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -40,6 +47,8 @@ class MessageTile extends StatelessWidget {
     this.replyTo,
     this.onReply,
     this.onQuoteTap,
+    this.core,
+    this.onResendImage,
   });
 
   final ChatMessage message;
@@ -62,6 +71,13 @@ class MessageTile extends StatelessWidget {
   /// The reply's quote was tapped.
   final VoidCallback? onQuoteTap;
 
+  /// The core, which an image message needs to load its picture.
+  final CoreService? core;
+
+  /// Resends an own picture as a new message (long-press → "Resend
+  /// picture").
+  final VoidCallback? onResendImage;
+
   String _label(MentionTarget target) =>
       mentionLabel?.call(target) ??
       switch (target) {
@@ -70,17 +86,76 @@ class MessageTile extends StatelessWidget {
       };
 
   Future<void> _sheet(BuildContext context) async {
-    final reply = await showModalBottomSheet<bool>(
+    final resend = message.outgoing && message.body is ChatBody_Image
+        ? onResendImage
+        : null;
+    final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
-        child: ListTile(
-          leading: const Icon(Icons.reply),
-          title: const Text(replyLabel),
-          onTap: () => Navigator.of(context).pop(true),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply),
+              title: const Text(replyLabel),
+              onTap: () => Navigator.of(context).pop('reply'),
+            ),
+            if (resend != null)
+              ListTile(
+                key: const Key('resend-picture'),
+                leading: const Icon(Icons.refresh),
+                title: const Text(resendPictureLabel),
+                onTap: () => Navigator.of(context).pop('resend'),
+              ),
+          ],
         ),
       ),
     );
-    if (reply ?? false) onReply?.call();
+    switch (choice) {
+      case 'reply':
+        onReply?.call();
+      case 'resend':
+        resend?.call();
+    }
+  }
+
+  /// [text] with this message's mentions drawn in it.
+  Widget _withMentions(BuildContext context, String text) =>
+      message.mentions.isEmpty
+      ? Text(text)
+      : Text.rich(
+          mentionSpans(
+            context,
+            text,
+            message.mentions,
+            label: _label,
+            me: me,
+            own: message.ownUser,
+          ),
+        );
+
+  Widget _image(BuildContext context, ImageView image) {
+    final core = this.core;
+    final caption = image.caption;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (core == null)
+          const Text('Picture')
+        else
+          ImageBubble(
+            key: ValueKey('image-${message.id}'),
+            core: core,
+            messageId: message.id,
+            image: image,
+          ),
+        if (caption != null && caption.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _withMentions(context, caption),
+        ],
+      ],
+    );
   }
 
   Widget _quote(BuildContext context, ReplyQuote reply) {
@@ -123,19 +198,8 @@ class MessageTile extends StatelessWidget {
     final own = message.ownUser;
     final status = message.outgoing ? message.status : null;
     final textBody = switch (message.body) {
-      ChatBody_Text(:final text) =>
-        message.mentions.isEmpty
-            ? Text(text)
-            : Text.rich(
-                mentionSpans(
-                  context,
-                  text,
-                  message.mentions,
-                  label: _label,
-                  me: me,
-                  own: message.ownUser,
-                ),
-              ),
+      ChatBody_Text(:final text) => _withMentions(context, text),
+      ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Unsupported() => Text(
         unsupportedText,
         style: TextStyle(

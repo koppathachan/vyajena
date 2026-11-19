@@ -231,6 +231,39 @@ abstract class CoreService {
   /// Marks the mention in message [id] seen.
   Future<bool> markMentionSeen(int id);
 
+  // --- Images (message-content: Image messages; app-ui: Send an image,
+  // Image bubble and viewer). The core makes the WebP, encrypts it, uploads
+  // it and decrypts what comes back: the app only passes the picked file in
+  // and draws the WebP it gets out. ---
+
+  /// Sends the picked image file [picked] to chat [chatId] with an optional
+  /// [caption] and [mentions] (UTF-16 ranges of the caption); returns its
+  /// local id. Like a text it is queued at once, connected or not, and goes out
+  /// when the core can send it.
+  Future<int> sendImage(
+    Uint8List picked, {
+    int chatId = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
+  });
+
+  /// The picture of image message [id] as WebP bytes: from the core's cache
+  /// on this device, else downloaded first. Throws [CoreError] with
+  /// [CoreErrorKind.mediaExpired] when the Pi no longer has it.
+  Future<Uint8List> downloadImage(int id);
+
+  /// The picture of image message [id] if this device has it cached; never
+  /// uses the network.
+  Future<Uint8List?> cachedImage(int id);
+
+  /// Resends the picture of own image message [id] as a new message; returns
+  /// the new message's local id.
+  Future<int> resendImage(int id);
+
+  /// The blur a ThumbHash stands for, as a small PNG; null if the bytes are
+  /// not a ThumbHash. Decoded by the core.
+  Uint8List? thumbhashPreview(Uint8List thumbhash);
+
   // --- Chats (direct-messages; app-ui: Chat list, change `dms`) ---
 
   /// Whether the Pi knows DMs: "Message" is offered only then.

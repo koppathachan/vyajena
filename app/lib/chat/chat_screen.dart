@@ -6,8 +6,11 @@
 // once its bubble was on screen while the app is in the foreground, or
 // when the badge takes the user to it. Tapping a reply's quote scrolls to
 // the original when it is among the loaded messages.
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
+import '../app/errors.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
@@ -16,6 +19,7 @@ import 'composer.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
+import 'picture_picker.dart';
 
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
@@ -190,7 +194,11 @@ class _ChatScreenState extends State<ChatScreen> {
       () => _reply = ReplyDraft(
         id: message.id,
         name: message.ownUser ? 'yourself' : _model.names.of(message.sender),
-        quote: body is ChatBody_Text ? body.text : unsupportedText,
+        quote: switch (body) {
+          ChatBody_Text(:final text) => text,
+          ChatBody_Image(:final image) => image.caption ?? pictureQuote,
+          _ => unsupportedText,
+        },
       ),
     );
   }
@@ -198,6 +206,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _send(String text, List<MentionSpan> mentions) async {
     await _model.send(text, mentions: mentions, replyTo: _reply?.id);
     if (mounted) setState(() => _reply = null);
+  }
+
+  Future<void> _sendImage(
+    Uint8List picked,
+    String? caption,
+    List<MentionSpan> mentions,
+  ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+
+  Future<void> _resendImage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendImage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
   }
 
   /// Whether the tile of message [id] is at least partly inside the list's
@@ -385,12 +408,15 @@ class _ChatScreenState extends State<ChatScreen> {
                                     final ReplyQuote r => _model.names.of(r.to),
                                     null => null,
                                   },
+                                  core: widget.core,
+                                  onResendImage: () => _resendImage(message),
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
                                   onQuoteTap: switch (message.reply) {
-                                    final ReplyQuote r => () =>
-                                        _openOriginal(r),
+                                    final ReplyQuote r => () => _openOriginal(
+                                      r,
+                                    ),
                                     null => null,
                                   },
                                 ),
@@ -446,6 +472,8 @@ class _ChatScreenState extends State<ChatScreen> {
               Composer(
                 core: widget.core,
                 send: _send,
+                pickImage: PicturePickerScope.of(context).pick,
+                sendImage: _sendImage,
                 choices: _choices,
                 reply: _reply,
                 onCancelReply: () => setState(() => _reply = null),

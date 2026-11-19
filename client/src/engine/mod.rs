@@ -34,6 +34,7 @@
 
 mod jobs;
 mod outbox;
+mod uploads;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
@@ -74,6 +75,10 @@ pub(crate) use jobs::Job;
 /// injectable clock (design D7), so tests move time without waiting.
 pub(crate) const TICK: Duration = Duration::from_millis(100);
 
+/// How long a queued image waits before its upload is tried again after a
+/// failure that may pass (media-blobs: Blob crypto and send order).
+pub(crate) const UPLOAD_RETRY_DELAY: Duration = Duration::from_secs(3);
+
 /// Jobs run only once the stream has been quiet this long, so a burst of
 /// catch-up is processed first.
 pub(crate) const JOB_QUIET: Duration = Duration::from_millis(100);
@@ -92,6 +97,11 @@ pub(crate) enum Command {
     Job(Job),
     /// An own message was stored: send it when possible.
     Outbox,
+    /// The upload of a queued image's blob ended.
+    Uploaded {
+        id: MessageId,
+        outcome: uploads::Outcome,
+    },
     /// The network is back: skip the current backoff wait if disconnected
     /// (client-runtime: Connection lifecycle, `reconnect_now`).
     ReconnectNow,
@@ -108,6 +118,9 @@ pub(crate) struct Shared {
     /// Whether the Pi last connected to lists protocol version 2, so knows
     /// DMs (wire-transport: Protocol version negotiation, change `dms`).
     pub(crate) pi_knows_dms: std::sync::atomic::AtomicBool,
+    /// The decrypted images this device keeps (client-runtime: Image download
+    /// and cache).
+    pub(crate) media: crate::media::MediaCache,
 }
 
 /// A reply to a job.
@@ -166,6 +179,10 @@ pub(crate) struct Engine {
     account: AccountRow,
     pi: ExternalSender,
     commands: mpsc::Receiver<Command>,
+    /// Lets a task the engine started (an image upload) report back.
+    command_tx: mpsc::Sender<Command>,
+    /// The blob uploads of queued image messages, by message.
+    uploads: BTreeMap<MessageId, uploads::Upload>,
     /// The main group.
     group: Option<MlsGroup>,
     /// The DMs this device has MLS state for, by group id (change `dms`).
@@ -272,6 +289,7 @@ impl Engine {
         keys: DeviceKeys,
         account: AccountRow,
         commands: mpsc::Receiver<Command>,
+        command_tx: mpsc::Sender<Command>,
     ) -> Result<Self, EngineError> {
         let pi =
             mls_group::pi_external_sender(&account.pi_sender_key, &account.pi_sender_credential)?;
@@ -294,6 +312,8 @@ impl Engine {
             account,
             pi,
             commands,
+            command_tx,
+            uploads: BTreeMap::new(),
             group,
             dms,
             link: None,
@@ -501,6 +521,11 @@ impl Engine {
                             self.on_error(error);
                         }
                     }
+                    Some(Command::Uploaded { id, outcome }) => {
+                        if let Err(error) = self.on_uploaded(id, outcome).await {
+                            self.on_error(error);
+                        }
+                    }
                     Some(Command::ReconnectNow) => self.reconnect_now(),
                     None => break,
                 },
@@ -547,6 +572,7 @@ impl Engine {
                 self.last_rotation_check = None;
                 tracing::info!("connected");
                 self.emit(Event::Connection(ConnectionState::Connected));
+                self.retry_uploads_now();
                 if let Err(error) = self.resend_inflight().await {
                     self.on_error(error);
                 }
@@ -711,6 +737,10 @@ impl Engine {
         if !self.deferred.is_empty() && self.inflight.as_ref().is_none_or(|f| f.accepted.is_some())
         {
             self.process_deferred().await?;
+        }
+        // A queued image whose upload waited to retry.
+        if self.link.is_some() && self.upload_due() {
+            self.flush_outbox().await?;
         }
         let Some(link) = self.link.as_ref() else {
             return Ok(());

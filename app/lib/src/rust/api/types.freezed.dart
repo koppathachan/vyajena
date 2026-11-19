@@ -55,11 +55,12 @@ extension ChatBodyPatterns on ChatBody {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Image value)?  image,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
-return text(_that);case ChatBody_Unsupported() when unsupported != null:
+return text(_that);case ChatBody_Image() when image != null:
+return image(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return orElse();
 
@@ -78,11 +79,12 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Image value)  image,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text():
-return text(_that);case ChatBody_Unsupported():
+return text(_that);case ChatBody_Image():
+return image(_that);case ChatBody_Unsupported():
 return unsupported(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -97,11 +99,12 @@ return unsupported(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Image value)?  image,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
-return text(_that);case ChatBody_Unsupported() when unsupported != null:
+return text(_that);case ChatBody_Image() when image != null:
+return image(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return null;
 
@@ -119,10 +122,11 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function( ImageView image)?  image,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
-return text(_that.text);case ChatBody_Unsupported() when unsupported != null:
+return text(_that.text);case ChatBody_Image() when image != null:
+return image(_that.image);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return orElse();
 
@@ -141,10 +145,11 @@ return unsupported();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function()  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function( ImageView image)  image,required TResult Function()  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text():
-return text(_that.text);case ChatBody_Unsupported():
+return text(_that.text);case ChatBody_Image():
+return image(_that.image);case ChatBody_Unsupported():
 return unsupported();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -159,10 +164,11 @@ return unsupported();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function()?  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function( ImageView image)?  image,TResult? Function()?  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
-return text(_that.text);case ChatBody_Unsupported() when unsupported != null:
+return text(_that.text);case ChatBody_Image() when image != null:
+return image(_that.image);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return null;
 
@@ -232,6 +238,74 @@ class _$ChatBody_TextCopyWithImpl<$Res>
   return _then(ChatBody_Text(
 text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
 as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ChatBody_Image extends ChatBody {
+  const ChatBody_Image({required this.image}): super._();
+  
+
+/// The image. Boxed: it is large next to a text, and a message is
+/// carried in every event.
+ final  ImageView image;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ChatBody_ImageCopyWith<ChatBody_Image> get copyWith => _$ChatBody_ImageCopyWithImpl<ChatBody_Image>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatBody_Image&&(identical(other.image, image) || other.image == image));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,image);
+
+@override
+String toString() {
+  return 'ChatBody.image(image: $image)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ChatBody_ImageCopyWith<$Res> implements $ChatBodyCopyWith<$Res> {
+  factory $ChatBody_ImageCopyWith(ChatBody_Image value, $Res Function(ChatBody_Image) _then) = _$ChatBody_ImageCopyWithImpl;
+@useResult
+$Res call({
+ ImageView image
+});
+
+
+
+
+}
+/// @nodoc
+class _$ChatBody_ImageCopyWithImpl<$Res>
+    implements $ChatBody_ImageCopyWith<$Res> {
+  _$ChatBody_ImageCopyWithImpl(this._self, this._then);
+
+  final ChatBody_Image _self;
+  final $Res Function(ChatBody_Image) _then;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? image = null,}) {
+  return _then(ChatBody_Image(
+image: null == image ? _self.image : image // ignore: cast_nullable_to_non_nullable
+as ImageView,
   ));
 }
 
