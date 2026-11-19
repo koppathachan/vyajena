@@ -466,7 +466,7 @@ pub(crate) async fn run(
         .state
         .hub
         .register(device_id, &session.caller.username);
-    tracing::debug!(device_id = %crate::runtime::server_keys::hex(&device_id), "stream opened");
+    tracing::debug!(device = %crate::runtime::redact(&device_id), "stream opened");
     let _ = serve(
         &mut session,
         &mut inbound,
@@ -485,7 +485,7 @@ pub(crate) async fn run(
         .store
         .call(move |conn| inactivity::touch(conn, &device_id, now))
         .await;
-    tracing::debug!(device_id = %crate::runtime::server_keys::hex(&device_id), "stream closed");
+    tracing::debug!(device = %crate::runtime::redact(&device_id), "stream closed");
 }
 
 async fn serve(

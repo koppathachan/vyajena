@@ -122,7 +122,7 @@ async fn clear_invalid_token(state: &State, device_id: DeviceId, token: String) 
         .await;
     match cleared {
         Ok(true) => tracing::info!(
-            device_id = %crate::runtime::server_keys::hex(&device_id),
+            device = %crate::runtime::redact(&device_id),
             "cleared a push token the platform called invalid"
         ),
         Ok(false) => {}

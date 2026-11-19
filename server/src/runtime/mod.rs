@@ -5,6 +5,7 @@
 pub mod bootstrap;
 pub mod clock;
 pub mod config;
+pub mod redact;
 pub mod server_keys;
 pub mod tls;
 
@@ -28,6 +29,7 @@ use crate::store::{Store, StoreError};
 pub use bootstrap::{Bootstrap, BootstrapInvite};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use config::{Config, ConfigError};
+pub use redact::redact;
 pub use server_keys::{KeyError, ServerKeys};
 pub use tls::{TlsConnectInfo, TlsError};
 

@@ -250,7 +250,7 @@ impl Keys for KeysService {
             )));
         }
         let now = self.state.clock.now();
-        let device_hex = crate::runtime::server_keys::hex(&caller.device_id);
+        let device = crate::runtime::redact(&caller.device_id);
         let limited = !self.state.readd_asks.allowed(&caller.device_id, now);
         let admin = self.state.config.admin_username.clone();
         let server_id = self.state.config.server_id.clone();
@@ -335,7 +335,7 @@ impl Keys for KeysService {
         // The core's error text (never content), so the owner can read the
         // cause in the Pi's journal.
         tracing::info!(
-            device_id = %device_hex,
+            device = %device,
             refused_welcome_seq = refused_seq,
             outcome = outcome.as_str_name(),
             reason = %reason,
