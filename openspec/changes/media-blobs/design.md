@@ -238,7 +238,8 @@ compiler for the target, as the native key stores already do.
 
 Per image the core generates a random `BLOB_ID_LEN` (16) byte id and a random
 `BLOB_KEY_LEN` (32) byte key, then encrypts the WebP with XChaCha20-Poly1305: a
-random 24-byte nonce prepended to the ciphertext, the tag appended, and the
+24-byte nonce prepended to the ciphertext (derived from the key and the blob id,
+D7, so a retry is byte-identical), the tag appended, and the
 `blob_id` as additional authenticated data so a blob cannot be served under the
 wrong id. `MAX_BLOB_BYTES` = `MAX_IMAGE_BYTES` + nonce + tag (24 + 16), rounded.
 The key is put in `Image.blob_key` and never leaves the core except inside the
@@ -253,15 +254,59 @@ spike crates (see D5).
 
 ### D7. Send and download order; idempotency
 
-Send: the core stores the outgoing image message's plaintext and its encoded
-WebP in the device media cache first (the sender cannot decrypt its own
-ciphertext and must keep the plaintext, client-runtime: Local message store),
-uploads the blob (idempotent on `blob_id`), and only after the upload is
-accepted sends the `APPLICATION` envelope carrying `Content{Image{…}}`. A crash
-between steps resumes: the stored message is marked sending, the blob re-uploads
-idempotently, the envelope resends with the same `msg_id` (message-delivery:
-Idempotent sends). Sending the blob before the envelope means a receiver never
-sees an `Image` whose blob is missing because the upload had not happened.
+Send (owner, 2026-11-19: images queue offline like text): `Client::send_image`
+encodes the image, puts its WebP in the device media cache (the sender cannot
+decrypt its own ciphertext and must keep the plaintext, client-runtime: Local
+message store), and stores the own message as `sending` with its `Image` content
+(blob id, blob key, size, ThumbHash, caption) **and a `blob_pending` mark**, in
+one transaction. That is all it does: it needs no connection and returns at
+once, as `send_text` does.
+
+The outbox then does the rest, in order, when the message's chat can send:
+
+1. The message is `blob_pending`: start uploading its blob and hold the chat's
+   later messages behind it. The upload runs in a **task of its own** (a 2 MB
+   upload inside the engine loop would stall heartbeats and the stream on a slow
+   link); the task reads the WebP from the cache, encrypts it under the key from
+   the stored content, calls `UploadBlob`, and reports back to the engine.
+2. On `Done` the engine clears `blob_pending` and runs the outbox again, which
+   now sends the `APPLICATION` envelope carrying `Content{Image{…}}` exactly as
+   for text.
+
+So "the envelope implies the blob exists" holds per message at the moment it is
+really sent, however long it waited, and the blob's 7 days start at that upload,
+not when the user tapped Send. A crash anywhere resumes: the message is
+`sending` and `blob_pending`, so the upload is tried again (byte-identical, so
+the Pi answers with the original expiry), or it is `sending` without the mark,
+so the envelope resends byte for byte under the same `msg_id` (message-delivery:
+Idempotent sends).
+
+Upload failures (the sub-decisions below are the owner's):
+
+| The upload ends with | The core |
+|---|---|
+| accepted | clears the mark, sends the envelope |
+| `UNAVAILABLE` (the Pi's drive is away, or it stores no pictures), `UNAUTHENTICATED` (the session ran out), a timeout or a network error | keeps the message `sending`, holds the chat, tries again after 3 s and at once on every reconnect |
+| `PERMISSION_DENIED`, `INVALID_ARGUMENT`, `ALREADY_EXISTS`, `NOT_FOUND` | fails the message with the Pi's reason; later messages go on |
+| the picture is no longer in the media cache | fails it: "the picture is no longer on this device" |
+| the message waited 7 days (`BLOB_TTL`) | fails it: "the picture could not be sent in time" |
+
+A failed image is an ordinary failed own message: the sender can still use
+"Resend picture" if the cache has the picture.
+
+**History.** The first draft had the outbox upload the blob. The first
+implementation (task 4.2) instead uploaded in `send_image` and only then stored
+the message, which kept the outbox unchanged but meant an image could be sent
+only while connected. The owner reversed that the same day, so this is the draft
+again, built with the upload in a separate task.
+
+The blob upload is idempotent on `blob_id` and byte-identical on a retry because
+the XChaCha20 nonce is derived from the key and the blob id rather than drawn at
+random: `nonce = HMAC-SHA256(blob_key, "vyajena2-blob-nonce-v1" || blob_id)[..24]`.
+That is safe because a key encrypts exactly one plaintext, ever (fresh key per
+blob, D6), so no (key, nonce) pair is reused for different data. A retried call
+inside the core therefore sends the same bytes and the Pi answers with the
+original `expires_at` instead of `ALREADY_EXISTS`.
 
 Download (on tap): the core calls `DownloadBlob(group_id, blob_id)`, decrypts
 with `blob_key` (checking the `blob_id` AAD), decodes the WebP, caches the
@@ -278,9 +323,12 @@ sequenceDiagram
   participant B as Rust core (Bob)
   UI->>C: send_image(bytes, caption)
   C->>C: decode, strip EXIF, scale ≤2048, WebP q80, ThumbHash
-  C->>C: blob_id, key; XChaCha20 encrypt; store plaintext locally
+  C->>C: blob_id, key; keep the WebP in the cache; store the message, blob_pending
+  Note over C,P: later, when the outbox reaches it with a connection (maybe after an offline wait or a restart)
+  C->>C: XChaCha20 encrypt from the cache
   C->>P: Blobs.UploadBlob(group, blob_id, ciphertext)
   P-->>C: UploadBlobResponse(expires_at)
+  C->>C: clear blob_pending
   C->>P: Messaging Envelope APPLICATION = Content{Image{blob_id,key,w,h,thumbhash,caption}}
   P-->>B: Envelope (ciphertext only); wake ping "New message" if offline
   B->>B: decrypt → Image; show ThumbHash blur at w×h
@@ -325,8 +373,13 @@ own.
 **Degrade gracefully when the backend is unavailable** (the drive not mounted, a
 bucket unreachable): the server still starts and serves all text messaging, and
 `Blobs` RPCs return `UNAVAILABLE` until the backend is back. The filesystem
-backend checks its path is the real mounted store, not a bare directory on the
-root filesystem, so a blob is never written to the SD card by mistake.
+backend never creates its directory and writes and removes a probe file in it on
+every RPC. A missing directory fails the probe; so does an unmounted mountpoint,
+which belongs to root and is not writable by the service user (the deploy makes
+the path `vyajena`-owned only on the drive itself). So a blob is never written to
+the SD card by mistake. This does not tell a drive from an ordinary directory
+the service user owns: that is the deploy script's job (task 7.1), and a
+test host may point it anywhere.
 
 Deployment of the default backend goes through `deploy/pi/` only (CLAUDE.md): the
 drive auto-mounts at the stable path (the owner's setup, not scripted by us);
@@ -361,6 +414,35 @@ works, then are eligible for eviction like any entry. The cache stores plaintext
 WebP only; the per-blob key stays with the message in the store, so an evicted
 image is re-fetched and re-decrypted, never kept decrypted beyond the cache.
 
+**As built (tasks 4.3, 6.1).** The cache is a folder of `<hex blob id>.webp`
+files, mode 0600 in a 0700 folder, beside the database, with its index
+(`media_cache`: size, `own`, created, last shown) in the core's SQLite
+(migration 0007). The cap defaults to 256 MiB; eviction drops the least recently
+shown entry first, never the entry just cached, and skips an `own` entry until
+7 days after it was cached. A cached file that went missing is forgotten, not an
+error. A blob the Pi answered `NOT_FOUND` for is recorded (`media_expired`), so a
+later tap says "expired" without a network call.
+
+Where the folder is: `ClientConfig::media_dir`, which defaults to `media` inside
+`data_dir`. The app's `data_dir` is already the platform's protected folder
+(app-ui: Data on the phone: iOS Application Support with
+`NSFileProtectionComplete` and excluded from iCloud backup; Android
+`noBackupFilesDir`, which `allowBackup="false"` and file-based encryption cover),
+so the cache inherits both properties and **no native code or channel is added**.
+The app passes no media folder; `Core.open(dataDir)` is unchanged.
+
+**The blur is decoded by the core.** `thumbhash` already ships in the core for
+encoding, so it also decodes: `thumbhash_preview` returns the blur as a small
+PNG that the app draws with `Image.memory`. The app has no ThumbHash code and no
+`dart:ui` pixel API, and `app-ui: UI goes through the core` keeps its import
+whitelist.
+
+**Picking.** The picker (`image_picker`, the one new Dart dependency, which
+reads a file the user chose and opens no connection) is asked for a bounded size
+and a quality, which makes both platforms return a JPEG even for an iPhone HEIC
+photo. The core does not decode HEIC (D5). This was not run on a real device in
+this change; task 6.1's check on one is left to the owner's test run.
+
 ### D11. Old clients, versioning and push
 
 The `Image` body is field 5 of the `Content.body` oneof; a client built before
@@ -384,6 +466,17 @@ an opaque ciphertext of known size; it carries no content and no push.
   already routes and sizes that group's envelopes; the blob content and key stay
   encrypted. The anonymous model (D4) would hide the group at the cost of
   ack-delete.
+- [A crash between the backend write and the metadata insert leaves a file with
+  no row] → an upload writes the bytes first and records the row second, so a
+  receiver never finds a row without bytes. The file is invisible to every RPC
+  and the expiry sweep, which works from rows, never deletes it. At most one
+  blob per crash and a retry of the same `blob_id` replaces it; an orphan scan
+  is left for a later change. Accepted for the MVP.
+- [Two uploads race for one blob id with different bytes] → the second write can
+  replace the first's file while the row keeps the first's hash. Blob ids are
+  random 128-bit values, so only a member trying to attack its own group could
+  do it; a download checks the hash and answers `DATA_LOSS` rather than serving
+  the wrong bytes.
 - [The storage backend fills or is gone] → the feature degrades to `UNAVAILABLE`
   (D8) and text keeps working; `check.sh` flags a missing or full store.
 - [HEIC/odd inputs fail to decode on some platforms] → the core refuses with a
@@ -419,4 +512,30 @@ an opaque ciphertext of known size; it carries no content and no push.
    gracefully when the backend is unavailable. The drive is auto-mounted at a
    fixed path (owner's setup).
 
-No open questions remain for this change.
+4. **Images queue offline like text (D7):** an image is stored and queued at
+   once, connected or not; its blob uploads at send time, before its envelope.
+
+## Open Questions
+
+Sub-decisions that fell out of queuing images offline (D7). Each has a default
+in the code; the owner may change any of them.
+
+1. **Retry policy for a queued image that keeps failing to upload.** Now: a
+   failure that may pass (the Pi's drive away, a lost session, no network) is
+   retried every 3 seconds and at once on each reconnect, forever, until the
+   7-day limit below. Alternative: exponential backoff, or a visible "retry"
+   button after some number of failures.
+2. **Age limit.** Now: a message still waiting 7 days after it was written
+   (`BLOB_TTL`) fails with "could not be sent in time", since a picture that old
+   is stale and a blob made for it would be near the end of its own life.
+   Alternative: no limit, or a shorter one.
+3. **`UNAVAILABLE` from a Pi that stores no pictures at all** (no `[blob_store]`,
+   the default on the real Pi until the owner sets `BLOB_DIR`) is treated as a
+   failure that may pass, so such an image waits and retries for 7 days instead
+   of failing at once. The core cannot tell "the drive is away" from "this Pi has
+   no picture store" by the status alone. Alternative: a distinct status or a
+   `GetServerInfo` capability, so the core can fail at once and the app can say
+   "this server does not take pictures".
+4. **A failed image has no "retry" of its own**; the sender uses "Resend picture"
+   on it (the same new-message path). Alternative: a retry that reuses the
+   stored message.

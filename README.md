@@ -3,10 +3,10 @@
 End-to-end encrypted, old-school text messaging for one admin-run group.
 Successor to the original `vyajena` learning experiment.
 
-The MVP is invite-only and text-only, end-to-end encrypted with
+The MVP is invite-only, text and pictures, end-to-end encrypted with
 [OpenMLS](https://openmls.tech/) (RFC 9420), and store-and-forward through a
 self-hosted Raspberry Pi server. Keys never leave the Rust core on each device;
-decrypted text reaches the Flutter UI only to be shown, never stored, logged or
+decrypted text and pictures reach the Flutter UI only to be shown, never stored, logged or
 sent from there. The relay and the server see only ciphertext.
 
 ## Architecture
