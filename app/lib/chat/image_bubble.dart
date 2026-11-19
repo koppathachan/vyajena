@@ -23,6 +23,10 @@ const imageFailedText = "Couldn't load the picture. Tap to try again.";
 const _maxWidth = 260.0;
 const _maxHeight = 320.0;
 
+/// The shortest long edge a bubble is drawn at: a tiny picture is scaled up
+/// to this so its download button and notices fit and it can be tapped.
+const _minLongEdge = 120.0;
+
 /// The label under a download button: "1.2 MB", "340 KB".
 String sizeText(BigInt bytes) {
   final kb = bytes.toInt() / 1024;
@@ -112,8 +116,9 @@ class _ImageBubbleState extends State<ImageBubble> {
   Size _size() {
     final w = widget.image.width.toDouble();
     final h = widget.image.height.toDouble();
+    final longEdge = w > h ? w : h;
     final scale = [
-      1.0,
+      1.0 < _minLongEdge / longEdge ? _minLongEdge / longEdge : 1.0,
       _maxWidth / w,
       _maxHeight / h,
     ].reduce((a, b) => a < b ? a : b);

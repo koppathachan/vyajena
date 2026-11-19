@@ -139,21 +139,35 @@ which backs up first).
 
 `make relay` is a plain TCP passthrough on 127.0.0.1:9443 to the Pi, for use
 with `make pi-relayed` (its own data in `server/.pi-local/relayed/`; its
-invites name port 9443). It stands in for the real relay's path, not for
-rathole.
+invites name port 9443, and a picture store in `server/.pi-local/relayed/blobs`,
+so pictures work there; `make pi` has none, so pictures stay off). It stands in
+for the real relay's path, not for rathole.
 
 App tests never touch your local Pi or its invite:
 
 ```bash
 cd app && flutter analyze && flutter test        # widget tests, a fake core
-app/integration_test/run.sh <device id>          # the real app on a simulator
+app/integration_test/run.sh <device id> [chat|images]   # the real app on a device
 ```
 
 `run.sh` starts its own temporary Pi on a free port in a temp folder (never
 `server/local.toml`), plays the admin's device on the Mac through the core
-(`bridge/tests/app_peer.rs`), and runs `app/integration_test/` on the device
-as Bob: join, added automatically, "hi" ⏳ → ✓, "hey" received. It stops the
-Pi and removes the folder when done.
+(`bridge/tests/app_peer.rs`, or `app_peer_images.rs` for `images`), and runs
+`app/integration_test/` on the device as Bob. `chat`: join, added
+automatically, "hi" ⏳ → ✓, "hey" received. `images`: send a picture, open the
+admin's (blur, download, viewer), send one while offline (it queues, uploads,
+then sends), "Resend picture". It stops the Pi and removes the folder when
+done.
+
+**No screenshots, no tapping:** `make test-ios` and `make test-android` run the
+`images` scenario (`SCENARIO=chat` for the other) on scratch devices, a
+simulator "Vyajena Test" and the emulator AVD `vyajena_test`, which the script
+creates or starts if needed. The test clears the app's data on its device,
+which is why it never uses the phones you chat on. About 10 s per run once the
+app is built. The first run of a freshly built Mac-side peer can take about a
+minute: macOS scans every new binary on its first start (the script waits
+up to four minutes for it). `make test-bridge` runs the same pictures through
+the bridge without a device.
 
 ## Run on the Pi
 

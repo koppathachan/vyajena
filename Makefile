@@ -26,7 +26,8 @@ IOS_DEVICE    ?= $(shell xcrun simctl list devices booted 2>/dev/null | grep -Eo
 RELAYED_DIR := server/.pi-local/relayed
 
 .PHONY: help pi pi-relayed relay ios ios-sim android android-emulator android-reverse \
-        pi-reset pi-relayed-reset reset-ios reset-android rust-targets devices emulators
+        pi-reset pi-relayed-reset reset-ios reset-android rust-targets devices emulators \
+        test-ios test-android test-bridge
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/^([a-z-]+):.*## (.*)/  make \1\t\2/' | expand -t 24
@@ -39,14 +40,18 @@ pi: ## Local Pi on 127.0.0.1:8443 (server/local.toml); the invite prints on firs
 # Rewritten on every run, so PI_PORT and RELAY_PORT overrides take effect.
 .PHONY: $(RELAYED_DIR)/pi.toml
 $(RELAYED_DIR)/pi.toml:
-	mkdir -p $(RELAYED_DIR)
+	mkdir -p $(RELAYED_DIR)/blobs
 	printf '%s\n' \
 	  'server_id = "pi"' \
 	  'admin_username = "akhil"' \
 	  'listen_address = "127.0.0.1:$(PI_PORT)"' \
 	  'public_address = "127.0.0.1:$(RELAY_PORT)"' \
 	  'database_path = "pi.sqlite"' \
-	  'key_dir = "keys"' > $@
+	  'key_dir = "keys"' \
+	  '' \
+	  '[blob_store]' \
+	  'backend = "filesystem"' \
+	  'path = "blobs"' > $@
 
 pi-relayed: $(RELAYED_DIR)/pi.toml ## Local Pi whose invites name the relay port, own data; needs `make relay`
 	cargo run -p server -- --config $<
@@ -104,3 +109,19 @@ reset-ios: ## Uninstall the app from the iOS Simulator (deletes its identity and
 
 reset-android: ## Uninstall the app from the Android emulator (same); stop `make android` first
 	"$(ADB)" -s $(ANDROID_DEVICE) uninstall $(APP_ID)
+
+# --- scripted end-to-end tests (no screenshots, no tapping) ------------------
+# The real app on a scratch simulator/emulator (never the phones you chat on:
+# the test clears the app's data on its device) against a temp Pi, with the
+# admin's device on the Mac (app/integration_test/run.sh). SCENARIO is chat or
+# images. Nothing else needs to be running; the temp Pi takes a free port.
+SCENARIO ?= images
+
+test-ios: ## Scripted app test on a scratch iOS simulator "Vyajena Test"; SCENARIO=chat|images
+	app/integration_test/run.sh "$$(deploy/local/devices.sh ios)" $(SCENARIO)
+
+test-android: ## Scripted app test on a scratch emulator (AVD vyajena_test); SCENARIO=chat|images
+	app/integration_test/run.sh "$$(deploy/local/devices.sh android)" $(SCENARIO)
+
+test-bridge: ## Rust end-to-end picture tests through the bridge, no device
+	cargo test -p bridge --test images
