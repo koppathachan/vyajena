@@ -18,14 +18,11 @@ use anyhow::{Context, Result, bail};
 use server::push::{LoggingProvider, Options, Providers, PushProvider, proxy};
 use server::runtime::{Config, Pi, SystemClock};
 use server::store::backup;
-use tracing_subscriber::EnvFilter;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(server::runtime::logging::filter())
         .init();
 
     // Config errors stop us here, before any key, database or port is touched

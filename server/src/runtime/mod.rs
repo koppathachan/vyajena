@@ -5,6 +5,7 @@
 pub mod bootstrap;
 pub mod clock;
 pub mod config;
+pub mod logging;
 pub mod redact;
 pub mod server_keys;
 pub mod tls;
