@@ -18,6 +18,9 @@ readonly HERE
 readonly SECRETS="${RELAY_SECRETS:-$HOME/.vyajena-relay}"
 # shellcheck source=relay.conf
 . "$HERE/relay.conf"
+# The Pi's own settings (BLOB_DIR); PI_CONF points at another copy.
+# shellcheck source=../pi/pi.conf
+. "${PI_CONF:-$HERE/../pi/pi.conf}"
 
 die() {
   echo "render.sh: $*" >&2
@@ -78,6 +81,17 @@ case "${1:-}" in
   pi-config)
     [[ "$RELAY_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "RELAY_HOST in relay.conf is not a DNS name"
     render "$HERE/../pi/config.toml" RELAY_HOST "$RELAY_HOST" PUBLIC_PORT "$PUBLIC_PORT"
+    # The blob store (pi-deployment: Blob store deployment): only with a
+    # BLOB_DIR, so a Pi without one has no [blob_store] and images are off.
+    if [ -n "${BLOB_DIR:-}" ]; then
+      [[ "$BLOB_DIR" =~ ^/[A-Za-z0-9._/-]*[A-Za-z0-9_-]$ ]] || die "BLOB_DIR in pi.conf is not a plain absolute path"
+      case "$BLOB_DIR/" in
+        /var/lib/vyajena/* | /var/lib/vyajena-review/* | /home/* | /root/* | /etc/* | /usr/* | /tmp/*)
+          die "BLOB_DIR $BLOB_DIR is where the service cannot use it or deploy and backup touch" ;;
+      esac
+      [[ "$BLOB_DIR" != *..* ]] || die "BLOB_DIR in pi.conf has a .. in it"
+      printf '\n# Image blobs (change media-blobs): the drive'"'"'s stable path, from pi.conf.\n[blob_store]\nbackend = "filesystem"\npath = "%s"\n' "$BLOB_DIR"
+    fi
     ;;
   pi-review-config)
     [[ "$RELAY_HOST" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || die "RELAY_HOST in relay.conf is not a DNS name"

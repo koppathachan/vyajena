@@ -8,6 +8,10 @@
 //! public_address = "relay.example:443"   # optional: put in invite payloads
 //! database_path = "data/pi.sqlite"       # relative paths: from the config file's folder
 //! key_dir = "data/keys"
+//!
+//! [blob_store]                           # optional: without it, images are off
+//! backend = "filesystem"
+//! path = "/mnt/vyajena-blobs"            # a stable path, the same on every start
 //! ```
 
 use std::net::SocketAddr;
@@ -29,6 +33,19 @@ pub struct Config {
     pub database_path: PathBuf,
     /// The folder holding the TLS and MLS external sender private keys.
     pub key_dir: PathBuf,
+    /// Where encrypted image blobs are kept; `None` turns images off
+    /// (blob-store: Pluggable storage backend).
+    pub blob_store: Option<BlobStoreConfig>,
+}
+
+/// Which blob-store backend holds the ciphertext, and where.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BlobStoreConfig {
+    /// Files in one directory: the stable path the drive is mounted at.
+    Filesystem {
+        /// The directory, which must already exist; the server never creates it.
+        path: PathBuf,
+    },
 }
 
 /// The config field names, as written in the TOML file.
@@ -45,6 +62,12 @@ pub mod field {
     pub const DATABASE_PATH: &str = "database_path";
     /// `key_dir`
     pub const KEY_DIR: &str = "key_dir";
+    /// `[blob_store]`
+    pub const BLOB_STORE: &str = "blob_store";
+    /// `blob_store.backend`
+    pub const BLOB_STORE_BACKEND: &str = "blob_store.backend";
+    /// `blob_store.path`
+    pub const BLOB_STORE_PATH: &str = "blob_store.path";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -53,6 +76,7 @@ pub mod field {
         PUBLIC_ADDRESS,
         DATABASE_PATH,
         KEY_DIR,
+        BLOB_STORE,
     ];
 }
 
@@ -145,6 +169,7 @@ impl Config {
 
         let database_path = base.join(required_str(&table, field::DATABASE_PATH)?);
         let key_dir = base.join(required_str(&table, field::KEY_DIR)?);
+        let blob_store = blob_store(&table, base)?;
 
         Ok(Self {
             server_id,
@@ -153,12 +178,53 @@ impl Config {
             public_address,
             database_path,
             key_dir,
+            blob_store,
         })
     }
 
     /// The admin's user id in its textual form, `<admin_username>@<server_id>`.
     pub fn admin_user_id(&self) -> String {
         format!("{}@{}", self.admin_username, self.server_id)
+    }
+}
+
+/// The `[blob_store]` table, if there is one.
+fn blob_store(table: &toml::Table, base: &Path) -> Result<Option<BlobStoreConfig>, ConfigError> {
+    let Some(value) = table.get(field::BLOB_STORE) else {
+        return Ok(None);
+    };
+    let toml::Value::Table(sub) = value else {
+        return Err(ConfigError::Invalid {
+            field: field::BLOB_STORE,
+            reason: format!("must be a table, found {}", value.type_str()),
+        });
+    };
+    const KNOWN: &[&str] = &["backend", "path"];
+    if let Some(unknown) = sub.keys().find(|key| !KNOWN.contains(&key.as_str())) {
+        return Err(ConfigError::Unknown {
+            field: format!("{}.{unknown}", field::BLOB_STORE),
+        });
+    }
+    let text = |key: &str, name: &'static str| match sub.get(key) {
+        None => Err(ConfigError::Missing { field: name }),
+        Some(toml::Value::String(value)) if !value.trim().is_empty() => Ok(value.clone()),
+        Some(toml::Value::String(_)) => Err(ConfigError::Invalid {
+            field: name,
+            reason: "must not be empty".into(),
+        }),
+        Some(other) => Err(ConfigError::Invalid {
+            field: name,
+            reason: format!("must be a string, found {}", other.type_str()),
+        }),
+    };
+    match text("backend", field::BLOB_STORE_BACKEND)?.as_str() {
+        "filesystem" => Ok(Some(BlobStoreConfig::Filesystem {
+            path: base.join(text("path", field::BLOB_STORE_PATH)?),
+        })),
+        other => Err(ConfigError::Invalid {
+            field: field::BLOB_STORE_BACKEND,
+            reason: format!("{other:?} is not a known backend (only \"filesystem\")"),
+        }),
     }
 }
 

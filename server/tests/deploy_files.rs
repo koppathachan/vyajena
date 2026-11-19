@@ -854,3 +854,315 @@ fn the_pi_check_covers_the_review_server_and_separate_pins() {
     let relay_check = read("deploy/relay/check.sh");
     assert!(relay_check.contains("$NAME-review INGRESS false false tcp:$REVIEW_PORT"));
 }
+
+// --- media-blobs: the blob store on the Pi ---------------------------------------
+
+/// A `pi.conf` that names `blob_dir` (empty for none).
+fn pi_conf_with(sandbox: &Sandbox, blob_dir: &str) -> PathBuf {
+    let path = sandbox.dir.path().join("pi.conf");
+    // Quoted, so an odd value reaches the script's own checks as text.
+    std::fs::write(&path, format!("BLOB_DIR='{blob_dir}'\n")).check("pi.conf");
+    path
+}
+
+/// `render.sh pi-config` with `blob_dir` in the Pi's settings.
+fn render_pi_config(sandbox: &Sandbox, blob_dir: &str) -> Output {
+    let conf = pi_conf_with(sandbox, blob_dir);
+    let mut command = Command::new("bash");
+    command
+        .arg(repo().join("deploy/relay/render.sh"))
+        .arg("pi-config")
+        .env("RELAY_SECRETS", sandbox.secrets())
+        .env("PI_CONF", conf)
+        .env("HOME", sandbox.dir.path());
+    command.output().check("render.sh")
+}
+
+/// The one function `name` out of deploy.sh, run with `args`, with fake tools
+/// first on PATH that log their calls and print what `fakes` say. Returns
+/// the output and the tools' calls, one per line.
+fn run_deploy_function(
+    name: &str,
+    args: &[&str],
+    fakes: &[(&str, &str)],
+    env: &[(&str, &Path)],
+) -> (Output, Vec<String>) {
+    let dir = tempfile::tempdir().check("temp dir");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir(&bin).check("bin");
+    let log = dir.path().join("calls.log");
+    for tool in ["systemctl", "findmnt", "chown", "install", "rmdir"] {
+        let body = fakes
+            .iter()
+            .find(|(t, _)| *t == tool)
+            .map_or(String::new(), |(_, body)| (*body).to_owned());
+        let path = bin.join(tool);
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\necho \"{tool} $*\" >> '{}'\n{body}\n",
+                log.display()
+            ),
+        )
+        .check("fake tool");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).check("chmod");
+    }
+    let path = format!(
+        "{}:{}",
+        bin.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let mut command = Command::new("bash");
+    command
+        .arg("-c")
+        .arg(format!(
+            "eval \"$(sed -n '/^{name}() {{/,/^}}/p' \"$0\")\"; {name} \"$@\""
+        ))
+        .arg(repo().join("deploy/pi/deploy.sh"))
+        .args(args)
+        .env("PATH", path);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let out = command.output().check(name);
+    let calls = std::fs::read_to_string(&log)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    (out, calls)
+}
+
+// spec: pi-deployment/blob-store-deployment
+#[test]
+fn images_are_off_until_the_owner_names_the_drives_path() {
+    // As committed: no path, so no [blob_store] and the Pi is as before.
+    let conf = read("deploy/pi/pi.conf");
+    assert!(conf.lines().any(|l| l == "BLOB_DIR="), "off by default");
+    let sandbox = Sandbox::new().with_secrets();
+    let config = Config::from_toml(&sandbox.render("pi-config"), Path::new("/")).check("config");
+    assert_eq!(config.blob_store, None);
+
+    // With a path: the server's config names exactly it.
+    let out = render_pi_config(&sandbox, "/mnt/vyajena-blobs");
+    assert!(out.status.success(), "{}", text(&out));
+    let rendered = String::from_utf8(out.stdout).check("utf-8");
+    let config = Config::from_toml(&rendered, Path::new("/")).check("config");
+    assert_eq!(
+        config.blob_store,
+        Some(server::runtime::config::BlobStoreConfig::Filesystem {
+            path: "/mnt/vyajena-blobs".into()
+        })
+    );
+    // The rest of the config is the same as without.
+    assert_eq!(config.server_id, "purplechaamba.com");
+}
+
+// spec: pi-deployment/blob-store-deployment
+#[test]
+fn a_blob_path_that_could_put_blobs_on_the_wrong_storage_is_refused() {
+    let sandbox = Sandbox::new().with_secrets();
+    for bad in [
+        "blobs",                  // relative
+        "/",                      // the root
+        "/var/lib/vyajena/blobs", // what the backup copies and a reset wipes
+        "/var/lib/vyajena",
+        "/var/lib/vyajena-review/b",
+        "/home/vyajan/blobs", // the service cannot see /home
+        "/root/blobs",
+        "/mnt/a b",
+        "/mnt/../etc",
+        "/mnt/blobs/", // a trailing slash is not a plain path
+        "/mnt/$(id)",
+    ] {
+        let out = render_pi_config(&sandbox, bad);
+        assert!(!out.status.success(), "{bad:?} was accepted");
+        assert!(text(&out).contains("BLOB_DIR"), "{bad:?}: {}", text(&out));
+    }
+    for good in ["/mnt/vyajena-blobs", "/media/drive_1/vyajena", "/srv/blobs"] {
+        let out = render_pi_config(&sandbox, good);
+        assert!(out.status.success(), "{good:?}: {}", text(&out));
+    }
+}
+
+// spec: pi-deployment/blob-store-deployment
+#[test]
+fn deploy_never_makes_the_folder_and_only_hands_over_one_on_its_own_mount() {
+    let work = tempfile::tempdir().check("temp dir");
+    let dropins = work.path().join("dropins");
+    let blobs = work.path().join("drive");
+    let env = [("VYAJENA_DROPIN_DIR", dropins.as_path())];
+    let dropin = dropins.join("blob-store.conf");
+
+    // The drive is not mounted: its path is not there. The drop-in is written
+    // (the service may write the path once it is), a warning says so, and
+    // nothing is created or given away.
+    let (out, calls) = run_deploy_function(
+        "remote_blob_store",
+        &[blobs.to_str().check("path")],
+        &[("install", "for last; do :; done; mkdir -p \"$last\"")],
+        &env,
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("WARN blob store"), "{}", text(&out));
+    assert!(!blobs.exists(), "deploy made the folder");
+    assert!(!calls.iter().any(|c| c.starts_with("chown")), "{calls:?}");
+    let written = std::fs::read_to_string(&dropin).check("drop-in");
+    assert!(
+        written
+            .lines()
+            .any(|l| l == format!("ReadWritePaths=-{}", blobs.display())),
+        "{written}"
+    );
+    assert!(written.starts_with("[Service]"));
+
+    // The path exists but is on the main storage (`findmnt` says "/"): the
+    // service is not given it.
+    std::fs::create_dir(&blobs).check("drive folder");
+    let (out, calls) = run_deploy_function(
+        "remote_blob_store",
+        &[blobs.to_str().check("path")],
+        &[("findmnt", "echo /")],
+        &env,
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("main storage"), "{}", text(&out));
+    assert!(!calls.iter().any(|c| c.starts_with("chown")), "{calls:?}");
+
+    // On a mount of its own: it is the service's, owner-only.
+    let (out, calls) = run_deploy_function(
+        "remote_blob_store",
+        &[blobs.to_str().check("path")],
+        &[("findmnt", "echo /mnt/thumb")],
+        &env,
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(
+        calls.contains(&format!("chown vyajena:vyajena {}", blobs.display())),
+        "{calls:?}"
+    );
+    assert_eq!(mode(&blobs), 0o700);
+
+    // No path: images are off and the drop-in is gone.
+    let (out, _) = run_deploy_function("remote_blob_store", &[""], &[], &env);
+    assert!(out.status.success(), "{}", text(&out));
+    assert!(!dropin.exists());
+}
+
+// spec: pi-deployment/blob-store-deployment
+// spec: pi-deployment/sandboxed-service
+#[test]
+fn the_unit_stays_closed_and_only_the_drop_in_opens_the_blob_path() {
+    // The committed unit writes nothing but its state directory...
+    let unit = read("deploy/pi/vyajena.service");
+    assert!(unit.lines().any(|l| l == "ProtectSystem=strict"));
+    assert!(unit.lines().any(|l| l == "StateDirectory=vyajena"));
+    assert!(!unit.contains("ReadWritePaths"));
+    assert!(
+        !unit.contains("RequiresMountsFor"),
+        "a missing drive must not stop the Pi"
+    );
+    // ...and deploy installs the drop-in only when a path is named, and runs
+    // the function that does it, on the Pi, for every install.
+    let deploy = read("deploy/pi/deploy.sh");
+    assert!(deploy.contains("remote_blob_store \"$blob_dir\""));
+    assert!(deploy.contains("\"${BLOB_DIR:-}\" | divert_invite"));
+    assert!(deploy.contains("remote_push_keys remote_blob_store"));
+    // The path is never created by deploy: the function has no mkdir.
+    let function: String = deploy
+        .lines()
+        .skip_while(|l| !l.starts_with("remote_blob_store() {"))
+        .take_while(|l| *l != "}")
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(!function.contains("mkdir"), "{function}");
+    assert!(!function.contains("install -d -m 0700"), "{function}");
+}
+
+// spec: pi-deployment/scripted-reset
+#[test]
+fn a_reset_deletes_the_groups_blobs_and_only_files_named_like_blobs() {
+    let work = tempfile::tempdir().check("temp dir");
+    let drive = work.path().join("drive");
+    std::fs::create_dir(&drive).check("drive");
+    let blob = "0123456789abcdef0123456789abcdef";
+    for name in [
+        blob,
+        ".tmp-0123-ab",
+        ".probe-12",
+        "notes.txt",
+        "0123456789abcdef",
+        "0123456789abcdef0123456789abcdeX",
+    ] {
+        std::fs::write(drive.join(name), b"x").check(name);
+    }
+    std::fs::create_dir(drive.join("ab".repeat(16))).check("a folder is not a blob");
+
+    let (out, _) = run_deploy_function("remote_wipe", &[drive.to_str().check("path")], &[], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let mut left: Vec<String> = std::fs::read_dir(&drive)
+        .check("read_dir")
+        .map(|e| e.check("entry").file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            "0123456789abcdef",
+            "0123456789abcdef0123456789abcdeX",
+            "abababababababababababababababab",
+            "notes.txt"
+        ],
+        "only blobs and leftovers went"
+    );
+
+    // With no path (images off) or a drive that is gone, nothing is touched.
+    let (out, _) = run_deploy_function("remote_wipe", &[""], &[], &[]);
+    assert!(out.status.success(), "{}", text(&out));
+    let (out, _) = run_deploy_function(
+        "remote_wipe",
+        &[work.path().join("not-mounted").to_str().check("path")],
+        &[],
+        &[],
+    );
+    assert!(out.status.success(), "{}", text(&out));
+}
+
+// spec: pi-deployment/backup-to-the-mac
+#[test]
+fn the_backup_copies_the_database_and_keys_and_never_the_blobs() {
+    let backup = read("deploy/pi/backup.sh");
+    let code: Vec<&str> = backup
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    let code = code.join("\n");
+    // The one folder it copies from is /var/lib/vyajena, and deploy refuses a
+    // blob path inside it.
+    assert!(code.contains("tar -C /var/lib/vyajena -cf - \"backup/$name\" keys"));
+    assert!(
+        !code.contains("BLOB_DIR") && !code.contains("blob"),
+        "{code}"
+    );
+    assert!(backup.contains("Image blobs are not backed up"));
+}
+
+// spec: pi-deployment/hardening-check
+#[test]
+fn the_pi_check_covers_the_blob_store_and_only_warns_about_an_absent_drive() {
+    let check = read("deploy/pi/check.sh");
+    for name in [
+        "blob-store off (no [blob_store] in the config)",
+        "blob-store mount",
+        "blob-store sandbox ReadWritePaths",
+        "blob-store service can write",
+        "blob-store service writes",
+    ] {
+        assert!(check.contains(name), "pi check.sh has no {name:?} check");
+    }
+    // An absent drive is a WARN, which never fails the check.
+    assert!(check.contains("warn blob-store \"$blob_dir is not there"));
+    assert!(!check.contains("fail blob-store \"$blob_dir is not there"));
+    // On the main storage is a failure.
+    assert!(check.contains("fail \"blob-store mount\""));
+}

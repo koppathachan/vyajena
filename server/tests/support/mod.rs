@@ -43,7 +43,12 @@ key_dir = "keys"
 
 /// A config whose database and keys live in `dir`, on a random local port.
 pub fn config_in(dir: &Path) -> Config {
-    match Config::from_toml(&config_text(), dir) {
+    config_with(dir, "")
+}
+
+/// [`config_in`] plus extra config text (a `[blob_store]` table goes last).
+pub fn config_with(dir: &Path, extra: &str) -> Config {
+    match Config::from_toml(&format!("{}\n{extra}\n", config_text()), dir) {
         Ok(config) => config,
         Err(error) => panic!("test config is invalid: {error}"),
     }

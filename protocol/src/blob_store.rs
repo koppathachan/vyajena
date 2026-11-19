@@ -17,6 +17,13 @@ pub const BLOB_NONCE_LEN: usize = 24;
 /// Length of the Poly1305 tag stored after the ciphertext.
 pub const BLOB_TAG_LEN: usize = 16;
 
+/// The label the nonce of a blob is derived under (Blob crypto and send
+/// order): `nonce = HMAC-SHA256(blob_key, BLOB_NONCE_CONTEXT || blob_id)`,
+/// first [`BLOB_NONCE_LEN`] bytes. A key encrypts one plaintext only, so the
+/// derived nonce is never reused with different data, and a retried upload is
+/// byte for byte the same.
+pub const BLOB_NONCE_CONTEXT: &[u8] = b"vyajena2-blob-nonce-v1";
+
 /// The most bytes of encoded WebP a sent image may hold: 2 MB (Image encode
 /// pipeline).
 pub const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;

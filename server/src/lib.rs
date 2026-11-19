@@ -10,6 +10,7 @@
 
 pub mod admin;
 pub mod auth;
+pub mod blobs;
 pub mod devices;
 pub mod dms;
 pub mod keys;

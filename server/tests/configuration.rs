@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
 
+use server::runtime::config::BlobStoreConfig;
 use server::runtime::{Config, ConfigError};
 use support::Check;
 use support::binary::{Home, admin_on, logged};
@@ -206,4 +207,70 @@ async fn behind_the_relay_listens_on_loopback_and_invites_name_the_relay() {
     let payload = response.payload.check("payload");
     assert_eq!(payload.relay_address, "203.0.113.10:443");
     assert_eq!(payload.tls_spki_sha256, pi.pin.to_vec());
+}
+
+fn blob_store(table: &str) -> String {
+    format!("{}\n{table}\n", support::config_text())
+}
+
+// spec: pi-runtime/configuration
+#[test]
+fn the_blob_store_is_off_unless_configured() {
+    let config = parse(&support::config_text()).check("valid config");
+    assert_eq!(config.blob_store, None);
+}
+
+// spec: pi-runtime/configuration
+#[test]
+fn reads_a_filesystem_blob_store_and_resolves_its_path_like_the_others() {
+    let config = parse(&blob_store(
+        "[blob_store]\nbackend = \"filesystem\"\npath = \"/mnt/vyajena-blobs\"",
+    ))
+    .check("valid config");
+    // An absolute path is the stable path, the same on every start.
+    assert_eq!(
+        config.blob_store,
+        Some(BlobStoreConfig::Filesystem {
+            path: "/mnt/vyajena-blobs".into()
+        })
+    );
+    // A relative one is read from the config file's folder.
+    let config = parse(&blob_store(
+        "[blob_store]\nbackend = \"filesystem\"\npath = \"blobs\"",
+    ))
+    .check("valid config");
+    assert_eq!(
+        config.blob_store,
+        Some(BlobStoreConfig::Filesystem {
+            path: "/srv/pi/blobs".into()
+        })
+    );
+}
+
+// spec: pi-runtime/configuration
+#[test]
+fn a_bad_blob_store_names_the_field() {
+    let cases = [
+        ("[blob_store]\npath = \"/mnt/b\"", "blob_store.backend"),
+        ("[blob_store]\nbackend = \"filesystem\"", "blob_store.path"),
+        (
+            "[blob_store]\nbackend = \"floppy\"\npath = \"/mnt/b\"",
+            "blob_store.backend",
+        ),
+        (
+            "[blob_store]\nbackend = \"filesystem\"\npath = \" \"",
+            "blob_store.path",
+        ),
+        (
+            "[blob_store]\nbackend = \"filesystem\"\npath = \"/b\"\nbucket = \"x\"",
+            "blob_store.bucket",
+        ),
+        ("blob_store = \"/mnt/b\"", "blob_store"),
+    ];
+    for (table, field) in cases {
+        match parse(&blob_store(table)) {
+            Err(error) => assert_eq!(error.field(), Some(field), "for {table}: {error}"),
+            Ok(_) => panic!("config accepted: {table}"),
+        }
+    }
 }

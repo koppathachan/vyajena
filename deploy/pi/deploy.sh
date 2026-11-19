@@ -20,6 +20,13 @@
 # touched, so the TLS pin and the users survive every upgrade. A new bootstrap
 # invite is saved to an owner-only file in BACKUP_ROOT (~/vyajena-pi-backups),
 # never printed.
+#
+# Images (change media-blobs): BLOB_DIR in deploy/pi/pi.conf, empty by default,
+# names the path the owner's drive is mounted at. Set, deploy renders the
+# server's [blob_store] from it, lets the service write that path through a
+# systemd drop-in and, only if the path is on a mount of its own, gives it to
+# the service user (0700). Deploy never mounts anything and never writes blobs
+# to the SD card; with the drive absent it warns and the server serves text.
 set -euo pipefail
 
 PI="${PI:-vyajan@192.168.1.8}"
@@ -32,6 +39,9 @@ RENDER="$REPO/deploy/relay/render.sh"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/vyajena-pi-backups}"
 PUSH_DIR="${PUSH_DIR:-$HOME/.vyajena-push}"
 readonly HERE REPO BINARY RATHOLE RENDER BACKUP_ROOT PUSH_DIR
+# BLOB_DIR: where image blobs live (empty: images off). PI_CONF overrides.
+# shellcheck source=pi.conf
+. "${PI_CONF:-$HERE/pi.conf}"
 
 die() {
   echo "deploy.sh: $*" >&2
@@ -139,13 +149,62 @@ remote_wait_tunnel() {
 
 # Deletes the group (pi-deployment: Scripted reset; relay design D9): only
 # ever called by remote_install with reset=yes, after deploy.sh made a backup.
+# The group's image blobs go too: with the database gone nothing would ever
+# delete them. Only files named as blobs are removed (32 hex digits, or a
+# leftover temporary one), and only in the blob store's own folder.
 remote_wipe() {
   set -euo pipefail
+  local blob_dir="${1:-}"
   systemctl stop vyajena-tunnel.service vyajena.service 2>/dev/null || true
   if [ -d /var/lib/vyajena ]; then
     find /var/lib/vyajena -mindepth 1 -delete
   fi
   echo "deleted the database and keys in /var/lib/vyajena" >&2
+  if [ -n "$blob_dir" ] && [ -d "$blob_dir" ]; then
+    find "$blob_dir" -maxdepth 1 -type f \( -regex '.*/[0-9a-f]\{32\}' -o -name '.tmp-*' -o -name '.probe-*' \) -delete
+    echo "deleted the image blobs in $blob_dir" >&2
+  fi
+}
+
+# The blob store's part of an install (pi-deployment: Blob store deployment):
+# lets the service write the blob path and gives the path to the service user,
+# when that is safe. An unset path removes the drop-in: images are off.
+#
+# Deploy never mounts a drive and never makes the folder. It chowns and chmods
+# the path only when the path is on a mount of its own: if the drive is not
+# mounted the path is missing or on the SD card, and handing that to the
+# service would let blobs land there. The drop-in's leading "-" lets the
+# service start when the path is absent; it picks the path up at its next
+# start once the drive is mounted.
+remote_blob_store() {
+  set -euo pipefail
+  # VYAJENA_DROPIN_DIR is only for the tests that run this function; the
+  # function is sent over SSH, where it is never set.
+  local dir="${1:-}" dropin_dir="${VYAJENA_DROPIN_DIR:-/etc/systemd/system/vyajena.service.d}" target
+  local dropin="$dropin_dir/blob-store.conf"
+  if [ -z "$dir" ]; then
+    rm -f "$dropin"
+    rmdir "$dropin_dir" 2>/dev/null || true
+    echo "blob store: BLOB_DIR is not set; images are off" >&2
+    return 0
+  fi
+  install -d -m 0755 -o root -g root "$dropin_dir"
+  printf '[Service]\n# media-blobs: the blob store'"'"'s folder is the one path besides the\n# state directory the server may write. "-": absent while the drive is.\nReadWritePaths=-%s\n' "$dir" >"$dropin"
+  chmod 0644 "$dropin"
+  if [ ! -d "$dir" ]; then
+    echo "WARN blob store: $dir does not exist (drive not mounted?); images stay unavailable until it is mounted and vyajena.service is restarted" >&2
+    return 0
+  fi
+  target="$(findmnt -n -o TARGET -T "$dir")"
+  if [ "$target" = / ]; then
+    echo "WARN blob store: $dir is on the main storage, not on a mount of its own; left alone, images stay unavailable" >&2
+    return 0
+  fi
+  if chown vyajena:vyajena "$dir" && chmod 0700 "$dir"; then
+    echo "blob store: $dir (on $target) is the service's, mode 0700" >&2
+  else
+    echo "WARN blob store: cannot give $dir to the service user (is the drive ext4?); images stay unavailable" >&2
+  fi
 }
 
 # Wipes only the store reviewers' server (review-server: Review reset): never
@@ -183,12 +242,12 @@ remote_push_keys() {
 
 remote_install() {
   set -euo pipefail
-  local staging="$1" reset="$2" reset_review="$3" bin=/usr/local/bin/vyajena-server first=no
-  local review_first=no since
+  local staging="$1" reset="$2" reset_review="$3" blob_dir="${4:-}"
+  local bin=/usr/local/bin/vyajena-server first=no review_first=no since
   [ -e "$bin" ] || first=yes
   [ -e /var/lib/vyajena-review/keys ] || review_first=yes
   if [ "$reset" = yes ]; then
-    remote_wipe
+    remote_wipe "$blob_dir"
     first=yes
   fi
   if [ "$reset_review" = yes ]; then
@@ -205,6 +264,7 @@ remote_install() {
   install -m 0644 -o root -g root "$staging/vyajena-tunnel.service" /etc/systemd/system/vyajena-tunnel.service
   install -m 0755 -o root -g root "$staging/rathole" /usr/local/bin/rathole
   install -m 0644 -o root -g root "$staging/vyajena.service" /etc/systemd/system/vyajena.service
+  remote_blob_store "$blob_dir"
   install -m 0755 -o root -g root "$staging/vyajena-server" "$bin.new"
   if [ "$first" = yes ]; then
     mv "$bin.new" "$bin"
@@ -261,7 +321,7 @@ run_remote() {
   local fn="$1"
   shift
   { declare -f remote_wait_ready remote_wait_tunnel remote_wipe remote_wipe_review remote_report \
-      remote_push_keys "$fn"
+      remote_push_keys remote_blob_store "$fn"
     printf '%s' "$fn"; printf ' %q' "$@"; echo; } |
     pi sudo bash -s
 }
@@ -422,7 +482,7 @@ main() {
   else
     say "installing and restarting vyajena.service and vyajena-tunnel.service"
   fi
-  run_remote remote_install "$staging" "$reset" "$reset_review" | divert_invite
+  run_remote remote_install "$staging" "$reset" "$reset_review" "${BLOB_DIR:-}" | divert_invite
   pi rm -rf "$staging"
   say "done; check with deploy/pi/check.sh"
 }
