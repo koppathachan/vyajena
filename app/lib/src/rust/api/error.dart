@@ -125,6 +125,19 @@ enum CoreErrorKind {
   /// The Pi does not support DMs yet.
   dmsUnavailable,
 
+  /// The picked file is not an image the app can send (JPEG, PNG, GIF or
+  /// WebP).
+  imageUnsupported,
+
+  /// The image cannot be made small enough to send.
+  imageTooLarge,
+
+  /// The Pi no longer has the picture (client-runtime: Expired media).
+  mediaExpired,
+
+  /// This device no longer has the picture to resend.
+  mediaNotOnDevice,
+
   /// The one event stream was already taken.
   eventsTaken,
 

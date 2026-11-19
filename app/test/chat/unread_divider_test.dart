@@ -21,8 +21,7 @@ ChatMessage msg(int id, String text, {bool own = false}) => ChatMessage(
   status: own ? const SendState.accepted() : null,
 );
 
-double dyOf(WidgetTester tester, Finder finder) =>
-    tester.getTopLeft(finder).dy;
+double dyOf(WidgetTester tester, Finder finder) => tester.getTopLeft(finder).dy;
 
 Finder divider() => find.byKey(const Key('unread-divider'));
 Finder fab() => find.byKey(const Key('scroll-to-bottom'));
@@ -97,7 +96,10 @@ void main() {
     // Still between "one" and "two", not moved down to "four".
     expect(dyOf(tester, find.text('one')), lessThan(dyOf(tester, divider())));
     expect(dyOf(tester, divider()), lessThan(dyOf(tester, find.text('two'))));
-    expect(dyOf(tester, find.text('two')), lessThan(dyOf(tester, find.text('four'))));
+    expect(
+      dyOf(tester, find.text('two')),
+      lessThan(dyOf(tester, find.text('four'))),
+    );
   });
 
   // spec: app-ui/scroll-to-bottom

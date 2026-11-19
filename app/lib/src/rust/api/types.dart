@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 @freezed
 sealed class ChatBody with _$ChatBody {
@@ -19,6 +19,13 @@ sealed class ChatBody with _$ChatBody {
     /// The text, only to be shown.
     required String text,
   }) = ChatBody_Text;
+
+  /// An image with an optional caption.
+  const factory ChatBody.image({
+    /// The image. Boxed: it is large next to a text, and a message is
+    /// carried in every event.
+    required ImageView image,
+  }) = ChatBody_Image;
 
   /// A body this version does not know: shown as a placeholder saying the
   /// app needs an update (app-ui: Chat screen).
@@ -69,7 +76,8 @@ class ChatMessage {
   /// The body.
   final ChatBody body;
 
-  /// The mentions in a text body, in text order; empty otherwise.
+  /// The mentions in a text body or an image's caption, in text order;
+  /// empty otherwise.
   final List<MentionSpan> mentions;
 
   /// Whether it mentions this device's user or everyone (from another
@@ -335,6 +343,59 @@ sealed class CoreEvent with _$CoreEvent {
   const factory CoreEvent.other() = CoreEvent_Other;
 }
 
+/// An image message (message-content: Image messages). No key and no blob id:
+/// they stay in the core, which is given the message's local id.
+class ImageView {
+  /// Pixel width of the picture, to lay the bubble out before it loads.
+  final int width;
+
+  /// Pixel height of the picture.
+  final int height;
+
+  /// The ThumbHash blur to draw until the picture is downloaded.
+  final Uint8List thumbhash;
+
+  /// The picture's size on the Pi in bytes, to show before downloading.
+  final BigInt size;
+
+  /// The caption, only to be shown; its mentions are the message's
+  /// `mentions`, as UTF-16 ranges of this text.
+  final String? caption;
+
+  /// Where the picture is.
+  final MediaStatus state;
+
+  const ImageView({
+    required this.width,
+    required this.height,
+    required this.thumbhash,
+    required this.size,
+    this.caption,
+    required this.state,
+  });
+
+  @override
+  int get hashCode =>
+      width.hashCode ^
+      height.hashCode ^
+      thumbhash.hashCode ^
+      size.hashCode ^
+      caption.hashCode ^
+      state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ImageView &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          thumbhash == other.thumbhash &&
+          size == other.size &&
+          caption == other.caption &&
+          state == other.state;
+}
+
 /// An invite the admin created.
 class InviteInfo {
   /// The single-use code (for revoking).
@@ -392,6 +453,19 @@ class InvitePreview {
           runtimeType == other.runtimeType &&
           user == other.user &&
           relayAddress == other.relayAddress;
+}
+
+/// Where an image message's picture is on this device (client-runtime: Image
+/// download and cache; Expired media).
+enum MediaStatus {
+  /// Not downloaded: the blur shows and a tap downloads it.
+  notDownloaded,
+
+  /// Cached on this device: it opens at once.
+  available,
+
+  /// The Pi no longer has it: "media expired".
+  expired,
 }
 
 /// A group member device.

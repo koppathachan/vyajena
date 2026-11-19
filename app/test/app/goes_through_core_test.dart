@@ -53,6 +53,11 @@ const allowedFlutter = {
 /// data is up and opens no connection.
 const mainOnly = {'package:connectivity_plus/connectivity_plus.dart'};
 
+/// What only the one picture-picker file may import: the phone's gallery
+/// (app-ui: Send an image). It picks a file the user chooses and opens no
+/// connection.
+const pickerOnly = {'package:image_picker/image_picker.dart'};
+
 /// What only the generated bindings may import: FFI to the Rust core.
 const bindingOnly = {
   'dart:ffi',
@@ -76,6 +81,8 @@ void main() {
           _ when bindingOnly.contains(uri) => generated(file),
           _ when mainOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/main.dart',
+          _ when pickerOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/chat/picture_picker.dart',
           _ => false,
         };
         if (!ok) bad.add('${file.path}: $uri');
@@ -109,13 +116,15 @@ void main() {
       r'^  ([a-z_]+):',
       multiLine: true,
     ).allMatches(section).map((m) => m.group(1)!).toSet();
-    // connectivity_plus only reports whether a connection is up (D6).
+    // connectivity_plus only reports whether a connection is up (D6);
+    // image_picker only picks a file from the gallery (Send an image).
     expect(names, {
       'flutter',
       'bridge',
       'flutter_rust_bridge',
       'freezed_annotation',
       'connectivity_plus',
+      'image_picker',
     });
   });
 

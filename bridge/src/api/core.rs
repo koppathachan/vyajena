@@ -44,9 +44,20 @@ pub fn text_fits(text: String) -> bool {
     client::messaging::encode_text(&text, std::time::SystemTime::now()).is_ok()
 }
 
+/// The blur a ThumbHash stands for, as a small PNG, or `None` for bytes that
+/// are not a ThumbHash. The core decodes it so the app has no second ThumbHash
+/// implementation.
+#[flutter_rust_bridge::frb(sync)]
+pub fn thumbhash_preview(thumbhash: Vec<u8>) -> Option<Vec<u8>> {
+    client::media::encode::thumbhash_preview(&thumbhash)
+}
+
 impl Core {
     /// Opens the core: the database in `data_dir` (the app's private
-    /// storage) and the keys in the OS key store.
+    /// storage) and the keys in the OS key store. The decrypted pictures
+    /// are cached in `data_dir/media`: `data_dir` is the folder the platform
+    /// keeps out of backups and encrypts at rest (app-ui: Data on the phone),
+    /// so the cache is too.
     pub async fn open(data_dir: String) -> Result<Core, CoreError> {
         let key_store = tokio::task::spawn_blocking(|| {
             open_key_store(&KeyStoreConfig {
@@ -284,6 +295,59 @@ impl Core {
                 .send_message(&text, &mentions, reply_to.map(MessageId)),
         )?
         .0)
+    }
+
+    /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the
+    /// main group with an optional caption and `mentions` (UTF-16 ranges of
+    /// the caption); returns its local id. The core makes the WebP and queues
+    /// the message at once, connected or not, like a text; it uploads the
+    /// picture and sends the message when it can (message-content: Image
+    /// messages; client-runtime: Blob crypto and send order).
+    pub async fn send_image(
+        &self,
+        picked: Vec<u8>,
+        caption: Option<String>,
+        mentions: Vec<MentionSpan>,
+    ) -> Result<i64, CoreError> {
+        self.send_image_in(0, picked, caption, mentions).await
+    }
+
+    /// [`Core::send_image`] in chat `chat_id`.
+    pub async fn send_image_in(
+        &self,
+        chat_id: i64,
+        picked: Vec<u8>,
+        caption: Option<String>,
+        mentions: Vec<MentionSpan>,
+    ) -> Result<i64, CoreError> {
+        let mentions = map::mentions(caption.as_deref().unwrap_or_default(), &mentions)?;
+        Ok(forward(
+            self.client
+                .send_image_in(ChatId(chat_id), &picked, caption.as_deref(), &mentions)
+                .await,
+        )?
+        .0)
+    }
+
+    /// The picture of image message `id` as WebP bytes: from this device's
+    /// cache, else downloaded, decrypted and cached (client-runtime: Image
+    /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
+    /// the Pi no longer has it.
+    pub async fn download_image(&self, id: i64) -> Result<Vec<u8>, CoreError> {
+        forward(self.client.download_image(MessageId(id)).await)
+    }
+
+    /// The picture of image message `id` if this device has it cached; never
+    /// uses the network.
+    pub async fn cached_image(&self, id: i64) -> Result<Option<Vec<u8>>, CoreError> {
+        forward(self.client.cached_image(MessageId(id)).await)
+    }
+
+    /// Resends the picture of the own image message `id` as a new message
+    /// with a new blob, when the first one expired (client-runtime: Expired
+    /// media); returns the new message's local id.
+    pub async fn resend_image(&self, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.resend_image(MessageId(id)).await)?.0)
     }
 
     /// The local ids of messages whose mention of this user is not seen yet,

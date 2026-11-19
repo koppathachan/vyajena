@@ -10,8 +10,9 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, InviteInfo,
-    MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote, SendState, UserRef,
+    ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, ImageView,
+    InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote,
+    SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -107,6 +108,11 @@ pub(crate) fn mentions(text: &str, spans: &[MentionSpan]) -> Result<Vec<Mention>
 pub(crate) fn message(message: Message) -> ChatMessage {
     let mentions = match &message.body {
         MessageBody::Text(text) => spans(text, &message.mentions),
+        // A caption's mentions are ranges of the caption.
+        MessageBody::Image(image) => image
+            .caption
+            .as_deref()
+            .map_or_else(Vec::new, |caption| spans(caption, &message.mentions)),
         _ => Vec::new(),
     };
     ChatMessage {
@@ -125,6 +131,23 @@ pub(crate) fn message(message: Message) -> ChatMessage {
         }),
         body: match message.body {
             MessageBody::Text(text) => ChatBody::Text { text },
+            MessageBody::Image(image) => {
+                let image = *image;
+                ChatBody::Image {
+                    image: Box::new(ImageView {
+                        width: image.width,
+                        height: image.height,
+                        thumbhash: image.thumbhash,
+                        size: image.size,
+                        caption: image.caption,
+                        state: match image.state {
+                            client::MediaState::Available => MediaStatus::Available,
+                            client::MediaState::Expired => MediaStatus::Expired,
+                            _ => MediaStatus::NotDownloaded,
+                        },
+                    }),
+                }
+            }
             _ => ChatBody::Unsupported,
         },
         sent_at_ms: message.sent_at.map(millis),
@@ -282,6 +305,12 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::NoSuchChat => K::NoSuchChat,
         ClientError::ChatClosed => K::ChatClosed,
         ClientError::DmsUnavailable => K::DmsUnavailable,
+        ClientError::MediaExpired => K::MediaExpired,
+        ClientError::MediaNotOnDevice => K::MediaNotOnDevice,
+        ClientError::Media(client::media::MediaError::Image(image)) => match image {
+            client::media::ImageError::TooLarge => K::ImageTooLarge,
+            _ => K::ImageUnsupported,
+        },
         _ => K::Internal,
     };
     CoreError::new(kind, error.to_string())

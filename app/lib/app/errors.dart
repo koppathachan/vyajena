@@ -15,6 +15,12 @@ String errorText(Object error) {
       'Only the phone you joined with can link devices.',
     CoreErrorKind.noGroup => 'This phone is not in the group yet.',
     CoreErrorKind.tooLong => 'The text is too long to send.',
+    CoreErrorKind.imageUnsupported =>
+      'That file is not a picture the app can send.',
+    CoreErrorKind.imageTooLarge => 'That picture is too large to send.',
+    CoreErrorKind.mediaExpired => 'The picture has expired.',
+    CoreErrorKind.mediaNotOnDevice =>
+      'This phone no longer has the picture to send again.',
     _ => error.message,
   };
 }

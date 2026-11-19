@@ -11,6 +11,37 @@ pub struct UserRef {
     pub server_id: String,
 }
 
+/// Where an image message's picture is on this device (client-runtime: Image
+/// download and cache; Expired media).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaStatus {
+    /// Not downloaded: the blur shows and a tap downloads it.
+    NotDownloaded,
+    /// Cached on this device: it opens at once.
+    Available,
+    /// The Pi no longer has it: "media expired".
+    Expired,
+}
+
+/// An image message (message-content: Image messages). No key and no blob id:
+/// they stay in the core, which is given the message's local id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageView {
+    /// Pixel width of the picture, to lay the bubble out before it loads.
+    pub width: u32,
+    /// Pixel height of the picture.
+    pub height: u32,
+    /// The ThumbHash blur to draw until the picture is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The picture's size on the Pi in bytes, to show before downloading.
+    pub size: u64,
+    /// The caption, only to be shown; its mentions are the message's
+    /// `mentions`, as UTF-16 ranges of this text.
+    pub caption: Option<String>,
+    /// Where the picture is.
+    pub state: MediaStatus,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatBody {
@@ -18,6 +49,12 @@ pub enum ChatBody {
     Text {
         /// The text, only to be shown.
         text: String,
+    },
+    /// An image with an optional caption.
+    Image {
+        /// The image. Boxed: it is large next to a text, and a message is
+        /// carried in every event.
+        image: Box<ImageView>,
     },
     /// A body this version does not know: shown as a placeholder saying the
     /// app needs an update (app-ui: Chat screen).
@@ -91,7 +128,8 @@ pub struct ChatMessage {
     pub own_user: bool,
     /// The body.
     pub body: ChatBody,
-    /// The mentions in a text body, in text order; empty otherwise.
+    /// The mentions in a text body or an image's caption, in text order;
+    /// empty otherwise.
     pub mentions: Vec<MentionSpan>,
     /// Whether it mentions this device's user or everyone (from another
     /// user): highlighted (app-ui: Mentions of me).

@@ -95,11 +95,7 @@ class _GroupGateState extends State<GroupGate> {
     // The chat list is always the home once this device is in the group
     // (app-ui: Chat list); the group's chat opens on top of it.
     if (inGroup) {
-      return ChatListScreen(
-        core: widget.core,
-        chat: widget.chat,
-        admin: admin,
-      );
+      return ChatListScreen(core: widget.core, chat: widget.chat, admin: admin);
     }
     if (admin) return CreateGroupScreen(core: widget.core, onCreated: _check);
     return Scaffold(

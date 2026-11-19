@@ -1,5 +1,8 @@
 // A CoreService for widget tests (flutter-app design D7): no Rust, no Pi.
 // Tests set its state, push events with [emit] and read [calls].
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:vyajena/core/core_service.dart';
 
 /// An in-memory core.
@@ -64,6 +67,22 @@ class FakeCoreService extends CoreService {
 
   int _nextId = 1;
 
+  /// A 1x1 PNG: what [thumbhashPreview] returns, so the blur is a real image,
+  /// and the picture the fake's Pi holds.
+  static final Uint8List blurPng = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  );
+
+  /// The pictures this device has cached, by message id ([cachedImage]).
+  final Map<int, Uint8List> cachedPictures = {};
+
+  /// The pictures the Pi still has, by message id: what [downloadImage]
+  /// downloads. A message not here has expired.
+  final Map<int, Uint8List> piPictures = {};
+
+  /// The pictures [sendImage] was given, in order.
+  final List<Uint8List> sentPictures = [];
+
   /// A new local id, after every id in [messages].
   int _newId() {
     for (final m in messages) {
@@ -80,6 +99,45 @@ class FakeCoreService extends CoreService {
     args[name] = arg;
     final error = fails[name];
     if (error != null) throw error;
+  }
+
+  /// A received picture from [sender], with an optional [caption]. The Pi
+  /// still has it ([piPictures]) unless [expired]; it is not cached yet.
+  ChatMessage receiveImage(
+    UserRef sender, {
+    String? caption,
+    List<MentionSpan> mentions = const [],
+    bool expired = false,
+    int width = 640,
+    int height = 480,
+    int chatId = 0,
+  }) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.image(
+        image: ImageView(
+          width: width,
+          height: height,
+          thumbhash: Uint8List.fromList([1, 2, 3]),
+          size: BigInt.from(1200 * 1024),
+          caption: caption,
+          state: expired ? MediaStatus.expired : MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: mentions,
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    if (!expired) piPictures[id] = blurPng;
+    emit(CoreEvent.message(message: message));
+    return message;
   }
 
   /// A received message from [sender], appended to [messages] and emitted
@@ -137,6 +195,41 @@ class FakeCoreService extends CoreService {
           m,
     ];
     emit(CoreEvent.sendStatus(id: id, status: status));
+  }
+
+  /// Moves the picture of image message [id] to [state] ([MediaStatus]) and
+  /// emits it as the core's status change does; the next history read shows it.
+  void setMediaState(int id, MediaStatus state) {
+    messages = [
+      for (final m in messages)
+        if (m.id == id && m.body is ChatBody_Image)
+          ChatMessage(
+            id: m.id,
+            chatId: m.chatId,
+            sender: m.sender,
+            senderDevice: m.senderDevice,
+            outgoing: m.outgoing,
+            ownUser: m.ownUser,
+            body: ChatBody.image(
+              image: ImageView(
+                width: (m.body as ChatBody_Image).image.width,
+                height: (m.body as ChatBody_Image).image.height,
+                thumbhash: (m.body as ChatBody_Image).image.thumbhash,
+                size: (m.body as ChatBody_Image).image.size,
+                caption: (m.body as ChatBody_Image).image.caption,
+                state: state,
+              ),
+            ),
+            mentions: m.mentions,
+            mentionsMe: m.mentionsMe,
+            reply: m.reply,
+            sentAtMs: m.sentAtMs,
+            acceptedAtMs: m.acceptedAtMs,
+            status: m.status,
+          )
+        else
+          m,
+    ];
   }
 
   @override
@@ -307,6 +400,79 @@ class FakeCoreService extends CoreService {
     );
     return id;
   }
+
+  @override
+  Future<int> sendImage(
+    Uint8List picked, {
+    int chatId = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
+  }) async {
+    _call('sendImage', (chatId: chatId, caption: caption, mentions: mentions));
+    sentPictures.add(picked);
+    final id = _newId();
+    cachedPictures[id] = picked;
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.image(
+          image: ImageView(
+            width: 640,
+            height: 480,
+            thumbhash: Uint8List.fromList([1, 2, 3]),
+            size: BigInt.from(1200 * 1024),
+            caption: caption,
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: mentions,
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<Uint8List> downloadImage(int id) async {
+    _call('downloadImage', id);
+    final cached = cachedPictures[id];
+    if (cached != null) return cached;
+    final picture = piPictures[id];
+    if (picture == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaExpired,
+        message: 'the picture has expired',
+      );
+    }
+    cachedPictures[id] = picture;
+    return picture;
+  }
+
+  @override
+  Future<Uint8List?> cachedImage(int id) async => cachedPictures[id];
+
+  @override
+  Future<int> resendImage(int id) async {
+    _call('resendImage', id);
+    final picture = cachedPictures[id];
+    if (picture == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaNotOnDevice,
+        message: 'not on this device',
+      );
+    }
+    return sendImage(picture);
+  }
+
+  @override
+  Uint8List? thumbhashPreview(Uint8List thumbhash) => blurPng;
 
   @override
   Future<List<int>> unseenMentions() => unseenMentionsIn(0);
