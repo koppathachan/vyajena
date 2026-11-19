@@ -161,7 +161,20 @@ remote_wipe() {
   fi
   echo "deleted the database and keys in /var/lib/vyajena" >&2
   if [ -n "$blob_dir" ] && [ -d "$blob_dir" ]; then
-    find "$blob_dir" -maxdepth 1 -type f \( -regex '.*/[0-9a-f]\{32\}' -o -name '.tmp-*' -o -name '.probe-*' \) -delete
+    # A shell glob, not find -regex: GNU find (the Pi) reads \{32\} differently
+    # from BSD find, and a reset must really remove the blobs.
+    local pat f base
+    pat="$(printf '[0-9a-f]%.0s' $(seq 1 32))"
+    for f in "$blob_dir"/* "$blob_dir"/.tmp-* "$blob_dir"/.probe-*; do
+      # Only plain files (an unmatched glob stays literal and is skipped).
+      if [ -f "$f" ] && [ ! -L "$f" ]; then
+        base="${f##*/}"
+        # shellcheck disable=SC2254 # the unquoted pattern is the point
+        case "$base" in
+          $pat | .tmp-* | .probe-*) rm -f -- "$f" ;;
+        esac
+      fi
+    done
     echo "deleted the image blobs in $blob_dir" >&2
   fi
 }
