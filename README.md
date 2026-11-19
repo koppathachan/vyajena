@@ -115,6 +115,28 @@ make ios              # booted iOS Simulator
 make android ANDROID_EMULATOR=<id>   # ids: make emulators; adb reverse included
 ```
 
+**Reset the data** (a clean slate: new Pi keys, a new bootstrap invite, phones
+join again). Stop the Pi and quit the app runs first, then reset both sides
+together. A phone that kept its old identity will not connect to a Pi with new
+keys (the TLS pin changes), and the other way round.
+
+```bash
+make pi-reset           # the Pi from `make pi`        (server/.pi-local/)
+make pi-relayed-reset   # the Pi from `make pi-relayed` (server/.pi-local/relayed/)
+make reset-ios          # uninstalls the app from the booted simulator
+make reset-android      # uninstalls the app from the emulator
+```
+
+Then start the Pi again, copy the new bootstrap invite from its log (printed
+once), and `make ios` / `make android` reinstall the app fresh. With several
+simulators booted, pick one with `IOS_DEVICE=<id>` (`make devices`); a second
+Android emulator is `ANDROID_DEVICE=<id>`. By hand: `rm -rf server/.pi-local`,
+`xcrun simctl uninstall <simulator id> com.purplechaamba.vyajena`,
+`adb uninstall com.purplechaamba.vyajena`, or Erase All Content and Settings in
+the Simulator. `make pi-reset` keeps the relayed Pi's data and the other way
+round; the real Pi is never touched (its reset is `deploy/pi/deploy.sh --reset`,
+which backs up first).
+
 `make relay` is a plain TCP passthrough on 127.0.0.1:9443 to the Pi, for use
 with `make pi-relayed` (its own data in `server/.pi-local/relayed/`; its
 invites name port 9443). It stands in for the real relay's path, not for

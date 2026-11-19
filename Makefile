@@ -26,7 +26,7 @@ IOS_DEVICE    ?= $(shell xcrun simctl list devices booted 2>/dev/null | grep -Eo
 RELAYED_DIR := server/.pi-local/relayed
 
 .PHONY: help pi pi-relayed relay ios ios-sim android android-emulator android-reverse \
-        pi-reset pi-relayed-reset rust-targets devices emulators
+        pi-reset pi-relayed-reset reset-ios reset-android rust-targets devices emulators
 
 help: ## List the targets
 	@grep -hE '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/^([a-z-]+):.*## (.*)/  make \1\t\2/' | expand -t 24
@@ -62,6 +62,9 @@ pi-relayed-reset: ## Same for the relayed Pi; stop it first
 
 # --- the phones --------------------------------------------------------------
 
+APP_ID := com.purplechaamba.vyajena
+
+
 rust-targets: ## One-time: the Rust targets cargokit builds the bridge for
 	rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
 	  aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
@@ -95,3 +98,9 @@ android-reverse: android-emulator ## adb reverse the Pi and relay ports (emulato
 
 android: android-reverse ## Run the app on the Android emulator (launches it if ANDROID_EMULATOR=<id>)
 	cd app && flutter run -d $(ANDROID_DEVICE)
+
+reset-ios: ## Uninstall the app from the iOS Simulator (deletes its identity and chats); stop `make ios` first
+	xcrun simctl uninstall $(IOS_DEVICE) $(APP_ID)
+
+reset-android: ## Uninstall the app from the Android emulator (same); stop `make android` first
+	"$(ADB)" -s $(ANDROID_DEVICE) uninstall $(APP_ID)
