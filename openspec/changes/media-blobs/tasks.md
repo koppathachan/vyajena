@@ -18,7 +18,7 @@
 
 ## 2. Spike: the image pipeline crate stack (before core code)
 
-- [ ] 2.1 `spikes/webp-thumbhash/`: prove lossy WebP encode + decode, EXIF
+- [x] 2.1 `spikes/webp-thumbhash/`: prove lossy WebP encode + decode, EXIF
   read/orient/strip, ThumbHash encode, and XChaCha20-Poly1305 with chosen
   crates, and that they cross-compile for the iOS simulator and an Android
   target (libwebp is a C dependency, like the native key stores). Record the

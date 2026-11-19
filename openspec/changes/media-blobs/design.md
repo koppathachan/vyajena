@@ -207,6 +207,33 @@ HEIC decoding depends on the platform image library; where unavailable the core
 refuses that input with a clear error and the app tells the user. This is noted
 as a per-platform risk, not an owner decision.
 
+**Spike result (task 2.1, 2026-11-19): PASS.** Crates: `image` 0.25 with
+`default-features = false, features = ["jpeg", "png", "gif", "webp"]` (decode,
+EXIF orientation via `ImageDecoder::orientation()` + `apply_orientation`,
+Lanczos resize), `webp` 0.3 (libwebp, the only lossy WebP encoder; `image`'s own
+encoder is lossless), `thumbhash` 0.1 (pure Rust). Run on the host:
+- a JPEG with EXIF orientation 6 decodes as 300x400 after `apply_orientation`
+  from a 400x300 source, and the WebP is built from pixels, so no EXIF or GPS
+  can reach it (no `EXIF` chunk in the output);
+- a 4000x3000 image scaled to 2048x1536 and encoded at q80 is 181 KB in about
+  180 ms. The test image is a synthetic gradient, so the size is not
+  representative of a photo; the lower-quality-then-smaller loop stays;
+- ThumbHash of a 100x100 downscale is 21 bytes and decodes (so
+  `MAX_THUMBHASH_BYTES` = 64 has room); the input must be at most 100x100;
+- an animated GIF decodes to its first frame through `load_from_memory`. For an
+  animated WebP, `image-webp` 0.2.4's `read_image` returns the first frame
+  (read in its source, not run: no animated WebP was at hand), so the
+  "first frame only" rule holds for both.
+- HEIC is not decoded by `image`. The core does not decode it; it refuses it
+  with `UnsupportedImage`, and the app's picker is expected to hand over JPEG
+  or PNG. Task 6.1 checks what the picker gives on a real iOS and Android
+  device and changes this if it does not.
+
+Cross-compile: the release spike builds for `aarch64-apple-ios-sim` and for
+`aarch64-linux-android` (NDK 28.2 clang from `toolchains/llvm`, API 24, linked
+by the NDK clang; no `cargo-ndk` needed). libwebp is C, so the build needs a C
+compiler for the target, as the native key stores already do.
+
 ### D6. Blob crypto: fresh key, XChaCha20-Poly1305, id as AAD
 
 Per image the core generates a random `BLOB_ID_LEN` (16) byte id and a random
@@ -217,6 +244,12 @@ wrong id. `MAX_BLOB_BYTES` = `MAX_IMAGE_BYTES` + nonce + tag (24 + 16), rounded.
 The key is put in `Image.blob_key` and never leaves the core except inside the
 MLS ciphertext (invariant: keys never leave the core). No dedup: every send is a
 new id and key, even of the same picture.
+
+**Spike result (task 2.1): PASS.** `chacha20poly1305` 0.10, which the core
+already depends on, encrypts with `XChaCha20Poly1305` and `Payload { msg, aad }`:
+the ciphertext is the plaintext plus the 16-byte tag, a flipped bit of the AAD
+(`blob_id`) fails decryption, and it builds for iOS and Android with the other
+spike crates (see D5).
 
 ### D7. Send and download order; idempotency
 
