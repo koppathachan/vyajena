@@ -1,6 +1,6 @@
 # CLAUDE.md: vyajena2
 
-End-to-end encrypted, text-only chat for one admin-run group plus DMs between
+End-to-end encrypted chat of text and pictures for one admin-run group plus DMs between
 its members. **Read
 `openspec/config.yaml` first**: it holds the project context, the invariants you
 must never break, and the Rust conventions. This file only adds how to work here.
