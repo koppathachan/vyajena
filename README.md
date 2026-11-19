@@ -105,6 +105,21 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios \
   later runs reuse that phone. A clean slate (`rm -rf server/.pi-local`)
   deletes the local Pi's users and group.
 
+**Shortcuts:** the steps above are in the `Makefile` (`make help` lists them),
+one terminal each:
+
+```bash
+make rust-targets     # once
+make pi               # local Pi (or: make pi-relayed, plus make relay)
+make ios              # booted iOS Simulator
+make android ANDROID_EMULATOR=<id>   # ids: make emulators; adb reverse included
+```
+
+`make relay` is a plain TCP passthrough on 127.0.0.1:9443 to the Pi, for use
+with `make pi-relayed` (its own data in `server/.pi-local/relayed/`; its
+invites name port 9443). It stands in for the real relay's path, not for
+rathole.
+
 App tests never touch your local Pi or its invite:
 
 ```bash
