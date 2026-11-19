@@ -408,6 +408,7 @@ pub(crate) async fn run(
     mut inbound: Streaming<pb::ClientFrame>,
     out: Outgoing,
 ) {
+    let opened_at = std::time::Instant::now();
     let mut session = Session {
         state,
         caller,
@@ -462,11 +463,19 @@ pub(crate) async fn run(
     last_frame = session.state.clock.now();
 
     let device_id = session.caller.device_id;
-    let (stream_id, mut events) = session
+    let (stream_id, mut events, reopens) = session
         .state
         .hub
         .register(device_id, &session.caller.username);
-    tracing::debug!(device_id = %crate::runtime::server_keys::hex(&device_id), "stream opened");
+    // relay-privacy-logging: Connection metrics — one event per stream open,
+    // the device id redacted.
+    tracing::info!(
+        device = %crate::runtime::redact(&device_id),
+        open_ms = opened_at.elapsed().as_millis() as u64,
+        reopens,
+        active_streams = session.state.hub.active(),
+        "stream open"
+    );
     let _ = serve(
         &mut session,
         &mut inbound,
@@ -485,7 +494,7 @@ pub(crate) async fn run(
         .store
         .call(move |conn| inactivity::touch(conn, &device_id, now))
         .await;
-    tracing::debug!(device_id = %crate::runtime::server_keys::hex(&device_id), "stream closed");
+    tracing::debug!(device = %crate::runtime::redact(&device_id), "stream closed");
 }
 
 async fn serve(

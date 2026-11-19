@@ -170,6 +170,7 @@ void main() {
     core.epochValue = BigInt.one;
     core.emit(const CoreEvent.joinedGroup());
     await settle(tester);
+    await enterGroup(tester);
 
     expect(find.textContaining("Ali (alice)'s key changed"), findsOneWidget);
   });
@@ -411,6 +412,7 @@ void main() {
       const CoreEvent.membersChanged(added: [], removed: [], automatic: []),
     );
     await settle(tester);
+    await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
     expect(find.byType(NoticeTile), findsNothing);
 

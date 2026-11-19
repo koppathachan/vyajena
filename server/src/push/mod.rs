@@ -35,7 +35,6 @@ pub use config::{
 pub use fcm::FcmProvider;
 
 use crate::pb;
-use crate::runtime::server_keys::hex;
 
 /// The only text a wake ping shows, on every platform, for every message
 /// (message-delivery: Content-free wake pings; owner, 2026-11-16).
@@ -92,7 +91,7 @@ pub struct LoggingProvider;
 impl PushProvider for LoggingProvider {
     async fn wake(&self, device_id: DeviceId, token: pb::PushToken) -> WakeOutcome {
         tracing::info!(
-            device_id = %hex(&device_id),
+            device = %crate::runtime::redact(&device_id),
             platform = platform_name(&token),
             "wake ping (logging push provider: nothing sent)"
         );
@@ -203,13 +202,13 @@ impl PushProvider for Providers {
             (Some(pb::PushPlatform::Apns), _, Some(apns)) => apns.send(&token.token).await,
             _ => return LoggingProvider.wake(device_id, token).await,
         };
-        let device_id = hex(&device_id);
+        let device = crate::runtime::redact(&device_id);
         let platform = platform_name(&token);
         match outcome {
             WakeOutcome::Dropped => {
-                tracing::warn!(%device_id, platform, outcome = outcome.as_str(), "wake ping")
+                tracing::warn!(%device, platform, outcome = outcome.as_str(), "wake ping")
             }
-            _ => tracing::info!(%device_id, platform, outcome = outcome.as_str(), "wake ping"),
+            _ => tracing::info!(%device, platform, outcome = outcome.as_str(), "wake ping"),
         }
         outcome
     }

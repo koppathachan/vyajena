@@ -418,4 +418,11 @@ impl Core {
     pub fn mark_chat_read(&self, chat_id: i64) -> Result<(), CoreError> {
         forward(self.client.mark_chat_read(ChatId(chat_id)))
     }
+
+    /// The read mark of chat `chat_id`: the local id of the newest message
+    /// read last, or 0 when it was never read. The app reads it when a chat
+    /// opens to place the "New messages" divider (app-ui: Unread divider).
+    pub fn chat_read_mark(&self, chat_id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.read_mark(ChatId(chat_id)))?.0)
+    }
 }

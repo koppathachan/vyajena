@@ -259,6 +259,11 @@ void main() {
     for (var i = 25; i < 50; i++) {
       core.receive(akhil, 'filler $i', emitEvent: false);
     }
+    // Bob had read to the newest message, so the chat opens at the bottom,
+    // scrolled past the two older mentions (which stay unseen). Without a
+    // read mark every message is unread and unread-divider would open on the
+    // first one, putting the mentions on screen.
+    core.readMarks[0] = core.messages.last.id;
     await openApp(tester, core);
     await settle(tester);
 
@@ -364,6 +369,8 @@ void main() {
       ),
       emitEvent: false,
     );
+    // The chat opens at the bottom (all read), so only the reply is on screen.
+    core.readMarks[0] = core.messages.last.id;
     await openApp(tester, core);
     // Only the reply's quote is on screen, not the original.
     expect(find.text('dinner at 8?'), findsOneWidget);

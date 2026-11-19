@@ -260,6 +260,11 @@ abstract class CoreService {
   /// The user has seen chat [chatId] up to its newest message.
   Future<void> markChatRead(int chatId);
 
+  /// The read mark of chat [chatId]: the local id of the newest message read
+  /// last, or 0 when it was never read. The chat screen reads it on open to
+  /// place the "New messages" divider (app-ui: Unread divider).
+  Future<int> chatReadMark(int chatId);
+
   /// How to show [user]: "Ali (alice)", or the username alone.
   Future<String> displayName(UserRef user);
 

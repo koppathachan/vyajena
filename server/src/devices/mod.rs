@@ -274,7 +274,7 @@ impl Devices for DevicesService {
                 Ok(result)
             })
             .await??;
-        tracing::info!(device_id = %crate::runtime::server_keys::hex(&device_id), "linked a device");
+        tracing::info!(device = %crate::runtime::redact(&device_id), "linked a device");
         Ok(Response::new(pb::LinkDeviceResponse {}))
     }
 
@@ -328,7 +328,7 @@ impl Devices for DevicesService {
             .await??;
         // Its open Connect stream closes (device-identity: Device revocation).
         let _ = self.state.revocations.send(target);
-        tracing::info!(device_id = %crate::runtime::server_keys::hex(&target), "revoked a device");
+        tracing::info!(device = %crate::runtime::redact(&target), "revoked a device");
         Ok(Response::new(pb::RevokeDeviceResponse {}))
     }
 

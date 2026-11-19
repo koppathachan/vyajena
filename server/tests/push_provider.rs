@@ -1,6 +1,7 @@
 //! pi-runtime: Push provider interface. Without a real provider the server
-//! logs one content-free wake ping (device id and platform only) and sends
-//! nothing. This binary installs a global log capture, so it holds one test.
+//! logs one content-free wake ping (a redacted device id and platform only)
+//! and sends nothing. This binary installs a global log capture, so it holds
+//! one test.
 
 mod support;
 
@@ -74,7 +75,7 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
     wait_offline(&w.pi, &w.phone).await;
     say(&mut w.admin, &mut w.admin_stream, b"content").await;
 
-    let phone_id = hex(&w.phone.device_id);
+    let phone_device = server::runtime::redact(&w.phone.device_id).to_string();
     let pings = || -> Vec<String> {
         captured
             .lines()
@@ -92,9 +93,10 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
     let pings = pings();
     assert_eq!(pings.len(), 1, "{pings:?}");
     let line = &pings[0];
-    assert!(line.contains(&phone_id), "{line}");
+    assert!(line.contains(&phone_device), "{line}");
     assert!(line.contains("PUSH_PLATFORM_FCM"), "{line}");
-    // Nothing else: no token, sender, group or content.
+    // Nothing else: no raw device id, token, sender, group or content.
+    assert!(!line.contains(&hex(&w.phone.device_id)), "{line}");
     assert!(!line.contains("secret-fcm-token"), "{line}");
     assert!(!line.contains(&hex(&w.admin.device_id)), "{line}");
     assert!(!line.contains(&hex(support::messaging::GROUP_ID)), "{line}");

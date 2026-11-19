@@ -152,6 +152,9 @@ class RustCoreService extends CoreService {
   Future<void> markChatRead(int chatId) => _c.markChatRead(chatId: chatId);
 
   @override
+  Future<int> chatReadMark(int chatId) => _c.chatReadMark(chatId: chatId);
+
+  @override
   Future<String> displayName(UserRef user) => _c.displayName(user: user);
 
   @override

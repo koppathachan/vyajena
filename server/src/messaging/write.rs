@@ -387,7 +387,7 @@ pub(crate) fn mark_inactive(
     let oldest = log::delete_all_deliveries(conn, device_id)?;
     inactivity::mark(conn, device_id, ctx.now, oldest.unwrap_or(ctx.now))?;
     tracing::info!(
-        device_id = %crate::runtime::server_keys::hex(device_id),
+        device = %crate::runtime::redact(device_id),
         "marked a device inactive"
     );
     let mut notify = Vec::new();

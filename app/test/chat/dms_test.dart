@@ -68,19 +68,23 @@ void main() {
   });
 
   // spec: app-ui/chat-list
-  testWidgets('A DM that arrives while the group is open does not leave it: '
-      'the app bar offers the chats', (tester) async {
+  testWidgets('A DM that arrives while a chat is open does not leave it; the '
+      'list shows its unread mark on return', (tester) async {
     final core = aliceInGroup();
-    await openApp(tester, core);
-    expect(find.byKey(const Key('chats')), findsNothing);
+    await openApp(tester, core); // lands in the group's chat over the list
+    expect(composer, findsOneWidget, reason: 'in the group');
 
     core.dmChats = [dmWithBob(unread: 1)];
     core.receive(bob, 'psst', chatId: 1);
     await settle(tester);
     expect(composer, findsOneWidget, reason: 'still in the group');
     expect(find.text('psst'), findsNothing, reason: 'not the group chat');
-    await tap(tester, find.byKey(const Key('chats')));
+
+    // Back to the chat list: the DM is there with its unread mark.
+    await tester.pageBack();
+    await settle(tester);
     expect(find.byKey(const ValueKey('chat-1')), findsOneWidget);
+    expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
   });
 
   // spec: app-ui/open-a-dm
