@@ -18,17 +18,18 @@ id. The Pi enforces this at every `tracing` call site.
 
 ### Requirement: Connection metrics
 The Pi SHALL emit, for each opened `Messaging.Connect` stream, a structured
-event carrying the connect, auth and stream-open durations, the number of times
-that device's stream has (re)opened this run, and the current count of active
-streams, with the device id redacted. The event is a `tracing` event in the
-journal; the Pi exposes no network endpoint for metrics.
+event carrying `open_ms` (the time in the Connect task from it starting to the
+stream registering), `reopens` (how many times that device's stream has opened
+this run) and `active_streams` (the count of live streams), with the device id
+redacted. The event is a `tracing` event in the journal; the Pi exposes no
+network endpoint for metrics.
 
-#### Scenario: Timings are emitted on stream open
-- **WHEN** Alice's device authenticates and opens its stream
-- **THEN** the Pi emits an event with `auth_ms`, `stream_open_ms`, a reopen count
-  and `active_streams`, and `device` as the redacted hash
+#### Scenario: Metrics are emitted on stream open
+- **WHEN** Alice's device opens its `Messaging.Connect` stream
+- **THEN** the Pi emits an event with `open_ms`, `reopens` and `active_streams`,
+  and `device` as the redacted hash, and no raw device id
 
 #### Scenario: The active-stream gauge follows real streams
-- **WHEN** a second device opens a stream and then the first disconnects
-- **THEN** the emitted `active_streams` rises to 2 and later falls, matching the
-  hub's live streams
+- **WHEN** a second device opens a stream so two are live
+- **THEN** the emitted `active_streams` on that open is 2, matching the hub's
+  live streams

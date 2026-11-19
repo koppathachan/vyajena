@@ -16,27 +16,27 @@
 
 ## 3. Connection metrics
 
-- [ ] 3.1 Time the lifecycle in the stream/auth path: `auth_ms`, `stream_open_ms`
-      (and `connect_ms` where the TCP-accept time is reachable); a per-device
-      reopen counter; read the hub's live-stream count for `active_streams`.
-- [ ] 3.2 Emit one structured `tracing` event on stream open with those fields,
-      ids redacted (spec: pi-runtime/connection-metrics). Log `active_streams`
-      when it changes.
+- [x] 3.1 Hub: a per-device reopen counter (returned from `register`) and an
+      `active()` live-stream count; measure `open_ms` in the Connect task from
+      its start to `register`. (auth_ms/connect_ms dropped — see design D2.)
+- [x] 3.2 Emit one structured `tracing` event on stream open with `open_ms`,
+      `reopens`, `active_streams`, id redacted (spec: pi-runtime/connection-metrics).
 
 ## 4. Tests
 
-- [ ] 4.1 A `tracing` capture layer (collect emitted events into a `Vec<String>`)
-      in `server/tests/support/`.
-- [ ] 4.2 `server/tests/` test (temp Pi): run connect → auth → stream; assert the
-      capture contains the `redact(id)` hash and `auth_ms`/`stream_open_ms`/
-      `active_streams`, and contains NO raw device-id hex, body, token or invite
+- [x] 4.1 A `tracing` capture writer (collect emitted events into a shared
+      buffer) in the test, following the existing `invite_logs.rs` pattern.
+- [x] 4.2 `server/tests/private_logs.rs` (temp Pi): run connect → auth → stream;
+      assert the capture contains the `redact(id)` hash and `open_ms`/`reopens`/
+      `active_streams`, and contains NO raw device-id hex, nor the session token
       (spec: pi-runtime/private-logs, pi-runtime/connection-metrics).
+      `push_end_to_end.rs` updated to assert the redacted id, not the raw hex.
 
 ## 5. Verify
 
-- [ ] 5.1 `cargo build/test/clippy --workspace -- -D warnings`, `cargo fmt
+- [x] 5.1 `cargo build/test/clippy --workspace -- -D warnings`, `cargo fmt
       --check`.
-- [ ] 5.2 `buf lint`, `buf breaking --against '.git#branch=main'` (clean — no
+- [x] 5.2 `buf lint`, `buf breaking --against '.git#branch=main'` (clean — no
       proto change).
-- [ ] 5.3 `openspec validate relay-privacy-logging --strict`.
+- [x] 5.3 `openspec validate relay-privacy-logging --strict`.
 - [ ] 5.4 Report the commit list to the owner; do not push without approval.

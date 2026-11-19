@@ -37,6 +37,10 @@ struct Registered {
 pub struct Hub {
     streams: Mutex<HashMap<DeviceId, Registered>>,
     next_id: AtomicU64,
+    /// How many times each device's stream has opened this process run
+    /// (relay-privacy-logging: Connection metrics). Never cleared, so a
+    /// reconnect loop is visible.
+    reopens: Mutex<HashMap<DeviceId, u64>>,
     pings: PingLimiter,
     /// Set once when the server stops (pi-runtime: Graceful stop).
     stopping: watch::Sender<bool>,
@@ -66,7 +70,7 @@ impl Hub {
         &self,
         device_id: DeviceId,
         username: &str,
-    ) -> (u64, mpsc::UnboundedReceiver<Event>) {
+    ) -> (u64, mpsc::UnboundedReceiver<Event>, u64) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (events, receiver) = mpsc::unbounded_channel();
         let older = self.streams().insert(
@@ -82,7 +86,18 @@ impl Hub {
                 "a newer Connect stream opened for this device",
             )));
         }
-        (id, receiver)
+        let reopens = {
+            let mut counts = self.reopens.lock().unwrap_or_else(PoisonError::into_inner);
+            let n = counts.entry(device_id).or_insert(0);
+            *n += 1;
+            *n
+        };
+        (id, receiver, reopens)
+    }
+
+    /// The number of live streams (relay-privacy-logging: Connection metrics).
+    pub(crate) fn active(&self) -> usize {
+        self.streams().len()
     }
 
     /// Removes stream `id` of `device_id`, unless a newer one replaced it.

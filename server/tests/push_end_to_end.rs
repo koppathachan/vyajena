@@ -1,7 +1,7 @@
 //! message-delivery: Content-free wake pings and pi-runtime: Push errors, end
 //! to end: a test Pi's pings go to the real providers pointed at fake APNs and
 //! FCM servers. This binary installs a global log capture, so it holds one
-//! test: push logs name only the device id, platform and outcome.
+//! test: push logs name only a redacted device id, platform and outcome.
 
 mod push_support;
 mod support;
@@ -193,16 +193,19 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    // Logs: device ids, platforms and outcomes; never tokens, ids of the
-    // message at FCM/APNs, access tokens or response bodies.
+    // Logs: a redacted device id, platforms and outcomes; never the raw device
+    // id, tokens, ids of the message at FCM/APNs, access tokens or response
+    // bodies (relay-privacy-logging: Private logs).
     let logs = captured.text();
-    assert!(logs.contains(&hex(&w.phone.device_id)), "{logs}");
+    let phone_device = server::runtime::redact(&w.phone.device_id).to_string();
+    assert!(logs.contains(&phone_device), "{logs}");
     assert!(
         logs.contains("outcome=\"sent\"") || logs.contains("outcome=sent"),
         "{logs}"
     );
     assert!(logs.contains("token_invalid"), "{logs}");
     for secret in [
+        hex(&w.phone.device_id).as_str(),
         iphone_token.as_str(),
         "alice-fcm-token",
         "secret-message-name",

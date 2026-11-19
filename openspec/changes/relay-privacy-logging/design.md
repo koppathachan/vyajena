@@ -44,23 +44,34 @@ part of the real id.
 The Pi is loopback-only and privacy-first; adding a Prometheus endpoint means a
 new port, surface and dependency. Instead, emit `tracing` events with numeric
 fields at the lifecycle points, so `journalctl -u vyajena -o json` yields the
-numbers:
+numbers. On a `Connect` stream opening, one event carries:
 
-- on a `Connect` stream opening: `connect_ms`, `auth_ms`, `stream_open_ms`
-  (durations measured from the TCP accept / auth start / stream handler start),
-  `device = %redact(id)`.
-- a reconnect counter per device (how many times its stream has (re)opened this
-  process), logged with the stream-open event.
-- an `active_streams` gauge: the hub's live-stream count, logged when it changes.
+- `open_ms`: the time in the `Connect` task from the task starting to the stream
+  registering with the hub — i.e. how long the client took to send its first
+  `Hello` over the relay once the stream RPC began. This is the server-visible
+  connect latency and the signal a "slow to connect over the relay" report needs.
+- `reopens`: how many times this device's stream has (re)opened this process run
+  (a reconnect counter), from a per-device count in the hub.
+- `active_streams`: the hub's live-stream count — the Pi-side "pool" gauge (D3).
+- `device = %redact(id)`.
+
+**Why not `auth_ms` / `connect_ms` (changed from the first draft — code review,
+CLAUDE.md "fix the spec first"):** the Pi cannot usefully measure them. Per-RPC
+auth is a single indexed SQLite token lookup (sub-millisecond, never the
+slow-connect cause), and the client's multi-round-trip handshake
+(`GetChallenge` → `Authenticate` → `Connect`) arrives as separate RPCs the Pi
+does not stitch into one per-device timeline. `open_ms` captures the
+server-visible part of the connect latency; the rest is a client-side concern
+(faster-connect already addresses the round trips).
 
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant Pi as Pi (timers)
-  C->>Pi: TCP + TLS accept  (t0)
-  C->>Pi: Authenticate      (t1 → auth_ms = t1-t0)
-  C->>Pi: Messaging.Connect (t2 → stream_open_ms = t2-t1)
-  Note over Pi: event: device=redact, auth_ms, stream_open_ms,<br/>reopens=n, active_streams=k
+  participant Pi as Pi Connect task
+  Pi->>Pi: task starts (t0)
+  C->>Pi: Hello over the relay
+  Pi->>Pi: register stream (t1 → open_ms = t1-t0)
+  Note over Pi: event: device=redact, open_ms, reopens=n, active_streams=k
 ```
 
 **Alternative:** a real metrics crate (`metrics`/`prometheus`) — deferred; the
