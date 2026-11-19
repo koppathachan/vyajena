@@ -5,12 +5,12 @@
 
 ## 1. Proto and shared limits
 
-- [ ] 1.1 `content.proto`: `Image image = 5` in `Content.body`; new `Image`
+- [x] 1.1 `content.proto`: `Image image = 5` in `Content.body`; new `Image`
   (`blob_id`, `blob_key`, `width`, `height`, `thumbhash`, `blob_size`,
   `caption`, `caption_mentions`). `blobs.proto` (new): `Blobs` service
   (`UploadBlob`, `DownloadBlob`, `AckBlob`) and its messages. `buf lint`,
   `buf breaking`; `cargo run -p pbgen`
-- [ ] 1.2 `protocol::blob_store` (new module): `MAX_BLOB_BYTES`,
+- [x] 1.2 `protocol::blob_store` (new module): `MAX_BLOB_BYTES`,
   `MAX_IMAGE_BYTES` (2 MB), `MAX_IMAGE_EDGE` (2048), `WEBP_QUALITY` (~80),
   `BLOB_ID_LEN` (16), `BLOB_KEY_LEN` (32), `MAX_THUMBHASH_BYTES`, `BLOB_TTL`
   (7 days); unit test for the size relation (`MAX_BLOB_BYTES` = image + nonce +

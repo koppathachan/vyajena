@@ -460,6 +460,213 @@ pub mod admin_client {
         }
     }
 }
+/// blob-store: Upload. The Pi accepts it only from a current member device of
+/// `group_id` (`PERMISSION_DENIED` otherwise), rejects `ciphertext` over
+/// `protocol::blob_store::MAX_BLOB_BYTES` or a `blob_id` that is not 16 bytes with
+/// `INVALID_ARGUMENT`, and rejects different bytes under a live `blob_id` with
+/// `ALREADY_EXISTS`. Identical bytes again return the same `expires_at`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UploadBlobRequest {
+    /// The group the image is sent in; download and ack-delete are scoped to it.
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    /// 16 random bytes, chosen by the sender.
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// XChaCha20-Poly1305: nonce, then ciphertext and tag.
+    #[prost(bytes = "vec", tag = "3")]
+    pub ciphertext: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct UploadBlobResponse {
+    /// Upload time plus `protocol::blob_store::BLOB_TTL`.
+    #[prost(message, optional, tag = "1")]
+    pub expires_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// blob-store: Download. Only a current member device of `group_id` may fetch it
+/// (`PERMISSION_DENIED` otherwise); `NOT_FOUND` for an expired, deleted or
+/// unknown blob, or one that belongs to another group.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DownloadBlobRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DownloadBlobResponse {
+    #[prost(bytes = "vec", tag = "1")]
+    pub ciphertext: ::prost::alloc::vec::Vec<u8>,
+}
+/// blob-store: Expiry and ack-delete. Idempotent; the blob is deleted once every
+/// member device of its group has acked it. Acking a blob that is already gone
+/// succeeds, so a retry is always safe.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AckBlobRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AckBlobResponse {}
+/// Generated client implementations.
+pub mod blobs_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// buf:lint:ignore SERVICE_SUFFIX
+    /// Service name as used in the specs and design D2.
+    #[derive(Debug, Clone)]
+    pub struct BlobsClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> BlobsClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> BlobsClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            BlobsClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// blob-store: Upload. Idempotent on `blob_id`.
+        pub async fn upload_blob(
+            &mut self,
+            request: impl tonic::IntoRequest<super::UploadBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UploadBlobResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Blobs/UploadBlob",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Blobs", "UploadBlob"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// blob-store: Download. `NOT_FOUND` once the blob has expired or been deleted.
+        pub async fn download_blob(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DownloadBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DownloadBlobResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Blobs/DownloadBlob",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Blobs", "DownloadBlob"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// blob-store: Expiry and ack-delete. A member device reports it needs the
+        /// blob no more.
+        pub async fn ack_blob(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AckBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AckBlobResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/vyajena.v1.Blobs/AckBlob");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("vyajena.v1.Blobs", "AckBlob"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
 /// message-content: Inner content format. A client send time and exactly one
 /// body. A client that decrypts a `Content` whose body it does not know (the
 /// oneof decodes as unset) shows a placeholder saying the message needs a newer
@@ -469,7 +676,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -482,7 +689,48 @@ pub mod content {
         GroupSettings(super::GroupSettings),
         #[prost(message, tag = "4")]
         Profile(super::Profile),
+        /// message-content: Image messages (change `media-blobs`).
+        #[prost(message, tag = "5")]
+        Image(super::Image),
     }
+}
+/// message-content: Image messages. One static image, stored as an encrypted blob
+/// on the Pi (blob-store). This body is what a receiver needs to show a blurred
+/// placeholder at once and to fetch and decrypt the full image on tap. A client
+/// that predates it decodes the body as unset and shows the "needs a newer app
+/// version" placeholder. Only the Rust core reads it; the Pi never sees it, and
+/// `blob_key` never leaves the encrypted `Content`.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct Image {
+    /// The random id the ciphertext is stored under on the Pi, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The WebP's pixel size, so the bubble lays out before the image downloads.
+    /// Both are at least 1 and at most `protocol::blob_store::MAX_IMAGE_EDGE`.
+    #[prost(uint32, tag = "3")]
+    pub width: u32,
+    #[prost(uint32, tag = "4")]
+    pub height: u32,
+    /// A ThumbHash of the image, shown as a blur until the full image is
+    /// downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes.
+    #[prost(bytes = "vec", tag = "5")]
+    pub thumbhash: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most
+    /// `protocol::blob_store::MAX_BLOB_BYTES`.
+    #[prost(uint64, tag = "6")]
+    pub blob_size: u64,
+    /// Optional caption: UTF-8, limited like `Text.text`.
+    #[prost(string, optional, tag = "7")]
+    pub caption: ::core::option::Option<::prost::alloc::string::String>,
+    /// The mentions in `caption`, under the same rules as `Text.mentions`
+    /// (message-content: Image caption and mentions).
+    #[prost(message, repeated, tag = "8")]
+    pub caption_mentions: ::prost::alloc::vec::Vec<Mention>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich

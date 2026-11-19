@@ -1,0 +1,71 @@
+// Blobs service: encrypted image blobs, stored on the Pi and never seen in the
+// clear (change `media-blobs`).
+//
+// Every RPC requires a session token (wire-transport: Session authentication).
+// A blob is opaque XChaCha20-Poly1305 ciphertext the sending device made; its
+// key travels only inside an MLS message. The Pi learns a blob's size, group and
+// timing, never its content or key (blob-store: Blobs are opaque ciphertext).
+//
+// Errors use standard gRPC status codes. Every RPC answers `UNAVAILABLE` while
+// the blob store's backend is unavailable or not configured (blob-store: Blob
+// storage and graceful degradation); messaging is unaffected.
+syntax = "proto3";
+
+package vyajena.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs and design D2.
+service Blobs {
+  // blob-store: Upload. Idempotent on `blob_id`.
+  rpc UploadBlob(UploadBlobRequest) returns (UploadBlobResponse);
+
+  // blob-store: Download. `NOT_FOUND` once the blob has expired or been deleted.
+  rpc DownloadBlob(DownloadBlobRequest) returns (DownloadBlobResponse);
+
+  // blob-store: Expiry and ack-delete. A member device reports it needs the
+  // blob no more.
+  rpc AckBlob(AckBlobRequest) returns (AckBlobResponse);
+}
+
+// blob-store: Upload. The Pi accepts it only from a current member device of
+// `group_id` (`PERMISSION_DENIED` otherwise), rejects `ciphertext` over
+// `protocol::blob_store::MAX_BLOB_BYTES` or a `blob_id` that is not 16 bytes with
+// `INVALID_ARGUMENT`, and rejects different bytes under a live `blob_id` with
+// `ALREADY_EXISTS`. Identical bytes again return the same `expires_at`.
+message UploadBlobRequest {
+  // The group the image is sent in; download and ack-delete are scoped to it.
+  bytes group_id = 1;
+  // 16 random bytes, chosen by the sender.
+  bytes blob_id = 2;
+  // XChaCha20-Poly1305: nonce, then ciphertext and tag.
+  bytes ciphertext = 3;
+}
+
+message UploadBlobResponse {
+  // Upload time plus `protocol::blob_store::BLOB_TTL`.
+  google.protobuf.Timestamp expires_at = 1;
+}
+
+// blob-store: Download. Only a current member device of `group_id` may fetch it
+// (`PERMISSION_DENIED` otherwise); `NOT_FOUND` for an expired, deleted or
+// unknown blob, or one that belongs to another group.
+message DownloadBlobRequest {
+  bytes group_id = 1;
+  bytes blob_id = 2;
+}
+
+message DownloadBlobResponse {
+  bytes ciphertext = 1;
+}
+
+// blob-store: Expiry and ack-delete. Idempotent; the blob is deleted once every
+// member device of its group has acked it. Acking a blob that is already gone
+// succeeds, so a retry is always safe.
+message AckBlobRequest {
+  bytes group_id = 1;
+  bytes blob_id = 2;
+}
+
+message AckBlobResponse {}

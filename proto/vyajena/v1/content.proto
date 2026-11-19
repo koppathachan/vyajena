@@ -21,7 +21,39 @@ message Content {
     Text text = 2;
     GroupSettings group_settings = 3;
     Profile profile = 4;
+    // message-content: Image messages (change `media-blobs`).
+    Image image = 5;
   }
+}
+
+// message-content: Image messages. One static image, stored as an encrypted blob
+// on the Pi (blob-store). This body is what a receiver needs to show a blurred
+// placeholder at once and to fetch and decrypt the full image on tap. A client
+// that predates it decodes the body as unset and shows the "needs a newer app
+// version" placeholder. Only the Rust core reads it; the Pi never sees it, and
+// `blob_key` never leaves the encrypted `Content`.
+message Image {
+  // The random id the ciphertext is stored under on the Pi, 16 bytes
+  // (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+  bytes blob_id = 1;
+  // The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+  // (`protocol::blob_store::BLOB_KEY_LEN`).
+  bytes blob_key = 2;
+  // The WebP's pixel size, so the bubble lays out before the image downloads.
+  // Both are at least 1 and at most `protocol::blob_store::MAX_IMAGE_EDGE`.
+  uint32 width = 3;
+  uint32 height = 4;
+  // A ThumbHash of the image, shown as a blur until the full image is
+  // downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes.
+  bytes thumbhash = 5;
+  // The blob ciphertext's size in bytes, at most
+  // `protocol::blob_store::MAX_BLOB_BYTES`.
+  uint64 blob_size = 6;
+  // Optional caption: UTF-8, limited like `Text.text`.
+  optional string caption = 7;
+  // The mentions in `caption`, under the same rules as `Text.mentions`
+  // (message-content: Image caption and mentions).
+  repeated Mention caption_mentions = 8;
 }
 
 // message-content: Text only. UTF-8 text, optional mentions and one optional

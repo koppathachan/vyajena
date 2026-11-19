@@ -105,7 +105,9 @@ pub fn decode(content: &[u8]) -> DecodedContent {
             display_name: profile.display_name,
             about: profile.about,
         }),
-        None => Decoded::Unsupported,
+        // Image messages are decoded once the core handles them (media-blobs
+        // task 4.2); until then they show the unknown-body placeholder.
+        Some(Body::Image(_)) | None => Decoded::Unsupported,
     };
     DecodedContent {
         sent_at: content.sent_at.as_ref().map(from_timestamp),
