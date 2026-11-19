@@ -3,7 +3,7 @@
 //!
 //! The plaintext of every application message is an encoded
 //! `vyajena.v1.Content` (message-content: Inner content format): a send time
-//! and one of `Text`, `GroupSettings` or `Profile`. Only this core encodes or
+//! and one of `Text`, `Image`, `GroupSettings` or `Profile`. Only this core encodes or
 //! decodes it. Sending lives in the engine (`engine/outbox.rs`), which owns
 //! the group; [`receive_application`] is the step it runs for each incoming
 //! `APPLICATION` envelope inside the store transaction that also records
@@ -17,9 +17,10 @@ use prost::Message as _;
 
 use crate::engine::EngineError;
 use crate::events::{
-    DeviceId, Mention, MentionTarget, Message, MessageBody, Reply, SendStatus, UserId,
+    DeviceId, MediaState, Mention, MentionTarget, Message, MessageBody, Reply, SendStatus, UserId,
 };
 use crate::identity::certificate::{from_timestamp, timestamp};
+use crate::media::{BlobId, BlobKey};
 use crate::mls::verify;
 use crate::pb;
 use crate::pb::content::Body;
@@ -61,11 +62,35 @@ pub struct ReplyTo {
     pub quote: String,
 }
 
+/// An `Image` body, decoded and checked (message-content: Image messages). It
+/// keeps the blob key; the UI's [`crate::ImageBody`] does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageContent {
+    /// The blob's id.
+    pub blob_id: BlobId,
+    /// The blob's key.
+    pub blob_key: BlobKey,
+    /// Pixel width.
+    pub width: u32,
+    /// Pixel height.
+    pub height: u32,
+    /// The ThumbHash blur.
+    pub thumbhash: Vec<u8>,
+    /// The blob's size on the Pi.
+    pub blob_size: u64,
+    /// The caption, if any.
+    pub caption: Option<String>,
+    /// The valid caption mentions, sorted by `start`; empty without a caption.
+    pub mentions: Vec<Mention>,
+}
+
 /// What a `Content` says, decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decoded {
     /// A text message.
     Text(TextContent),
+    /// An image message.
+    Image(ImageContent),
     /// `GroupSettings`: the group's name.
     GroupSettings {
         /// The name, if set.
@@ -105,9 +130,12 @@ pub fn decode(content: &[u8]) -> DecodedContent {
             display_name: profile.display_name,
             about: profile.about,
         }),
-        // Image messages are decoded once the core handles them (media-blobs
-        // task 4.2); until then they show the unknown-body placeholder.
-        Some(Body::Image(_)) | None => Decoded::Unsupported,
+        // An image reference that is not well formed is shown as a message this
+        // version cannot read, never dropped.
+        Some(Body::Image(image)) => {
+            decode_image(image).map_or(Decoded::Unsupported, Decoded::Image)
+        }
+        None => Decoded::Unsupported,
     };
     DecodedContent {
         sent_at: content.sent_at.as_ref().map(from_timestamp),
@@ -115,9 +143,9 @@ pub fn decode(content: &[u8]) -> DecodedContent {
     }
 }
 
-fn decode_text(text: pb::Text) -> TextContent {
-    let mentions = text
-        .mentions
+/// The mentions of an encoded `Text` or `Image`, before the range checks.
+fn mentions_from_pb(mentions: &[pb::Mention]) -> Vec<Mention> {
+    mentions
         .iter()
         .filter_map(|mention| {
             let target = match mention.target.as_ref()? {
@@ -130,7 +158,62 @@ fn decode_text(text: pb::Text) -> TextContent {
                 len: usize::try_from(mention.length).ok()?,
             })
         })
-        .collect();
+        .collect()
+}
+
+/// `mentions` as they go on the wire; fails if a range cannot be encoded.
+fn mentions_to_pb(mentions: &[Mention]) -> Result<Vec<pb::Mention>, ContentError> {
+    mentions
+        .iter()
+        .map(|mention| {
+            Ok(pb::Mention {
+                target: Some(match &mention.target {
+                    MentionTarget::User(user) => pb::mention::Target::User(user.to_pb()),
+                    MentionTarget::Everyone => {
+                        pb::mention::Target::Everyone(pb::mention::Everyone {})
+                    }
+                }),
+                start: u32::try_from(mention.start).map_err(|_| ContentError::TooLong)?,
+                length: u32::try_from(mention.len).map_err(|_| ContentError::TooLong)?,
+            })
+        })
+        .collect()
+}
+
+/// An `Image` body, if it is well formed: a 16-byte id, a 32-byte key, a
+/// picture size within the limits, a ThumbHash and blob size within theirs
+/// (message-content: Image messages). The caption's invalid mentions are
+/// dropped (Image caption and mentions); the caption stays.
+fn decode_image(image: pb::Image) -> Option<ImageContent> {
+    use protocol::blob_store::{MAX_BLOB_BYTES, MAX_IMAGE_EDGE, MAX_THUMBHASH_BYTES};
+    let edge = 1..=MAX_IMAGE_EDGE;
+    let blob_size = image.blob_size;
+    if !edge.contains(&image.width)
+        || !edge.contains(&image.height)
+        || image.thumbhash.len() > MAX_THUMBHASH_BYTES
+        || blob_size == 0
+        || blob_size > MAX_BLOB_BYTES as u64
+    {
+        return None;
+    }
+    let mentions = match &image.caption {
+        Some(caption) => valid_mentions(caption, mentions_from_pb(&image.caption_mentions)),
+        None => Vec::new(),
+    };
+    Some(ImageContent {
+        blob_id: BlobId::try_from(image.blob_id.as_slice()).ok()?,
+        blob_key: BlobKey::try_from(image.blob_key.as_slice()).ok()?,
+        width: image.width,
+        height: image.height,
+        thumbhash: image.thumbhash,
+        blob_size,
+        caption: image.caption,
+        mentions,
+    })
+}
+
+fn decode_text(text: pb::Text) -> TextContent {
+    let mentions = mentions_from_pb(&text.mentions);
     let reply = text.reply_to.and_then(|reply| {
         let sender = reply.sender?;
         Some(ReplyTo {
@@ -219,21 +302,7 @@ pub fn encode_message(
     if valid_mentions(text, mentions.to_vec()).len() != mentions.len() {
         return Err(ContentError::InvalidMention);
     }
-    let mentions = mentions
-        .iter()
-        .map(|mention| {
-            Ok(pb::Mention {
-                target: Some(match &mention.target {
-                    MentionTarget::User(user) => pb::mention::Target::User(user.to_pb()),
-                    MentionTarget::Everyone => {
-                        pb::mention::Target::Everyone(pb::mention::Everyone {})
-                    }
-                }),
-                start: u32::try_from(mention.start).map_err(|_| ContentError::TooLong)?,
-                length: u32::try_from(mention.len).map_err(|_| ContentError::TooLong)?,
-            })
-        })
-        .collect::<Result<Vec<_>, ContentError>>()?;
+    let mentions = mentions_to_pb(mentions)?;
     let reply_to = reply.map(|reply| pb::ReplyTo {
         sender: Some(pb::DeviceRef {
             user_id: Some(reply.user.to_pb()),
@@ -247,6 +316,30 @@ pub fn encode_message(
             text: text.to_owned(),
             mentions,
             reply_to,
+        }),
+        sent_at,
+    )
+}
+
+/// An `Image` body (message-content: Image messages; Image caption and
+/// mentions). Fails with [`ContentError::InvalidMention`] if a caption mention
+/// is not one a receiver keeps, and with [`ContentError::TooLong`] if it would
+/// encrypt to more than the ciphertext cap.
+pub fn encode_image(image: &ImageContent, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
+    let caption = image.caption.as_deref().unwrap_or_default();
+    if valid_mentions(caption, image.mentions.clone()).len() != image.mentions.len() {
+        return Err(ContentError::InvalidMention);
+    }
+    encode(
+        Body::Image(pb::Image {
+            blob_id: image.blob_id.to_vec(),
+            blob_key: image.blob_key.to_vec(),
+            width: image.width,
+            height: image.height,
+            thumbhash: image.thumbhash.clone(),
+            blob_size: image.blob_size,
+            caption: image.caption.clone(),
+            caption_mentions: mentions_to_pb(&image.mentions)?,
         }),
         sent_at,
     )
@@ -302,8 +395,32 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
             });
             Some((MessageBody::Text(content.text), content.mentions, reply))
         }
+        Decoded::Image(image) => {
+            let body = image_body(store, &image);
+            Some((MessageBody::Image(Box::new(body)), image.mentions, None))
+        }
         Decoded::Unsupported => Some((MessageBody::Unsupported, Vec::new(), None)),
         Decoded::Profile(_) | Decoded::GroupSettings { .. } => None,
+    }
+}
+
+/// An image message as the UI sees it: where its picture is on this device.
+pub(crate) fn image_body(store: &Store, image: &ImageContent) -> crate::events::ImageBody {
+    let state = if store.media_entry(&image.blob_id).ok().flatten().is_some() {
+        MediaState::Available
+    } else if store.is_media_expired(&image.blob_id).unwrap_or(false) {
+        MediaState::Expired
+    } else {
+        MediaState::NotDownloaded
+    };
+    crate::events::ImageBody {
+        blob_id: image.blob_id,
+        width: image.width,
+        height: image.height,
+        thumbhash: image.thumbhash.clone(),
+        size: image.blob_size,
+        caption: image.caption.clone(),
+        state,
     }
 }
 
@@ -317,6 +434,7 @@ pub(crate) fn mentions_user(sender: &UserId, mentions: &[Mention], own_user: &Us
 fn content_mentions(content: &DecodedContent, sender: &UserId, own_user: &UserId) -> bool {
     match &content.body {
         Decoded::Text(text) => mentions_user(sender, &text.mentions, own_user),
+        Decoded::Image(image) => mentions_user(sender, &image.mentions, own_user),
         _ => false,
     }
 }
@@ -472,7 +590,7 @@ pub(crate) fn receive_application(
     };
     let sent_at = decoded.sent_at;
     Ok(match decoded.body {
-        body @ (Decoded::Text(_) | Decoded::Unsupported) => {
+        body @ (Decoded::Text(_) | Decoded::Image(_) | Decoded::Unsupported) => {
             let Some((body, mentions, reply)) = chat_parts(store, body) else {
                 return Ok(Received::Nothing);
             };

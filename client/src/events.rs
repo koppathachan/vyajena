@@ -69,12 +69,50 @@ pub enum SendStatus {
     },
 }
 
+/// Where an image message's picture is on this device (client-runtime: Image
+/// download and cache; Expired media).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaState {
+    /// Not downloaded: the blur shows, and a tap downloads it.
+    NotDownloaded,
+    /// In this device's media cache: it opens at once.
+    Available,
+    /// The Pi no longer has it ("media expired").
+    Expired,
+}
+
+/// An image message, as the UI sees it (message-content: Image messages). The
+/// blob key is not here: it never leaves the core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageBody {
+    /// The blob's id, which names the image to [`crate::Client::download_image`]
+    /// callers and keys the cache.
+    pub blob_id: [u8; protocol::blob_store::BLOB_ID_LEN],
+    /// Pixel width of the picture.
+    pub width: u32,
+    /// Pixel height of the picture.
+    pub height: u32,
+    /// The ThumbHash blur shown until the picture is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The blob's size on the Pi, in bytes.
+    pub size: u64,
+    /// The caption, if there is one. Its mentions are the message's
+    /// [`Message::mentions`].
+    pub caption: Option<String>,
+    /// Where the picture is.
+    pub state: MediaState,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MessageBody {
     /// A text message (message-content: Text only).
     Text(String),
+    /// An image with an optional caption (message-content: Image messages).
+    /// Boxed: a picture's description is large next to a text, and `Message`
+    /// is carried in every event.
+    Image(Box<ImageBody>),
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,

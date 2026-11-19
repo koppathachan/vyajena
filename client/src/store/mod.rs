@@ -31,6 +31,7 @@ mod content_state;
 mod device_state;
 mod dms;
 mod identity_keys;
+mod media;
 mod messages;
 mod migrations;
 
@@ -38,6 +39,7 @@ pub use content_state::ProfileRow;
 pub use device_state::{AccountRow, GroupRow, OutgoingCommitRow};
 pub use dms::{DmRow, MAIN_CHAT};
 pub use identity_keys::{PinOutcome, PinnedIdentityKey};
+pub use media::MediaEntry;
 pub use messages::{IncomingMessage, InsertOutcome, OutgoingMessage, StoredMessage};
 pub use migrations::SCHEMA_VERSION;
 

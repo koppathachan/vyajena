@@ -29,6 +29,7 @@ use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
 use crate::identity::{DeviceKeys, Invite, LinkApproval, LinkRequest, PayloadError};
 use crate::keystore::{KeyName, KeyStore, KeyStoreError, KeyStoreKind};
+use crate::media::{MediaCache, MediaError};
 use crate::messaging::ContentError;
 use crate::mls::MlsError;
 use crate::mls::verify;
@@ -49,6 +50,14 @@ pub struct ClientConfig {
     pub key_store: Arc<dyn KeyStore>,
     /// The clock; [`SystemClock`] unless a test moves time itself (design D7).
     pub clock: Arc<dyn Clock>,
+    /// Where decrypted images are cached, or `None` for `media` inside
+    /// [`ClientConfig::data_dir`]. The app points it at a folder the OS
+    /// encrypts at rest and leaves out of backups (client-runtime: Image
+    /// download and cache).
+    pub media_dir: Option<PathBuf>,
+    /// The most bytes the media cache holds before it drops the least recently
+    /// shown images.
+    pub media_cache_bytes: u64,
 }
 
 impl ClientConfig {
@@ -58,7 +67,21 @@ impl ClientConfig {
             data_dir: data_dir.into(),
             key_store,
             clock: Arc::new(SystemClock),
+            media_dir: None,
+            media_cache_bytes: crate::media::DEFAULT_CACHE_BYTES,
         }
+    }
+
+    /// The same config with the media cache in `dir`.
+    pub fn with_media_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.media_dir = Some(dir.into());
+        self
+    }
+
+    /// The same config with the media cache capped at `bytes`.
+    pub fn with_media_cache_bytes(mut self, bytes: u64) -> Self {
+        self.media_cache_bytes = bytes;
+        self
     }
 
     /// The same config on `clock`.
@@ -73,6 +96,7 @@ impl std::fmt::Debug for ClientConfig {
         f.debug_struct("ClientConfig")
             .field("data_dir", &self.data_dir)
             .field("key_store", &self.key_store.kind())
+            .field("media_dir", &self.media_dir)
             .finish_non_exhaustive()
     }
 }
@@ -157,6 +181,17 @@ pub enum ClientError {
     /// A mention's range does not fit the text (message-content: Mentions).
     #[error("a mention does not fit the text")]
     InvalidMention,
+    /// An image could not be prepared, sent or opened (message-content: Image
+    /// messages).
+    #[error(transparent)]
+    Media(#[from] MediaError),
+    /// The Pi no longer has the picture: its blob expired or was deleted
+    /// (client-runtime: Expired media).
+    #[error("the picture has expired")]
+    MediaExpired,
+    /// This device no longer has the picture to resend.
+    #[error("the picture is not on this device any more")]
+    MediaNotOnDevice,
     /// No stored chat message has that id (client-runtime: Reply lookup).
     #[error("no such message")]
     NoSuchMessage,
@@ -246,7 +281,13 @@ impl Client {
             data_dir,
             key_store,
             clock,
+            media_dir,
+            media_cache_bytes,
         } = config;
+        let media = MediaCache::new(
+            media_dir.unwrap_or_else(|| data_dir.join("media")),
+            media_cache_bytes,
+        );
         let keys = Arc::clone(&key_store);
         let store =
             blocking(move || Ok(Store::open(&data_dir.join(DATABASE_FILE), keys.as_ref())?))
@@ -261,6 +302,7 @@ impl Client {
                 events,
                 session: Mutex::new(None),
                 pi_knows_dms: std::sync::atomic::AtomicBool::new(false),
+                media,
             }),
             stream: Some(stream),
             running: Mutex::new(None),
@@ -603,8 +645,14 @@ impl Client {
                 .await?;
         self.stop();
         let (commands, receiver) = mpsc::channel(64);
-        let engine = Engine::new(Arc::clone(&self.shared), keys, account, receiver)
-            .map_err(ClientError::from)?;
+        let engine = Engine::new(
+            Arc::clone(&self.shared),
+            keys,
+            account,
+            receiver,
+            commands.clone(),
+        )
+        .map_err(ClientError::from)?;
         let task = tokio::spawn(engine.run());
         *self.running.lock() = Some(Running { commands, task });
         Ok(())
@@ -858,6 +906,8 @@ impl Client {
             .ok_or(ClientError::NoSuchMessage)?;
         let quote = match crate::messaging::decode(&stored.content).body {
             Decoded::Text(text) => text.text,
+            // Replying to a picture quotes its caption, if it has one.
+            Decoded::Image(image) => image.caption.unwrap_or_default(),
             Decoded::Unsupported => String::new(),
             Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
                 return Err(ClientError::NoSuchMessage);
@@ -1033,6 +1083,261 @@ impl Client {
         self.queue_content(chat.0, &content)
     }
 
+    // --- Images (message-content: Image messages; client-runtime: Image
+    // encode pipeline, Blob crypto and send order, Image download and cache,
+    // Expired media) ---
+
+    /// Sends a picked image to the main group: [`Client::send_image_in`].
+    pub async fn send_image(
+        &self,
+        picked: &[u8],
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
+    ) -> Result<MessageId, ClientError> {
+        self.send_image_in(ChatId::MAIN, picked, caption, mentions)
+            .await
+    }
+
+    /// Sends an image with an optional caption (and `mentions` of it, UTF-8
+    /// byte ranges) to chat `chat`. `picked` is the file as the picker gave it
+    /// (JPEG, PNG, GIF or WebP): the core turns it into a WebP of at most
+    /// 2048 px and 2 MB with no metadata and keeps it in its media cache.
+    ///
+    /// The message is stored and queued at once, like text, connected or not.
+    /// When the outbox reaches it with a connection it encrypts the picture
+    /// under a fresh key, uploads the blob and only then sends the message
+    /// (client-runtime: Blob crypto and send order), so a receiver never sees
+    /// an image whose blob is missing. It shows as sending until then.
+    pub async fn send_image_in(
+        &self,
+        chat: ChatId,
+        picked: &[u8],
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
+    ) -> Result<MessageId, ClientError> {
+        self.account()?;
+        self.check_can_queue(chat)?;
+        let picked = picked.to_vec();
+        let encoded =
+            blocking(move || Ok(crate::media::encode::encode(&picked).map_err(MediaError::from)?))
+                .await?;
+        self.queue_encoded(chat, encoded, caption, mentions).await
+    }
+
+    /// Resends the image of the own message `id` as a new message with a fresh
+    /// blob, key and `msg_id`, from the picture this device kept: for when the
+    /// first blob expired on the Pi (client-runtime: Expired media). Fails with
+    /// [`ClientError::MediaNotOnDevice`] when the picture is no longer cached.
+    pub async fn resend_image(&self, id: MessageId) -> Result<MessageId, ClientError> {
+        use crate::messaging::Decoded;
+        self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Image(image) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if !stored.outgoing {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let chat = ChatId(stored.chat);
+        self.check_can_queue(chat)?;
+        let webp = self
+            .cached_webp(&image.blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)?;
+        let encoded = crate::media::EncodedImage {
+            webp,
+            width: image.width,
+            height: image.height,
+            thumbhash: image.thumbhash,
+        };
+        self.queue_encoded(chat, encoded, image.caption.as_deref(), &image.mentions)
+            .await
+    }
+
+    /// Caches `image`, then stores its message as waiting for its blob and
+    /// wakes the outbox, which uploads the blob and sends the message.
+    async fn queue_encoded(
+        &self,
+        chat: ChatId,
+        image: crate::media::EncodedImage,
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
+    ) -> Result<MessageId, ClientError> {
+        use protocol::blob_store::{BLOB_NONCE_LEN, BLOB_TAG_LEN};
+        let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
+        let content = crate::messaging::ImageContent {
+            blob_id,
+            blob_key,
+            width: image.width,
+            height: image.height,
+            thumbhash: image.thumbhash,
+            // The blob is the nonce, the picture and the tag.
+            blob_size: (image.webp.len() + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64,
+            caption: caption.map(str::to_owned),
+            mentions: mentions.to_vec(),
+        };
+        // A bad caption or mention is refused before anything is kept.
+        let encoded = crate::messaging::encode_image(&content, self.now()).map_err(too_long)?;
+        // The sender cannot decrypt its own message, so it keeps the picture;
+        // the outbox encrypts and uploads it from here.
+        self.cache_webp(&blob_id, image.webp, true).await?;
+        match self.queue_content_with(chat.0, &encoded, true) {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let store = Arc::clone(&self.shared.store);
+                let cache = self.shared.media.clone();
+                let _ = blocking(move || Ok(cache.remove(&store, &blob_id)?)).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// Whether chat `chat` takes a message now, as text does: the main group
+    /// exists, or the DM exists and is open. (An image waits in the outbox
+    /// until its chat can send, like any message.)
+    fn check_can_queue(&self, chat: ChatId) -> Result<(), ClientError> {
+        if chat.is_main() {
+            if self.shared.store.group()?.is_none() {
+                return Err(ClientError::NoGroup);
+            }
+            return Ok(());
+        }
+        let dm = self
+            .shared
+            .store
+            .dm_by_chat(chat.0)?
+            .ok_or(ClientError::NoSuchChat)?;
+        if dm.closed_at.is_some() {
+            return Err(ClientError::ChatClosed);
+        }
+        Ok(())
+    }
+
+    /// The picture of image message `id`, opened: from this device's media
+    /// cache if it is there, else downloaded, decrypted and cached, and the
+    /// blob acked so the Pi can delete it once everyone has it. Returns the
+    /// WebP bytes. Fails with [`ClientError::MediaExpired`] when the Pi no
+    /// longer has it, and with [`ClientError::Offline`] when it must download
+    /// and is not connected.
+    pub async fn download_image(&self, id: MessageId) -> Result<Vec<u8>, ClientError> {
+        use crate::messaging::Decoded;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Image(image) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if let Some(webp) = self.cached_webp(&image.blob_id).await? {
+            return Ok(webp);
+        }
+        if self.shared.store.is_media_expired(&image.blob_id)? {
+            return Err(ClientError::MediaExpired);
+        }
+        let group_id = self.group_id_of(ChatId(stored.chat))?;
+        let session = self.session()?;
+        let downloaded = session
+            .conn()
+            .blobs()
+            .download_blob(session.request(pb::DownloadBlobRequest {
+                group_id: group_id.clone(),
+                blob_id: image.blob_id.to_vec(),
+            })?)
+            .await;
+        let blob = match downloaded {
+            Ok(response) => response.into_inner().ciphertext,
+            Err(status) if status.code() == tonic::Code::NotFound => {
+                self.shared
+                    .store
+                    .mark_media_expired(&image.blob_id, self.now())?;
+                return Err(ClientError::MediaExpired);
+            }
+            Err(status) => return Err(NetError::from(status).into()),
+        };
+        let (key, blob_id) = (image.blob_key, image.blob_id);
+        let webp = blocking(move || {
+            let webp =
+                crate::media::crypto::decrypt(&key, &blob_id, &blob).map_err(MediaError::from)?;
+            // Only a picture the core can read is cached and shown.
+            crate::media::encode::webp_size(&webp)
+                .ok_or(MediaError::Image(crate::media::ImageError::Unsupported))?;
+            Ok(webp)
+        })
+        .await?;
+        self.cache_webp(&blob_id, webp.clone(), false).await?;
+        // Best effort: if the ack is lost the blob simply lives its 7 days.
+        let acked = session
+            .conn()
+            .blobs()
+            .ack_blob(session.request(pb::AckBlobRequest {
+                group_id,
+                blob_id: blob_id.to_vec(),
+            })?)
+            .await;
+        if let Err(error) = acked {
+            tracing::warn!(%error, "could not ack a downloaded image");
+        }
+        Ok(webp)
+    }
+
+    /// The picture of image message `id` if this device has it cached; never
+    /// touches the network.
+    pub async fn cached_image(&self, id: MessageId) -> Result<Option<Vec<u8>>, ClientError> {
+        use crate::messaging::Decoded;
+        let Some(stored) = self.shared.store.message(id)? else {
+            return Ok(None);
+        };
+        let Decoded::Image(image) = crate::messaging::decode(&stored.content).body else {
+            return Ok(None);
+        };
+        self.cached_webp(&image.blob_id).await
+    }
+
+    async fn cached_webp(
+        &self,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Option<Vec<u8>>, ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.get(&store, &blob_id, now)?)).await
+    }
+
+    async fn cache_webp(
+        &self,
+        blob_id: &crate::media::BlobId,
+        webp: Vec<u8>,
+        own: bool,
+    ) -> Result<(), ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.put(&store, &blob_id, &webp, own, now)?)).await
+    }
+
+    /// The group id of chat `chat`, whether or not it can send now.
+    fn group_id_of(&self, chat: ChatId) -> Result<Vec<u8>, ClientError> {
+        if chat.is_main() {
+            return Ok(self
+                .shared
+                .store
+                .group()?
+                .ok_or(ClientError::NoGroup)?
+                .group_id);
+        }
+        Ok(self
+            .shared
+            .store
+            .dm_by_chat(chat.0)?
+            .ok_or(ClientError::NoSuchChat)?
+            .group_id)
+    }
+
     /// [`Client::history`] of chat `chat` (change `dms`).
     pub fn history_in(&self, chat: ChatId, limit: usize) -> Result<Vec<Message>, ClientError> {
         let own = self.own_user()?;
@@ -1089,21 +1394,40 @@ impl Client {
 
     /// Stores an own message in chat `chat` as sending and wakes the engine.
     fn queue_content(&self, chat: i64, content: &[u8]) -> Result<MessageId, ClientError> {
+        self.queue_content_with(chat, content, false)
+    }
+
+    /// [`Client::queue_content`]; with `blob_pending` the message is marked as
+    /// waiting for its blob in the same transaction that stores it, so the
+    /// outbox never sees it without the mark.
+    fn queue_content_with(
+        &self,
+        chat: i64,
+        content: &[u8],
+        blob_pending: bool,
+    ) -> Result<MessageId, ClientError> {
         let account = self.account()?;
         let mut msg_id = [0u8; 16];
         getrandom::fill(&mut msg_id)
             .map_err(|e| ClientError::Mls(MlsError::new("randomness", e)))?;
         let user = UserId::new(account.username, account.server_id).to_string();
-        let id = self.shared.store.insert_outgoing_in(
-            chat,
-            &OutgoingMessage {
-                msg_id,
-                sender_user: &user,
-                sender_device: account.device_id,
-                content,
-                created_at: self.now(),
-            },
-        )?;
+        let store = &self.shared.store;
+        let id = store.transaction(|| -> Result<MessageId, StoreError> {
+            let id = store.insert_outgoing_in(
+                chat,
+                &OutgoingMessage {
+                    msg_id,
+                    sender_user: &user,
+                    sender_device: account.device_id,
+                    content,
+                    created_at: self.now(),
+                },
+            )?;
+            if blob_pending {
+                store.set_blob_pending(id, true)?;
+            }
+            Ok(id)
+        })?;
         if let Some(running) = self.running.lock().as_ref() {
             // A full queue means the engine is busy and flushes anyway.
             let _ = running.commands.try_send(Command::Outbox);

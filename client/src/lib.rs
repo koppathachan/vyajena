@@ -34,6 +34,7 @@ mod events;
 pub mod identity;
 pub mod keys;
 pub mod keystore;
+pub mod media;
 pub mod membership;
 pub mod messaging;
 pub mod mls;
@@ -49,6 +50,6 @@ pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
     Chat, ChatId, ChatKind, ConnectionState, DeviceId, Event, EventStream, GroupSettings,
-    InviteInfo, Member, Mention, MentionTarget, Message, MessageBody, MessageId, Profile,
-    PushPlatform, PushToken, ReaddOutcome, Reply, SendStatus, UserId,
+    ImageBody, InviteInfo, MediaState, Member, Mention, MentionTarget, Message, MessageBody,
+    MessageId, Profile, PushPlatform, PushToken, ReaddOutcome, Reply, SendStatus, UserId,
 };

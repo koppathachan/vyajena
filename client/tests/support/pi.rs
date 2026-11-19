@@ -100,6 +100,10 @@ listen_address = "127.0.0.1:0"
 public_address = "{relay}"
 database_path = "pi.sqlite"
 key_dir = "keys"
+
+[blob_store]
+backend = "filesystem"
+path = "blobs"
 "#
     );
     Config::from_toml(&text, dir).check("test config")
@@ -118,6 +122,8 @@ impl TestPi {
     pub async fn start() -> Self {
         super::init_logging();
         let dir = tempfile::tempdir().check("temp dir");
+        // The drive the blobs are on, mounted.
+        std::fs::create_dir(dir.path().join("blobs")).check("blob directory");
         let clock = ManualClock::new(start_time());
         // The relay's own port is known before the Pi starts (its invites
         // name it); it learns the Pi's port once the Pi is listening.
@@ -194,6 +200,29 @@ impl TestPi {
     /// Runs the server's time-driven upkeep now (inactivity, expiry).
     pub async fn sweep(&self) {
         server::messaging::sweep(&self.state).await.check("sweep");
+        server::blobs::sweep(&self.state).await.check("blob sweep");
+    }
+
+    /// The directory the Pi keeps blobs in.
+    pub fn blob_dir(&self) -> std::path::PathBuf {
+        self.dir.path().join("blobs")
+    }
+
+    /// The names of the blobs the Pi holds, each as its hex blob id.
+    pub fn blobs(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.blob_dir())
+            .check("blob directory")
+            .map(|entry| {
+                entry
+                    .check("entry")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .filter(|name| !name.starts_with('.'))
+            .collect();
+        names.sort();
+        names
     }
 
     /// Runs a query on the server's database.
