@@ -19,7 +19,7 @@ pub fn client(options: &Options, h2_only: bool) -> Result<reqwest::Client, PushC
         .connect_timeout(options.request_timeout)
         .pool_idle_timeout(Duration::from_secs(90))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent("vyajena-pi");
+        .user_agent("vyajena-server");
     if h2_only {
         builder = builder.http2_prior_knowledge();
     }
@@ -40,7 +40,7 @@ pub fn client(options: &Options, h2_only: bool) -> Result<reqwest::Client, PushC
 }
 
 /// One per provider: after a 429 or 5xx nothing is sent to that platform
-/// until the wait is over (pi-runtime: Push errors).
+/// until the wait is over (server-runtime: Push errors).
 #[derive(Debug, Default)]
 pub struct Gate {
     not_before: Mutex<Option<Instant>>,

@@ -540,7 +540,7 @@ enum MenuEntry {
 }
 
 /// The chat's menu: everyone's entries, and the admin's only on admin
-/// devices (the Pi rejects other devices' admin calls anyway).
+/// devices (the server rejects other devices' admin calls anyway).
 class ChatMenu extends StatelessWidget {
   const ChatMenu({super.key, required this.admin});
 

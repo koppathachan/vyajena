@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2153 # the ports are set by network.sh
 # Checks the relay (relay: Relay hardening check; design D10) through gcloud,
 # over SSH via IAP, and from the Mac. Prints one line per check,
 # "FAIL <name>: <why>" for each failure, and exits 1 if any failed. WARN lines
-# (a pending reboot, the Pi's tunnel not attached) do not fail it.
+# (a pending reboot, the server's tunnel not attached) do not fail it.
 #
 #   deploy/relay/check.sh       needs a valid `gcloud auth login`
 set -euo pipefail
@@ -35,7 +36,7 @@ gcp_checks() {
   status="$(jq -r '.status' <<<"$inst")"
   region="${ZONE%-*}"
   if [ "$machine" = e2-micro ]; then ok "vm type e2-micro"; else fail "vm type" "is $machine, want e2-micro"; fi
-  if [ "$region" = "$RELAY_REGION" ]; then ok "vm region $region"; else fail "vm region" "$region, want $RELAY_REGION (Mumbai, next to the Pi)"; fi
+  if [ "$region" = "$RELAY_REGION" ]; then ok "vm region $region"; else fail "vm region" "$region, want $RELAY_REGION (Mumbai, next to the server)"; fi
   if [ "$status" = RUNNING ]; then ok "vm running"; else fail "vm running" "status $status"; fi
   if [ "$(jq '.serviceAccounts // [] | length' <<<"$inst")" = 0 ]; then
     ok "vm no service account"
@@ -213,11 +214,11 @@ remote_checks() {
   check "listening $tunnel_port" "rathole is not listening on the tunnel port" \
     grep -q ":$tunnel_port .*\"rathole\"" <<<"$listeners"
 
-  # The Pi's control channel.
+  # The server's control channel.
   if ss -Htn state established "( sport = :$tunnel_port )" | grep -q .; then
     ok "tunnel attached"
   else
-    warn tunnel "no tunnel connection from the Pi on $tunnel_port"
+    warn tunnel "no tunnel connection from the server on $tunnel_port"
   fi
 
   local sshd
@@ -272,7 +273,7 @@ mac_checks() {
     if nc -z -G 3 "$ip" "$port" 2>/dev/null; then
       ok "reachable $ip:$port"
     else
-      warn reachable "$ip:$port does not answer (it listens only while the Pi's tunnel offers it)"
+      warn reachable "$ip:$port does not answer (it listens only while the server's tunnel offers it)"
     fi
   done
   local open=""

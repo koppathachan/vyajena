@@ -1,13 +1,13 @@
-//! The Pi server binary:
+//! The server binary:
 //!
 //! - `server --config <file.toml> [--push <push.toml>]` runs the server until
 //!   `SIGTERM` or Ctrl-C; with `--push`, wake pings go to FCM / APNs
-//!   (pi-runtime: Push provider interface), else they are only logged.
+//!   (server-runtime: Push provider interface), else they are only logged.
 //! - `server egress-proxy --listen <addr>` runs the CONNECT proxy to the push
-//!   hosts (pi-runtime: Egress proxy).
+//!   hosts (server-runtime: Egress proxy).
 //! - `server backup --config <file.toml> --to <file>` writes a consistent
 //!   snapshot of the server's database to a new file (mode 0600) while the
-//!   server keeps running (pi-deployment: Backup to the Mac).
+//!   Server keeps running (server-deployment: Backup to the Mac).
 
 #![forbid(unsafe_code)]
 
@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use server::push::{LoggingProvider, Options, Providers, PushProvider, proxy};
-use server::runtime::{Config, Pi, SystemClock};
+use server::runtime::{Config, Server, SystemClock};
 use server::store::backup;
 
 fn main() -> Result<()> {
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
         .init();
 
     // Config errors stop us here, before any key, database or port is touched
-    // (pi-runtime: Configuration).
+    // (server-runtime: Configuration).
     let (config, push) = match command_from_args()? {
         Command::EgressProxy { listen } => return egress_proxy(listen),
         Command::Backup { config, to } => {
@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     };
 
     // Push errors stop us here too, before any key, database or port
-    // (pi-runtime: Push configuration).
+    // (server-runtime: Push configuration).
     let push: Arc<dyn PushProvider> = match push {
         None => {
             tracing::info!("no --push: wake pings are only logged");
@@ -68,17 +68,17 @@ fn main() -> Result<()> {
         .build()
         .context("starting the async runtime")?
         .block_on(async {
-            let pi = Pi::start_with_push(config, Arc::new(SystemClock), push).await?;
-            pi.serve(shutdown_signal()).await?;
+            let server = Server::start_with_push(config, Arc::new(SystemClock), push).await?;
+            server.serve(shutdown_signal()).await?;
             Ok(())
         })
 }
 
-const USAGE: &str = "usage: server --config <file.toml> [--push <push.toml>]
+const USAGE: &str = "usage: Server --config <file.toml> [--push <push.toml>]
        server backup --config <file.toml> --to <file>
        server egress-proxy --listen <addr>";
 
-/// pi-runtime: Egress proxy, until `SIGTERM` or Ctrl-C.
+/// server-runtime: Egress proxy, until `SIGTERM` or Ctrl-C.
 fn egress_proxy(listen: std::net::SocketAddr) -> Result<()> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

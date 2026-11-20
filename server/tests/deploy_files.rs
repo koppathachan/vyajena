@@ -1,9 +1,9 @@
-//! relay and pi-deployment: the committed deploy files (relay design D11).
-//! Checks `deploy/relay/` and `deploy/pi/` as written, and runs the scripts
+//! relay and server-deployment: the committed deploy files (relay design D11).
+//! Checks `deploy/relay/` and `deploy/server/` as written, and runs the scripts
 //! that need no host (`secrets.sh`, `render.sh`, `create.sh --dry-run`,
 //! `deploy.sh --reset` up to its guards) in temp folders, with fake `ssh`,
 //! `scp` and `gcloud` that only record being called. The hosts themselves are
-//! checked by `deploy/relay/check.sh` and `deploy/pi/check.sh`.
+//! checked by `deploy/relay/check.sh` and `deploy/server/check.sh`.
 
 mod support;
 
@@ -28,9 +28,9 @@ fn read(path: &str) -> String {
     std::fs::read_to_string(repo().join(path)).check(path)
 }
 
-/// `deploy/relay/relay.conf` as a map.
-fn relay_conf() -> BTreeMap<String, String> {
-    read("deploy/relay/relay.conf")
+/// A `KEY=value` file of the repository as a map.
+fn key_values(path: &str) -> BTreeMap<String, String> {
+    read(path)
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
@@ -41,8 +41,16 @@ fn relay_conf() -> BTreeMap<String, String> {
         .collect()
 }
 
+/// `deploy/relay/relay.conf` and the example network settings
+/// (`deploy/network.conf.example`: the real ones are outside the repository).
 fn conf(key: &str) -> String {
-    relay_conf().get(key).cloned().check(key)
+    if let Some(value) = key_values("deploy/relay/relay.conf").get(key) {
+        return value.clone();
+    }
+    key_values("deploy/network.conf.example")
+        .get(key)
+        .cloned()
+        .check(key)
 }
 
 fn mode(path: &Path) -> u32 {
@@ -77,6 +85,16 @@ impl Sandbox {
             .check("fake tool");
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).check("chmod");
         }
+        // The real network settings live outside the repository; a sandbox gets
+        // the example ones.
+        let secrets = dir.path().join("relay-secrets");
+        std::fs::create_dir(&secrets).check("secrets dir");
+        std::fs::set_permissions(&secrets, std::fs::Permissions::from_mode(0o700)).check("chmod");
+        std::fs::write(
+            secrets.join("network.conf"),
+            read("deploy/network.conf.example"),
+        )
+        .check("network.conf");
         Self { dir }
     }
 
@@ -101,7 +119,7 @@ impl Sandbox {
             .env("HOME", self.dir.path())
             .env("RELAY_SECRETS", self.secrets())
             .env("BACKUP_ROOT", self.dir.path().join("backups"))
-            .env("PI", "nobody@192.0.2.1")
+            .env("SERVER", "nobody@192.0.2.1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -190,13 +208,10 @@ fn dry_run(sandbox: &Sandbox) -> Vec<String> {
 // spec: relay/relay-host
 #[test]
 fn the_relay_is_an_e2_micro_in_mumbai_on_its_own_network() {
-    // relay-mumbai: next to the Pi and its users, not a US region.
+    // relay-mumbai: next to the server and its users, not a US region.
     let region = conf("REGION");
     assert_eq!(region, "asia-south1");
     assert!(conf("ZONE").starts_with(&format!("{region}-")));
-    // The VPC is shared with the old us-east1 subnet during the move, so the
-    // new subnet must not reuse its range.
-    assert_ne!(conf("SUBNET_RANGE"), "10.42.0.0/28");
     // The relay check enforces the same region.
     assert!(read("deploy/relay/check.sh").contains("RELAY_REGION=\"asia-south1\""));
     assert_eq!(conf("MACHINE_TYPE"), "e2-micro");
@@ -271,7 +286,7 @@ fn the_firewall_opens_443_and_the_tunnel_and_ssh_only_from_iap() {
         ("tcp:443", "0.0.0.0/0"),
         (&*format!("tcp:{review}"), "0.0.0.0/0"),
         (&*format!("tcp:{tunnel}"), "0.0.0.0/0"),
-        ("tcp:22", "35.235.240.0/20"),
+        ("tcp:22", &*conf("IAP_RANGE")),
     ];
     for (port, range) in expect {
         let rule = rules
@@ -301,7 +316,7 @@ fn the_firewall_opens_443_and_the_tunnel_and_ssh_only_from_iap() {
 fn the_tunnel_uses_noise_with_the_pinned_relay_key_and_the_token() {
     let sandbox = Sandbox::new().with_secrets();
     let server = toml(&sandbox.render("relay-server"));
-    let client = toml(&sandbox.render("pi-tunnel"));
+    let client = toml(&sandbox.render("server-tunnel"));
     let tunnel = conf("TUNNEL_PORT");
 
     for (side, table) in [("server", &server), ("client", &client)] {
@@ -319,7 +334,7 @@ fn the_tunnel_uses_noise_with_the_pinned_relay_key_and_the_token() {
             "tcp"
         );
     }
-    // The relay holds the private key; the Pi pins the public one.
+    // The relay holds the private key; the server pins the public one.
     assert_eq!(
         string(&server, "server.transport.noise.local_private_key"),
         sandbox.secret("noise.key")
@@ -329,7 +344,7 @@ fn the_tunnel_uses_noise_with_the_pinned_relay_key_and_the_token() {
         sandbox.secret("noise.pub")
     );
     assert_ne!(sandbox.secret("noise.key"), sandbox.secret("noise.pub"));
-    // The Pi dials out; the relay listens.
+    // The server dials out; the relay listens.
     assert_eq!(
         string(&server, "server.bind_addr"),
         format!("0.0.0.0:{tunnel}")
@@ -344,7 +359,7 @@ fn the_tunnel_uses_noise_with_the_pinned_relay_key_and_the_token() {
     );
     assert_eq!(
         string(&client, "client.services.vyajena.local_addr"),
-        "127.0.0.1:8443"
+        format!("127.0.0.1:{}", conf("SERVER_PORT"))
     );
 }
 
@@ -483,9 +498,9 @@ fn secrets_are_made_once_owner_only_and_never_printed() {
 fn templates_in_the_repo_hold_placeholders_not_secrets() {
     for path in [
         "deploy/relay/server.toml",
-        "deploy/pi/tunnel.toml",
-        "deploy/pi/config.toml",
-        "deploy/pi/vyajena-tunnel.service",
+        "deploy/server/tunnel.toml",
+        "deploy/server/config.toml",
+        "deploy/server/vyajena-tunnel.service",
     ] {
         let text = read(path);
         assert!(text.contains('@'), "{path} has no placeholder");
@@ -564,27 +579,33 @@ fn the_relay_check_names_every_area() {
     }
 }
 
-// --- pi-deployment ----------------------------------------------------------
+// --- server-deployment ----------------------------------------------------------
 
-// spec: pi-deployment/reachable-through-the-relay
+// spec: server-deployment/reachable-through-the-relay
 #[test]
-fn the_pi_listens_on_loopback_and_invites_name_the_relay() {
+fn the_server_listens_on_loopback_and_invites_name_the_relay() {
     let sandbox = Sandbox::new().with_secrets();
-    let config = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
-        .check("rendered deploy/pi/config.toml");
-    assert_eq!(config.listen_address.to_string(), "127.0.0.1:8443");
-    // Invites name the relay's DNS name; the Pi itself never resolves it.
+    let config = Config::from_toml(&sandbox.render("server-config"), Path::new("/"))
+        .check("rendered deploy/server/config.toml");
+    assert_eq!(
+        config.listen_address.to_string(),
+        format!("127.0.0.1:{}", conf("SERVER_PORT"))
+    );
+    // Invites name the relay's DNS name; the server itself never resolves it.
     assert_eq!(config.public_address, "vyajarelay.purplechaamba.com:443");
-    assert!(!sandbox.render("pi-config").contains(RELAY_IP));
-    assert_eq!(config.admin_user_id(), "vyajan@purplechaamba.com");
+    assert!(!sandbox.render("server-config").contains(RELAY_IP));
+    assert_eq!(
+        config.admin_user_id(),
+        format!("{}@purplechaamba.com", conf("ADMIN_USERNAME"))
+    );
 }
 
-// spec: pi-deployment/host-hardening
+// spec: server-deployment/host-hardening
 #[test]
 fn nftables_opens_only_ssh_from_home() {
-    let rules = read("deploy/pi/nftables.conf");
+    let rules = read("deploy/server/nftables.conf");
     assert!(
-        !rules.contains("8443"),
+        !rules.contains(&conf("SERVER_PORT")),
         "the server port is still in nftables.conf"
     );
     let accepts: Vec<&str> = rules
@@ -596,15 +617,15 @@ fn nftables_opens_only_ssh_from_home() {
     assert!(rules.contains("type filter hook input priority filter; policy drop;"));
 }
 
-// spec: pi-deployment/sandboxed-service
+// spec: server-deployment/sandboxed-service
 #[test]
 fn the_server_reaches_loopback_only_and_the_tunnel_only_the_relay() {
-    let server = read("deploy/pi/vyajena.service");
+    let server = read("deploy/server/vyajena.service");
     assert!(server.lines().any(|l| l == "IPAddressAllow=localhost"));
     assert!(server.lines().any(|l| l == "IPAddressDeny=any"));
 
     let sandbox = Sandbox::new().with_secrets();
-    let tunnel = sandbox.render("pi-tunnel-unit");
+    let tunnel = sandbox.render("server-tunnel-unit");
     for line in [
         "DynamicUser=yes".to_owned(),
         "LoadCredential=tunnel.toml:/etc/vyajena/tunnel.toml".to_owned(),
@@ -628,23 +649,23 @@ fn the_server_reaches_loopback_only_and_the_tunnel_only_the_relay() {
     assert!(!tunnel.contains("StateDirectory"));
 }
 
-// spec: pi-deployment/build-for-the-pi
+// spec: server-deployment/build-for-the-server
 #[test]
-fn the_pi_build_also_builds_rathole_for_arm64() {
-    let build = read("deploy/pi/build.sh");
+fn the_server_build_also_builds_rathole_for_arm64() {
+    let build = read("deploy/server/build.sh");
     assert!(build.contains("\"$repo/deploy/relay/build.sh\" arm64"));
     let relay_build = read("deploy/relay/build.sh");
-    assert!(relay_build.contains("arm64) arch=arm64 out=\"$repo/target/pi/rathole\""));
+    assert!(relay_build.contains("arm64) arch=arm64 out=\"$repo/target/server/rathole\""));
 }
 
-// spec: pi-deployment/install-and-upgrade
+// spec: server-deployment/install-and-upgrade
 #[test]
 fn deploy_installs_the_tunnel_with_a_root_only_token_file() {
-    let deploy = read("deploy/pi/deploy.sh");
+    let deploy = read("deploy/server/deploy.sh");
     for line in [
         "install -m 0600 -o root -g root \"$staging/tunnel.toml\" /etc/vyajena/tunnel.toml",
         "install -m 0755 -o root -g root \"$staging/rathole\" /usr/local/bin/rathole",
-        "\"$RENDER\" pi-tunnel | pi \"umask 077; cat > '$staging/tunnel.toml'\"",
+        "\"$RENDER\" server-tunnel | server \"umask 077; cat > '$staging/tunnel.toml'\"",
         "systemctl restart vyajena-tunnel.service",
         "mv -f \"$bin\" \"$bin.prev\"",
     ] {
@@ -652,13 +673,17 @@ fn deploy_installs_the_tunnel_with_a_root_only_token_file() {
     }
 }
 
-// spec: pi-deployment/scripted-reset
+// spec: server-deployment/scripted-reset
 #[test]
 fn a_reset_needs_the_server_id_and_a_backup_before_anything_is_deleted() {
     let sandbox = Sandbox::new().with_secrets();
 
-    // A wrong answer: nothing runs on the Pi, not even the backup.
-    let out = sandbox.run("deploy/pi/deploy.sh", &["--no-build", "--reset"], "yes\n");
+    // A wrong answer: nothing runs on the server, not even the backup.
+    let out = sandbox.run(
+        "deploy/server/deploy.sh",
+        &["--no-build", "--reset"],
+        "yes\n",
+    );
     assert!(!out.status.success());
     assert!(
         text(&out).contains("not confirmed; nothing changed"),
@@ -668,12 +693,12 @@ fn a_reset_needs_the_server_id_and_a_backup_before_anything_is_deleted() {
     assert!(sandbox.calls().is_empty(), "{}", sandbox.calls());
 
     // The right answer, but the backup fails (the fake ssh): the deploy stops
-    // before opening its own session to the Pi.
-    let server_id = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
-        .check("rendered deploy/pi/config.toml")
+    // before opening its own session to the server.
+    let server_id = Config::from_toml(&sandbox.render("server-config"), Path::new("/"))
+        .check("rendered deploy/server/config.toml")
         .server_id;
     let out = sandbox.run(
-        "deploy/pi/deploy.sh",
+        "deploy/server/deploy.sh",
         &["--no-build", "--reset"],
         &format!("{server_id}\n"),
     );
@@ -691,28 +716,31 @@ fn a_reset_needs_the_server_id_and_a_backup_before_anything_is_deleted() {
     );
 
     // The wipe lives only in the deploy script's remote install, behind reset.
-    let deploy = read("deploy/pi/deploy.sh");
+    let deploy = read("deploy/server/deploy.sh");
     assert!(deploy.contains("find /var/lib/vyajena -mindepth 1 -delete"));
     assert!(deploy.contains("if [ \"$reset\" = yes ]; then\n    remote_wipe"));
     assert!(deploy.contains("kind=bootstrap-invite"));
 }
 
-// spec: pi-deployment/hardening-check
+// spec: server-deployment/hardening-check
 #[test]
-fn the_pi_check_covers_the_tunnel_and_the_relay_path() {
-    let check = read("deploy/pi/check.sh");
+fn the_server_check_covers_the_tunnel_and_the_relay_path() {
+    let check = read("deploy/server/check.sh");
     for name in [
         "tunnel-running",
         "tunnel sandbox",
         "tunnel attached",
-        "nftables no 8443",
+        "nftables no server port",
         "lan-closed",
         "relay-pin",
-        "listening 127.0.0.1:8443",
+        "listening on loopback",
         "/etc/vyajena/tunnel.toml:\"600 root\"",
         "kernel-reboot",
     ] {
-        assert!(check.contains(name), "pi check.sh has no {name:?} check");
+        assert!(
+            check.contains(name),
+            "server check.sh has no {name:?} check"
+        );
     }
 }
 
@@ -722,12 +750,15 @@ fn the_pi_check_covers_the_tunnel_and_the_relay_path() {
 #[test]
 fn the_review_server_has_its_own_ids_port_user_and_data() {
     let sandbox = Sandbox::new().with_secrets();
-    let review = Config::from_toml(&sandbox.render("pi-review-config"), Path::new("/"))
-        .check("rendered deploy/pi/review.toml");
-    let real = Config::from_toml(&sandbox.render("pi-config"), Path::new("/"))
-        .check("rendered deploy/pi/config.toml");
+    let review = Config::from_toml(&sandbox.render("server-review-config"), Path::new("/"))
+        .check("rendered deploy/server/review.toml");
+    let real = Config::from_toml(&sandbox.render("server-config"), Path::new("/"))
+        .check("rendered deploy/server/config.toml");
     assert_eq!(review.admin_user_id(), "review@review.purplechaamba.com");
-    assert_eq!(review.listen_address.to_string(), "127.0.0.1:8444");
+    assert_eq!(
+        review.listen_address.to_string(),
+        format!("127.0.0.1:{}", conf("REVIEW_SERVER_PORT"))
+    );
     assert_ne!(review.server_id, real.server_id);
     assert_ne!(review.listen_address, real.listen_address);
     assert_ne!(review.database_path, real.database_path);
@@ -735,8 +766,8 @@ fn the_review_server_has_its_own_ids_port_user_and_data() {
     assert!(review.key_dir.starts_with("/var/lib/vyajena-review"));
 
     // The unit differs from the real one only in user, config and state dir.
-    let real_unit = read("deploy/pi/vyajena.service");
-    let review_unit = read("deploy/pi/vyajena-review.service");
+    let real_unit = read("deploy/server/vyajena.service");
+    let review_unit = read("deploy/server/vyajena-review.service");
     for line in [
         "User=vyajena-review",
         "Group=vyajena-review",
@@ -767,7 +798,7 @@ fn the_review_server_has_its_own_ids_port_user_and_data() {
         settings(&real_unit),
         "same sandbox as the real server"
     );
-    assert!(read("deploy/pi/harden.sh").contains("--shell /usr/sbin/nologin vyajena-review"));
+    assert!(read("deploy/server/harden.sh").contains("--shell /usr/sbin/nologin vyajena-review"));
 }
 
 // spec: review-server/review-route-through-the-relay
@@ -775,7 +806,7 @@ fn the_review_server_has_its_own_ids_port_user_and_data() {
 fn the_review_route_has_its_own_token_and_ports() {
     let sandbox = Sandbox::new().with_secrets();
     let server = toml(&sandbox.render("relay-server"));
-    let client = toml(&sandbox.render("pi-tunnel"));
+    let client = toml(&sandbox.render("server-tunnel"));
     let review_token = sandbox.secret("review-token");
     assert_ne!(review_token, sandbox.secret("token"));
     assert_eq!(
@@ -788,17 +819,19 @@ fn the_review_route_has_its_own_token_and_ports() {
     );
     assert_eq!(
         string(&server, "server.services.review.bind_addr"),
-        "0.0.0.0:8443"
+        format!("0.0.0.0:{}", conf("REVIEW_PORT"))
     );
     assert_eq!(
         string(&client, "client.services.review.local_addr"),
-        "127.0.0.1:8444"
+        format!("127.0.0.1:{}", conf("REVIEW_SERVER_PORT"))
     );
     // Review invites name the relay's DNS name and the review port.
-    let review = Config::from_toml(&sandbox.render("pi-review-config"), Path::new("/"))
+    let review = Config::from_toml(&sandbox.render("server-review-config"), Path::new("/"))
         .check("review config");
-    assert_eq!(review.public_address, "vyajarelay.purplechaamba.com:8443");
-    assert_eq!(conf("REVIEW_PORT"), "8443");
+    assert_eq!(
+        review.public_address,
+        format!("vyajarelay.purplechaamba.com:{}", conf("REVIEW_PORT"))
+    );
 }
 
 // spec: review-server/review-reset
@@ -806,9 +839,9 @@ fn the_review_route_has_its_own_token_and_ports() {
 fn a_review_reset_needs_the_review_id_and_never_touches_the_real_server() {
     let sandbox = Sandbox::new().with_secrets();
     let out = sandbox.run(
-        "deploy/pi/deploy.sh",
+        "deploy/server/deploy.sh",
         &["--no-build", "--reset-review"],
-        "pi\n",
+        "server\n",
     );
     assert!(!out.status.success());
     assert!(
@@ -818,10 +851,10 @@ fn a_review_reset_needs_the_review_id_and_never_touches_the_real_server() {
     );
     assert!(sandbox.calls().is_empty(), "{}", sandbox.calls());
 
-    // The right id: no backup is taken; the deploy goes straight to the Pi
+    // The right id: no backup is taken; the deploy goes straight to the server
     // (the fake ssh refuses, so nothing more happens).
     let out = sandbox.run(
-        "deploy/pi/deploy.sh",
+        "deploy/server/deploy.sh",
         &["--no-build", "--reset-review"],
         "review.purplechaamba.com\n",
     );
@@ -834,7 +867,7 @@ fn a_review_reset_needs_the_review_id_and_never_touches_the_real_server() {
         sandbox.calls()
     );
 
-    let deploy = read("deploy/pi/deploy.sh");
+    let deploy = read("deploy/server/deploy.sh");
     let wipe = deploy
         .split("remote_wipe_review() {")
         .nth(1)
@@ -854,41 +887,41 @@ fn a_review_reset_needs_the_review_id_and_never_touches_the_real_server() {
 
 // spec: review-server/review-server-check
 #[test]
-fn the_pi_check_covers_the_review_server_and_separate_pins() {
-    let check = read("deploy/pi/check.sh");
+fn the_server_check_covers_the_review_server_and_separate_pins() {
+    let check = read("deploy/server/check.sh");
     for name in [
         "server_checks vyajena-review.service vyajena-review /var/lib/vyajena-review",
-        "review listening 127.0.0.1:8444",
+        "review listening on loopback",
         "review-pin",
         "pins differ",
         "lan-closed",
         "/etc/vyajena/review.toml:\"644 root\"",
     ] {
-        assert!(check.contains(name), "pi check.sh has no {name:?}");
+        assert!(check.contains(name), "server check.sh has no {name:?}");
     }
     let relay_check = read("deploy/relay/check.sh");
     assert!(relay_check.contains("$NAME-review INGRESS false false tcp:$REVIEW_PORT"));
 }
 
-// --- media-blobs: the blob store on the Pi ---------------------------------------
+// --- media-blobs: the blob store on the server ---------------------------------------
 
-/// A `pi.conf` that names `blob_dir` (empty for none).
-fn pi_conf_with(sandbox: &Sandbox, blob_dir: &str) -> PathBuf {
-    let path = sandbox.dir.path().join("pi.conf");
+/// A `server.conf` that names `blob_dir` (empty for none).
+fn server_conf_with(sandbox: &Sandbox, blob_dir: &str) -> PathBuf {
+    let path = sandbox.dir.path().join("server.conf");
     // Quoted, so an odd value reaches the script's own checks as text.
-    std::fs::write(&path, format!("BLOB_DIR='{blob_dir}'\n")).check("pi.conf");
+    std::fs::write(&path, format!("BLOB_DIR='{blob_dir}'\n")).check("server.conf");
     path
 }
 
-/// `render.sh pi-config` with `blob_dir` in the Pi's settings.
-fn render_pi_config(sandbox: &Sandbox, blob_dir: &str) -> Output {
-    let conf = pi_conf_with(sandbox, blob_dir);
+/// `render.sh server-config` with `blob_dir` in the server's settings.
+fn render_server_config(sandbox: &Sandbox, blob_dir: &str) -> Output {
+    let conf = server_conf_with(sandbox, blob_dir);
     let mut command = Command::new("bash");
     command
         .arg(repo().join("deploy/relay/render.sh"))
-        .arg("pi-config")
+        .arg("server-config")
         .env("RELAY_SECRETS", sandbox.secrets())
-        .env("PI_CONF", conf)
+        .env("SERVER_CONF", conf)
         .env("HOME", sandbox.dir.path());
     command.output().check("render.sh")
 }
@@ -933,7 +966,7 @@ fn run_deploy_function(
         .arg(format!(
             "eval \"$(sed -n '/^{name}() {{/,/^}}/p' \"$0\")\"; {name} \"$@\""
         ))
-        .arg(repo().join("deploy/pi/deploy.sh"))
+        .arg(repo().join("deploy/server/deploy.sh"))
         .args(args)
         .env("PATH", path);
     for (key, value) in env {
@@ -948,18 +981,19 @@ fn run_deploy_function(
     (out, calls)
 }
 
-// spec: pi-deployment/blob-store-deployment
+// spec: server-deployment/blob-store-deployment
 #[test]
 fn images_are_off_until_the_owner_names_the_drives_path() {
     // As committed: the owner's drive (mounted at /mnt/vyajena through fstab),
     // so the server's config names that folder.
-    let conf = read("deploy/pi/pi.conf");
+    let conf = read("deploy/server/server.conf");
     assert!(
         conf.lines().any(|l| l == "BLOB_DIR=/mnt/vyajena/blobs"),
-        "the committed pi.conf names the owner's drive"
+        "the committed server.conf names the owner's drive"
     );
     let sandbox = Sandbox::new().with_secrets();
-    let config = Config::from_toml(&sandbox.render("pi-config"), Path::new("/")).check("config");
+    let config =
+        Config::from_toml(&sandbox.render("server-config"), Path::new("/")).check("config");
     assert_eq!(
         config.blob_store,
         Some(server::runtime::config::BlobStoreConfig::Filesystem {
@@ -967,15 +1001,15 @@ fn images_are_off_until_the_owner_names_the_drives_path() {
         })
     );
 
-    // With no path: no [blob_store], and the Pi is as before (images off).
-    let out = render_pi_config(&sandbox, "");
+    // With no path: no [blob_store], and the server is as before (images off).
+    let out = render_server_config(&sandbox, "");
     assert!(out.status.success(), "{}", text(&out));
     let rendered = String::from_utf8(out.stdout).check("utf-8");
     let config = Config::from_toml(&rendered, Path::new("/")).check("config");
     assert_eq!(config.blob_store, None);
 
     // With a path: the server's config names exactly it.
-    let out = render_pi_config(&sandbox, "/mnt/vyajena-blobs");
+    let out = render_server_config(&sandbox, "/mnt/vyajena-blobs");
     assert!(out.status.success(), "{}", text(&out));
     let rendered = String::from_utf8(out.stdout).check("utf-8");
     let config = Config::from_toml(&rendered, Path::new("/")).check("config");
@@ -989,7 +1023,7 @@ fn images_are_off_until_the_owner_names_the_drives_path() {
     assert_eq!(config.server_id, "purplechaamba.com");
 }
 
-// spec: pi-deployment/blob-store-deployment
+// spec: server-deployment/blob-store-deployment
 #[test]
 fn a_blob_path_that_could_put_blobs_on_the_wrong_storage_is_refused() {
     let sandbox = Sandbox::new().with_secrets();
@@ -999,24 +1033,24 @@ fn a_blob_path_that_could_put_blobs_on_the_wrong_storage_is_refused() {
         "/var/lib/vyajena/blobs", // what the backup copies and a reset wipes
         "/var/lib/vyajena",
         "/var/lib/vyajena-review/b",
-        "/home/vyajan/blobs", // the service cannot see /home
+        "/home/user/blobs", // the service cannot see /home
         "/root/blobs",
         "/mnt/a b",
         "/mnt/../etc",
         "/mnt/blobs/", // a trailing slash is not a plain path
         "/mnt/$(id)",
     ] {
-        let out = render_pi_config(&sandbox, bad);
+        let out = render_server_config(&sandbox, bad);
         assert!(!out.status.success(), "{bad:?} was accepted");
         assert!(text(&out).contains("BLOB_DIR"), "{bad:?}: {}", text(&out));
     }
     for good in ["/mnt/vyajena-blobs", "/media/drive_1/vyajena", "/srv/blobs"] {
-        let out = render_pi_config(&sandbox, good);
+        let out = render_server_config(&sandbox, good);
         assert!(out.status.success(), "{good:?}: {}", text(&out));
     }
 }
 
-// spec: pi-deployment/blob-store-deployment
+// spec: server-deployment/blob-store-deployment
 #[test]
 fn deploy_never_makes_the_folder_and_only_hands_over_one_on_its_own_mount() {
     let work = tempfile::tempdir().check("temp dir");
@@ -1080,24 +1114,24 @@ fn deploy_never_makes_the_folder_and_only_hands_over_one_on_its_own_mount() {
     assert!(!dropin.exists());
 }
 
-// spec: pi-deployment/blob-store-deployment
-// spec: pi-deployment/sandboxed-service
+// spec: server-deployment/blob-store-deployment
+// spec: server-deployment/sandboxed-service
 #[test]
 fn the_unit_stays_closed_and_only_the_drop_in_opens_the_blob_path() {
     // The committed unit writes nothing but its state directory...
-    let unit = read("deploy/pi/vyajena.service");
+    let unit = read("deploy/server/vyajena.service");
     assert!(unit.lines().any(|l| l == "ProtectSystem=strict"));
     assert!(unit.lines().any(|l| l == "StateDirectory=vyajena"));
     assert!(!unit.contains("ReadWritePaths"));
     assert!(
         !unit.contains("RequiresMountsFor"),
-        "a missing drive must not stop the Pi"
+        "a missing drive must not stop the server"
     );
     // ...and deploy installs the drop-in only when a path is named, and runs
-    // the function that does it, on the Pi, for every install.
-    let deploy = read("deploy/pi/deploy.sh");
+    // the function that does it, on the server, for every install.
+    let deploy = read("deploy/server/deploy.sh");
     assert!(deploy.contains("remote_blob_store \"$blob_dir\""));
-    assert!(deploy.contains("\"${BLOB_DIR:-}\" | divert_invite"));
+    assert!(deploy.contains("\"${BLOB_DIR:-}\" \\\n    \"$SERVER_PORT\""));
     assert!(deploy.contains("remote_push_keys remote_blob_store"));
     // The path is never created by deploy: the function has no mkdir.
     let function: String = deploy
@@ -1110,7 +1144,7 @@ fn the_unit_stays_closed_and_only_the_drop_in_opens_the_blob_path() {
     assert!(!function.contains("install -d -m 0700"), "{function}");
 }
 
-// spec: pi-deployment/scripted-reset
+// spec: server-deployment/scripted-reset
 #[test]
 fn a_reset_deletes_the_groups_blobs_and_only_files_named_like_blobs() {
     let work = tempfile::tempdir().check("temp dir");
@@ -1159,10 +1193,10 @@ fn a_reset_deletes_the_groups_blobs_and_only_files_named_like_blobs() {
     assert!(out.status.success(), "{}", text(&out));
 }
 
-// spec: pi-deployment/backup-to-the-mac
+// spec: server-deployment/backup-to-the-mac
 #[test]
 fn the_backup_copies_the_database_and_keys_and_never_the_blobs() {
-    let backup = read("deploy/pi/backup.sh");
+    let backup = read("deploy/server/backup.sh");
     let code: Vec<&str> = backup
         .lines()
         .filter(|l| !l.trim_start().starts_with('#'))
@@ -1178,10 +1212,10 @@ fn the_backup_copies_the_database_and_keys_and_never_the_blobs() {
     assert!(backup.contains("Image blobs are not backed up"));
 }
 
-// spec: pi-deployment/hardening-check
+// spec: server-deployment/hardening-check
 #[test]
-fn the_pi_check_covers_the_blob_store_and_only_warns_about_an_absent_drive() {
-    let check = read("deploy/pi/check.sh");
+fn the_server_check_covers_the_blob_store_and_only_warns_about_an_absent_drive() {
+    let check = read("deploy/server/check.sh");
     for name in [
         "blob-store off (no [blob_store] in the config)",
         "blob-store mount",
@@ -1189,11 +1223,92 @@ fn the_pi_check_covers_the_blob_store_and_only_warns_about_an_absent_drive() {
         "blob-store service can write",
         "blob-store service writes",
     ] {
-        assert!(check.contains(name), "pi check.sh has no {name:?} check");
+        assert!(
+            check.contains(name),
+            "server check.sh has no {name:?} check"
+        );
     }
     // An absent drive is a WARN, which never fails the check.
     assert!(check.contains("warn blob-store \"$blob_dir is not there"));
     assert!(!check.contains("fail blob-store \"$blob_dir is not there"));
     // On the main storage is a failure.
     assert!(check.contains("fail \"blob-store mount\""));
+}
+
+// --- generic-deployment: no real network details in the repository ---------------
+
+// spec: server-deployment/deployment-details-stay-out-of-the-repository
+#[test]
+fn the_example_network_settings_are_complete_and_the_templates_fill_from_them() {
+    let example = key_values("deploy/network.conf.example");
+    for key in [
+        "SERVER",
+        "HOME_LAN",
+        "ROUTER",
+        "ADMIN_USERNAME",
+        "SERVER_PORT",
+        "REVIEW_SERVER_PORT",
+        "EGRESS_PORT",
+        "TUNNEL_PORT",
+        "REVIEW_PORT",
+        "SUBNET_RANGE",
+        "IAP_RANGE",
+    ] {
+        assert!(example.contains_key(key), "the example lacks {key}");
+    }
+    // The host-side templates fill completely, and the values land in them.
+    let sandbox = Sandbox::new().with_secrets();
+    for name in [
+        "harden.sh",
+        "nftables.conf",
+        "push.toml",
+        "vyajena-egress.service",
+    ] {
+        let out = sandbox.run("deploy/relay/render.sh", &["server-file", name], "");
+        assert!(out.status.success(), "{name}: {}", text(&out));
+        let rendered = String::from_utf8(out.stdout).check("utf-8");
+        assert!(!rendered.contains("@ADDRESS@") && !rendered.contains("@HOME_LAN@"));
+    }
+}
+
+// spec: server-deployment/deployment-details-stay-out-of-the-repository
+#[test]
+fn no_real_address_or_port_of_the_deployment_is_committed() {
+    let files = Command::new("git")
+        .args(["ls-files"])
+        .current_dir(repo())
+        .output()
+        .check("git ls-files");
+    let files = String::from_utf8(files.stdout).check("utf-8");
+    // What this deployment used before it was moved out of the repository.
+    // The values are written as pieces so this file does not hold them either.
+    let banned = [
+        format!("192.168.{}.{}", 1, 8),
+        format!("{}:a2:9e:f3:2c:55", 88),
+        format!("{}{}", "vyaj", "an@"),
+    ];
+    for file in files.lines() {
+        if file.ends_with(".lock")
+            || file.contains("Runner.xcscheme")
+            || file.ends_with("push/tasks.md")
+        {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(repo().join(file)) else {
+            continue;
+        };
+        for needle in &banned {
+            assert!(!content.contains(needle.as_str()), "{file} holds {needle}");
+        }
+        if file.starts_with("deploy/") && file != "deploy/network.conf.example" {
+            for port in ["2333", "8443", "8444", "8445"] {
+                assert!(
+                    !content
+                        .split(|c: char| !c.is_ascii_digit())
+                        .any(|w| w == port),
+                    "{file} holds the port {port}"
+                );
+            }
+        }
+    }
 }

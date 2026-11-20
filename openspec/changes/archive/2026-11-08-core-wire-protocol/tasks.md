@@ -34,7 +34,7 @@
 
 ## 6. Contract gaps
 
-- [x] 6.1 Bind each Welcome to its commit: `Envelope.welcome` (`WelcomeBundle`) on the `COMMIT` that creates it, accepted or rejected together; the Pi emits `WELCOME` envelopes only after accepting the commit; a client-sent `WELCOME` is `MALFORMED`; the 256 KB cap covers the whole `COMMIT` envelope (message-delivery, group-membership, wire-transport, D7 and linking diagrams)
-- [x] 6.2 Add optional `device_ids` to `FetchKeyPackagesRequest`; the Pi returns and consumes KeyPackages only for those devices (key-directory, D7 re-add)
+- [x] 6.1 Bind each Welcome to its commit: `Envelope.welcome` (`WelcomeBundle`) on the `COMMIT` that creates it, accepted or rejected together; the server emits `WELCOME` envelopes only after accepting the commit; a client-sent `WELCOME` is `MALFORMED`; the 256 KB cap covers the whole `COMMIT` envelope (message-delivery, group-membership, wire-transport, D7 and linking diagrams)
+- [x] 6.2 Add optional `device_ids` to `FetchKeyPackagesRequest`; the server returns and consumes KeyPackages only for those devices (key-directory, D7 re-add)
 - [x] 6.3 Return `is_admin` from `Devices.GetSelf` so the admin's app knows to call `Admin.CreateGroup` (device-identity, D13)
 - [x] 6.4 Pin the TLS exporter label `EXPORTER-vyajena2-auth-v1` (32 bytes), the 32-byte single-use challenge nonce valid 60 seconds, and status codes `PERMISSION_DENIED` (Register certificate for another user), `NOT_FOUND` (fetch for an unknown user) and `ABORTED` (older `Connect` stream replaced) (wire-transport, device-identity, key-directory, protos, `vyajena-proto` constants)

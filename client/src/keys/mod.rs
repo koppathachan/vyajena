@@ -12,7 +12,7 @@
 //! low-KeyPackages notice, and replaces the last-resort one when it is
 //! [`protocol::key_directory::LAST_RESORT_MAX_AGE`] old. Every upload carries
 //! exactly one last-resort KeyPackage, which replaces the previous one on the
-//! Pi.
+//! server.
 
 use std::time::{Duration, SystemTime};
 
@@ -39,7 +39,7 @@ pub struct Upload {
     /// it is two refreshes old.
     pub last_resort_ref: Vec<u8>,
     /// The one-time KeyPackages' hash references (TLS-serialized), to delete
-    /// their private keys if the Pi does not take them.
+    /// their private keys if the server does not take them.
     pub one_time_refs: Vec<Vec<u8>>,
 }
 
@@ -98,7 +98,7 @@ pub fn new_upload(
     })
 }
 
-/// How many one-time KeyPackages to upload when the Pi holds `remaining`:
+/// How many one-time KeyPackages to upload when the server holds `remaining`:
 /// enough to get back to [`ONE_TIME_KEY_PACKAGES_TARGET`].
 pub fn top_up(remaining: u32) -> usize {
     ONE_TIME_KEY_PACKAGES_TARGET.saturating_sub(usize::try_from(remaining).unwrap_or(usize::MAX))
@@ -137,9 +137,9 @@ pub fn rotation_jitter() -> Duration {
     Duration::from_millis(random_below(max.saturating_add(1)))
 }
 
-/// key-directory: Identity key lookup. The identity keys the Pi has for
+/// key-directory: Identity key lookup. The identity keys the server has for
 /// `users`, from `Keys.GetIdentityKeys` (which consumes no KeyPackages). The
-/// Pi fails the whole call with `NOT_FOUND` if one user is unknown or has no
+/// Server fails the whole call with `NOT_FOUND` if one user is unknown or has no
 /// non-revoked device; then each user is looked up alone, and those it does
 /// not know are left out.
 pub(crate) async fn identity_keys(
@@ -171,7 +171,7 @@ pub(crate) async fn identity_keys(
                 match call(vec![user.to_pb()]).await {
                     Ok(mut one) => keys.append(&mut one),
                     Err(NetError::Rpc(status)) if status.code() == tonic::Code::NotFound => {
-                        tracing::debug!(user = %user, "the Pi knows no identity key");
+                        tracing::debug!(user = %user, "the server knows no identity key");
                     }
                     Err(error) => return Err(error),
                 }

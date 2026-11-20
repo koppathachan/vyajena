@@ -47,13 +47,13 @@ pub(crate) enum Job {
         seen: Option<Vec<u8>>,
     },
     /// group-membership: Automatic add of new users. Admin: add a new user's
-    /// device the Pi announced with a `JoinNotice`.
+    /// device the server announced with a `JoinNotice`.
     AddNew { user: UserId, device: DeviceId },
     /// device-identity: Device linking. Add a device this device linked,
     /// once it has uploaded KeyPackages.
     AddLinked { device: DeviceId },
-    /// Admin: commit the Pi's pending inactivity Removes.
-    CommitPiRemoves,
+    /// Admin: commit the server's pending inactivity Removes.
+    CommitServerRemoves,
     /// group-membership: Own leaf rotation.
     Rotate,
     /// key-directory: upload KeyPackages. `Some(n)`: top up one-time
@@ -61,22 +61,22 @@ pub(crate) enum Job {
     /// replace the last-resort one (weekly refresh). Every upload carries a
     /// new last-resort KeyPackage.
     UploadKeyPackages { remaining: Option<u32> },
-    /// group-membership: Re-add after an unusable Welcome. Ask the Pi to be
+    /// group-membership: Re-add after an unusable Welcome. Ask the server to be
     /// added again, with fresh KeyPackages: after refusing the Welcome at
     /// `refused_seq`, or (`0`) at start with no group.
     RequestReadd { refused_seq: u64, reason: String },
     /// direct-messages: Opening a DM with `peer`.
     OpenDm { peer: UserId, reply: Option<Reply> },
     /// direct-messages: DM members kept complete. Add `device` of `user` to
-    /// the DM `group_id`, with the Pi's pending Remove of its old leaf.
+    /// the DM `group_id`, with the server's pending Remove of its old leaf.
     AddToDm {
         group_id: Vec<u8>,
         user: UserId,
         device: DeviceId,
     },
-    /// direct-messages: Inactivity across groups. Commit the Pi's pending
+    /// direct-messages: Inactivity across groups. Commit the server's pending
     /// Removes in the DM `group_id`.
-    CommitPiRemovesIn { group_id: Vec<u8> },
+    CommitServerRemovesIn { group_id: Vec<u8> },
     /// group-membership: Own leaf rotation, in the DM `group_id`.
     RotateIn { group_id: Vec<u8> },
 }
@@ -123,11 +123,11 @@ impl Job {
             Job::Readd { .. }
                 | Job::AddNew { .. }
                 | Job::AddLinked { .. }
-                | Job::CommitPiRemoves
+                | Job::CommitServerRemoves
                 | Job::Rotate
                 | Job::UploadKeyPackages { .. }
                 | Job::AddToDm { .. }
-                | Job::CommitPiRemovesIn { .. }
+                | Job::CommitServerRemovesIn { .. }
                 | Job::RotateIn { .. }
         )
     }
@@ -136,7 +136,7 @@ impl Job {
     pub(crate) fn dm_group(&self) -> Option<&[u8]> {
         match self {
             Job::AddToDm { group_id, .. }
-            | Job::CommitPiRemovesIn { group_id }
+            | Job::CommitServerRemovesIn { group_id }
             | Job::RotateIn { group_id } => Some(group_id),
             _ => None,
         }
@@ -147,7 +147,7 @@ impl Job {
             (Job::Readd { device: a, .. }, Job::Readd { device: b, .. })
             | (Job::AddNew { device: a, .. }, Job::AddNew { device: b, .. }) => a == b,
             (Job::AddLinked { device: a }, Job::AddLinked { device: b }) => a == b,
-            (Job::CommitPiRemoves, Job::CommitPiRemoves)
+            (Job::CommitServerRemoves, Job::CommitServerRemoves)
             | (Job::Rotate, Job::Rotate)
             | (Job::UploadKeyPackages { .. }, Job::UploadKeyPackages { .. }) => true,
             (
@@ -162,7 +162,10 @@ impl Job {
                     ..
                 },
             ) => a == b && x == y,
-            (Job::CommitPiRemovesIn { group_id: a }, Job::CommitPiRemovesIn { group_id: b })
+            (
+                Job::CommitServerRemovesIn { group_id: a },
+                Job::CommitServerRemovesIn { group_id: b },
+            )
             | (Job::RotateIn { group_id: a }, Job::RotateIn { group_id: b }) => a == b,
             _ => false,
         }
@@ -182,7 +185,7 @@ impl Job {
             ),
             Job::AddNew { user, device } => format!("add_new|{user}|{}", hex(device)),
             Job::AddLinked { device } => format!("add_linked|{}", hex(device)),
-            Job::CommitPiRemoves => "pi_removes".into(),
+            Job::CommitServerRemoves => "pi_removes".into(),
             Job::Rotate => "rotate".into(),
             Job::UploadKeyPackages { .. } => "upload_key_packages".into(),
             Job::RequestReadd { .. } => "request_readd".into(),
@@ -192,7 +195,9 @@ impl Job {
                 user,
                 device,
             } => format!("dm_add|{}|{user}|{}", hex(group_id), hex(device)),
-            Job::CommitPiRemovesIn { group_id } => format!("dm_pi_removes|{}", hex(group_id)),
+            Job::CommitServerRemovesIn { group_id } => {
+                format!("dm_server_removes|{}", hex(group_id))
+            }
             Job::RotateIn { group_id } => format!("dm_rotate|{}", hex(group_id)),
         }
     }
@@ -223,7 +228,7 @@ impl Job {
                 _ => None,
             },
             ["add_linked", device] => parse_device(device).map(|device| Job::AddLinked { device }),
-            ["pi_removes"] => Some(Job::CommitPiRemoves),
+            ["pi_removes"] => Some(Job::CommitServerRemoves),
             ["dm_add", group, user, device] => {
                 match (unhex(group), parse_user(user), parse_device(device)) {
                     (Some(group_id), Some(user), Some(device)) => Some(Job::AddToDm {
@@ -234,8 +239,8 @@ impl Job {
                     _ => None,
                 }
             }
-            ["dm_pi_removes", group] => {
-                unhex(group).map(|group_id| Job::CommitPiRemovesIn { group_id })
+            ["dm_server_removes", group] => {
+                unhex(group).map(|group_id| Job::CommitServerRemovesIn { group_id })
             }
             ["dm_rotate", group] => unhex(group).map(|group_id| Job::RotateIn { group_id }),
             _ => None,
@@ -348,7 +353,7 @@ impl Engine {
         }
     }
 
-    /// What to do after the Pi accepted a job's commit (or the job needed
+    /// What to do after the server accepted a job's commit (or the job needed
     /// none).
     pub(super) async fn finish(&mut self, job: Job) {
         match job {
@@ -508,7 +513,8 @@ impl Engine {
                     .map(|(leaf, _)| leaf)
                     .filter(|leaf| !pending.contains(leaf))
                     .collect();
-                if removes.is_empty() && !membership::has_pending_pi_removes(group, self.pi_index())
+                if removes.is_empty()
+                    && !membership::has_pending_server_removes(group, self.server_index())
                 {
                     return Ok(Prepared::Nothing);
                 }
@@ -644,10 +650,10 @@ impl Engine {
                 })?;
                 Ok(Prepared::Commit(staged, recipients))
             }
-            Job::CommitPiRemoves => {
+            Job::CommitServerRemoves => {
                 self.usable_group()?;
                 let group = self.group.as_ref().ok_or(ClientError::NoGroup)?;
-                if !membership::has_pending_pi_removes(group, self.pi_index()) {
+                if !membership::has_pending_server_removes(group, self.server_index()) {
                     return Ok(Prepared::Nothing);
                 }
                 let staged = self.stage(CommitPlan::default())?;
@@ -704,7 +710,7 @@ impl Engine {
                 let Some((key_package, recipient)) = checked else {
                     return Ok(Prepared::Nothing);
                 };
-                // The Pi's pending Remove of an old leaf goes in by
+                // The server's pending Remove of an old leaf goes in by
                 // reference (the stage consumes the proposal store).
                 let staged = self.stage_in(
                     group_id,
@@ -715,12 +721,12 @@ impl Engine {
                 )?;
                 Ok(Prepared::Commit(staged, vec![recipient]))
             }
-            Job::CommitPiRemovesIn { group_id } => {
-                let pi = self.pi_index_in(group_id);
+            Job::CommitServerRemovesIn { group_id } => {
+                let server = self.server_index_in(group_id);
                 let Some(group) = self.dms.get(group_id) else {
                     return Ok(Prepared::Nothing);
                 };
-                if !membership::has_pending_pi_removes(group, pi) {
+                if !membership::has_pending_server_removes(group, server) {
                     return Ok(Prepared::Nothing);
                 }
                 let staged = self.stage_in(group_id, CommitPlan::default())?;
@@ -752,19 +758,19 @@ impl Engine {
         }
     }
 
-    fn pi_index_in(&self, group_id: &[u8]) -> Option<u32> {
+    fn server_index_in(&self, group_id: &[u8]) -> Option<u32> {
         self.group_ref(group_id)
-            .and_then(|g| mls_group::pi_sender_index(g.extensions(), &self.pi))
+            .and_then(|g| mls_group::pi_sender_index(g.extensions(), &self.server))
     }
 
     /// direct-messages: Opening a DM. The DM at epoch 0 with this device as
     /// its only member, then `Dms.CreateDm`. When the peer opened it first,
-    /// the Pi answers with theirs: this device drops its own and waits for
+    /// the server answers with theirs: this device drops its own and waits for
     /// the Welcome.
     async fn open_dm(&mut self, peer: &UserId) -> Result<(), ClientError> {
         if !self
             .shared
-            .pi_knows_dms
+            .server_knows_dms
             .load(std::sync::atomic::Ordering::Relaxed)
         {
             return Err(ClientError::DmsUnavailable);
@@ -785,7 +791,7 @@ impl Engine {
             &signer,
             self.credential(),
             group_id,
-            self.pi.clone(),
+            self.server.clone(),
             (&own, &other),
         )?;
         let group_info = group
@@ -830,10 +836,10 @@ impl Engine {
         Ok(())
     }
 
-    fn pi_index(&self) -> Option<u32> {
+    fn server_index(&self) -> Option<u32> {
         self.group
             .as_ref()
-            .and_then(|g| mls_group::pi_sender_index(g.extensions(), &self.pi))
+            .and_then(|g| mls_group::pi_sender_index(g.extensions(), &self.server))
     }
 
     fn require_admin(&self) -> Result<(), ClientError> {
@@ -871,7 +877,7 @@ impl Engine {
             &signer,
             self.credential(),
             group_id,
-            self.pi.clone(),
+            self.server.clone(),
             &admin,
         )?;
         let group_info = group
@@ -944,9 +950,9 @@ impl Engine {
         Ok(())
     }
 
-    /// group-membership: Re-add after an unusable Welcome. Asks the Pi with
+    /// group-membership: Re-add after an unusable Welcome. Asks the server with
     /// fresh KeyPackages, which replace the device's stored ones only if the
-    /// Pi answers `ASKED` (welcome-recovery design D2, D3).
+    /// Server answers `ASKED` (welcome-recovery design D2, D3).
     async fn request_readd(&mut self, refused_seq: u64, reason: &str) -> Result<(), ClientError> {
         if refused_seq == 0 && self.store().group()?.is_some() {
             // Joined since the ask was queued.
@@ -979,8 +985,8 @@ impl Engine {
             Err(status) => {
                 forget_unused(&store, &upload);
                 if status.code() == tonic::Code::Unimplemented {
-                    // A Pi from before welcome-recovery: wait as before.
-                    tracing::warn!("the Pi cannot re-add this device on request");
+                    // A server from before welcome-recovery: wait as before.
+                    tracing::warn!("the server cannot re-add this device on request");
                     return Ok(());
                 }
                 return Err(NetError::from(status).into());
@@ -1013,7 +1019,7 @@ impl Engine {
     }
 }
 
-/// Deletes the private keys of KeyPackages the Pi did not take.
+/// Deletes the private keys of KeyPackages the server did not take.
 fn forget_unused(store: &crate::store::Store, upload: &crate::keys::Upload) {
     let forgot = store.transaction(|| -> Result<(), EngineError> {
         for hash_ref in upload

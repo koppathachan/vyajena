@@ -1,5 +1,5 @@
 //! group-membership: Inactive devices are kept out; Automatic re-add, on the
-//! device, end to end against the real Pi (client-core task 5.3), with the
+//! device, end to end against the real server (client-core task 5.3), with the
 //! two owner decisions of task 6.4: a device re-added from a Welcome that
 //! names a reset user re-pins that user's key (key-directory: Clients verify
 //! the identity chain), and a message typed while removed goes out after the
@@ -13,34 +13,35 @@ use client::store::Store;
 use client::{ConnectionState, Event, MessageBody, SendStatus};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 const TEN_DAYS: Duration = Duration::from_secs(10 * 24 * 60 * 60);
 
-/// Stops `device` and waits until the Pi has seen its stream close, so its
+/// Stops `device` and waits until the server has seen its stream close, so its
 /// last-seen time is now and not after a clock jump.
-async fn go_offline(pi: &TestPi, device: &Device) {
+async fn go_offline(server: &TestServer, device: &Device) {
     device.client.stop();
-    pi.wait_offline_recorded(&device.device_id()).await;
+    server.wait_offline_recorded(&device.device_id()).await;
 }
 
-/// The one-time KeyPackages the Pi holds for `device`.
-async fn one_time(pi: &TestPi, device: &Device) -> i64 {
+/// The one-time KeyPackages the server holds for `device`.
+async fn one_time(server: &TestServer, device: &Device) -> i64 {
     let id = device.device_id();
-    pi.query(move |db| {
-        db.query_row(
-            "SELECT count(*) FROM key_packages WHERE device_id = ?1 AND last_resort = 0",
-            [id.as_slice()],
-            |row| row.get(0),
-        )
-    })
-    .await
+    server
+        .query(move |db| {
+            db.query_row(
+                "SELECT count(*) FROM key_packages WHERE device_id = ?1 AND last_resort = 0",
+                [id.as_slice()],
+                |row| row.get(0),
+            )
+        })
+        .await
 }
 
-/// Moves the Pi's clock and waits until `online` reconnected (the Pi's idle
+/// Moves the server's clock and waits until `online` reconnected (the server's idle
 /// timeout closes streams when its clock jumps).
-async fn advance_pi(pi: &TestPi, by: Duration, online: &mut [&mut Device]) {
-    pi.clock.advance(by);
+async fn advance_server(server: &TestServer, by: Duration, online: &mut [&mut Device]) {
+    server.clock.advance(by);
     for device in online.iter_mut() {
         device
             .wait_event("the stream to be closed", |e| {
@@ -56,15 +57,15 @@ async fn advance_pi(pi: &TestPi, by: Duration, online: &mut [&mut Device]) {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn back_from_holiday_the_admin_re_adds_the_phone_with_no_one_tapping() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     bob.wait_epoch(1).await;
-    go_offline(&pi, &bob).await;
+    go_offline(&server, &bob).await;
 
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin]).await;
-    pi.sweep().await;
-    // The admin commits the Pi's inactivity Remove.
+    advance_server(&server, TEN_DAYS, &mut [&mut admin]).await;
+    server.sweep().await;
+    // The admin commits the server's inactivity Remove.
     admin.wait_members(&[member(&admin)]).await;
     admin.wait_epoch(2).await;
 
@@ -78,7 +79,7 @@ async fn back_from_holiday_the_admin_re_adds_the_phone_with_no_one_tapping() {
     let Event::RemovedForInactivity { missed_since } = removed else {
         unreachable!()
     };
-    assert!(missed_since <= pi.now());
+    assert!(missed_since <= server.now());
     bob.wait_event("rejoined", |e| matches!(e, Event::Rejoined))
         .await;
     let both = [member(&admin), member(&bob)];
@@ -93,8 +94,8 @@ async fn back_from_holiday_the_admin_re_adds_the_phone_with_no_one_tapping() {
 // spec: key-directory/keypackage-fetch
 #[tokio::test(flavor = "multi_thread")]
 async fn two_devices_race_to_re_add_and_the_loser_does_nothing_more() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut phone = device::member_of_group(&admin, "bob").await;
     // Bob links a tablet; his phone adds it.
     let mut tablet = Device::new().await;
@@ -112,18 +113,18 @@ async fn two_devices_race_to_re_add_and_the_loser_does_nothing_more() {
     let all = [member(&admin), member(&phone), member(&tablet)];
     admin.wait_members(&all).await;
     admin.wait_epoch(2).await;
-    go_offline(&pi, &phone).await;
+    go_offline(&server, &phone).await;
 
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin, &mut tablet]).await;
-    pi.sweep().await;
+    advance_server(&server, TEN_DAYS, &mut [&mut admin, &mut tablet]).await;
+    server.sweep().await;
     let without_phone = [member(&admin), member(&tablet)];
     admin.wait_members(&without_phone).await;
     tablet.wait_members(&without_phone).await;
 
     // Both the tablet and the admin hear the phone is back and race. Each
     // fetches a KeyPackage for the phone only.
-    let tablet_before = one_time(&pi, &tablet).await;
-    let admin_before = one_time(&pi, &admin).await;
+    let tablet_before = one_time(&server, &tablet).await;
+    let admin_before = one_time(&server, &admin).await;
     phone.client.start().await.check("start phone");
     phone
         .wait_event("rejoined", |e| matches!(e, Event::Rejoined))
@@ -141,8 +142,8 @@ async fn two_devices_race_to_re_add_and_the_loser_does_nothing_more() {
             .await
     );
     assert_eq!(admin.epoch(), Some(epoch), "the loser committed again");
-    assert_eq!(one_time(&pi, &tablet).await, tablet_before);
-    assert_eq!(one_time(&pi, &admin).await, admin_before);
+    assert_eq!(one_time(&server, &tablet).await, tablet_before);
+    assert_eq!(one_time(&server, &admin).await, admin_before);
     for device in [&mut admin, &mut tablet, &mut phone] {
         assert!(
             !device
@@ -159,25 +160,25 @@ async fn two_devices_race_to_re_add_and_the_loser_does_nothing_more() {
 // spec: group-membership/inactive-devices-are-kept-out
 #[tokio::test(flavor = "multi_thread")]
 async fn nobody_able_to_re_add_is_online_so_the_phone_waits() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice.wait_epoch(2).await;
-    go_offline(&pi, &bob).await;
+    go_offline(&server, &bob).await;
 
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin, &mut alice]).await;
-    // The admin is offline when the Pi notices Bob is inactive...
-    go_offline(&pi, &admin).await;
-    pi.sweep().await;
-    // ... and commits the Pi's Remove when it next connects.
+    advance_server(&server, TEN_DAYS, &mut [&mut admin, &mut alice]).await;
+    // The admin is offline when the server notices Bob is inactive...
+    go_offline(&server, &admin).await;
+    server.sweep().await;
+    // ... and commits the server's Remove when it next connects.
     admin.client.start().await.check("start admin");
     admin.wait_members(&[member(&admin), member(&alice)]).await;
     alice.wait_members(&[member(&admin), member(&alice)]).await;
 
     // Bob comes back while the admin is away again: Alice cannot re-add
     // another user's device, so he waits.
-    go_offline(&pi, &admin).await;
+    go_offline(&server, &admin).await;
     bob.client.start().await.check("start bob");
     bob.wait_event("removed for inactivity", |e| {
         matches!(e, Event::RemovedForInactivity { .. })
@@ -202,16 +203,16 @@ async fn nobody_able_to_re_add_is_online_so_the_phone_waits() {
 // spec: group-membership/automatic-re-add
 #[tokio::test(flavor = "multi_thread")]
 async fn back_from_holiday_after_a_reset_the_laptop_joins_and_re_pins() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice.wait_epoch(2).await;
-    go_offline(&pi, &alice).await;
+    go_offline(&server, &alice).await;
 
-    // Ten days away: the admin commits the Pi's Remove of Alice's laptop.
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin, &mut bob]).await;
-    pi.sweep().await;
+    // Ten days away: the admin commits the server's Remove of Alice's laptop.
+    advance_server(&server, TEN_DAYS, &mut [&mut admin, &mut bob]).await;
+    server.sweep().await;
     admin.wait_members(&[member(&admin), member(&bob)]).await;
 
     // Meanwhile the admin resets Bob: his new phone has a new identity key.
@@ -293,17 +294,17 @@ async fn back_from_holiday_after_a_reset_the_laptop_joins_and_re_pins() {
 // spec: group-membership/automatic-re-add
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     bob.wait_epoch(1).await;
-    go_offline(&pi, &bob).await;
+    go_offline(&server, &bob).await;
 
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin]).await;
-    pi.sweep().await;
+    advance_server(&server, TEN_DAYS, &mut [&mut admin]).await;
+    server.sweep().await;
     admin.wait_members(&[member(&admin)]).await;
     // Nobody who can re-add Bob is online when he comes back.
-    go_offline(&pi, &admin).await;
+    go_offline(&server, &admin).await;
 
     bob.client.start().await.check("start bob");
     bob.wait_event("removed for inactivity", |e| {
@@ -347,7 +348,7 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
             |e| matches!(e, Event::Message(m) if m.body == MessageBody::Text("back".into())),
         )
         .await;
-    // The Pi accepted exactly one envelope with that msg_id from Bob's
+    // The server accepted exactly one envelope with that msg_id from Bob's
     // laptop: the one Bob's history shows as accepted. The admin, who has
     // only the new epoch's keys, read it.
     let accepted_at = bob
@@ -358,7 +359,7 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
         .accepted_at;
     assert!(accepted_at.is_some());
     let bob_device = bob.device_id();
-    let accepted: i64 = pi
+    let accepted: i64 = server
         .query(move |db| {
             db.query_row(
                 "SELECT count(*) FROM dedup WHERE sender_device_id = ?1 AND msg_id = ?2",
@@ -385,8 +386,8 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
 // spec: group-membership/automatic-re-add
 #[tokio::test(flavor = "multi_thread")]
 async fn inactivity_removes_and_re_adds_are_marked_automatic() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -394,13 +395,13 @@ async fn inactivity_removes_and_re_adds_are_marked_automatic() {
         device.wait_members(&everyone).await;
     }
     let bob_member = member(&bob);
-    go_offline(&pi, &bob).await;
+    go_offline(&server, &bob).await;
     // Skip the events so far.
     let _ = admin.sees_within_quiet(|_| false).await;
     let seen = (admin.events().len(), alice.events().len());
 
-    advance_pi(&pi, TEN_DAYS, &mut [&mut admin, &mut alice]).await;
-    pi.sweep().await;
+    advance_server(&server, TEN_DAYS, &mut [&mut admin, &mut alice]).await;
+    server.sweep().await;
     let without_bob = [member(&admin), member(&alice)];
     admin.wait_members(&without_bob).await;
     alice.wait_members(&without_bob).await;

@@ -2,7 +2,7 @@
 // runs while the app is in the foreground: it stops when the app goes to
 // the background and restarts on return, so it reconnects at once and
 // catches up in order instead of waiting out a reconnect backoff.
-// A closed app is woken by the Pi's "New message" notification (app-ui:
+// A closed app is woken by the server's "New message" notification (app-ui:
 // Push notifications): tapping it opens the app, which starts the core
 // here; opening the app removes the shown notifications.
 //

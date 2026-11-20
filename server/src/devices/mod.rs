@@ -1,5 +1,5 @@
-//! Devices service: server info, signup, challenge and authentication,
-//! linking, revocation and push tokens (pi-server-core tasks 4.1-4.3).
+//! Devices service: Server info, signup, challenge and authentication,
+//! linking, revocation and push tokens (server-core tasks 4.1-4.3).
 
 use std::time::SystemTime;
 

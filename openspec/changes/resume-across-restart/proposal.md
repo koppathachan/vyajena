@@ -15,11 +15,11 @@ while one engine keeps running.
   renews one, and load it on `start()`, so a reopen with a still-valid token
   opens `Connect` directly: two round trips (`GetServerInfo` + `Connect`)
   instead of four.
-- **Clear it on removal.** The core SHALL delete the saved token when the Pi
+- **Clear it on removal.** The core SHALL delete the saved token when the server
   says the device is revoked, and when a fresh signup or link request creates new
   device keys.
 - **Session tokens last 6 hours (was 1).** `SESSION_TOKEN_MAX_LIFETIME` becomes
-  `6 * 60 * 60`. The Pi issues tokens of that lifetime and the core's renewal
+  `6 * 60 * 60`. The server issues tokens of that lifetime and the core's renewal
   point (5 min before expiry) follows from it. Without this, a one-hour token
   rarely survives a day of background→reopen.
 - **No proto change.** The token is already a connection-independent bearer
@@ -52,8 +52,8 @@ while one engine keeps running.
   assertion for 6 h, `server/tests/session_authentication.rs`.
 - Docs: `docs/architecture-decisions.md` line on token lifetime.
 - No proto, no `pb.rs`, no bridge API, no Flutter change; the app picks it up on
-  its next build, the Pi on its next deploy (any order: old cores and new Pi, and
+  its next build, the server on its next deploy (any order: old cores and new server, and
   the reverse, still interoperate).
 - **Security:** a 6 h token is a longer theft window. It lives only in the key
-  store, and revoking the device deletes its sessions on the Pi, so a stolen
+  store, and revoking the device deletes its sessions on the server, so a stolen
   token dies with the device's removal (design D3).

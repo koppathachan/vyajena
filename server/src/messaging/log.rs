@@ -1,6 +1,6 @@
 //! The `sequence`, `envelopes`, `deliveries`, `cursors` and `dedup` tables
 //! (message-delivery: Per-device queues; Commit log; Acknowledgement;
-//! Idempotent sends; pi-server-core design D4).
+//! Idempotent sends; server-core design D4).
 //!
 //! One `envelopes` row per accepted envelope; one `deliveries` row per device
 //! that still has to receive it. A device's application queue is its

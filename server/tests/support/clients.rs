@@ -27,7 +27,7 @@ use super::pb;
 pub const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
 /// The server id of test servers.
-pub const SERVER_ID: &str = "pi";
+pub const SERVER_ID: &str = "chat";
 
 /// 32 random bytes.
 pub fn random32() -> [u8; 32] {
@@ -85,7 +85,7 @@ impl TestUser {
         }
     }
 
-    /// `<username>@pi`.
+    /// `<username>@chat`.
     pub fn user_id(&self) -> String {
         format!("{}@{SERVER_ID}", self.username)
     }
@@ -229,19 +229,19 @@ impl TestDevice {
     }
 
     /// Creates a DM as a version 2 core would, as [`TestDevice::group`]
-    /// (the current group moves to [`TestDevice::other`]): the Pi as external
+    /// (the current group moves to [`TestDevice::other`]): the server as external
     /// sender, the DM extension naming `users`, no admin. Returns the
     /// `CreateDmRequest` for `peer`.
     pub fn create_dm(
         &mut self,
         group_id: &[u8],
-        pi: &pb::ExternalSender,
+        server: &pb::ExternalSender,
         users: (&str, &str),
         peer: pb::UserId,
     ) -> pb::CreateDmRequest {
-        let pi = external_sender(pi);
+        let server = external_sender(server);
         let extensions = Extensions::from_vec(vec![
-            Extension::ExternalSenders(vec![pi]),
+            Extension::ExternalSenders(vec![server]),
             Extension::Unknown(
                 DM_EXTENSION_TYPE,
                 UnknownExtension(dm_extension_data(users.0, users.1)),
@@ -416,18 +416,18 @@ impl TestDevice {
             .check("UploadKeyPackages");
     }
 
-    /// Creates the group as the admin's device would: Pi as external sender,
+    /// Creates the group as the admin's device would: Server as external sender,
     /// the admin named in the group context, handshakes as PublicMessage.
     /// Returns the `CreateGroupRequest`.
     pub fn create_group(
         &mut self,
         group_id: &[u8],
-        pi: &pb::ExternalSender,
+        server: &pb::ExternalSender,
         admin_user_id: &str,
     ) -> pb::CreateGroupRequest {
-        let pi = external_sender(pi);
+        let server = external_sender(server);
         let extensions = Extensions::from_vec(vec![
-            Extension::ExternalSenders(vec![pi]),
+            Extension::ExternalSenders(vec![server]),
             Extension::Unknown(
                 ADMIN_EXTENSION_TYPE,
                 UnknownExtension(admin_extension_data(admin_user_id)),
@@ -581,7 +581,7 @@ impl TestDevice {
         wire(&commit)
     }
 
-    /// The Pi accepted the pending commit.
+    /// The server accepted the pending commit.
     pub fn confirm(&mut self) {
         let provider = &self.provider;
         let group = match &mut self.group {
@@ -593,7 +593,7 @@ impl TestDevice {
             .check("merge_pending_commit");
     }
 
-    /// The Pi rejected the pending commit.
+    /// The server rejected the pending commit.
     pub fn abort(&mut self) {
         let storage = self.provider.storage();
         let group = match &mut self.group {
@@ -682,12 +682,13 @@ impl TestDevice {
     }
 }
 
-/// The Pi's external sender entry from `ServerInfo`.
-pub fn external_sender(pi: &pb::ExternalSender) -> ExternalSender {
-    let credential = openmls::prelude::Credential::tls_deserialize_exact(pi.credential.as_slice())
-        .check("external sender credential");
+/// The server's external sender entry from `ServerInfo`.
+pub fn external_sender(server: &pb::ExternalSender) -> ExternalSender {
+    let credential =
+        openmls::prelude::Credential::tls_deserialize_exact(server.credential.as_slice())
+            .check("external sender credential");
     ExternalSender::new(
-        SignaturePublicKey::from(pi.signature_public_key.clone()),
+        SignaturePublicKey::from(server.signature_public_key.clone()),
         credential,
     )
 }

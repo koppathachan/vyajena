@@ -1,4 +1,4 @@
-//! device-identity on the device, end to end against the real Pi: signup,
+//! device-identity on the device, end to end against the real server: signup,
 //! keys in the key store, linking, revocation, push tokens, invites
 //! (client-core task 4.1).
 
@@ -9,15 +9,15 @@ use client::keystore::{KeyName, KeyStore};
 use client::{ClientError, Event, PushPlatform, PushToken};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 // spec: device-identity/signup-with-an-invite
 // spec: device-identity/user-identity-key-and-device-certificates
 // spec: device-identity/admin-owned-usernames
 #[tokio::test(flavor = "multi_thread")]
 async fn a_first_device_signs_up_with_an_invite() {
-    let pi = TestPi::start().await;
-    let admin = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin(&server).await;
     let invite = admin.client.create_invite("alice").await.check("invite");
     assert_eq!(invite.user, user("alice"));
 
@@ -29,14 +29,14 @@ async fn a_first_device_signs_up_with_an_invite() {
     assert_eq!(id, user("alice"));
     assert_eq!(alice.user(), user("alice"));
 
-    // The Pi holds her identity key and certificate.
+    // The server holds her identity key and certificate.
     let identity = alice
         .keys
         .get(KeyName::IdentityKey)
         .check("get")
         .check("identity key");
     let alice_id = alice.device_id();
-    let (stored_identity, uploaded): (Vec<u8>, i64) = pi
+    let (stored_identity, uploaded): (Vec<u8>, i64) = server
         .query(move |conn| {
             conn.query_row(
                 "SELECT u.identity_public_key,
@@ -69,8 +69,8 @@ async fn a_first_device_signs_up_with_an_invite() {
 // spec: client-runtime/key-storage
 #[tokio::test(flavor = "multi_thread")]
 async fn signup_keeps_the_keys_in_the_key_store_only() {
-    let pi = TestPi::start().await;
-    let admin = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin(&server).await;
     for name in [
         KeyName::IdentityKey,
         KeyName::DeviceAuthKey,
@@ -107,8 +107,8 @@ fn admin_database(device: &Device) -> std::path::PathBuf {
 // spec: device-identity/user-identity-key-and-device-certificates
 #[tokio::test(flavor = "multi_thread")]
 async fn a_new_device_is_linked_and_added_by_the_identity_device() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
 
     let mut laptop = Device::new().await;
     let request = laptop.client.link_request().await.check("link request");
@@ -140,10 +140,10 @@ async fn a_new_device_is_linked_and_added_by_the_identity_device() {
 
 // spec: device-identity/federation-ready-identifiers
 #[tokio::test(flavor = "multi_thread")]
-async fn a_device_computes_its_own_device_id_without_the_pi() {
+async fn a_device_computes_its_own_device_id_without_the_server() {
     use sha2::Digest as _;
 
-    // No Pi at all: the new device creates its keys and names itself. The
+    // No server at all: the new device creates its keys and names itself. The
     // link request carries the id, and decoding it checks that the id is
     // derived from the auth key.
     let laptop = Device::new().await;
@@ -167,8 +167,8 @@ async fn a_device_computes_its_own_device_id_without_the_pi() {
 // spec: device-identity/device-revocation
 #[tokio::test(flavor = "multi_thread")]
 async fn a_revoked_device_is_removed_and_cut_off() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut phone = Device::new().await;
     let request = phone.client.link_request().await.check("link request");
     let approval = admin.client.approve_link(&request).await.check("approve");
@@ -197,17 +197,17 @@ async fn a_revoked_device_is_removed_and_cut_off() {
             ))
             .await
     );
-    pi.wait_disconnected(&phone_id).await;
+    server.wait_disconnected(&phone_id).await;
 }
 
 // spec: device-identity/push-token-registration
 #[tokio::test(flavor = "multi_thread")]
 async fn a_device_sets_and_clears_its_push_token() {
-    let pi = TestPi::start().await;
-    let admin = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin(&server).await;
     let id = admin.device_id();
-    let token = |pi: &TestPi| {
-        let state = pi.state.clone();
+    let token = |server: &TestServer| {
+        let state = server.state.clone();
         async move {
             state
                 .store
@@ -224,16 +224,16 @@ async fn a_device_sets_and_clears_its_push_token() {
         }))
         .await
         .check("set");
-    assert_eq!(token(&pi).await.check("token").token, "fcm-1");
+    assert_eq!(token(&server).await.check("token").token, "fcm-1");
     admin.client.set_push_token(None).await.check("clear");
-    assert!(token(&pi).await.is_none());
+    assert!(token(&server).await.is_none());
 }
 
 // spec: device-identity/invites
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_lists_and_revokes_invites_and_others_cannot_invite() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let invite = admin.client.create_invite("carol").await.check("invite");
     let listed = admin.client.list_invites().await.check("list");
     assert!(listed.iter().any(|i| i.code == invite.code));

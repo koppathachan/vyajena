@@ -13,7 +13,7 @@
 //!
 //! The message store and OpenMLS share one connection, so
 //! [`Store::transaction`] makes "process an MLS message, store the result"
-//! atomic: the core acks to the Pi only after it commits (design D4).
+//! atomic: the core acks to the server only after it commits (design D4).
 //!
 //! The store is synchronous and quick; it is used from one task at a time.
 

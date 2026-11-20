@@ -9,7 +9,7 @@ use bridge::api::error::CoreErrorKind;
 use bridge::api::types::{ChatBody, ChatMessage, CoreEvent, MentionSpan, MentionTarget, SendState};
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 async fn wait_text(device: &mut Device, text: &str) -> ChatMessage {
     let event = device
@@ -36,8 +36,8 @@ async fn wait_accepted(device: &mut Device, id: i64) {
 // spec: app-ui/reply-to-a-message
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_mentions_bob_after_an_emoji_and_bob_replies() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice

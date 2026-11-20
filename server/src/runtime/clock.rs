@@ -1,4 +1,4 @@
-//! An injectable clock (pi-server-core design D7). Inactivity, expiry, challenge
+//! An injectable clock (server-core design D7). Inactivity, expiry, challenge
 //! lifetimes and heartbeats read the time from a [`Clock`], so tests can move
 //! time forward by a week without waiting.
 

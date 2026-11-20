@@ -1,6 +1,6 @@
 // Store screenshots (app-release: Store listing and icons; design D15). The
 // app runs on the FAKE core with sample users and text, never a real group or
-// a real Pi. Run with app/store/screenshots.sh <device id> <ios|android> on a
+// a real server. Run with app/store/screenshots.sh <device id> <ios|android> on a
 // throwaway simulator or emulator.
 import 'dart:io';
 

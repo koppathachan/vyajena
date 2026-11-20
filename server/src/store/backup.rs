@@ -1,6 +1,6 @@
-//! pi-deployment: Backup to the Mac. A consistent snapshot of the live
+//! server-deployment: Backup to the Mac. A consistent snapshot of the live
 //! database, taken with SQLite's online backup while the server keeps running
-//! (pi-deployment design D6), so the Pi needs no `sqlite3` tool.
+//! (server-deployment design D6), so the server needs no `sqlite3` tool.
 
 use std::fs::OpenOptions;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};

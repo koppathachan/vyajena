@@ -45,7 +45,7 @@ class _MembersScreenState extends State<MembersScreen> {
   List<MemberUser>? _members;
   String? _error;
 
-  /// Whether the Pi knows DMs: only then "Message" (app-ui: Open a DM).
+  /// Whether the server knows DMs: only then "Message" (app-ui: Open a DM).
   bool _dms = false;
   StreamSubscription<CoreEvent>? _subscription;
 

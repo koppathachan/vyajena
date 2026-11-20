@@ -1,11 +1,11 @@
 ## Context
 
 The relay (`vyajena-relay`, rathole 0.5.0, a native systemd unit; Docker is used
-only at build time) is in `us-east1-b`. The Pi and all users are in India.
+only at build time) is in `us-east1-b`. The server and all users are in India.
 Measured 2026-11-20 from India: TCP connect to `vyajarelay.purplechaamba.com:443`
 takes 0.25–0.32 s, every time. The round trip is the cost, not the relay's
 work. It is stateless: ciphertext passthrough, logs in RAM, no service
-account; TLS ends on the Pi.
+account; TLS ends on the server.
 
 ## Goals / Non-Goals
 
@@ -13,7 +13,7 @@ account; TLS ends on the Pi.
 on the owner's word only.
 
 **Non-Goals:** a bigger VM (e2-micro kept; e2-small is an option if CPU-burst TLS
-spikes persist), containerising the relay, any change to rathole, the Pi or the
+spikes persist), containerising the relay, any change to rathole, the server or the
 apps, tuning rathole's data-channel pool (a separate idea).
 
 ## Decisions
@@ -29,13 +29,13 @@ for a single e2-micro.
 
 | Thing | Effect |
 |---|---|
-| Pi TLS pin | Unchanged: TLS ends on the Pi, never on the relay |
+| Server TLS pin | Unchanged: TLS ends on the server, never on the relay |
 | Invites and devices | Unchanged: they name `vyajarelay.purplechaamba.com:443`, and a device resolves it on each connect |
 | Noise key pair, rathole token, SSH key | Reused from `~/.vyajena-relay/`; not region-bound |
 | Firewall rules, VPC | Global; they already exist, `create.sh` skips them |
 | Static IP | Regional: a new Mumbai address, same name `vyajena-relay` (names are unique per region) |
-| Subnet | A new `vyajena-relay` subnet in `asia-south1` with a **new range** `10.43.0.0/28`: the VPC is global and subnet ranges must not overlap while the old `10.42.0.0/28` exists |
-| Pi | `relay.env` `RELAY_IP` → new IP, tunnel unit and config redeployed; the Pi dials out to the new relay |
+| Subnet | A new `vyajena-relay` subnet in `asia-south1` with a **new range** (`SUBNET_RANGE` in `network.conf`): the VPC is global and subnet ranges must not overlap while the old exists |
+| Server | `relay.env` `RELAY_IP` → new IP, tunnel unit and config redeployed; the server dials out to the new relay |
 | Data | None to move |
 
 ### D3: Cost, runbook and rollback
@@ -51,15 +51,15 @@ sequenceDiagram
   participant M as Mac scripts
   participant New as Mumbai relay
   participant DNS as A record
-  participant Pi
+  participant server
   participant Old as us-east1 relay
   O->>M: create.sh --dry-run (reviews commands + cost)
   O->>M: yes, gcloud auth login
   M->>M: cp relay.env, known_hosts to *.old
   M->>New: create.sh (IP, subnet, VM), deploy.sh, check.sh
   O->>DNS: A record to the new IP
-  M->>Pi: deploy.sh --no-build (RELAY_IP = new)
-  Pi->>New: dials :2333, tunnel attached
+  M->>server: deploy.sh --no-build (RELAY_IP = new)
+  server->>New: dials :<tunnel-port>, tunnel attached
   Note over Old: stays up, no tunnel
   O->>M: after a day or two, yes
   M->>Old: delete VM, address, subnet
@@ -68,15 +68,15 @@ sequenceDiagram
 Order matters at the cut-over. Devices that still resolve the old IP reach a relay
 with no tunnel, so they fail and retry with backoff until the TTL passes; the
 window is the A record's TTL (lower it ahead). Devices that resolve the new IP
-before the Pi attaches fail the same way for the minutes between the DNS
-change and the Pi deploy, so the owner does the two back to back.
+before the server attaches fail the same way for the minutes between the DNS
+change and the server deploy, so the owner does the two back to back.
 
 **Rollback** (while the old VM exists): put the A record back to
-`104.196.102.174`; `cp relay.env.old relay.env; cp known_hosts.old known_hosts`
+the old relay IP (the owner has it); `cp relay.env.old relay.env; cp known_hosts.old known_hosts`
 (the scripts then talk to the old IP; the old VM's zone is `us-east1-b`, so use
 `ZONE=us-east1-b REGION=us-east1` from `git show` of the old `relay.conf` if a
-script must reach it); `deploy/pi/deploy.sh --no-build` re-renders the tunnel
-with the old IP. Nothing else changed on the Pi.
+script must reach it); `deploy/server/deploy.sh --no-build` re-renders the tunnel
+with the old IP. Nothing else changed on the server.
 
 **Delete the old relay** (only on the owner's yes, after devices have connected
 through Mumbai, and not before DNS has propagated):
@@ -101,7 +101,7 @@ is a size discipline, not a free-tier claim, and the message no longer says
 ### D5: What this change does not do
 
 It touches no real system. `relay.conf` is read by `deploy/relay/*.sh` and
-`deploy/pi/*.sh`, so the next `deploy/pi/deploy.sh` or `relay/check.sh` after
+`deploy/server/*.sh`, so the next `deploy/server/deploy.sh` or `relay/check.sh` after
 this lands on `main` already assumes Mumbai. **Do not run any of them until the
 owner has done the move (tasks 4.x), or the checks will look for a VM that does
 not exist yet.** Merge and run the move as one sitting.

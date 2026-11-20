@@ -1,17 +1,17 @@
 //! External tests for `protocol::group_membership` (public API only).
 //!
-//! Cast: the admin (`akhil@pi`, phone at leaf 0), Alice (`alice@pi`, phone at
-//! leaf 1, tablet at leaf 2) and Bob (`bob@pi`, phone at leaf 3).
+//! Cast: the admin (`akhil@chat`, phone at leaf 0), Alice (`alice@chat`, phone at
+//! leaf 1, tablet at leaf 2) and Bob (`bob@chat`, phone at leaf 3).
 
 use protocol::group_membership::{
     CommitAuthorityError, Committer, Proposal, ProposalKind, ProposalSender, Violation,
     check_commit_authority,
 };
 
-const ADMIN: &str = "akhil@pi";
-const ALICE: &str = "alice@pi";
-const BOB: &str = "bob@pi";
-const CAROL: &str = "carol@pi";
+const ADMIN: &str = "akhil@chat";
+const ALICE: &str = "alice@chat";
+const BOB: &str = "bob@chat";
+const CAROL: &str = "carol@chat";
 
 const ADMIN_PHONE: Committer<'static> = Committer {
     user: ADMIN,
@@ -47,9 +47,9 @@ fn remove(target_user: &str) -> ProposalKind<'_> {
     ProposalKind::Remove { target_user }
 }
 
-fn pi_remove(target_user: &str) -> Proposal<'_> {
+fn server_remove(target_user: &str) -> Proposal<'_> {
     Proposal {
-        sender: ProposalSender::Pi,
+        sender: ProposalSender::Server,
         kind: remove(target_user),
     }
 }
@@ -88,15 +88,15 @@ fn member_updates_their_own_leaf() {
 
 // spec: group-membership/commit-authority
 #[test]
-fn member_commits_a_pi_issued_remove_of_another_user() {
+fn member_commits_a_server_issued_remove_of_another_user() {
     // group-membership: Inactive devices are kept out. Any member may commit the
-    // Pi's external Remove, whoever it targets.
+    // server's external Remove, whoever it targets.
     assert_eq!(
-        check_commit_authority(&ALICE_PHONE, &[pi_remove(BOB)]),
+        check_commit_authority(&ALICE_PHONE, &[server_remove(BOB)]),
         Ok(())
     );
     assert_eq!(
-        check_commit_authority(&ALICE_PHONE, &[pi_remove(ADMIN)]),
+        check_commit_authority(&ALICE_PHONE, &[server_remove(ADMIN)]),
         Ok(())
     );
 }
@@ -105,13 +105,13 @@ fn member_commits_a_pi_issued_remove_of_another_user() {
 #[test]
 fn member_re_adds_their_own_returning_device() {
     // group-membership: Automatic re-add. Bob's tablet re-adds Bob's phone: the
-    // Pi's pending Remove of the old leaf plus an Add of the fresh KeyPackage.
+    // server's pending Remove of the old leaf plus an Add of the fresh KeyPackage.
     let bob_tablet = Committer {
         user: BOB,
         is_admin: false,
         leaf_index: 4,
     };
-    let proposals = [pi_remove(BOB), by_value(&bob_tablet, add(BOB))];
+    let proposals = [server_remove(BOB), by_value(&bob_tablet, add(BOB))];
     assert_eq!(check_commit_authority(&bob_tablet, &proposals), Ok(()));
 }
 
@@ -141,7 +141,7 @@ fn admin_commits_anything() {
         by_value(&ADMIN_PHONE, remove(BOB)),
         by_value(&ADMIN_PHONE, add(ALICE)),
         bob_update,
-        pi_remove(ALICE),
+        server_remove(ALICE),
         other_external,
         by_value(&ADMIN_PHONE, ProposalKind::Other { proposal_type: 7 }),
     ];
@@ -151,7 +151,7 @@ fn admin_commits_anything() {
 // spec: group-membership/commit-authority
 #[test]
 fn admin_re_adds_another_users_device() {
-    let proposals = [pi_remove(BOB), by_value(&ADMIN_PHONE, add(BOB))];
+    let proposals = [server_remove(BOB), by_value(&ADMIN_PHONE, add(BOB))];
     assert_eq!(check_commit_authority(&ADMIN_PHONE, &proposals), Ok(()));
 }
 
@@ -183,7 +183,7 @@ fn member_removes_someone_else() {
 #[test]
 fn member_commits_another_members_remove_proposal_of_someone_else() {
     // Bob proposed removing one of Alice's devices; Bob commits it himself: not
-    // his user. Only Removes the Pi issued are exempt.
+    // his user. Only Removes the server issued are exempt.
     let proposal = Proposal {
         sender: ProposalSender::Member { leaf_index: 0 },
         kind: remove(ALICE),
@@ -250,14 +250,14 @@ fn member_commits_a_remove_from_another_external_sender() {
 
 // spec: group-membership/commit-authority
 #[test]
-fn pi_issued_proposals_other_than_remove_are_not_exempt() {
+fn server_issued_proposals_other_than_remove_are_not_exempt() {
     for kind in [
         add(BOB),
         ProposalKind::Update,
         ProposalKind::Other { proposal_type: 7 },
     ] {
         let proposal = Proposal {
-            sender: ProposalSender::Pi,
+            sender: ProposalSender::Server,
             kind,
         };
         assert_eq!(
@@ -271,14 +271,14 @@ fn pi_issued_proposals_other_than_remove_are_not_exempt() {
 // spec: group-membership/commit-authority
 #[test]
 fn one_bad_proposal_rejects_the_whole_commit() {
-    // Carol re-adds Bob's phone: the Pi's Remove is fine, the Add for Bob is not.
+    // Carol re-adds Bob's phone: the server's Remove is fine, the Add for Bob is not.
     let carol_phone = Committer {
         user: CAROL,
         is_admin: false,
         leaf_index: 5,
     };
     let proposals = [
-        pi_remove(BOB),
+        server_remove(BOB),
         by_value(&carol_phone, ProposalKind::Update),
         by_value(&carol_phone, add(BOB)),
     ];
@@ -291,8 +291,8 @@ fn one_bad_proposal_rejects_the_whole_commit() {
 // spec: group-membership/commit-authority
 #[test]
 fn user_ids_compare_exactly() {
-    // `alice@pi` and `alice@pi2` or `Alice@pi` are different users.
-    for other in ["alice@pi2", "Alice@pi", "alice"] {
+    // `alice@chat` and `alice@pi2` or `Alice@chat` are different users.
+    for other in ["alice@pi2", "Alice@chat", "alice"] {
         let proposals = [by_value(&ALICE_PHONE, add(other))];
         assert_eq!(
             check_commit_authority(&ALICE_PHONE, &proposals),
@@ -308,7 +308,7 @@ fn admin_extension_is_private_use_and_holds_the_user_id() {
     use protocol::group_membership::{ADMIN_EXTENSION_TYPE, admin_extension_data};
     // RFC 9420 section 17.3: 0xF000-0xFFFF is reserved for private use.
     const { assert!(ADMIN_EXTENSION_TYPE >= 0xF000) };
-    assert_eq!(admin_extension_data("akhil@pi"), b"akhil@pi".to_vec());
+    assert_eq!(admin_extension_data("akhil@chat"), b"akhil@chat".to_vec());
 }
 
 // spec: group-membership/own-leaf-rotation

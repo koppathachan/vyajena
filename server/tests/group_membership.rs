@@ -1,10 +1,10 @@
-//! group-membership: Device-level membership (the Pi's mirror of the client
-//! check); Group creation; Commit authority; Pi validates handshakes without
-//! group secrets; Removing a user; Membership state on the Pi.
+//! group-membership: Device-level membership (the server's mirror of the client
+//! check); Group creation; Commit authority; server validates handshakes without
+//! group secrets; Removing a user; Membership state on the server.
 //!
 //! `Admin.CreateGroup` and `Admin.RemoveUser` run over gRPC. The commit checks
 //! run through `server::membership::GroupState` on the store's writer, as the
-//! messaging write path (pi-server-core task 7.3) will call them.
+//! messaging write path (server-core task 7.3) will call them.
 
 mod support;
 
@@ -14,8 +14,8 @@ use openmls_basic_credential::SignatureKeyPair;
 use server::auth::Caller;
 use server::membership::{AcceptedCommit, GroupState, HandshakeRejection};
 use support::clients::{CIPHERSUITE, TestDevice, TestUser};
-use support::harness::{Conn, TestPi, authed};
-use support::{Check, bootstrap_admin, invite_user, link_device, pb, pi_external_sender};
+use support::harness::{Conn, TestServer, authed};
+use support::{Check, bootstrap_admin, invite_user, link_device, pb, server_external_sender};
 use tonic::Code;
 
 const GROUP_ID: &[u8] = b"the-one-group";
@@ -24,27 +24,28 @@ fn caller(device: &TestDevice) -> Caller {
     Caller {
         device_id: device.device_id,
         username: device.username.clone(),
-        user_id: format!("{}@pi", device.username),
+        user_id: format!("{}@chat", device.username),
         is_admin: device.username == "akhil",
     }
 }
 
-/// Runs a commit through the Pi's checks and, if accepted, saves the new state.
+/// Runs a commit through the server's checks and, if accepted, saves the new state.
 async fn submit(
-    pi: &TestPi,
+    server: &TestServer,
     device: &TestDevice,
     commit: &[u8],
 ) -> Result<AcceptedCommit, HandshakeRejection> {
     let caller = caller(device);
     let commit = commit.to_vec();
-    pi.state
+    server
+        .state
         .store
         .call(move |conn| {
             let tx = conn.transaction()?;
             let Some(mut group) = GroupState::load_main(&tx)? else {
                 panic!("no group");
             };
-            let result = group.check_commit(&tx, &caller, "pi", &commit)?;
+            let result = group.check_commit(&tx, &caller, "server", &commit)?;
             if result.is_ok() {
                 group.save(&tx)?;
                 tx.commit()?;
@@ -55,15 +56,16 @@ async fn submit(
         .check("store")
 }
 
-/// Runs a proposal through the Pi's checks and saves it.
+/// Runs a proposal through the server's checks and saves it.
 async fn submit_proposal(
-    pi: &TestPi,
+    server: &TestServer,
     device: &TestDevice,
     proposal: &[u8],
 ) -> Result<(), HandshakeRejection> {
     let caller = caller(device);
     let proposal = proposal.to_vec();
-    pi.state
+    server
+        .state
         .store
         .call(move |conn| {
             let tx = conn.transaction()?;
@@ -81,9 +83,10 @@ async fn submit_proposal(
         .check("store")
 }
 
-/// The Pi's ratchet tree, TLS-serialized.
-async fn pi_tree(pi: &TestPi) -> Vec<u8> {
-    pi.state
+/// The server's ratchet tree, TLS-serialized.
+async fn server_tree(server: &TestServer) -> Vec<u8> {
+    server
+        .state
         .store
         .call(|conn| {
             let group = GroupState::load_main(conn)?.check("group");
@@ -99,15 +102,15 @@ async fn pi_tree(pi: &TestPi) -> Vec<u8> {
 
 /// The admin's device creates the group over gRPC.
 async fn create_group(conn: &Conn, admin: &mut TestDevice) {
-    let pi_sender = pi_external_sender(conn).await;
-    let request = admin.create_group(GROUP_ID, &pi_sender, "akhil@pi");
+    let server_sender = server_external_sender(conn).await;
+    let request = admin.create_group(GROUP_ID, &server_sender, "akhil@chat");
     conn.admin()
         .create_group(authed(admin.token(), request))
         .await
         .check("CreateGroup");
 }
 
-/// A fresh one-time KeyPackage of each of `user`'s devices, via the Pi.
+/// A fresh one-time KeyPackage of each of `user`'s devices, via the server.
 async fn fetch_all(conn: &Conn, caller: &TestDevice, user: &TestUser) -> Vec<Vec<u8>> {
     conn.keys()
         .fetch_key_packages(authed(
@@ -127,7 +130,7 @@ async fn fetch_all(conn: &Conn, caller: &TestDevice, user: &TestUser) -> Vec<Vec
         .collect()
 }
 
-/// A fresh KeyPackage of one of `user`'s devices, via the Pi.
+/// A fresh KeyPackage of one of `user`'s devices, via the server.
 async fn fetch_for(
     conn: &Conn,
     caller: &TestDevice,
@@ -152,17 +155,17 @@ async fn fetch_for(
         .collect()
 }
 
-/// `committer` adds the given KeyPackages; the Pi accepts; everyone in
+/// `committer` adds the given KeyPackages; the server accepts; everyone in
 /// `others` processes the commit and the new devices join.
 async fn add_accepted(
-    pi: &TestPi,
+    server: &TestServer,
     committer: &mut TestDevice,
     key_packages: &[Vec<u8>],
     others: &mut [&mut TestDevice],
     joiners: &mut [&mut TestDevice],
 ) -> AcceptedCommit {
     let (commit, welcome) = committer.add(key_packages);
-    let accepted = submit(pi, committer, &commit)
+    let accepted = submit(server, committer, &commit)
         .await
         .check("commit accepted");
     committer.confirm();
@@ -177,7 +180,7 @@ async fn add_accepted(
 
 /// Admin + group + Alice (laptop) in the group.
 struct Setup {
-    pi: TestPi,
+    server: TestServer,
     conn: Conn,
     admin: TestDevice,
     alice: TestUser,
@@ -185,16 +188,23 @@ struct Setup {
 }
 
 async fn setup() -> Setup {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, mut admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, mut admin) = bootstrap_admin(&server, &conn).await;
     create_group(&conn, &mut admin).await;
     let (alice, mut laptop) = invite_user(&conn, &admin, "alice").await;
     laptop.upload_key_packages(&conn, 3).await;
     let key_packages = fetch_all(&conn, &admin, &alice).await;
-    add_accepted(&pi, &mut admin, &key_packages, &mut [], &mut [&mut laptop]).await;
+    add_accepted(
+        &server,
+        &mut admin,
+        &key_packages,
+        &mut [],
+        &mut [&mut laptop],
+    )
+    .await;
     Setup {
-        pi,
+        server,
         conn,
         admin,
         alice,
@@ -206,7 +216,7 @@ async fn setup() -> Setup {
 #[tokio::test]
 async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         alice,
@@ -214,7 +224,7 @@ async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
     } = setup().await;
     let mut tablet = link_device(&conn, &alice, &laptop).await;
 
-    // Clients reject this commit; the Pi refuses to sequence it too (D10).
+    // Clients reject this commit; the server refuses to sequence it too (D10).
     let other = SignatureKeyPair::new(CIPHERSUITE.signature_algorithm()).check("key");
     let swapped = tablet.key_package_signed_by(
         CIPHERSUITE,
@@ -225,7 +235,7 @@ async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
         },
     );
     let (commit, _) = admin.add(&[swapped]);
-    let result = submit(&pi, &admin, &commit).await;
+    let result = submit(&server, &admin, &commit).await;
     assert!(
         matches!(result, Err(HandshakeRejection::PolicyViolation(_))),
         "{result:?}"
@@ -236,7 +246,7 @@ async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
     // member through it as well as through her laptop.
     let genuine = tablet.key_package();
     let accepted = add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &[genuine],
         &mut [&mut laptop],
@@ -250,12 +260,12 @@ async fn genuine_certificate_on_the_wrong_key_is_a_policy_violation() {
 // spec: group-membership/group-creation
 #[tokio::test]
 async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, mut admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, mut admin) = bootstrap_admin(&server, &conn).await;
     create_group(&conn, &mut admin).await;
 
-    let (group_id, epoch): (Vec<u8>, i64) = pi
+    let (group_id, epoch): (Vec<u8>, i64) = server
         .query(|db| {
             db.query_row("SELECT group_id, epoch FROM mls_groups", [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
@@ -264,7 +274,7 @@ async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
         .await;
     assert_eq!(group_id, GROUP_ID);
     assert_eq!(epoch, 0);
-    let members = pi
+    let members = server
         .state
         .store
         .call(|db| GroupState::main_members(db))
@@ -274,7 +284,7 @@ async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
     assert_eq!(members[0].device_id, admin.device_id);
     assert_eq!(members[0].leaf_index, 0);
     assert_eq!(
-        pi_tree(&pi).await,
+        server_tree(&server).await,
         admin
             .group()
             .export_ratchet_tree()
@@ -286,12 +296,12 @@ async fn admin_creates_the_group_at_epoch_0_as_its_only_member() {
 // spec: group-membership/group-creation
 #[tokio::test]
 async fn second_group_is_already_exists() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, mut admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, mut admin) = bootstrap_admin(&server, &conn).await;
     create_group(&conn, &mut admin).await;
-    let pi_sender = pi_external_sender(&conn).await;
-    let request = admin.create_group(b"another-group", &pi_sender, "akhil@pi");
+    let server_sender = server_external_sender(&conn).await;
+    let request = admin.create_group(b"another-group", &server_sender, "akhil@chat");
     let result = conn
         .admin()
         .create_group(authed(admin.token(), request))
@@ -301,11 +311,11 @@ async fn second_group_is_already_exists() {
 
 // spec: group-membership/group-creation
 #[tokio::test]
-async fn group_must_list_the_pi_name_the_admin_and_match_its_id() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, mut admin) = bootstrap_admin(&pi, &conn).await;
-    let pi_sender = pi_external_sender(&conn).await;
+async fn group_must_list_the_server_name_the_admin_and_match_its_id() {
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, mut admin) = bootstrap_admin(&server, &conn).await;
+    let server_sender = server_external_sender(&conn).await;
     let invalid = |request: pb::CreateGroupRequest, token: String| {
         let mut client = conn.admin();
         async move {
@@ -315,37 +325,37 @@ async fn group_must_list_the_pi_name_the_admin_and_match_its_id() {
     };
     let token = admin.token().to_owned();
 
-    // Another external sender instead of the Pi.
-    let mut stranger = pi_sender.clone();
+    // Another external sender instead of the server.
+    let mut stranger = server_sender.clone();
     stranger.signature_public_key = support::clients::new_key()
         .verifying_key()
         .to_bytes()
         .to_vec();
     invalid(
-        admin.create_group(b"g1", &stranger, "akhil@pi"),
+        admin.create_group(b"g1", &stranger, "akhil@chat"),
         token.clone(),
     )
     .await;
 
     // Naming someone else as admin.
     invalid(
-        admin.create_group(b"g2", &pi_sender, "alice@pi"),
+        admin.create_group(b"g2", &server_sender, "alice@chat"),
         token.clone(),
     )
     .await;
 
     // group_id that does not match the GroupInfo.
-    let mut request = admin.create_group(b"g3", &pi_sender, "akhil@pi");
+    let mut request = admin.create_group(b"g3", &server_sender, "akhil@chat");
     request.group_id = b"other".to_vec();
     invalid(request, token.clone()).await;
 
     // Garbage.
-    let mut request = admin.create_group(b"g4", &pi_sender, "akhil@pi");
+    let mut request = admin.create_group(b"g4", &server_sender, "akhil@chat");
     request.ratchet_tree.truncate(10);
     invalid(request, token.clone()).await;
     invalid(pb::CreateGroupRequest::default(), token.clone()).await;
 
-    let groups: i64 = pi
+    let groups: i64 = server
         .query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
         .await;
     assert_eq!(groups, 0);
@@ -354,13 +364,13 @@ async fn group_must_list_the_pi_name_the_admin_and_match_its_id() {
 // spec: group-membership/group-creation
 #[tokio::test]
 async fn only_an_admin_device_creates_the_group_and_must_be_its_member() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (admin_user, mut admin) = bootstrap_admin(&pi, &conn).await;
-    let pi_sender = pi_external_sender(&conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (admin_user, mut admin) = bootstrap_admin(&server, &conn).await;
+    let server_sender = server_external_sender(&conn).await;
     let (_, mut alice) = invite_user(&conn, &admin, "alice").await;
 
-    let request = alice.create_group(GROUP_ID, &pi_sender, "akhil@pi");
+    let request = alice.create_group(GROUP_ID, &server_sender, "akhil@chat");
     let result = conn
         .admin()
         .create_group(authed(alice.token(), request))
@@ -369,7 +379,7 @@ async fn only_an_admin_device_creates_the_group_and_must_be_its_member() {
 
     // The admin's tablet uploads a group whose member is the admin's phone.
     let tablet = link_device(&conn, &admin_user, &admin).await;
-    let request = admin.create_group(GROUP_ID, &pi_sender, "akhil@pi");
+    let request = admin.create_group(GROUP_ID, &server_sender, "akhil@chat");
     let result = conn
         .admin()
         .create_group(authed(tablet.token(), request))
@@ -381,7 +391,7 @@ async fn only_an_admin_device_creates_the_group_and_must_be_its_member() {
 #[tokio::test]
 async fn admin_adds_all_of_carols_devices_in_one_commit() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -395,7 +405,7 @@ async fn admin_adds_all_of_carols_devices_in_one_commit() {
     assert_eq!(key_packages.len(), 2);
 
     let accepted = add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -408,8 +418,8 @@ async fn admin_adds_all_of_carols_devices_in_one_commit() {
     expected.sort();
     assert_eq!(added, expected, "the Welcome must be for exactly these");
     assert_eq!((accepted.from_epoch, accepted.epoch), (1, 2));
-    // Everyone, the Pi included, has the same tree.
-    let tree = pi_tree(&pi).await;
+    // Everyone, the server included, has the same tree.
+    let tree = server_tree(&server).await;
     for device in [&admin, &laptop, &phone, &tablet] {
         assert_eq!(
             device
@@ -426,7 +436,7 @@ async fn admin_adds_all_of_carols_devices_in_one_commit() {
 #[tokio::test]
 async fn member_links_their_own_device() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         alice,
@@ -436,7 +446,7 @@ async fn member_links_their_own_device() {
     tablet.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_for(&conn, &laptop, &alice, &tablet).await;
     let accepted = add_accepted(
-        &pi,
+        &server,
         &mut laptop,
         &key_packages,
         &mut [&mut admin],
@@ -452,7 +462,7 @@ async fn member_links_their_own_device() {
 #[tokio::test]
 async fn member_adding_someone_else_is_a_policy_violation() {
     let Setup {
-        pi,
+        server,
         conn,
         admin,
         mut laptop,
@@ -462,7 +472,7 @@ async fn member_adding_someone_else_is_a_policy_violation() {
     bobs_phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_all(&conn, &laptop, &bob).await;
     let (commit, _welcome) = laptop.add(&key_packages);
-    let result = submit(&pi, &laptop, &commit).await;
+    let result = submit(&server, &laptop, &commit).await;
     assert!(
         matches!(&result, Err(HandshakeRejection::PolicyViolation(why)) if why.contains("AddForAnotherUser")),
         "{result:?}"
@@ -478,7 +488,7 @@ async fn member_adding_someone_else_is_a_policy_violation() {
 #[tokio::test]
 async fn member_removing_someone_else_is_a_policy_violation() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -488,7 +498,7 @@ async fn member_removing_someone_else_is_a_policy_violation() {
     bobs_phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_all(&conn, &admin, &bob).await;
     add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -497,7 +507,7 @@ async fn member_removing_someone_else_is_a_policy_violation() {
     .await;
 
     let commit = laptop.remove(&[bobs_phone.leaf()]);
-    let result = submit(&pi, &laptop, &commit).await;
+    let result = submit(&server, &laptop, &commit).await;
     assert!(
         matches!(&result, Err(HandshakeRejection::PolicyViolation(why)) if why.contains("RemoveOfAnotherUser")),
         "{result:?}"
@@ -508,7 +518,7 @@ async fn member_removing_someone_else_is_a_policy_violation() {
 #[tokio::test]
 async fn member_removes_their_own_device_and_updates_their_own_leaf() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         alice,
@@ -518,7 +528,7 @@ async fn member_removes_their_own_device_and_updates_their_own_leaf() {
     phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_for(&conn, &laptop, &alice, &phone).await;
     add_accepted(
-        &pi,
+        &server,
         &mut laptop,
         &key_packages,
         &mut [&mut admin],
@@ -527,13 +537,15 @@ async fn member_removes_their_own_device_and_updates_their_own_leaf() {
     .await;
 
     let update = laptop.self_update();
-    submit(&pi, &laptop, &update).await.check("own leaf update");
+    submit(&server, &laptop, &update)
+        .await
+        .check("own leaf update");
     laptop.confirm();
     admin.receive_commit(&update);
     phone.receive_commit(&update);
 
     let remove = laptop.remove(&[phone.leaf()]);
-    let accepted = submit(&pi, &laptop, &remove)
+    let accepted = submit(&server, &laptop, &remove)
         .await
         .check("own device removed");
     assert_eq!(accepted.removed.len(), 1);
@@ -541,7 +553,7 @@ async fn member_removes_their_own_device_and_updates_their_own_leaf() {
     laptop.confirm();
     admin.receive_commit(&remove);
     assert_eq!(
-        pi_tree(&pi).await,
+        server_tree(&server).await,
         admin
             .group()
             .export_ratchet_tree()
@@ -553,22 +565,24 @@ async fn member_removes_their_own_device_and_updates_their_own_leaf() {
 // spec: group-membership/commit-authority
 #[tokio::test]
 async fn add_of_an_unregistered_device_is_a_policy_violation() {
-    let Setup { pi, mut admin, .. } = setup().await;
-    // A device the Pi has never seen, with a self-made identity.
+    let Setup {
+        server, mut admin, ..
+    } = setup().await;
+    // A device the server has never seen, with a self-made identity.
     let ghost = TestUser::new("ghost").new_device();
     let (commit, _) = admin.add(&[ghost.key_package()]);
-    let result = submit(&pi, &admin, &commit).await;
+    let result = submit(&server, &admin, &commit).await;
     assert!(
         matches!(result, Err(HandshakeRejection::PolicyViolation(_))),
         "{result:?}"
     );
 }
 
-// spec: group-membership/pi-validates-handshakes-without-group-secrets
+// spec: group-membership/server-validates-handshakes-without-group-secrets
 #[tokio::test]
 async fn commit_signed_by_another_leaf_is_a_policy_violation() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -578,7 +592,7 @@ async fn commit_signed_by_another_leaf_is_a_policy_violation() {
     bobs_phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_all(&conn, &admin, &bob).await;
     add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -588,38 +602,42 @@ async fn commit_signed_by_another_leaf_is_a_policy_violation() {
 
     // Alice's laptop made this commit; Bob's phone sends it.
     let update = laptop.self_update();
-    let result = submit(&pi, &bobs_phone, &update).await;
+    let result = submit(&server, &bobs_phone, &update).await;
     assert!(
         matches!(&result, Err(HandshakeRejection::PolicyViolation(why)) if why.contains("sender leaf")),
         "{result:?}"
     );
     // The genuine sender is still accepted.
-    submit(&pi, &laptop, &update).await.check("own commit");
+    submit(&server, &laptop, &update).await.check("own commit");
 }
 
-// spec: group-membership/pi-validates-handshakes-without-group-secrets
+// spec: group-membership/server-validates-handshakes-without-group-secrets
 #[tokio::test]
 async fn commit_with_a_bad_signature_is_a_policy_violation() {
-    let Setup { pi, mut laptop, .. } = setup().await;
+    let Setup {
+        server, mut laptop, ..
+    } = setup().await;
     let update = laptop.self_update();
     // PublicMessage commit from a member ends with the signature (64 bytes),
     // then the confirmation tag and the membership tag (1 + 32 bytes each).
     let mut forged = update.clone();
     let last_signature_byte = forged.len() - 2 * 33 - 1;
     forged[last_signature_byte] ^= 0x01;
-    let result = submit(&pi, &laptop, &forged).await;
+    let result = submit(&server, &laptop, &forged).await;
     assert!(
         matches!(&result, Err(HandshakeRejection::PolicyViolation(why)) if why.contains("signature")),
         "{result:?}"
     );
-    submit(&pi, &laptop, &update).await.check("unforged commit");
+    submit(&server, &laptop, &update)
+        .await
+        .check("unforged commit");
 }
 
-// spec: group-membership/pi-validates-handshakes-without-group-secrets
+// spec: group-membership/server-validates-handshakes-without-group-secrets
 #[tokio::test]
 async fn non_member_stale_and_malformed_commits_are_rejected() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -628,13 +646,13 @@ async fn non_member_stale_and_malformed_commits_are_rejected() {
     // A registered device that is not in the group.
     let (_, outsider) = invite_user(&conn, &admin, "bob").await;
     let update = laptop.self_update();
-    let result = submit(&pi, &outsider, &update).await;
+    let result = submit(&server, &outsider, &update).await;
     assert!(
         matches!(result, Err(HandshakeRejection::PolicyViolation(_))),
         "{result:?}"
     );
 
-    let result = submit(&pi, &laptop, b"not MLS").await;
+    let result = submit(&server, &laptop, b"not MLS").await;
     assert!(
         matches!(result, Err(HandshakeRejection::Malformed(_))),
         "{result:?}"
@@ -643,8 +661,10 @@ async fn non_member_stale_and_malformed_commits_are_rejected() {
     // The laptop's update is accepted; the admin's commit from the old epoch
     // is then stale.
     let admins = admin.self_update();
-    submit(&pi, &laptop, &update).await.check("laptop update");
-    let result = submit(&pi, &admin, &admins).await;
+    submit(&server, &laptop, &update)
+        .await
+        .check("laptop update");
+    let result = submit(&server, &admin, &admins).await;
     assert_eq!(
         result,
         Err(HandshakeRejection::StaleEpoch {
@@ -655,11 +675,11 @@ async fn non_member_stale_and_malformed_commits_are_rejected() {
     assert_eq!(result.err().and_then(|r| r.current_epoch()), Some(2));
 }
 
-// spec: group-membership/pi-validates-handshakes-without-group-secrets
+// spec: group-membership/server-validates-handshakes-without-group-secrets
 #[tokio::test]
 async fn proposals_are_kept_for_a_later_commit_by_reference() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         alice,
@@ -669,7 +689,7 @@ async fn proposals_are_kept_for_a_later_commit_by_reference() {
     phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_for(&conn, &laptop, &alice, &phone).await;
     add_accepted(
-        &pi,
+        &server,
         &mut laptop,
         &key_packages,
         &mut [&mut admin],
@@ -679,12 +699,12 @@ async fn proposals_are_kept_for_a_later_commit_by_reference() {
 
     // The laptop proposes removing the phone; the admin commits it by reference.
     let proposal = laptop.propose_remove(phone.leaf());
-    submit_proposal(&pi, &laptop, &proposal)
+    submit_proposal(&server, &laptop, &proposal)
         .await
         .check("proposal");
     admin.receive_proposal(&proposal);
     let commit = admin.commit_pending();
-    let accepted = submit(&pi, &admin, &commit)
+    let accepted = submit(&server, &admin, &commit)
         .await
         .check("commit by reference");
     assert_eq!(accepted.removed.len(), 1);
@@ -695,7 +715,7 @@ async fn proposals_are_kept_for_a_later_commit_by_reference() {
 #[tokio::test]
 async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -707,7 +727,7 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
     tablet.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_all(&conn, &admin, &bob).await;
     add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -717,11 +737,11 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
 
     // The admin commits Removes of all of Bob's devices, then calls RemoveUser.
     let commit = admin.remove(&[phone.leaf(), tablet.leaf()]);
-    submit(&pi, &admin, &commit)
+    submit(&server, &admin, &commit)
         .await
         .check("remove Bob's devices");
     admin.confirm();
-    let mut revocations = pi.state.revocations.subscribe();
+    let mut revocations = server.state.revocations.subscribe();
     conn.admin()
         .remove_user(authed(
             admin.token(),
@@ -751,7 +771,7 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
     expected.sort();
     assert_eq!(closed, expected);
 
-    let members = pi
+    let members = server
         .state
         .store
         .call(|db| GroupState::main_members(db))
@@ -764,7 +784,7 @@ async fn removed_user_fails_authentication_and_is_no_longer_a_member() {
 #[tokio::test]
 async fn admin_resets_a_user_who_lost_their_identity_device() {
     let Setup {
-        pi,
+        server,
         conn,
         mut admin,
         mut laptop,
@@ -774,7 +794,7 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
     old_phone.upload_key_packages(&conn, 1).await;
     let key_packages = fetch_all(&conn, &admin, &old_bob).await;
     add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -782,9 +802,9 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
     )
     .await;
 
-    // Bob lost his phone: the admin removes him from the group and the Pi.
+    // Bob lost his phone: the admin removes him from the group and the server.
     let commit = admin.remove(&[old_phone.leaf()]);
-    submit(&pi, &admin, &commit)
+    submit(&server, &admin, &commit)
         .await
         .check("remove Bob's phone");
     admin.confirm();
@@ -799,12 +819,12 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
         .await
         .check("RemoveUser");
 
-    // The username is free again: the Pi issues a new invite for bob@pi.
+    // The username is free again: the server issues a new invite for bob@chat.
     let invite = support::create_invite(&conn, &admin, "bob").await;
     let invite = invite.invite.check("invite");
     assert_eq!(invite.user_id.check("user id").username, "bob");
 
-    // Bob's new phone registers as bob@pi with a new identity key.
+    // Bob's new phone registers as bob@chat with a new identity key.
     let new_bob = TestUser::new("bob");
     assert_ne!(new_bob.identity_public_key(), old_bob.identity_public_key());
     let mut new_phone = new_bob.new_device();
@@ -838,7 +858,7 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
     // The admin adds the new phone back into the group.
     let key_packages: Vec<_> = fetched.devices.into_iter().map(|d| d.key_package).collect();
     let accepted = add_accepted(
-        &pi,
+        &server,
         &mut admin,
         &key_packages,
         &mut [&mut laptop],
@@ -865,7 +885,7 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
 #[tokio::test]
 async fn only_the_admin_removes_users_and_not_the_admin() {
     let Setup {
-        pi: _pi,
+        server: _server,
         conn,
         admin,
         laptop,
@@ -909,12 +929,12 @@ async fn only_the_admin_removes_users_and_not_the_admin() {
 #[tokio::test]
 async fn old_invite_dies_with_the_removal() {
     let Setup {
-        pi: _pi,
+        server: _server,
         conn,
         admin,
         ..
     } = setup().await;
-    // Two invites for bob@pi: Bob signs up with one, the other stays unused.
+    // Two invites for bob@chat: Bob signs up with one, the other stays unused.
     let spare = support::create_invite(&conn, &admin, "bob")
         .await
         .invite
@@ -957,13 +977,16 @@ async fn old_invite_dies_with_the_removal() {
     assert_eq!(registered.user_id, Some(new_bob.pb_user_id()));
 }
 
-// spec: group-membership/membership-state-on-the-pi
+// spec: group-membership/membership-state-on-the-server
 #[tokio::test]
-async fn pi_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
+async fn server_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
     let Setup {
-        pi, laptop, admin, ..
+        server,
+        laptop,
+        admin,
+        ..
     } = setup().await;
-    let tables: Vec<String> = pi
+    let tables: Vec<String> = server
         .query(|db| {
             let mut stmt = db.prepare(
                 "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'mls_%' ORDER BY name",
@@ -976,7 +999,7 @@ async fn pi_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
         tables,
         vec!["mls_groups", "mls_members", "mls_public_state"]
     );
-    let columns: Vec<String> = pi
+    let columns: Vec<String> = server
         .query(|db| {
             let mut stmt = db.prepare(
                 "SELECT name FROM pragma_table_info('mls_groups')
@@ -993,7 +1016,7 @@ async fn pi_stores_only_ids_epoch_leaves_tree_context_and_no_names() {
             .all(|c| !c.contains("name") && !c.contains("setting")),
         "{columns:?}"
     );
-    let members = pi
+    let members = server
         .state
         .store
         .call(|db| GroupState::main_members(db))

@@ -1,5 +1,5 @@
 //! The host side of the app's picture integration test (change `media-blobs`):
-//! the admin's device, driven through the bridge's `Core` against the temp Pi
+//! the admin's device, driven through the bridge's `Core` against the temp server
 //! that `app/integration_test/run.sh images` starts. Ignored by `cargo test`.
 //!
 //! With the app (Bob) on the other side it:
@@ -22,7 +22,7 @@ use bridge::api::types::{ChatBody, CoreEvent, SendState};
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use support::Check;
 use support::device::{Device, user};
-use support::pi::ADMIN;
+use support::server::ADMIN;
 
 /// How long the peer waits for the app: building and installing the app
 /// on a simulator takes minutes.

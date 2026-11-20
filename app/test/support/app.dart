@@ -8,9 +8,9 @@ import 'package:vyajena/core/core_service.dart';
 
 import 'fake_core_service.dart';
 
-const alice = UserRef(username: 'alice', serverId: 'pi');
-const bob = UserRef(username: 'bob', serverId: 'pi');
-const akhil = UserRef(username: 'akhil', serverId: 'pi');
+const alice = UserRef(username: 'alice', serverId: 'chat');
+const bob = UserRef(username: 'bob', serverId: 'chat');
+const akhil = UserRef(username: 'akhil', serverId: 'chat');
 
 /// Lets the fake core's futures, events and route transitions finish.
 /// (Never `Future.delayed` in `testWidgets`: its fake clock never runs it.)

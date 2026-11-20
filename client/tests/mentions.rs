@@ -1,8 +1,8 @@
-//! Mentions and replies end to end against the real Pi (change `mentions`):
+//! Mentions and replies end to end against the real server (change `mentions`):
 //! who is mentioned (message-content: Mentions), replies and their lookup
 //! (message-content: Replies; client-runtime: Reply lookup), unseen
 //! mentions across restarts (client-runtime: Unseen mentions), and that the
-//! Pi learns nothing new (message-content: Mentions and replies stay
+//! Server learns nothing new (message-content: Mentions and replies stay
 //! encrypted).
 
 mod support;
@@ -13,11 +13,11 @@ use client::{
 };
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 /// The admin, Alice and Bob, all in the group and seeing each other.
-async fn chat(pi: &TestPi) -> (Device, Device, Device) {
-    let admin = device::admin_with_group(pi).await;
+async fn chat(server: &TestServer) -> (Device, Device, Device) {
+    let admin = device::admin_with_group(server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -58,8 +58,8 @@ fn of(target: MentionTarget, start: usize, len: usize) -> Mention {
 // spec: client-runtime/unseen-mentions
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_mentions_bob_and_only_bob_is_mentioned() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let mentions = [of(MentionTarget::User(user("bob")), 3, 4)];
     let id = alice
@@ -96,8 +96,8 @@ async fn alice_mentions_bob_and_only_bob_is_mentioned() {
 // spec: message-content/mentions
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_who_is_not_the_admin_mentions_everyone() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let mentions = [of(MentionTarget::Everyone, 0, 9)];
     let id = bob
@@ -121,8 +121,8 @@ async fn bob_who_is_not_the_admin_mentions_everyone() {
 // spec: client-runtime/reply-lookup
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_replies_to_alice_and_everyone_finds_the_original() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let original = alice.client.send_text("dinner at 8?").check("send");
     wait_accepted(&mut alice, original).await;
@@ -182,8 +182,8 @@ async fn bob_replies_to_alice_and_everyone_finds_the_original() {
 // spec: client-runtime/reply-lookup
 #[tokio::test(flavor = "multi_thread")]
 async fn carol_who_joined_later_sees_the_quote_without_the_original() {
-    let pi = TestPi::start().await;
-    let (admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (admin, mut alice, mut bob) = chat(&server).await;
 
     let original = alice.client.send_text("dinner at 8?").check("send");
     wait_accepted(&mut alice, original).await;
@@ -211,8 +211,8 @@ async fn carol_who_joined_later_sees_the_quote_without_the_original() {
 // spec: client-runtime/unseen-mentions
 #[tokio::test(flavor = "multi_thread")]
 async fn an_unseen_mention_survives_a_restart_until_marked_seen() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
 
     let first = [of(MentionTarget::User(user("bob")), 0, 4)];
     let a = alice
@@ -243,8 +243,8 @@ async fn an_unseen_mention_survives_a_restart_until_marked_seen() {
 // spec: message-content/mentions-and-replies-stay-encrypted
 #[tokio::test(flavor = "multi_thread")]
 async fn a_mention_of_offline_bob_wakes_him_like_any_message() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, bob) = chat(&server).await;
 
     bob.client
         .set_push_token(Some(PushToken {
@@ -254,7 +254,7 @@ async fn a_mention_of_offline_bob_wakes_him_like_any_message() {
         .await
         .check("token");
     bob.client.stop();
-    pi.wait_offline_recorded(&bob.device_id()).await;
+    server.wait_offline_recorded(&bob.device_id()).await;
 
     let original = admin.client.send_text("secret plans").check("send");
     wait_accepted(&mut admin, original).await;
@@ -276,25 +276,25 @@ async fn a_mention_of_offline_bob_wakes_him_like_any_message() {
     // interface has nothing else to give, and the providers' text is the
     // fixed "New message" (server push tests).
     let bob_id = bob.device_id();
-    let deadline = tokio::time::Instant::now() + support::pi::WAIT;
-    while pi.pushes.count(&bob_id) == 0 {
+    let deadline = tokio::time::Instant::now() + support::server::WAIT;
+    while server.pushes.count(&bob_id) == 0 {
         assert!(
             tokio::time::Instant::now() < deadline,
             "no wake ping for Bob"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert_eq!(pi.pushes.sent(), [(bob_id, "bob-token".to_owned())]);
+    assert_eq!(server.pushes.sent(), [(bob_id, "bob-token".to_owned())]);
 
-    // Neither the text, the quote nor the mention reached the Pi's store.
-    let rows: Vec<Vec<u8>> = pi
+    // Neither the text, the quote nor the mention reached the server's store.
+    let rows: Vec<Vec<u8>> = server
         .query(|db| {
             let mut statement = db.prepare("SELECT ciphertext FROM envelopes WHERE kind = 1")?;
             let rows = statement.query_map([], |row| row.get(0))?;
             rows.collect()
         })
         .await;
-    assert!(!rows.is_empty(), "the Pi holds the message");
+    assert!(!rows.is_empty(), "the server holds the message");
     for row in rows {
         for secret in [&b"agreed"[..], b"secret plans", b"everyone"] {
             assert!(!support::contains(&row, secret));

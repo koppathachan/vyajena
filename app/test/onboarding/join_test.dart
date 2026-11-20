@@ -14,13 +14,13 @@ Future<void> paste(WidgetTester tester, String text) async {
 
 void main() {
   // spec: app-ui/join-from-an-invite
-  testWidgets('Bob joins: he sees bob@pi on 127.0.0.1:8443 first, then '
+  testWidgets('Bob joins: he sees bob@chat on 127.0.0.1:8443 first, then '
       'registers and lands in the chat', (tester) async {
     final core = await openApp(tester);
     expect(find.text('Join the group'), findsOneWidget);
 
     await paste(tester, 'vyajena-invite:bob');
-    expect(find.text('bob@pi'), findsOneWidget);
+    expect(find.text('bob@chat'), findsOneWidget);
     expect(find.text('on 127.0.0.1:8443'), findsOneWidget);
     expect(core.calls, isNot(contains('register')));
 
@@ -179,7 +179,7 @@ void main() {
     await paste(tester, 'hello, this is not an invite');
     expect(find.textContaining('This is not a valid invite'), findsOneWidget);
     expect(find.text('Join'), findsNothing);
-    // Only the local parse; nothing that reaches the Pi.
+    // Only the local parse; nothing that reaches the server.
     expect(core.calls, ['open', 'parseInvite']);
   });
 }

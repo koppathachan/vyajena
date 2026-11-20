@@ -1,5 +1,5 @@
 //! Messaging service: the `Connect` stream, sequencing, queues and the commit
-//! log (pi-server-core tasks 7.1-7.4), the Pi's inactivity Removes and re-add
+//! log (server-core tasks 7.1-7.4), the server's inactivity Removes and re-add
 //! notices (8.1, 8.2), and when to send wake pings (9.1).
 //!
 //! - [`hub`]: the open streams, one per device.
@@ -113,7 +113,7 @@ pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
     });
 }
 
-/// The platform called `token` invalid (pi-runtime: Push errors): clear it,
+/// The platform called `token` invalid (server-runtime: Push errors): clear it,
 /// unless the device registered another one meanwhile.
 async fn clear_invalid_token(state: &State, device_id: DeviceId, token: String) {
     let cleared = state

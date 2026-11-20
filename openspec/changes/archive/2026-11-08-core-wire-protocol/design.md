@@ -3,8 +3,8 @@
 This is the first change in vyajena2. Nothing exists yet except the architecture
 doc (`docs/architecture-decisions.md`) and the project conventions, which require
 the `.proto` contract before any Rust or Dart that depends on it. The contract has
-two consumers: the Rust core on each device (client side of every RPC) and the Pi
-server (tokio + tonic). Flutter never sees protobuf. The relay is a TCP
+two consumers: the Rust core on each device (client side of every RPC) and the server
+Server (tokio + tonic). Flutter never sees protobuf. The relay is a TCP
 passthrough and is unaffected.
 
 Two open decisions are settled by the owner for this change: multi-device is in
@@ -16,7 +16,7 @@ One application message through this contract:
 ```mermaid
 sequenceDiagram
   participant A as Sender device
-  participant P as Pi
+  participant P as server
   participant B as Recipient, online
   participant C as Recipient, offline
   participant X as FCM / APNs
@@ -41,14 +41,14 @@ sequenceDiagram
 
 - A complete, lint-clean `vyajena.v1` contract for everything in the MVP scope.
 - An identity model where each device is an MLS member and every device is
-  provably tied to its user, verifiable by other members without trusting the Pi.
-- A Pi that can enforce membership policy and the strict epoch rule while seeing
+  provably tied to its user, verifiable by other members without trusting the server.
+- A server that can enforce membership policy and the strict epoch rule while seeing
   only public MLS state.
 - Validate the two riskiest assumptions (below) before the server is built.
 
 **Non-Goals:**
 
-- Implementing Pi or Rust core behavior. Follow-up changes (`pi-server-core`,
+- Implementing server or Rust core behavior. Follow-up changes (`server-core`,
   `rust-core-messaging`) implement these specs against the contract.
 - Fingerprint verification (open decision #2), idle-group key rotation (#4),
   desktop clients (#3). The contract leaves room for each; none is required here.
@@ -65,7 +65,7 @@ device auth public key, MLS signature public key, created_at) is signed with it
 under the context string `vyajena2-device-cert-v1`. Device id = first 16 bytes of
 SHA-256(device auth public key), so a device knows its own id before registering.
 
-- **Alternative:** no user key, devices vouched for by the Pi. Rejected: the Pi
+- **Alternative:** no user key, devices vouched for by the server. Rejected: the server
   could then add a device to any user, which is exactly the residual risk the
   architecture doc already calls out.
 - **Side effect:** fingerprint verification (#2), if adopted, becomes one
@@ -77,7 +77,7 @@ How one device is tied to its user (D1, D3, D4):
 flowchart LR
   ik["User identity key<br/>Ed25519, first device only"]
   cert["DeviceCertificate<br/>user id · device id<br/>auth public key · MLS public key"]
-  auth["Device auth key<br/>signs Pi challenges"]
+  auth["Device auth key<br/>signs server challenges"]
   mlsk["MLS signature key<br/>signs MLS messages"]
   cred["MLS BasicCredential<br/>identity = serialized certificate"]
   leaf["Leaf in the ratchet tree<br/>checked by every member"]
@@ -94,10 +94,10 @@ flowchart LR
 The identity key never leaves the first device. Linking: the new device shows a QR
 of its public keys; the identity device scans it, signs a certificate and uploads
 it with `Devices.LinkDevice`; it then commits the new device's Add. No secret is
-transferred and the Pi relays nothing new.
+transferred and the server relays nothing new.
 
 - **Alternative:** copy the identity key to every linked device (encrypted to the
-  new device, relayed through the Pi), so any device can link more. Friendlier when
+  new device, relayed through the server), so any device can link more. Friendlier when
   the first phone is lost, but every device then carries the long-term key and the
   wire grows a secret-transfer RPC.
 - **Cost:** losing the identity device means the user can no longer add devices.
@@ -108,7 +108,7 @@ transferred and the Pi relays nothing new.
 sequenceDiagram
   participant N as New device
   participant F as First device (identity key)
-  participant P as Pi
+  participant P as server
   participant G as Other member devices
   N->>N: Generate device auth key and MLS key
   N-->>F: QR code with both public keys
@@ -122,12 +122,12 @@ sequenceDiagram
   P->>P: Commit authority, own user's device (D6)
   P->>P: Accept commit and Welcome together
   P->>G: Commit
-  P->>N: WELCOME (sent by the Pi)
+  P->>N: WELCOME (sent by the server)
 ```
 
 ### D3. Two keys per device
 
-Each device has a device auth key (Ed25519, signs Pi challenges) and an MLS
+Each device has a device auth key (Ed25519, signs server challenges) and an MLS
 signature key (Ed25519, signs MLS messages and its leaf). Separate keys avoid any
 cross-protocol signature confusion and let the MLS key rotate on its own.
 
@@ -142,9 +142,9 @@ more OpenMLS surface for no gain; X.509 credentials are not a good fit for one k
 works.** The identity bytes are a prost-encoded signed wrapper: the exact encoded
 certificate bytes plus an Ed25519 signature over `vyajena2-device-cert-v1 || bytes`
 (176 bytes in all). It survives KeyPackage creation, the wire and
-`KeyPackageIn::validate` on the Pi, Add, Welcome and later path updates. The
+`KeyPackageIn::validate` on the server, Add, Welcome and later path updates. The
 joiner (on the staged Welcome, before `into_group`), existing members
-(`StagedCommit::add_proposals`, `update_path_leaf_node`) and the Pi
+(`StagedCommit::add_proposals`, `update_path_leaf_node`) and the server
 (`PublicGroup::members`) all read and verify it from the tree. A 16 KiB identity
 also works, so size is not a concern. Caveats: OpenMLS never checks credentials
 itself, so the core must verify every new or changed leaf; and it must also check
@@ -153,49 +153,49 @@ certificate could be paired with another key. Signing the carried bytes (not a
 re-encoding) means the signed wrapper in task 2.1 holds `bytes certificate`, not
 a nested message, and no protobuf canonical form is needed.
 
-### D5. Handshakes are `PublicMessage`; the Pi runs OpenMLS `PublicGroup`
+### D5. Handshakes are `PublicMessage`; the server runs OpenMLS `PublicGroup`
 
-To enforce commit authority the Pi has to read proposals, so Commits and Proposals
-are sent as MLS `PublicMessage`. The Pi keeps the group's public state with
+To enforce commit authority the server has to read proposals, so Commits and Proposals
+are sent as MLS `PublicMessage`. The server keeps the group's public state with
 OpenMLS `PublicGroup` (built for delivery services), which verifies commit
 signatures and applies the tree changes without any group secret. Application
-messages stay `PrivateMessage`; for those the Pi reads only the unencrypted header
+messages stay `PrivateMessage`; for those the server reads only the unencrypted header
 (group id, epoch, content type).
 
-- **What the Pi newly learns:** nothing beyond the architecture doc's "Pi sees"
+- **What the server newly learns:** nothing beyond the architecture doc's "server sees"
   table (members, epoch, sender), plus the public leaf keys.
-- **Consequence:** anything in the group context is readable by the Pi. So the
+- **Consequence:** anything in the group context is readable by the server. So the
   group name and settings move to encrypted `GroupSettings` application messages
   (`message-content`), while the admin's user id sits in the group context, which
-  is fine because the Pi already enforces it.
-- **Alternative:** encrypted handshakes with client-declared metadata the Pi
+  is fine because the server already enforces it.
+- **Alternative:** encrypted handshakes with client-declared metadata the server
   trusts. Rejected: one dishonest member could get a bad commit accepted and fork
   the group for everyone.
 
 **Spike result (task 4.1, openmls 0.9.2, `spikes/openmls/tests/public_group.rs`):
-works.** `PublicGroup::from_external` builds the Pi's view from the GroupInfo
+works.** `PublicGroup::from_external` builds the server's view from the GroupInfo
 (without the tree extension) plus the ratchet tree. On a `PublicMessage` commit,
 `process_message` verifies the signature against the sender's leaf (one flipped
 byte gives `InvalidSignature`). `ProcessedMessage::sender()` names the committing
 leaf. `StagedCommit::queued_proposals()` returns every proposal with
 `proposal_or_ref_type()` (by value or by reference) and `sender()` (member or
 `External(index)`). That is enough to implement D6; the spike does, including the
-rejection cases. After `merge_commit`, the Pi's group context and tree are
+rejection cases. After `merge_commit`, the server's group context and tree are
 byte-identical to every member's. This held for an admin Add with Welcome, an
-own-device Add, a member Remove, a self Update, a Pi external Remove committed by
+own-device Add, a member Remove, a self Update, a server external Remove committed by
 reference, and the D7 re-add commit. The re-add combined the pending external
 Remove (by reference) with an Add of a fresh KeyPackage that has the same
 certificate and MLS signature key; OpenMLS accepts it because the old leaf is
 removed first. Caveats:
 
-- **Membership tags.** A member's `PublicMessage` must carry one, but the Pi has
+- **Membership tags.** A member's `PublicMessage` must carry one, but the server has
   no membership key, so `PublicGroup` skips the check. A commit with a bad tag is
-  accepted by the Pi and rejected by members (`InvalidMembershipTag`). Confirmation
+  accepted by the server and rejected by members (`InvalidMembershipTag`). Confirmation
   tags and encrypted path secrets are member-only checks too. So a dishonest
   member with a valid leaf can still get a commit sequenced that honest clients
   reject. D5 still enforces D6 policy and sender authenticity (signature plus D9
   stream auth), but this liveness gap remains with any MLS delivery service.
-- **The Pi keeps its own proposal store.** On a `ProposalMessage` it must call
+- **The server keeps its own proposal store.** On a `ProposalMessage` it must call
   `add_proposal`, including for its own external Removes, which it runs through
   its own `PublicGroup`. `merge_commit` clears the store, and a proposal from an
   earlier epoch is rejected (`WrongEpoch`), which confirms D7's reissue rule.
@@ -205,7 +205,7 @@ removed first. Caveats:
   under `test-utils`. Compare whole values, or use `public_group().group_context()`.
 - `PURE_PLAINTEXT_WIRE_FORMAT_POLICY` sends handshakes as `PublicMessage`, and
   application messages stay `PrivateMessage`. For those, `PublicGroup` returns
-  `IncompatibleWireFormat`; the Pi reads group id, epoch and content type from
+  `IncompatibleWireFormat`; the server reads group id, epoch and content type from
   `ProtocolMessage`.
 - A returning device must join with
   `StagedWelcome::build_from_welcome(..).replace_old_group()`; otherwise it gets
@@ -217,24 +217,24 @@ removed first. Caveats:
 
 Admin devices may commit anything. Other devices may commit only: own leaf update,
 Add of a device certified for their own user, Remove of their own user's device,
-or a Pi-issued external Remove. The Pi and every client both check this, so a
-commit the Pi accepted is one every honest client also accepts.
+or a server-issued external Remove. The server and every client both check this, so a
+commit the server accepted is one every honest client also accepts.
 
 ### D7. Inactive devices are kept out, then re-added automatically
 
 One rule replaces both "queue full rejects the send" and "removed after 30 days
 offline": a device that has been offline for 7 days, or whose queue reaches 1,000
-entries, is inactive. The Pi stops queueing for it, deletes its queue and proposes
+entries, is inactive. The server stops queueing for it, deletes its queue and proposes
 its removal. The group is never blocked by one device, and nobody has to skip
 thousands of messages to catch up, so OpenMLS's default limit on skipped messages
 never comes into play.
 
-The Pi cannot commit (it is not a member), but MLS lets a listed external sender
-propose. The group context lists the Pi's key in `external_senders`; the Pi sends
-an external Remove proposal and reissues it every epoch until committed. The Pi
+The server cannot commit (it is not a member), but MLS lets a listed external sender
+propose. The group context lists the server's key in `external_senders`; the server sends
+an external Remove proposal and reissues it every epoch until committed. The server
 publishes this key in `GetServerInfo`.
 
-When the device comes back, the Pi tells it that it was removed and since when,
+When the device comes back, the server tells it that it was removed and since when,
 and sends a rejoin notice to the user's other devices and the admin's devices.
 Whichever gets it first re-adds the device in one commit (Add, plus the pending
 Remove of its old leaf) with no user action. The commit rule (D6) already allows
@@ -247,7 +247,7 @@ delivered.
 ```mermaid
 sequenceDiagram
   participant D as Bob's phone
-  participant P as Pi
+  participant P as server
   participant G as Group
   participant A as Admin's phone
   Note over D: Offline 7 days, or its queue hits 1,000
@@ -261,7 +261,7 @@ sequenceDiagram
   A->>P: COMMIT Remove old leaf + Add, Welcome inside
   P->>P: Accept commit and Welcome together
   P->>G: Commit
-  P->>D: WELCOME (sent by the Pi)
+  P->>D: WELCOME (sent by the server)
   Note over D: Shows messages since X were not kept
 ```
 
@@ -282,7 +282,7 @@ commits first would leave queued messages from older epochs undecryptable.
 
 ```mermaid
 sequenceDiagram
-  participant P as Pi
+  participant P as server
   participant D as Returning device, last at epoch 4
   Note over P: Accepted while D was offline<br/>seq 10 M1 in epoch 4<br/>seq 11 commit, epoch 4 to 5<br/>seq 12 M2 in epoch 5
   D->>P: Connect, cursor at seq 9
@@ -296,7 +296,7 @@ sequenceDiagram
 ### D9. Session tokens for unary calls
 
 `GetChallenge` / `Authenticate` yields a short-lived bearer token (≤ 1 h, stored
-hashed on the Pi) used in metadata for unary RPCs and `Connect`. The signature
+hashed on the server) used in metadata for unary RPCs and `Connect`. The signature
 covers the TLS exporter value, so a challenge answered on one connection cannot be
 replayed on another. The exporter value is 32 bytes with label
 `EXPORTER-vyajena2-auth-v1` and an empty context; the nonce is 32 random bytes,
@@ -347,10 +347,10 @@ were closed in this change, before anything was released:
 
 - *Welcome bound to its commit.* `Envelope.welcome` (`WelcomeBundle`: Welcome
   bytes plus recipients) rides on the `COMMIT` that creates it and replaces the
-  client-sent `WELCOME` envelope (field 6 `recipients` is reserved). The Pi
+  client-sent `WELCOME` envelope (field 6 `recipients` is reserved). The server
   accepts or rejects both together, then emits `WELCOME` envelopes itself at the
   commit's `server_seq`. A client-sent `WELCOME` is `MALFORMED`. Before this the
-  Pi could not link a Welcome to its commit, so a re-add race loser's Welcome
+  Server could not link a Welcome to its commit, so a re-add race loser's Welcome
   could still reach the returning device.
 - *Per-device fetch.* `FetchKeyPackagesRequest.device_ids` limits the fetch, and
   the KeyPackages consumed, to the listed devices (D7 re-add, D2 linking).
@@ -368,13 +368,13 @@ local part of the user id (`<username>@<server>`). Users cannot change it. Since
 the user id is inside every device certificate, renaming means an admin reset in
 the MVP. Everything else about a user (display name, a short "about" line) is a
 `Profile` body sent encrypted inside the group, and only that user's devices can
-change it. The Pi never sees profiles.
+change it. The server never sees profiles.
 
-### D13. The admin is known to the Pi
+### D13. The admin is known to the server
 
-The admin's user id is set in the Pi's config, the bootstrap invite creates that
+The admin's user id is set in the server's config, the bootstrap invite creates that
 user, and the admin creates the group with `Admin.CreateGroup` before inviting
-anyone. The admin id is also in the group context, which the Pi can read; it
+anyone. The admin id is also in the group context, which the server can read; it
 learns nothing new from that. `Devices.GetSelf` returns `is_admin`, so the
 admin's app knows to call `Admin.CreateGroup` before any group exists.
 
@@ -383,15 +383,15 @@ admin's app knows to call `Admin.CreateGroup` before any group exists.
 - [OpenMLS `PublicGroup` may not verify `PublicMessage` commits the way D5 needs,
   e.g. membership tags or proposal-by-reference handling] → Task 4 spikes it before
   this change is done; if it fails, D5 and the group-membership spec are revisited
-  before the Pi is built.
+  before the server is built.
 - [OpenMLS may reject or mishandle large `BasicCredential` identities] → Task 4
   spikes it; fallback is a leaf-node extension (D4 alternative).
 - [Someone away for a week, or a quiet phone in a busy group, misses messages and
   is out until re-added] → accepted by the owner; re-add is automatic (D7).
 - [Losing the identity device blocks adding new devices] → admin-driven reset
   (decided).
-- [Handshakes in the clear expose public leaf keys to the Pi] → no secret is
-  exposed; it is the same trust the Pi already has for KeyPackages.
+- [Handshakes in the clear expose public leaf keys to the server] → no secret is
+  exposed; it is the same trust the server already has for KeyPackages.
 - [Specs describe behavior that only later changes implement] → accepted for a
   proto-first project; follow-up changes reference these requirements in their
   tasks.
@@ -413,6 +413,6 @@ Resolved by the owner (2026-11-08):
 - Identity key recovery (D2): admin-driven reset.
 - Handshake size cap (D10): 256 KB.
 - Usernames and profiles (D12): admin picks the username; users edit the rest.
-- Admin visible to the Pi (D13): approved. Catch-up ordering (D8) and group
+- Admin visible to the server (D13): approved. Catch-up ordering (D8) and group
   settings in encrypted messages (D5) go into the architecture doc update (task
   5.1).

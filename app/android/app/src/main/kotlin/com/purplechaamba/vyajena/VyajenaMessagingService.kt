@@ -7,7 +7,7 @@ import com.google.firebase.messaging.RemoteMessage
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * FCM's callbacks (app-ui: Push notifications). The Pi's ping is a
+ * FCM's callbacks (app-ui: Push notifications). The server's ping is a
  * notification message: Play services shows "New message" itself while the
  * app is in the background or closed, so nothing here handles it. A rotated
  * token goes to Dart while the app runs; otherwise the next start reads it.

@@ -1,4 +1,4 @@
-//! pi-runtime: Configuration.
+//! server-runtime: Configuration.
 
 mod support;
 
@@ -13,7 +13,7 @@ use support::Check;
 use support::binary::{Home, admin_on, logged};
 
 fn parse(text: &str) -> Result<Config, ConfigError> {
-    Config::from_toml(text, Path::new("/srv/pi"))
+    Config::from_toml(text, Path::new("/srv/server"))
 }
 
 /// The test config with one line removed or replaced.
@@ -29,24 +29,24 @@ fn with(field: &str, value: &str) -> String {
     format!("{}\n{field} = {value}\n", without(field))
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn reads_every_setting() {
     let config = match parse(&support::config_text()) {
         Ok(config) => config,
         Err(error) => panic!("valid config refused: {error}"),
     };
-    assert_eq!(config.server_id, "pi");
+    assert_eq!(config.server_id, "chat");
     assert_eq!(config.admin_username, "akhil");
-    assert_eq!(config.admin_user_id(), "akhil@pi");
+    assert_eq!(config.admin_user_id(), "akhil@chat");
     assert_eq!(config.listen_address.to_string(), "127.0.0.1:0");
     assert_eq!(config.public_address, "relay.example:443");
     // Relative paths are resolved from the config file's folder.
-    assert_eq!(config.database_path, Path::new("/srv/pi/pi.sqlite"));
-    assert_eq!(config.key_dir, Path::new("/srv/pi/keys"));
+    assert_eq!(config.database_path, Path::new("/srv/server/server.sqlite"));
+    assert_eq!(config.key_dir, Path::new("/srv/server/keys"));
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn missing_admin_username_names_the_field() {
     let error = parse(&without("admin_username")).err();
@@ -63,7 +63,7 @@ fn missing_admin_username_names_the_field() {
     assert!(message.contains("admin_username"), "{message}");
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn every_required_field_is_named_when_missing() {
     for field in [
@@ -82,7 +82,7 @@ fn every_required_field_is_named_when_missing() {
     }
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn public_address_defaults_to_the_listen_address() {
     let text = without("public_address");
@@ -93,7 +93,7 @@ fn public_address_defaults_to_the_listen_address() {
     );
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn invalid_values_name_their_field() {
     let cases = [
@@ -103,10 +103,10 @@ fn invalid_values_name_their_field() {
         ("public_address", r#""relay.example""#),
         ("public_address", r#""relay.example:99999""#),
         ("public_address", r#"":443""#),
-        ("admin_username", r#""akhil@pi""#),
+        ("admin_username", r#""akhil@chat""#),
         ("admin_username", r#""ak hil""#),
         ("admin_username", r#""""#),
-        ("server_id", r#""pi@home""#),
+        ("server_id", r#""server@home""#),
         ("server_id", "42"),
         ("database_path", r#""   ""#),
         ("key_dir", "true"),
@@ -120,7 +120,7 @@ fn invalid_values_name_their_field() {
     }
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn unknown_fields_are_refused_by_name() {
     let error = parse(&format!(
@@ -135,23 +135,23 @@ fn unknown_fields_are_refused_by_name() {
     assert!(matches!(error, Some(ConfigError::Unknown { .. })));
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn broken_toml_is_refused() {
     assert!(matches!(
-        parse("server_id = \"pi"),
+        parse("server_id = \"server"),
         Err(ConfigError::Syntax(_))
     ));
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn server_exits_naming_the_field_and_touches_nothing() {
     // Missing admin username: the binary exits with an error naming
     // `admin_username`, before creating keys or a database or opening a port.
     let dir = tempfile::tempdir().ok();
     let dir = dir.as_ref().map(|d| d.path()).unwrap_or(Path::new("."));
-    let config_path = dir.join("pi.toml");
+    let config_path = dir.join("server.toml");
     std::fs::write(&config_path, without("admin_username")).ok();
 
     let output = Command::new(env!("CARGO_BIN_EXE_server"))
@@ -166,7 +166,7 @@ fn server_exits_naming_the_field_and_touches_nothing() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("admin_username"), "{stderr}");
     assert!(!dir.join("keys").exists());
-    assert!(!dir.join("pi.sqlite").exists());
+    assert!(!dir.join("server.sqlite").exists());
 }
 
 /// This machine's address on its outbound interface (no packet is sent), if
@@ -178,49 +178,49 @@ fn lan_address() -> Option<std::net::IpAddr> {
     (!ip.is_loopback() && !ip.is_unspecified()).then_some(ip)
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[tokio::test]
 async fn behind_the_relay_listens_on_loopback_and_invites_name_the_relay() {
-    // The Pi's relay setup (deploy/pi/config.toml): loopback only, the relay's
+    // The server's relay setup (deploy/server/config.toml): loopback only, the relay's
     // static address in invites.
     let home = Home::new();
     let text = with("public_address", r#""203.0.113.10:443""#);
-    std::fs::write(home.config(), text).check("write pi.toml");
-    let pi = home.start();
+    std::fs::write(home.config(), text).check("write server.toml");
+    let server = home.start();
 
-    assert!(pi.addr.ip().is_loopback(), "listens on {}", pi.addr);
+    assert!(server.addr.ip().is_loopback(), "listens on {}", server.addr);
     assert_eq!(
-        logged(&pi.log, "relay_address").as_deref(),
+        logged(&server.log, "relay_address").as_deref(),
         Some("203.0.113.10:443"),
         "the bootstrap invite names the relay"
     );
     if let Some(ip) = lan_address() {
-        let lan = SocketAddr::new(ip, pi.addr.port());
+        let lan = SocketAddr::new(ip, server.addr.port());
         assert!(
             TcpStream::connect_timeout(&lan, Duration::from_secs(2)).is_err(),
             "{lan} must not accept: the server is loopback-only"
         );
     }
 
-    let (conn, _admin, device, _stream) = admin_on(&pi).await;
+    let (conn, _admin, device, _stream) = admin_on(&server).await;
     let response = support::create_invite(&conn, &device, "bob").await;
     let payload = response.payload.check("payload");
     assert_eq!(payload.relay_address, "203.0.113.10:443");
-    assert_eq!(payload.tls_spki_sha256, pi.pin.to_vec());
+    assert_eq!(payload.tls_spki_sha256, server.pin.to_vec());
 }
 
 fn blob_store(table: &str) -> String {
     format!("{}\n{table}\n", support::config_text())
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn the_blob_store_is_off_unless_configured() {
     let config = parse(&support::config_text()).check("valid config");
     assert_eq!(config.blob_store, None);
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn reads_a_filesystem_blob_store_and_resolves_its_path_like_the_others() {
     let config = parse(&blob_store(
@@ -242,12 +242,12 @@ fn reads_a_filesystem_blob_store_and_resolves_its_path_like_the_others() {
     assert_eq!(
         config.blob_store,
         Some(BlobStoreConfig::Filesystem {
-            path: "/srv/pi/blobs".into()
+            path: "/srv/server/blobs".into()
         })
     );
 }
 
-// spec: pi-runtime/configuration
+// spec: server-runtime/configuration
 #[test]
 fn a_bad_blob_store_names_the_field() {
     let cases = [

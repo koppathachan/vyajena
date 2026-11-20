@@ -10,7 +10,7 @@
 # The config (with the token and the Noise private key) is rendered from
 # ~/.vyajena-relay/ and piped over SSH into a root-only file; nothing secret
 # is written on the Mac. Restarting rathole drops the tunnel for a few seconds;
-# the Pi reattaches by itself.
+# the server reattaches by itself.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -31,11 +31,11 @@ pub fn manual_clock() -> ManualClock {
 /// Config text for a server whose data lives in `dir`, on a random local port.
 pub fn config_text() -> String {
     r#"
-server_id = "pi"
+server_id = "chat"
 admin_username = "akhil"
 listen_address = "127.0.0.1:0"
 public_address = "relay.example:443"
-database_path = "pi.sqlite"
+database_path = "server.sqlite"
 key_dir = "keys"
 "#
     .to_owned()
@@ -78,15 +78,15 @@ impl<T> Check<T> for Option<T> {
     }
 }
 
-/// The admin (`akhil@pi`) registered from the bootstrap invite, with one
+/// The admin (`akhil@chat`) registered from the bootstrap invite, with one
 /// authenticated device.
 pub async fn bootstrap_admin(
-    pi: &harness::TestPi,
+    server: &harness::TestServer,
     conn: &harness::Conn,
 ) -> (clients::TestUser, clients::TestDevice) {
     let admin = clients::TestUser::new("akhil");
     let mut device = admin.new_device();
-    register(conn, &pi.bootstrap_code, &admin, &device)
+    register(conn, &server.bootstrap_code, &admin, &device)
         .await
         .check("Register (bootstrap)");
     device.authenticate(conn).await;
@@ -167,7 +167,7 @@ pub async fn link_device(
 }
 
 /// `GetServerInfo`'s external sender entry.
-pub async fn pi_external_sender(conn: &harness::Conn) -> pb::ExternalSender {
+pub async fn server_external_sender(conn: &harness::Conn) -> pb::ExternalSender {
     conn.devices()
         .get_server_info(pb::GetServerInfoRequest {})
         .await

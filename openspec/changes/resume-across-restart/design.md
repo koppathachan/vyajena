@@ -30,7 +30,7 @@ and keep the token across `stop()`/`start()` in the OS key store.
 
 ### D1: No proto change
 
-The token is a connection-independent bearer (faster-connect D1); the Pi
+The token is a connection-independent bearer (faster-connect D1); the server
 authenticates `Connect` from `authorization` alone. Persisting it on the device
 adds nothing to the wire. `buf breaking` is trivially clean, `pbgen` is not run.
 
@@ -56,12 +56,12 @@ Longer life means a longer window if the token is stolen. What bounds it:
   mint tokens at will anyway; the token adds no weaker place than the key already
   has. It is never in SQLite, logs or files (a log line only says "resume token
   saved/loaded" and its expiry, never the value).
-- Removing a device revokes it on the Pi: `revoke_device` deletes all its
+- Removing a device revokes it on the server: `revoke_device` deletes all its
   `sessions` rows (`server/src/auth/mod.rs::end_sessions`), so a stolen token
   stops working the moment the admin removes the device. A revoked device with a
   token gets `UNAUTHENTICATED` on the stream, falls back to `Authenticate` and
   meets `PERMISSION_DENIED` (faster-connect, covered by a test).
-- The token authenticates one device's RPCs over the Pi's pinned TLS; it never
+- The token authenticates one device's RPCs over the server's pinned TLS; it never
   decrypts anything: MLS keys are separate and unchanged. A stolen token can open
   the stream and receive ciphertext, nothing more.
 - iOS Keychain survives an app reinstall: a leftover token from an older install is
@@ -78,24 +78,24 @@ sequenceDiagram
   participant Core as Client (start/stop)
   participant E as Engine
   participant KS as Key store
-  participant Pi
-  Note over App,Pi: First run
-  E->>Pi: GetServerInfo, GetChallenge, Authenticate, Connect
+  participant server
+  Note over App,server: First run
+  E->>server: GetServerInfo, GetChallenge, Authenticate, Connect
   E->>KS: set session-token (token, expires_at, renew_at)
   App->>Core: stop() (background)
   Note over E: engine and in-memory token gone
   App->>Core: start() (reopen, token before renew_at)
   Core->>KS: get session-token
   Core->>E: Engine::new(resume = token)
-  E->>Pi: GetServerInfo
-  E->>Pi: Connect + Hello (saved token)
+  E->>server: GetServerInfo
+  E->>server: Connect + Hello (saved token)
   alt accepted
-    Pi-->>E: catch-up, then live
+    server-->>E: catch-up, then live
   else UNAUTHENTICATED
-    E->>Pi: GetChallenge, Authenticate, Connect (full handshake)
+    E->>server: GetChallenge, Authenticate, Connect (full handshake)
     E->>KS: set session-token (fresh)
   end
-  Note over E,Pi: Device removed: PERMISSION_DENIED
+  Note over E,server: Device removed: PERMISSION_DENIED
   E->>KS: delete session-token
 ```
 
@@ -113,11 +113,11 @@ sequenceDiagram
 - The existing rule `usable(now) = now < renew_at` still gates reuse, so a loaded
   token lands with at least 5 minutes of margin.
 
-### D5: Old and new, Pi and core, interoperate
+### D5: Old and new, server and core, interoperate
 
-The core reads the token's lifetime from the Pi's `expires_at`, capped at
-`SESSION_TOKEN_MAX_LIFETIME`. An old Pi (1 h) with a new core: a 1 h token is
-saved and resumed within the hour, no harm. A new Pi (6 h) with an old core: the
+The core reads the token's lifetime from the server's `expires_at`, capped at
+`SESSION_TOKEN_MAX_LIFETIME`. An old server (1 h) with a new core: a 1 h token is
+saved and resumed within the hour, no harm. A new server (6 h) with an old core: the
 core renews 5 min before expiry as before, now every 5 h 55 m. Rollout order is
 free; there is no migration.
 
@@ -131,19 +131,19 @@ constant in the test.
 ## Risks / Trade-offs
 
 - [A 6 h token is stolen with the device's key store] → The auth key in the same
-  store is worse; removal deletes the sessions on the Pi (D3).
+  store is worse; removal deletes the sessions on the server (D3).
 - [Keychain write on every first connect adds a blocking call] → One small write
   per fresh token (about once per 6 h of use), off the engine thread.
 - [Stale token from a previous install or account] → Rejected with
   `UNAUTHENTICATED`, one wasted stream open, then the full handshake (faster-connect risk,
   unchanged); deleted on fresh keys.
 - [Clock skew makes a loaded token look valid or expired] → A wrongly valid token
-  is rejected by the Pi and falls back; a wrongly expired one only skips the
+  is rejected by the server and falls back; a wrongly expired one only skips the
   speed-up.
 
 ## Migration Plan
 
-Client + one constant. Deploy the Pi (`deploy/pi/build.sh && deploy.sh --no-build`)
+Client + one constant. Deploy the server (`deploy/server/build.sh && deploy.sh --no-build`)
 and ship an app build, in either order. Rollback: revert the commit; the saved
 `session-token` entry is then ignored and left in the key store (harmless, expires
 in at most 6 h).

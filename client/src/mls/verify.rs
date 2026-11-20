@@ -4,7 +4,7 @@
 //! key-directory: Clients verify the identity chain; client-core design D5).
 //!
 //! - Every new or changed leaf carries a device certificate that verifies
-//!   against its user's pinned identity key, names a user of this Pi, and
+//!   against its user's pinned identity key, names a user of this server, and
 //!   whose MLS key equals the leaf's signature key.
 //! - A member's own leaf never changes its certificate or key.
 //! - The commit passes `protocol::group_membership::check_commit_authority`.
@@ -54,8 +54,8 @@ pub enum LeafProblem {
     /// The commit breaks commit authority.
     #[error("the commit breaks commit authority: {0}")]
     Authority(String),
-    /// The group context does not name the admin or does not list the Pi.
-    #[error("the group context is not this Pi's group: {0}")]
+    /// The group context does not name the admin or does not list the server.
+    #[error("the group context is not this server's group: {0}")]
     Context(&'static str),
     /// Something the checks rely on is missing.
     #[error("unexpected commit structure: {0}")]
@@ -192,9 +192,9 @@ pub struct CommitReview {
     pub added: Vec<(UserId, DeviceId)>,
     /// Devices removed, with their users.
     pub removed: Vec<(UserId, DeviceId)>,
-    /// Devices removed by the Pi's inactivity Removes (a subset of
+    /// Devices removed by the server's inactivity Removes (a subset of
     /// `removed`).
-    pub pi_removed: Vec<DeviceId>,
+    pub server_removed: Vec<DeviceId>,
     /// Whether this device is removed.
     pub self_removed: bool,
 }
@@ -204,12 +204,12 @@ pub struct CommitReview {
 pub fn own_commit_changes(
     group: &MlsGroup,
     staged: &StagedCommit,
-    pi: Option<u32>,
+    server: Option<u32>,
 ) -> CommitReview {
     let mut review = CommitReview::default();
     for queued in staged.queued_proposals() {
-        let from_pi = matches!(queued.sender(), Sender::External(index)
-            if pi.is_some_and(|pi| *index == SenderExtensionIndex::new(pi)));
+        let from_server = matches!(queued.sender(), Sender::External(index)
+            if server.is_some_and(|server| *index == SenderExtensionIndex::new(server)));
         match queued.proposal() {
             Proposal::Add(add) => {
                 let leaf = add.key_package().leaf_node();
@@ -223,8 +223,8 @@ pub fn own_commit_changes(
             }
             Proposal::Remove(remove) => {
                 if let Ok(claim) = member_claim(group, remove.removed()) {
-                    if from_pi {
-                        review.pi_removed.push(claim.claimed.device_id);
+                    if from_server {
+                        review.server_removed.push(claim.claimed.device_id);
                     }
                     review
                         .removed
@@ -249,14 +249,14 @@ enum Kind {
 /// Reviews a commit another member sent, before it is merged: certificates
 /// and keys of new and changed leaves, then commit authority.
 ///
-/// `committer` is the sender leaf, `server_id` this Pi's, `pi` the Pi's
+/// `committer` is the sender leaf, `server_id` this server's, `server` the server's
 /// position in the external senders, `pinned` the pinned identity keys.
 pub fn review_commit(
     group: &MlsGroup,
     staged: &StagedCommit,
     committer: LeafNodeIndex,
     server_id: &str,
-    pi: Option<u32>,
+    server: Option<u32>,
     pinned: &dyn Fn(&UserId) -> Option<Vec<u8>>,
 ) -> Result<CommitReview, LeafProblem> {
     let committer_claim = member_claim(group, committer)?;
@@ -285,9 +285,9 @@ pub fn review_commit(
                 leaf_index: leaf.u32(),
             },
             Sender::External(index)
-                if pi.is_some_and(|pi| *index == SenderExtensionIndex::new(pi)) =>
+                if server.is_some_and(|server| *index == SenderExtensionIndex::new(server)) =>
             {
-                ProposalSender::Pi
+                ProposalSender::Server
             }
             _ => ProposalSender::Other,
         };
@@ -303,8 +303,8 @@ pub fn review_commit(
             }
             Proposal::Remove(remove) => {
                 let claim = member_claim(group, remove.removed())?;
-                if matches!(sender, ProposalSender::Pi) {
-                    review.pi_removed.push(claim.claimed.device_id);
+                if matches!(sender, ProposalSender::Server) {
+                    review.server_removed.push(claim.claimed.device_id);
                 }
                 review
                     .removed
@@ -379,7 +379,7 @@ pub fn committed_by_admin(group: &MlsGroup, committer: LeafNodeIndex) -> bool {
 /// refused a commit because a certificate does not verify against its user's
 /// pinned key, the user whose identity key the device may look up again: only
 /// for a commit from the admin (a reset user being re-added). The commit is
-/// then accepted only if the Pi returns a new key that makes the review pass.
+/// then accepted only if the server returns a new key that makes the review pass.
 /// From any other member, `None`: the commit stays refused.
 pub fn key_lookup_allowed(
     group: &MlsGroup,
@@ -400,7 +400,7 @@ pub fn key_lookup_allowed(
 /// refused a Welcome because a member's certificate does not verify against
 /// its user's pinned key, the user whose identity key the device looks up
 /// again, whoever signed the Welcome. The Welcome is then joined only if the
-/// Pi returns a new key that makes the check pass.
+/// Server returns a new key that makes the check pass.
 pub fn welcome_key_lookup(problem: &LeafProblem) -> Option<UserId> {
     let LeafProblem::Unverified(user) = problem else {
         return None;
@@ -411,14 +411,14 @@ pub fn welcome_key_lookup(problem: &LeafProblem) -> Option<UserId> {
 
 /// Checks a DM Welcome's group before joining it (direct-messages: DM
 /// members): no admin extension, the DM extension names `own_user` and one
-/// other user, the Pi is an external sender, and every member's leaf belongs
+/// other user, the server is an external sender, and every member's leaf belongs
 /// to one of the two and verifies. Returns the other user.
 pub fn check_dm_welcome(
     members: impl Iterator<Item = openmls::prelude::Member>,
     context_extensions: &openmls::prelude::Extensions<openmls::prelude::GroupContext>,
     own_user: &UserId,
     server_id: &str,
-    pi: &openmls::prelude::ExternalSender,
+    server: &openmls::prelude::ExternalSender,
     pinned: &dyn Fn(&UserId) -> Option<Vec<u8>>,
 ) -> Result<UserId, LeafProblem> {
     if super::group::admin_user_id(context_extensions).is_some() {
@@ -436,8 +436,8 @@ pub fn check_dm_welcome(
         .split_once('@')
         .ok_or(LeafProblem::Context("a DM peer without a server id"))?;
     let peer = UserId::new(username, peer_server);
-    if super::group::pi_sender_index(context_extensions, pi).is_none() {
-        return Err(LeafProblem::Context("the Pi is not an external sender"));
+    if super::group::pi_sender_index(context_extensions, server).is_none() {
+        return Err(LeafProblem::Context("the server is not an external sender"));
     }
     for member in members {
         let claim = LeafClaim::read(&member.credential, member.signature_key.as_slice())?;
@@ -450,19 +450,19 @@ pub fn check_dm_welcome(
 }
 
 /// Checks a Welcome's group before joining it: every member's leaf, the admin
-/// extension, and the Pi as external sender.
+/// extension, and the server as external sender.
 pub fn check_welcome(
     members: impl Iterator<Item = openmls::prelude::Member>,
     context_extensions: &openmls::prelude::Extensions<openmls::prelude::GroupContext>,
     server_id: &str,
-    pi: &openmls::prelude::ExternalSender,
+    server: &openmls::prelude::ExternalSender,
     pinned: &dyn Fn(&UserId) -> Option<Vec<u8>>,
 ) -> Result<(), LeafProblem> {
     if super::group::admin_user_id(context_extensions).is_none() {
         return Err(LeafProblem::Context("no admin extension"));
     }
-    if super::group::pi_sender_index(context_extensions, pi).is_none() {
-        return Err(LeafProblem::Context("the Pi is not an external sender"));
+    if super::group::pi_sender_index(context_extensions, server).is_none() {
+        return Err(LeafProblem::Context("the server is not an external sender"));
     }
     for member in members {
         LeafClaim::read(&member.credential, member.signature_key.as_slice())?

@@ -1,20 +1,20 @@
 //! External tests for the DM rules in `protocol` (change `dms`): the DM
 //! extension, the DM commit authority rule and the protocol versions.
 //!
-//! Cast: Alice (`alice@pi`, phone at leaf 0, tablet at leaf 2), Bob (`bob@pi`,
-//! phone at leaf 1) in the Alice–Bob DM, and Carol (`carol@pi`) outside it.
+//! Cast: Alice (`alice@chat`, phone at leaf 0, tablet at leaf 2), Bob (`bob@chat`,
+//! phone at leaf 1) in the Alice–Bob DM, and Carol (`carol@chat`) outside it.
 
 use protocol::group_membership::{
     CommitAuthorityError, Committer, DM_EXTENSION_TYPE, Proposal, ProposalKind, ProposalSender,
     Violation, check_dm_commit_authority, dm_extension_data, parse_dm_extension,
 };
 use protocol::wire_transport::{
-    PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, negotiate_protocol_version, pi_knows_dms,
+    PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, negotiate_protocol_version, server_knows_dms,
 };
 
-const ALICE: &str = "alice@pi";
-const BOB: &str = "bob@pi";
-const CAROL: &str = "carol@pi";
+const ALICE: &str = "alice@chat";
+const BOB: &str = "bob@chat";
+const CAROL: &str = "carol@chat";
 const PAIR: (&str, &str) = (ALICE, BOB);
 
 fn phone(user: &'static str, leaf_index: u32) -> Committer<'static> {
@@ -46,7 +46,7 @@ fn the_dm_extension_names_the_pair_in_either_order() {
     assert_eq!(DM_EXTENSION_TYPE, 0xF0A2);
     let data = dm_extension_data(BOB, ALICE);
     assert_eq!(data, dm_extension_data(ALICE, BOB));
-    assert_eq!(data, b"alice@pi\nbob@pi");
+    assert_eq!(data, b"alice@chat\nbob@chat");
     assert_eq!(
         parse_dm_extension(&data),
         Some((ALICE.to_owned(), BOB.to_owned()))
@@ -58,13 +58,13 @@ fn the_dm_extension_names_the_pair_in_either_order() {
 fn a_garbled_dm_extension_names_nobody() {
     for bad in [
         &b""[..],
-        b"alice@pi",
-        b"bob@pi\nalice@pi",
-        b"alice@pi\nalice@pi",
-        b"alice@pi\n",
-        b"alice@pi\nbob@pi\ncarol@pi",
-        b"alice@pi\nbob @pi",
-        b"\xff\nbob@pi",
+        b"alice@chat",
+        b"bob@chat\nalice@chat",
+        b"alice@chat\nalice@chat",
+        b"alice@chat\n",
+        b"alice@chat\nbob@chat\ncarol@chat",
+        b"alice@chat\nbob @chat",
+        b"\xff\nbob@chat",
     ] {
         assert_eq!(parse_dm_extension(bad), None, "{bad:?}");
     }
@@ -104,7 +104,7 @@ fn nobody_adds_a_third_user() {
 
 // spec: group-membership/commit-authority
 #[test]
-fn only_own_devices_are_removed_except_by_the_pi() {
+fn only_own_devices_are_removed_except_by_the_server() {
     let alice = phone(ALICE, 0);
     assert_eq!(
         check_dm_commit_authority(&alice, PAIR, &[by(0, remove(ALICE))]),
@@ -117,12 +117,12 @@ fn only_own_devices_are_removed_except_by_the_pi() {
             violation: Violation::RemoveOfAnotherUser
         })
     );
-    let pi_remove = Proposal {
-        sender: ProposalSender::Pi,
+    let server_remove = Proposal {
+        sender: ProposalSender::Server,
         kind: remove(BOB),
     };
     assert_eq!(
-        check_dm_commit_authority(&alice, PAIR, &[pi_remove]),
+        check_dm_commit_authority(&alice, PAIR, &[server_remove]),
         Ok(())
     );
 }
@@ -181,12 +181,12 @@ fn a_committer_outside_the_pair_is_refused() {
 
 // spec: wire-transport/protocol-version-negotiation
 #[test]
-fn version_2_with_a_new_pi_and_1_with_an_old_one() {
+fn version_2_with_a_new_server_and_1_with_an_old_one() {
     assert_eq!(PROTOCOL_VERSION, 2);
     assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, [1, 2]);
     assert_eq!(negotiate_protocol_version(&[1, 2]), Some(2));
     assert_eq!(negotiate_protocol_version(&[1]), Some(1));
     assert_eq!(negotiate_protocol_version(&[3]), None);
-    assert!(pi_knows_dms(&[1, 2]));
-    assert!(!pi_knows_dms(&[1]));
+    assert!(server_knows_dms(&[1, 2]));
+    assert!(!server_knows_dms(&[1]));
 }

@@ -1,6 +1,6 @@
-//! An in-process Pi on a random local port with a temporary database and keys
+//! An in-process server on a random local port with a temporary database and keys
 //! and a manual clock, plus gRPC connections over pinned TLS that know their
-//! TLS exporter value (pi-server-core design D8).
+//! TLS exporter value (server-core design D8).
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use hyper_util::rt::TokioIo;
 use protocol::wire_transport::{AUTH_TLS_EXPORTER_LABEL, AUTH_TLS_EXPORTER_LEN};
 use server::blobs::BlobStore;
-use server::runtime::{Bootstrap, ManualClock, Pi, State};
+use server::runtime::{Bootstrap, ManualClock, Server, State};
 use tokio::sync::oneshot;
 use tonic::transport::{Channel, Endpoint};
 
@@ -48,7 +48,7 @@ impl Blobs {
 }
 
 /// A running test server.
-pub struct TestPi {
+pub struct TestServer {
     /// Moves the server's time.
     pub clock: ManualClock,
     /// Where it listens.
@@ -67,20 +67,20 @@ pub struct TestPi {
     _dir: tempfile::TempDir,
 }
 
-impl TestPi {
-    /// Starts a fresh server (admin `akhil@pi`) whose wake pings are
-    /// recorded in [`TestPi::pushes`].
+impl TestServer {
+    /// Starts a fresh server (admin `akhil@chat`) whose wake pings are
+    /// recorded in [`TestServer::pushes`].
     pub async fn start() -> Self {
         Self::start_inner(true, Blobs::Off).await
     }
 
-    /// [`TestPi::start`] with image blobs stored as `blobs` says.
+    /// [`TestServer::start`] with image blobs stored as `blobs` says.
     pub async fn start_with_blobs(blobs: Blobs) -> Self {
         Self::start_inner(true, blobs).await
     }
 
     /// Starts a fresh server with the default push provider (the logging
-    /// one); [`TestPi::pushes`] stays empty.
+    /// one); [`TestServer::pushes`] stays empty.
     pub async fn start_with_default_push() -> Self {
         Self::start_inner(false, Blobs::Off).await
     }
@@ -92,25 +92,25 @@ impl TestPi {
         }
         let clock = manual_clock();
         let pushes = RecordingPush::default();
-        let pi = if record {
-            Self::start_pi(dir.path(), &blobs, &clock, &pushes).await
+        let server = if record {
+            Self::start_server(dir.path(), &blobs, &clock, &pushes).await
         } else {
-            Pi::start(
+            Server::start(
                 config_with(dir.path(), blobs.config()),
                 Arc::new(clock.clone()),
             )
             .await
         }
         .check("server start");
-        let bootstrap_code = match pi.bootstrap() {
+        let bootstrap_code = match server.bootstrap() {
             Bootstrap::Created(invite) => invite.invite.code.clone(),
             other => panic!("expected a bootstrap invite, got {other:?}"),
         };
-        let addr = pi.local_addr();
-        let pin = pi.state().keys.tls_spki_sha256();
-        let state = pi.state().clone();
+        let addr = server.local_addr();
+        let pin = server.state().keys.tls_spki_sha256();
+        let state = server.state().clone();
         let (stop, stopped) = oneshot::channel::<()>();
-        tokio::spawn(pi.serve(async {
+        tokio::spawn(server.serve(async {
             let _ = stopped.await;
         }));
         Self {
@@ -126,20 +126,20 @@ impl TestPi {
         }
     }
 
-    async fn start_pi(
+    async fn start_server(
         dir: &std::path::Path,
         blobs: &Blobs,
         clock: &ManualClock,
         pushes: &RecordingPush,
-    ) -> Result<Pi, server::runtime::StartError> {
+    ) -> Result<Server, server::runtime::StartError> {
         let config = config_with(dir, blobs.config());
         let clock = Arc::new(clock.clone());
         let pushes = Arc::new(pushes.clone());
         match blobs {
             Blobs::Backend(backend) => {
-                Pi::start_with_blobs(config, clock, pushes, Some(backend.clone())).await
+                Server::start_with_blobs(config, clock, pushes, Some(backend.clone())).await
             }
-            _ => Pi::start_with_push(config, clock, pushes).await,
+            _ => Server::start_with_push(config, clock, pushes).await,
         }
     }
 
@@ -160,13 +160,13 @@ impl TestPi {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
-        let pi = Self::start_pi(self._dir.path(), &self.blobs, &self.clock, &self.pushes)
+        let server = Self::start_server(self._dir.path(), &self.blobs, &self.clock, &self.pushes)
             .await
             .check("server restart");
-        self.addr = pi.local_addr();
-        self.state = pi.state().clone();
+        self.addr = server.local_addr();
+        self.state = server.state().clone();
         let (stop, stopped) = oneshot::channel::<()>();
-        tokio::spawn(pi.serve(async {
+        tokio::spawn(server.serve(async {
             let _ = stopped.await;
         }));
         self.stop = Some(stop);
@@ -202,7 +202,7 @@ impl TestPi {
     }
 }
 
-impl Drop for TestPi {
+impl Drop for TestServer {
     fn drop(&mut self) {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
@@ -210,12 +210,12 @@ impl Drop for TestPi {
     }
 }
 
-/// One HTTP/2 connection to the Pi over pinned TLS.
+/// One HTTP/2 connection to the server over pinned TLS.
 #[derive(Clone)]
 pub struct Conn {
     /// The gRPC channel (exactly one TLS connection; it does not reconnect).
     pub channel: Channel,
-    /// This connection's TLS exporter value, as the Pi sees it.
+    /// This connection's TLS exporter value, as the server sees it.
     pub exporter: [u8; AUTH_TLS_EXPORTER_LEN],
 }
 
@@ -235,7 +235,7 @@ impl Conn {
             )
             .check("TLS exporter");
         let slot = Arc::new(Mutex::new(Some(tls)));
-        let channel = Endpoint::from_static("http://vyajena2-pi")
+        let channel = Endpoint::from_static("http://vyajena2-server")
             .connect_with_connector(tower::service_fn(move |_| {
                 let stream = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
                 async move {

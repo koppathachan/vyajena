@@ -1,7 +1,7 @@
-//! pi-runtime (relay-sni-fix): the Pi's default log filter quiets benign rustls
+//! server-runtime (relay-sni-fix): the server's default log filter quiets benign rustls
 //! server-handshake warnings (external scanner IP-in-SNI noise).
 
-// spec: pi-runtime/quiet-external-tls-handshake-noise
+// spec: server-runtime/quiet-external-tls-handshake-noise
 #[test]
 fn default_filter_quiets_rustls_handshake_warnings() {
     let filter = server::runtime::logging::filter().to_string();

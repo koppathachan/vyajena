@@ -1,6 +1,6 @@
 //! The checks OpenMLS does not do, on real OpenMLS commits: the client half
 //! of commit authority and the certificate and leaf-key checks
-//! (client-core task 5.2; `client::mls::verify`). The Pi refuses such
+//! (client-core task 5.2; `client::mls::verify`). The server refuses such
 //! commits first, so these build them with OpenMLS directly and hand them to
 //! the same review the engine runs before merging.
 
@@ -24,7 +24,7 @@ use openmls::prelude::{
 };
 use support::Check;
 
-const SERVER: &str = "pi";
+const SERVER: &str = "server";
 
 fn seed() -> [u8; 32] {
     let mut bytes = [0u8; 32];
@@ -173,7 +173,7 @@ fn wire(message: &MlsMessageOut) -> Vec<u8> {
     mls_group::wire(message).check("wire")
 }
 
-fn pi() -> ExternalSender {
+fn server() -> ExternalSender {
     ExternalSender::new(
         SignaturePublicKey::from(
             SigningKey::from_bytes(&seed())
@@ -192,7 +192,7 @@ struct Setup {
     admin: Member,
     alice: Member,
     carol: Member,
-    pi: ExternalSender,
+    server: ExternalSender,
 }
 
 fn setup() -> Setup {
@@ -201,15 +201,15 @@ fn setup() -> Setup {
     let mut admin = akhil.device();
     let mut alice = alice_user.device();
     let mut carol = carol_user.device();
-    let pi = pi();
+    let server = server();
     admin.group = Some(
         mls_group::create(
             admin.store.mls(),
             &admin.keys.mls_signer(),
             admin.credential(),
             mls_group::new_group_id().check("group id"),
-            pi.clone(),
-            "akhil@pi",
+            server.clone(),
+            "akhil@chat",
         )
         .check("create"),
     );
@@ -226,7 +226,7 @@ fn setup() -> Setup {
         admin,
         alice,
         carol,
-        pi,
+        server,
     }
 }
 
@@ -237,13 +237,13 @@ fn review(
 ) -> Result<verify::CommitReview, LeafProblem> {
     let (staged, committer) = setup.carol.stage(commit);
     let group = setup.carol.group.as_ref().check("group");
-    let pi_index = mls_group::pi_sender_index(group.extensions(), &setup.pi);
+    let server_index = mls_group::pi_sender_index(group.extensions(), &setup.server);
     let result = verify::review_commit(
         group,
         &staged,
         openmls::prelude::LeafNodeIndex::new(committer),
         SERVER,
-        pi_index,
+        server_index,
         &|user| users.get(user).cloned(),
     );
     if result.is_ok() {
@@ -338,14 +338,14 @@ fn clients_reject_a_certificate_that_does_not_verify_against_the_pinned_key() {
     users.insert(bob.id.clone(), User::new("bob").public());
     let (commit, _) = setup.admin.add(vec![bob_phone.key_package()]);
     let refused = review(&mut setup, &commit, &users);
-    assert_eq!(refused, Err(LeafProblem::Unverified("bob@pi".into())));
+    assert_eq!(refused, Err(LeafProblem::Unverified("bob@chat".into())));
 
     // And with nothing pinned at all the leaf is not accepted either.
     let mut setup = self::setup();
     let users = setup.users.clone();
     let (commit, _) = setup.admin.add(vec![bob_phone.key_package()]);
     let refused = review(&mut setup, &commit, &users);
-    assert_eq!(refused, Err(LeafProblem::NotPinned("bob@pi".into())));
+    assert_eq!(refused, Err(LeafProblem::NotPinned("bob@chat".into())));
 }
 
 /// What Carol decides about `commit` with `users` pinned: the review, and
@@ -359,12 +359,13 @@ fn review_with_lookup(
     let (staged, committer) = setup.carol.stage(commit);
     let committer = openmls::prelude::LeafNodeIndex::new(committer);
     let group = setup.carol.group.as_ref().check("group");
-    let pi_index = mls_group::pi_sender_index(group.extensions(), &setup.pi);
+    let server_index = mls_group::pi_sender_index(group.extensions(), &setup.server);
     let mut pinned = users.clone();
     loop {
-        let result = verify::review_commit(group, &staged, committer, SERVER, pi_index, &|user| {
-            pinned.get(user).cloned()
-        });
+        let result =
+            verify::review_commit(group, &staged, committer, SERVER, server_index, &|user| {
+                pinned.get(user).cloned()
+            });
         let problem = match result {
             Ok(review) => return Ok(review),
             Err(problem) => problem,
@@ -372,7 +373,7 @@ fn review_with_lookup(
         let Some(user) = verify::key_lookup_allowed(group, committer, &problem) else {
             return Err(problem);
         };
-        // The Pi's answer to `Keys.GetIdentityKeys`.
+        // The server's answer to `Keys.GetIdentityKeys`.
         match new_keys.get(&user) {
             Some(key) if pinned.get(&user) != Some(key) => {
                 pinned.insert(user, key.clone());
@@ -390,7 +391,7 @@ fn an_admin_commit_with_a_reset_users_new_key_passes_after_a_lookup() {
     let old_bob = User::new("bob");
     let new_bob = User::new("bob");
     let new_phone = new_bob.device();
-    // Carol still has Bob's old key pinned; the Pi now has his new one.
+    // Carol still has Bob's old key pinned; the server now has his new one.
     let mut users = setup.users.clone();
     users.insert(old_bob.id.clone(), old_bob.public());
     let new_keys: BTreeMap<UserId, Vec<u8>> = [(new_bob.id.clone(), new_bob.public())]
@@ -416,7 +417,7 @@ fn an_admin_commit_with_a_reset_users_new_key_passes_after_a_lookup() {
         .collect();
     let (commit, _) = setup.admin.add(vec![forged.key_package()]);
     let refused = review_with_lookup(&mut setup, &commit, &users, &same);
-    assert_eq!(refused, Err(LeafProblem::Unverified("bob@pi".into())));
+    assert_eq!(refused, Err(LeafProblem::Unverified("bob@chat".into())));
 }
 
 // spec: key-directory/clients-verify-the-identity-chain
@@ -424,7 +425,7 @@ fn an_admin_commit_with_a_reset_users_new_key_passes_after_a_lookup() {
 fn a_non_admin_commit_with_a_changed_key_is_refused_without_a_lookup() {
     let mut setup = setup();
     // Alice's tablet is certified by a new identity key of Alice, which the
-    // Pi would confirm; Alice's own device commits its Add.
+    // Server would confirm; Alice's own device commits its Add.
     let new_alice = User::new("alice");
     let tablet = new_alice.device();
     let users = setup.users.clone();
@@ -433,7 +434,7 @@ fn a_non_admin_commit_with_a_changed_key_is_refused_without_a_lookup() {
         .collect();
     let (commit, _) = setup.alice.add(vec![tablet.key_package()]);
     let refused = review_with_lookup(&mut setup, &commit, &users, &new_keys);
-    assert_eq!(refused, Err(LeafProblem::Unverified("alice@pi".into())));
+    assert_eq!(refused, Err(LeafProblem::Unverified("alice@chat".into())));
 }
 
 /// Alice's DM with Bob, with Bob's device in it, as Alice's device has it.
@@ -441,15 +442,15 @@ fn dm_of_alice_and_bob() -> (BTreeMap<UserId, Vec<u8>>, Member, ExternalSender) 
     let (alice_user, bob_user) = (User::new("alice"), User::new("bob"));
     let mut alice = alice_user.device();
     let bob = bob_user.device();
-    let pi = pi();
+    let server = server();
     alice.group = Some(
         mls_group::create_dm(
             alice.store.mls(),
             &alice.keys.mls_signer(),
             alice.credential(),
             mls_group::new_group_id().check("group id"),
-            pi.clone(),
-            ("alice@pi", "bob@pi"),
+            server.clone(),
+            ("alice@chat", "bob@chat"),
         )
         .check("create a DM"),
     );
@@ -458,13 +459,13 @@ fn dm_of_alice_and_bob() -> (BTreeMap<UserId, Vec<u8>>, Member, ExternalSender) 
         .iter()
         .map(|u| (u.id.clone(), u.public()))
         .collect();
-    (users, alice, pi)
+    (users, alice, server)
 }
 
 // spec: direct-messages/dm-members
 #[test]
 fn a_dm_welcome_names_its_two_users_and_nobody_else_joins_it() {
-    let (users, alice, pi) = dm_of_alice_and_bob();
+    let (users, alice, server) = dm_of_alice_and_bob();
     let group = alice.group.as_ref().check("group");
     let pinned = |user: &UserId| users.get(user).cloned();
     // Bob's core finds itself in it, with Alice as the peer.
@@ -473,7 +474,7 @@ fn a_dm_welcome_names_its_two_users_and_nobody_else_joins_it() {
         group.extensions(),
         &UserId::new("bob", SERVER),
         SERVER,
-        &pi,
+        &server,
         &pinned,
     )
     .check("Bob checks the DM");
@@ -484,13 +485,19 @@ fn a_dm_welcome_names_its_two_users_and_nobody_else_joins_it() {
         group.extensions(),
         &UserId::new("carol", SERVER),
         SERVER,
-        &pi,
+        &server,
         &pinned,
     );
     assert!(matches!(refused, Err(LeafProblem::Context(_))));
     // And a main-group check refuses a DM's context (no admin extension).
     assert!(matches!(
-        verify::check_welcome(group.members(), group.extensions(), SERVER, &pi, &pinned),
+        verify::check_welcome(
+            group.members(),
+            group.extensions(),
+            SERVER,
+            &server,
+            &pinned
+        ),
         Err(LeafProblem::Context(_))
     ));
 }
@@ -499,7 +506,7 @@ fn a_dm_welcome_names_its_two_users_and_nobody_else_joins_it() {
 #[test]
 fn in_a_dm_a_member_adds_the_peers_device_but_removes_only_its_own() {
     use openmls_traits::OpenMlsProvider as _;
-    let (mut users, mut alice, pi) = dm_of_alice_and_bob();
+    let (mut users, mut alice, server) = dm_of_alice_and_bob();
     // Bob, reset since, now certifies devices with a new key.
     let bob_user = User::new("bob");
     users.insert(bob_user.id.clone(), bob_user.public());
@@ -513,13 +520,13 @@ fn in_a_dm_a_member_adds_the_peers_device_but_removes_only_its_own() {
         .check("add Bob's tablet");
     let _ = (wire(&commit), wire(&welcome));
     let staged = group.pending_commit().check("pending");
-    let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
+    let server_index = mls_group::pi_sender_index(group.extensions(), &server);
     let review = verify::review_commit(
         group,
         staged,
         group.own_leaf_index(),
         SERVER,
-        pi_index,
+        server_index,
         &|user| users.get(user).cloned(),
     );
     assert!(review.is_ok(), "{review:?}");
@@ -541,7 +548,7 @@ fn in_a_dm_a_member_adds_the_peers_device_but_removes_only_its_own() {
         staged,
         group.own_leaf_index(),
         SERVER,
-        pi_index,
+        server_index,
         &|user| users.get(user).cloned(),
     );
     assert!(

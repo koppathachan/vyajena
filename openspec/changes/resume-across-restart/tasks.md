@@ -32,7 +32,7 @@
 - [x] 4.2 `engine/mod.rs`: save the token to the key store on connect (when it
       changed) and on renewal, off the engine thread; delete it in `removed()`
 - [x] 4.3 `identity/keys.rs`: `create_fresh` deletes any saved token
-- [x] 4.4 End-to-end tests against the real Pi: reopen reuses the token (no new
+- [x] 4.4 End-to-end tests against the real server: reopen reuses the token (no new
       session), renewed token is the one resumed, past renewal falls back,
       a dropped token falls back, removal deletes it, token only in the key store,
       a failing key store still connects
@@ -40,7 +40,7 @@
 
 ## 5. Server (`server/`) — test only
 
-- [x] 5.1 `server/tests/session_authentication.rs`: the expiry the Pi issues is
+- [x] 5.1 `server/tests/session_authentication.rs`: the expiry the server issues is
       `SESSION_TOKEN_MAX_LIFETIME` = 6 h after issue
 
 ## 6. Verify
@@ -50,5 +50,5 @@
 - [ ] 6.2 `buf lint`, `buf breaking --against '.git#branch=main'`, `cd app &&
       flutter analyze && flutter test`, `openspec validate resume-across-restart --strict`
 - [ ] 6.3 Report the commit list to the tracker/owner; do not push (standing rule)
-- [ ] 6.4 Owner: deploy the Pi (`deploy/pi/build.sh && deploy/pi/deploy.sh --no-build`,
+- [ ] 6.4 Owner: deploy the server (`deploy/server/build.sh && deploy/server/deploy.sh --no-build`,
       `check.sh` 0 failed) and ship an app build; archive after both

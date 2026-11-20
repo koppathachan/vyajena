@@ -30,7 +30,7 @@ pub const ED25519_SIGNATURE_LEN: usize = 64;
 pub type DeviceId = [u8; DEVICE_ID_LEN];
 
 /// Derives a device id from its device auth public key
-/// (Federation-ready identifiers). Any device can compute its own id; the Pi
+/// (Federation-ready identifiers). Any device can compute its own id; the server
 /// never assigns one.
 pub fn device_id(auth_public_key: &[u8]) -> DeviceId {
     let digest = Sha256::digest(auth_public_key);
@@ -106,7 +106,7 @@ pub fn verify_device_certificate(
         .map_err(|_| CertificateError::BadSignature)
 }
 
-/// The longest push token the Pi accepts, in bytes (Push token registration).
+/// The longest push token the server accepts, in bytes (Push token registration).
 pub const MAX_PUSH_TOKEN_BYTES: usize = 4096;
 
 /// An APNs device token is this many hexadecimal characters, inclusive

@@ -21,7 +21,7 @@ import "google/protobuf/timestamp.proto";
 message UserId {
   // Local part, chosen by the admin.
   string username = 1;
-  // The Pi's server id, as returned in `ServerInfo.server_id`.
+  // The server's server id, as returned in `ServerInfo.server_id`.
   string server_id = 2;
 }
 
@@ -29,7 +29,7 @@ message UserId {
 //
 // device-identity: Federation-ready identifiers. `device_id` is exactly 16 bytes:
 // the first 16 bytes of SHA-256(device auth public key). A device computes it
-// itself; the Pi never assigns it.
+// itself; the server never assigns it.
 message DeviceRef {
   UserId user_id = 1;
   // 16 bytes (see vyajena_proto::DEVICE_ID_LEN).
@@ -48,7 +48,7 @@ message DeviceCertificate {
   // The certified device. `device.device_id` MUST equal the first 16 bytes of
   // SHA-256(`auth_public_key`) (device-identity: Federation-ready identifiers).
   DeviceRef device = 1;
-  // Ed25519 public key (32 bytes) the device signs Pi challenges with
+  // Ed25519 public key (32 bytes) the device signs server challenges with
   // (wire-transport: Session authentication).
   bytes auth_public_key = 2;
   // Ed25519 public key (32 bytes) the device signs MLS messages and its leaf
@@ -65,7 +65,7 @@ message DeviceCertificate {
 // device-identity: User identity key and device certificates. `signature` is an
 // Ed25519 signature by the user identity key over the bytes
 // `"vyajena2-device-cert-v1" || certificate` (plain concatenation, see
-// vyajena_proto::DEVICE_CERT_CONTEXT). The Pi accepts a certificate only if it
+// vyajena_proto::DEVICE_CERT_CONTEXT). The server accepts a certificate only if it
 // verifies against the identity key stored for that user, and rejects a forged
 // one with `PERMISSION_DENIED`.
 //
@@ -82,11 +82,11 @@ message SignedDeviceCertificate {
   bytes signature = 2;
 }
 
-// Why the Pi rejected an envelope on the `Connect` stream. Returned in
+// Why the server rejected an envelope on the `Connect` stream. Returned in
 // `SendResult.Rejected`. Unary RPCs use standard gRPC status codes instead
 // (design D11).
 //
-// There is no queue-full reason: the Pi never rejects a send because of another
+// There is no queue-full reason: the server never rejects a send because of another
 // device's queue (message-delivery: Per-device queues).
 enum RejectionReason {
   REJECTION_REASON_UNSPECIFIED = 0;
@@ -111,9 +111,9 @@ enum RejectionReason {
   REJECTION_REASON_DUPLICATE_MISMATCH = 4;
   // A commit breaks the commit authority rule, or its sender leaf is not the
   // authenticated device's leaf (group-membership: Commit authority;
-  // group-membership: Pi validates handshakes without group secrets).
+  // group-membership: server validates handshakes without group secrets).
   REJECTION_REASON_POLICY_VIOLATION = 5;
-  // The envelope is for a DM that the Pi closed because one of its two users
+  // The envelope is for a DM that the server closed because one of its two users
   // was removed (direct-messages: DM closed on user removal). Nothing is
   // stored.
   REJECTION_REASON_GROUP_CLOSED = 6;

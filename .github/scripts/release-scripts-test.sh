@@ -188,7 +188,7 @@ expect_pass "version server" bash -c "cd '$r' && test \"\$('$guard' version serv
 # --- release-automation/server-release-files ----------------------------------
 # spec: release-automation/server-release-files
 wf="$repo/.github/workflows/release-server.yml"
-if grep -q 'deploy/pi/build.sh' "$wf" && [ "$(grep -c '= "SHA256SUMS rathole vyajena-server "' "$wf")" = 2 ] &&
+if grep -q 'deploy/server/build.sh' "$wf" && [ "$(grep -c '= "SHA256SUMS rathole vyajena-server "' "$wf")" = 2 ] &&
   grep -q 'actions/attest-build-provenance@' "$wf"; then
   ok "server release: build.sh, three files checked twice, provenance"
 else
@@ -224,12 +224,12 @@ if ruby -ryaml -e '
     abort "#{j} not dispatch-only" unless job["if"] == "github.event_name == '"'"'workflow_dispatch'"'"'"
   end' "$repo/.github/workflows"; then ok "dry-run jobs exist, dispatch-only, no environment"; else bad "dry-run jobs"; fi
 
-# --- release-automation/pi-deploys-stay-manual --------------------------------
-# spec: release-automation/pi-deploys-stay-manual
-d="$(good_workflow | sed 's/      - run: echo dry/      - run: ssh pi@host true/' | fixture ssh)"
-expect_fail "workflow reaching the Pi is refused" "reaches the Pi or relay" "$check" "$d"
-d="$(good_workflow | sed 's|      - run: echo dry|      - run: deploy/pi/deploy.sh --no-build|' | fixture deploy)"
-expect_fail "workflow running deploy.sh is refused" "reaches the Pi or relay" "$check" "$d"
+# --- release-automation/server-deploys-stay-manual --------------------------------
+# spec: release-automation/server-deploys-stay-manual
+d="$(good_workflow | sed 's/      - run: echo dry/      - run: ssh server@host true/' | fixture ssh)"
+expect_fail "workflow reaching the server is refused" "reaches the server or relay" "$check" "$d"
+d="$(good_workflow | sed 's|      - run: echo dry|      - run: deploy/server/deploy.sh --no-build|' | fixture deploy)"
+expect_fail "workflow running deploy.sh is refused" "reaches the server or relay" "$check" "$d"
 
 # --- release-automation/owner-approval-gate: the environment is really protected
 # spec: release-automation/owner-approval-gate
@@ -291,7 +291,7 @@ expect_out "openspec only: nothing runs" openspec/changes/x/tasks.md "proto=fals
 expect_out "release workflow only: nothing runs here" .github/workflows/release-app.yml "proto=false rust=false flutter=false "
 expect_out "server code: rust" server/src/main.rs "proto=false rust=true flutter=false "
 expect_out "Cargo.lock: rust" Cargo.lock "proto=false rust=true flutter=false "
-expect_out "deploy files: rust (server tests read them)" deploy/pi/deploy.sh "proto=false rust=true flutter=false "
+expect_out "deploy files: rust (server tests read them)" deploy/server/deploy.sh "proto=false rust=true flutter=false "
 expect_out "proto: proto and rust" proto/vyajena/v1/x.proto "proto=true rust=true flutter=false "
 expect_out "app: flutter" app/lib/main.dart "proto=false rust=false flutter=true "
 expect_out "ci.yml: everything" .github/workflows/ci.yml "proto=true rust=true flutter=true "

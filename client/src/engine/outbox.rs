@@ -7,7 +7,7 @@
 //! sends every stored `sending` message in the order it was written:
 //!
 //! - one that was sent before (its ciphertext and epoch are stored) goes out
-//!   again byte for byte, so after a reconnect or a crash the Pi's dedup
+//!   again byte for byte, so after a reconnect or a crash the server's dedup
 //!   answers with the original result (message-delivery: Idempotent sends);
 //! - one never sent, or rejected with `STALE_EPOCH` (which leaves no dedup
 //!   record), is encrypted in the group's current epoch with the same
@@ -15,8 +15,8 @@
 //!
 //! Nothing is sent while an own commit waits for its result or envelopes are
 //! held (it would be in the old epoch), while the group is behind the epoch
-//! the Pi last named, or while this device is stalled. OpenMLS encrypts
-//! nothing while proposals are pending (the Pi's inactivity Removes): then
+//! the server last named, or while this device is stalled. OpenMLS encrypts
+//! nothing while proposals are pending (the server's inactivity Removes): then
 //! this device commits them first, which commit authority allows any member.
 
 use std::sync::Arc;
@@ -118,7 +118,7 @@ impl Engine {
                 continue;
             };
             // A queued image: its blob goes up first, in a task of its own, and
-            // nothing of its chat goes out until the Pi has it.
+            // nothing of its chat goes out until the server has it.
             if self.store().is_blob_pending(message.id)? {
                 held.insert(message.chat);
                 self.start_upload(&message, group_id)?;
@@ -140,11 +140,11 @@ impl Engine {
                     }
                     if group.pending_proposals().next().is_some() {
                         if self.dms.contains_key(&group_id) {
-                            self.push_job(Job::CommitPiRemovesIn {
+                            self.push_job(Job::CommitServerRemovesIn {
                                 group_id: group_id.clone(),
                             });
                         } else {
-                            self.push_job(Job::CommitPiRemoves);
+                            self.push_job(Job::CommitServerRemoves);
                         }
                         held.insert(message.chat);
                         continue;
@@ -310,7 +310,7 @@ impl Engine {
         Ok(true)
     }
 
-    /// An own profile or group settings the Pi accepted applies here too
+    /// An own profile or group settings the server accepted applies here too
     /// (the user's other devices apply it when they receive it).
     fn apply_own(&self, id: MessageId) -> Result<(), EngineError> {
         let Some(stored) = self.store().message(id)? else {

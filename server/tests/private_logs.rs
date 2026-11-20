@@ -1,4 +1,4 @@
-//! pi-runtime (relay-privacy-logging): the Pi's logs carry a device id only as
+//! server-runtime (relay-privacy-logging): the server's logs carry a device id only as
 //! a short stable hash, never raw, and never a session token; a stream open
 //! emits the connection metrics. This binary installs a global log capture, so
 //! it holds one test.
@@ -40,8 +40,8 @@ impl Captured {
     }
 }
 
-// spec: pi-runtime/private-logs
-// spec: pi-runtime/connection-metrics
+// spec: server-runtime/private-logs
+// spec: server-runtime/connection-metrics
 #[tokio::test]
 async fn logs_redact_device_ids_and_emit_stream_metrics() {
     let captured = Captured::default();

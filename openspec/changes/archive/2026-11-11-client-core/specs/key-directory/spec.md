@@ -1,30 +1,30 @@
 ## ADDED Requirements
 
 ### Requirement: Last-resort KeyPackage refresh
-Each device SHALL replace its last-resort KeyPackage on the Pi when the current
+Each device SHALL replace its last-resort KeyPackage on the server when the current
 one is older than 7 days, and SHALL upload more one-time KeyPackages whenever it
 receives a low-KeyPackages notice.
 
 #### Scenario: Weekly refresh
 - **WHEN** Bob's last-resort KeyPackage is 7 days old
-- **THEN** his core uploads a new last-resort KeyPackage and the Pi hands out the
+- **THEN** his core uploads a new last-resort KeyPackage and the server hands out the
   new one from then on
 
 ### Requirement: Identity key lookup
 `Keys.GetIdentityKeys` SHALL take a list of user ids and return each user's
-current identity public key, consuming no KeyPackages. The Pi SHALL reject the
+current identity public key, consuming no KeyPackages. The server SHALL reject the
 call with `NOT_FOUND`, returning nothing, if any listed user id is unknown or
 has no non-revoked device.
 
 #### Scenario: Learning keys without a KeyPackage
 - **WHEN** Carol joins from a Welcome and looks up the identity keys of Alice
   and Bob
-- **THEN** the Pi returns both keys and Alice's and Bob's devices keep all their
+- **THEN** the server returns both keys and Alice's and Bob's devices keep all their
   one-time KeyPackages
 
 #### Scenario: Unknown user in the list
-- **WHEN** a device looks up `alice@pi` and an unknown `zed@pi`
-- **THEN** the Pi rejects the call with `NOT_FOUND`
+- **WHEN** a device looks up `alice@chat` and an unknown `zed@chat`
+- **THEN** the server rejects the call with `NOT_FOUND`
 
 ## MODIFIED Requirements
 
@@ -35,16 +35,16 @@ learning it from `Keys.GetIdentityKeys` or `Keys.FetchKeyPackages`. If a later
 fetch returns a different identity key for a pinned user, the client SHALL refuse
 to add that user's devices and SHALL warn the user. A member processing a commit
 from the admin that adds a device whose certificate does not verify against the
-pinned key SHALL look up the user's identity key; if the Pi returns a new key that
+pinned key SHALL look up the user's identity key; if the server returns a new key that
 verifies the certificate, the member SHALL accept the commit, pin the new key and
 warn the user that the key changed. The same change in a commit from any other
 member SHALL be rejected. A device joining from a Welcome whose tree holds a leaf
 that does not verify against that user's pinned key SHALL look up the user's
-identity key the same way, whoever signed the Welcome; if the Pi's key verifies
+identity key the same way, whoever signed the Welcome; if the server's key verifies
 the leaf, the device SHALL join, pin the new key and warn the user.
 
 #### Scenario: Identity key changed
-- **WHEN** a fetch returns an identity key for `bob@pi` that differs from the one
+- **WHEN** a fetch returns an identity key for `bob@chat` that differs from the one
   pinned on this client
 - **THEN** the client does not add Bob's devices and surfaces a warning
 

@@ -4,7 +4,7 @@
 #
 #   release-workflows-check.sh [<workflows dir>]   default .github/workflows
 #
-# Every workflow:     no pull_request_target; no ssh, scp or deploy/pi/deploy.sh.
+# Every workflow:     no pull_request_target; no ssh, scp or deploy/server/deploy.sh.
 # release-*.yml       (except release-lint.yml):
 #   - triggers only `push: tags` and `workflow_dispatch`
 #   - top-level `permissions: {}`
@@ -43,8 +43,8 @@ Dir.glob(File.join(dir, "*.{yml,yaml}")).sort.each do |path|
   (doc["jobs"] || {}).each do |job_id, job|
     (job["steps"] || []).each do |step|
       run = step["run"].to_s
-      if run =~ /(^|[\s;&|(])(ssh|scp)\s/ || run =~ /(^|[\s;&|(])(\.\/)?deploy\/pi\/deploy\.sh/
-        problems << "#{name}: job #{job_id} reaches the Pi or relay (ssh/scp/deploy.sh)"
+      if run =~ /(^|[\s;&|(])(ssh|scp)\s/ || run =~ /(^|[\s;&|(])(\.\/)?deploy\/server\/deploy\.sh/
+        problems << "#{name}: job #{job_id} reaches the server or relay (ssh/scp/deploy.sh)"
       end
     end
   end
@@ -87,7 +87,7 @@ Dir.glob(File.join(dir, "*.{yml,yaml}")).sort.each do |path|
       if writes.include?("id-token")
         steps.each do |s|
           run = s["run"].to_s.strip
-          next unless run =~ /(^|[\s;&|(])(\.github\/scripts\/(android-aab|ios-ipa)\.sh|flutter|cargo|\.\/gradlew|gradle|deploy\/pi\/build\.sh)(\s|$)/
+          next unless run =~ /(^|[\s;&|(])(\.github\/scripts\/(android-aab|ios-ipa)\.sh|flutter|cargo|\.\/gradlew|gradle|deploy\/server\/build\.sh)(\s|$)/
           unless run.start_with?("env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL ")
             problems << "#{name}: job #{job_id} step #{(s['name'] || run[0, 30]).inspect} can ask for the OIDC token"
           end

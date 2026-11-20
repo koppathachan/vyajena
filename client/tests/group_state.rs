@@ -9,7 +9,7 @@ mod support;
 use client::{Event, Member, MessageBody, MessageId, SendStatus, UserId};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 async fn wait_accepted(device: &mut Device, id: MessageId) {
     device
@@ -102,8 +102,8 @@ fn texts(device: &Device) -> Vec<MessageBody> {
 // spec: message-content/user-owned-profiles
 #[tokio::test(flavor = "multi_thread")]
 async fn a_linked_tablet_learns_the_group_name_and_profiles() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut phone = device::member_of_group(&admin, "bob").await;
     phone.wait_members(&[member(&admin), member(&phone)]).await;
     named(&mut admin, &mut phone).await;
@@ -140,8 +140,8 @@ async fn a_linked_tablet_learns_the_group_name_and_profiles() {
 // spec: message-content/user-owned-profiles
 #[tokio::test(flavor = "multi_thread")]
 async fn a_newly_added_user_learns_the_group_name_and_profiles() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     bob.wait_members(&[member(&admin), member(&bob)]).await;
     named(&mut admin, &mut bob).await;
@@ -175,8 +175,8 @@ fn is_members_changed(event: &Event) -> bool {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn members_changed_names_the_devices_and_the_committer() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut phone = device::member_of_group(&admin, "bob").await;
     let bob_added = members_changed(&[member(&phone)], &[], &user(ADMIN));
     assert_eq!(
@@ -241,8 +241,8 @@ async fn members_changed_names_the_devices_and_the_committer() {
 // spec: key-directory/clients-verify-the-identity-chain
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reset_user_starts_without_a_name() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -327,8 +327,8 @@ async fn a_reset_user_starts_without_a_name() {
 // spec: app-ui/chat-screen
 #[tokio::test(flavor = "multi_thread")]
 async fn messages_from_any_own_device_are_own_user() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut phone = device::member_of_group(&admin, "bob").await;
     let mut tablet = link_tablet(&phone).await;
     phone

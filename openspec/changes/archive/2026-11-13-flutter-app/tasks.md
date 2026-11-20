@@ -8,7 +8,7 @@
 
 - [x] 2.1 `bridge/` crate in the workspace: plain types and functions forwarding to `client::Client`, one event `StreamSink`, text forms of invites, link requests and approvals (D2, D5)
 - [x] 2.2 Generate and commit the Dart and Rust bindings; add the codegen command to `CLAUDE.md`
-- [x] 2.3 `bridge/tests/` against a real in-process Pi: register, send, events in order, text codecs
+- [x] 2.3 `bridge/tests/` against a real in-process server: register, send, events in order, text codecs
 
 ## 3. Phone key stores
 
@@ -23,7 +23,7 @@
 ## 4b. Automatic add of new users (owner, 2026-11-12)
 
 - [x] 4.3 Proto first: `JoinNotice { group_id, device }` as a new `ServerFrame` field in `messaging.proto` (non-breaking, `buf lint` / `buf breaking` clean); `cargo run -p pbgen`; commit the regenerated `pb.rs` files
-- [x] 4.4 Pi: send `JoinNotice` to connected admin devices on registration and on each admin connect until the device is a member; `server/tests/` for the requirement's Pi side (group-membership: Automatic add of new users)
+- [x] 4.4 server: send `JoinNotice` to connected admin devices on registration and on each admin connect until the device is a member; `server/tests/` for the requirement's server side (group-membership: Automatic add of new users)
 - [x] 4.5 Core: admin devices add on `JoinNotice` with no user action (KeyPackage for that device, first-sight pin, changed key waits for accept, race loser does nothing); bridge/app see it as the existing `JoinedGroup` / `MembersChanged` events; `client/tests/` for every scenario
 
 ## 5. Screens
@@ -37,7 +37,7 @@
 ## 6. Tests and local run
 
 - [x] 6.1 Widget tests tagged `// spec: app-ui/<title-slug>` for every app-ui scenario, plus the import scan for "UI goes through the core"
-- [x] 6.2 `integration_test/`: the app on the iOS Simulator and on the Android emulator chats with a second member driven through the core, against a temp Pi (D6, D7)
+- [x] 6.2 `integration_test/`: the app on the iOS Simulator and on the Android emulator chats with a second member driven through the core, against a temp server (D6, D7)
 - [x] 6.3 README: run the app locally (simulator, emulator with `adb reverse`), never consuming the owner's invite in tests
 
 ## 7. CI, docs and validation

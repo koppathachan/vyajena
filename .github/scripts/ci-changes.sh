@@ -31,7 +31,7 @@ while IFS= read -r path; do
   esac
   case "$path" in
     # The crates, the committed protos they are generated from, and deploy/
-    # (server/tests read deploy/pi and deploy/relay scripts).
+    # (server/tests read deploy/server and deploy/relay scripts).
     Cargo.toml | Cargo.lock | rust-toolchain* | .cargo/* | protocol/* | server/* | \
       client/* | bridge/* | pbgen/* | proto/* | deploy/*) rust=true ;;
   esac

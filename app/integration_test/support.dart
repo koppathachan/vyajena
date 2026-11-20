@@ -76,8 +76,8 @@ final Uint8List testPicture = base64Decode(
 );
 
 /// A picker that always returns [testPicture], so the test needs no gallery.
-class TestPicker extends PicturePicker {
-  const TestPicker();
+class TestServercker extends PicturePicker {
+  const TestServercker();
 
   @override
   Future<Uint8List?> pick() async => testPicture;
@@ -156,12 +156,12 @@ Future<RustCoreService> joinFresh(WidgetTester tester) async {
   }
   await RustLib.init();
   final core = RustCoreService();
-  await tester.pumpWidget(VyajenaApp(core: core, pictures: const TestPicker()));
+  await tester.pumpWidget(VyajenaApp(core: core, pictures: const TestServercker()));
   await core.open();
   await waitFor(tester, find.text('Join the group'));
   await tester.enterText(find.byKey(const Key('invite')), invite);
   await tap(tester, find.text('Check invite'));
-  await waitFor(tester, find.text('bob@pi'));
+  await waitFor(tester, find.text('bob@chat'));
   await tap(tester, find.text('Join'));
   // Added by the admin's device on its own: the chat list shows the group.
   await tap(tester, find.text('Group'));

@@ -18,7 +18,7 @@
 - Toolchain: Flutter 3.44.4, Xcode 27.2 (`flutter build ios --simulator` breaks
   in Flutter's `lipo` step), Rust targets for all Android ABIs and `aarch64-apple-ios`
   installed.
-- The Pi is reachable only on the home LAN (`192.168.1.8:8443`); relay + real push
+- The server is reachable only on the home LAN (`<server-address>:<server-port>`); relay + real push
   come later. `qa-fixes` (session B) is editing `app/` now and adds
   `connectivity_plus` (`ACCESS_NETWORK_STATE`).
 
@@ -77,10 +77,10 @@ links 16 KB-aligned by default, but Rust drives the linker itself, so spike S3
 checks `llvm-readelf -l` on the release `libbridge.so`. If it is not aligned,
 add `-C link-arg=-Wl,-z,max-page-size=16384` for the Android targets in
 `app/rust_builder` (the cargokit invocation), not in a workspace-wide
-`.cargo/config.toml`, so the Pi build stays the same.
+`.cargo/config.toml`, so the server build stays the same.
 
 No `[profile.release]` change unless S3 measures a problem: a workspace profile
-change also changes the Pi server build.
+change also changes the server build.
 
 S3 result (2026-11-15, `flutter build appbundle --release`, NDK 28.2, Rust
 release): **no flag needed.** `llvm-readelf -lW`: every `LOAD` segment of
@@ -199,13 +199,13 @@ package and class, so R8 may rename it. Add `app/android/app/proguard-rules.pro`
 and `proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")`
 in `release`. The `android-native-keyring-store` crate calls only framework classes
 (`KeyStore`, `Cipher`, `SharedPreferences`) through JNI, which R8 does not touch.
-**Spike S2** proves it: a release APK on the emulator joins a temp Pi and survives
+**Spike S2** proves it: a release APK on the emulator joins a temp server and survives
 a kill + relaunch with its keys.
 
 S2 result (2026-11-15, throwaway AVD `vyajena_release_throwaway`, Android 15,
 release APK with R8, signed with a throwaway key in `spikes/`): **pass.**
-Joined a temp Pi from its bootstrap invite (`Devices.Register`), created the
-group, sent a text (✓ accepted), killed and relaunched: still `akhil@pi`,
+Joined a temp server from its bootstrap invite (`Devices.Register`), created the
+group, sent a text (✓ accepted), killed and relaunched: still `akhil@chat`,
 connected, history there, so the Android Keystore key and the sealed MLS state
 survived. `logcat`: no line from the app's Dart code or the core, and not the
 sent text (only the engine's Impeller line). Control build with the keep rules
@@ -292,7 +292,7 @@ DiskSpace.
 
 `app/store/privacy.md` is the single source for the policy, Play Data safety and
 the App Store privacy answers. The "developer" here is the owner, who also runs the
-Pi.
+server.
 
 ```mermaid
 flowchart LR
@@ -300,20 +300,20 @@ flowchart LR
     txt["message text, group name, profiles"]
     ids["username, identity + device public keys,<br/>device certificate, KeyPackages"]
   end
-  txt -->|"MLS ciphertext only"| pi["Owner's Pi"]
-  ids -->|"readable, needed to route and verify"| pi
-  phone -->|"IP address (TCP), not stored"| pi
-  pi -.->|"later: content-free wake ping"| push["FCM / APNs"]
+  txt -->|"MLS ciphertext only"| server["Owner's server"]
+  ids -->|"readable, needed to route and verify"| server
+  phone -->|"IP address (TCP), not stored"| server
+  server -.->|"later: content-free wake ping"| push["FCM / APNs"]
   phone -. "nothing" .-> x["developer analytics, ads, third parties"]
 ```
 
 | Data | Leaves the phone as | Play Data safety | App Store label |
 |---|---|---|---|
-| Messages, group name, profiles | End-to-end encrypted ciphertext to the Pi | Not collected (end-to-end encrypted; confirm Play's wording at submission) | Not collected (unreadable to the developer) |
-| Username (admin-chosen) | Plain, to the Pi | Personal info → User IDs: collected, required, app functionality, not shared | Identifiers → User ID: linked to the user, app functionality |
-| Identity/device public keys, certificates, KeyPackages | Plain, to the Pi | Same entry (User IDs / Device or other IDs) | Identifiers → User ID / Device ID, app functionality |
-| IP address | TCP connection; the Pi does not store it | Not collected | Not collected |
-| Push token (later change) | To the Pi, then FCM/APNs | Device or other IDs, app functionality | Device ID, app functionality |
+| Messages, group name, profiles | End-to-end encrypted ciphertext to the server | Not collected (end-to-end encrypted; confirm Play's wording at submission) | Not collected (unreadable to the developer) |
+| Username (admin-chosen) | Plain, to the server | Personal info → User IDs: collected, required, app functionality, not shared | Identifiers → User ID: linked to the user, app functionality |
+| Identity/device public keys, certificates, KeyPackages | Plain, to the server | Same entry (User IDs / Device or other IDs) | Identifiers → User ID / Device ID, app functionality |
+| IP address | TCP connection; the server does not store it | Not collected | Not collected |
+| Push token (later change) | To the server, then FCM/APNs | Device or other IDs, app functionality | Device ID, app functionality |
 
 Encrypted in transit: yes (TLS 1.3, pinned). Deletion: the admin removes a user
 (`Admin.RemoveUser`) today; self-service deletion is a public-release blocker

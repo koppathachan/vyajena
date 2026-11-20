@@ -1,7 +1,7 @@
 // app-ui: Image bubble and viewer. An image message is drawn at the picture's
 // aspect ratio: first the ThumbHash blur (decoded by the core), then, once the
 // user taps it, the downloaded picture. A tap on the loaded picture opens it
-// full screen. When the Pi no longer has the picture the blur stays with
+// full screen. When the server no longer has the picture the blur stays with
 // "Media expired — resend" (the sender can send it again from the message's
 // long-press menu); a failed download can be tried again.
 //
@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
 import '../app/errors.dart';
 import '../core/core_service.dart';
 
-/// What an image that is gone from the Pi says.
+/// What an image that is gone from the server says.
 const mediaExpiredText = 'Media expired — resend';
 
 /// What a download that failed says.

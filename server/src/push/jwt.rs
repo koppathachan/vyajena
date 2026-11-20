@@ -1,4 +1,4 @@
-//! The two JWTs the Pi signs (push design D2, D3): RS256 for Google's OAuth
+//! The two JWTs the server signs (push design D2, D3): RS256 for Google's OAuth
 //! JWT bearer grant and ES256 for APNs provider tokens. Signed with ring.
 
 use base64::Engine as _;

@@ -19,7 +19,7 @@ flowchart LR
 | `server-v0.2.0` | `release-server` | GitHub Release: `vyajena-server`, `rathole`, `SHA256SUMS`, provenance |
 | Run workflow (Actions tab) | either | **dry run**: builds, checks, uploads nothing, needs no secret |
 
-The Pi is never deployed from CI. You still run `deploy/pi/deploy.sh`.
+The server is never deployed from CI. You still run `deploy/server/deploy.sh`.
 
 Rules for every step below:
 
@@ -303,23 +303,23 @@ If you still release by hand (`docs/release.md`), pushing that tag also starts
    local build:
 
    ```bash
-   gh release download server-v0.2.0 --repo koppathachan/vyajena --dir target/pi --clobber
+   gh release download server-v0.2.0 --repo koppathachan/vyajena --dir target/server --clobber
    ```
 
    ```bash
-   cd target/pi && shasum -a 256 -c SHA256SUMS && cd -
+   cd target/server && shasum -a 256 -c SHA256SUMS && cd -
    ```
 
    ```bash
-   gh attestation verify target/pi/vyajena-server --repo koppathachan/vyajena
+   gh attestation verify target/server/vyajena-server --repo koppathachan/vyajena
    ```
 
    ```bash
-   gh attestation verify target/pi/rathole --repo koppathachan/vyajena
+   gh attestation verify target/server/rathole --repo koppathachan/vyajena
    ```
 
    ```bash
-   chmod 0755 target/pi/vyajena-server target/pi/rathole && deploy/pi/deploy.sh --no-build
+   chmod 0755 target/server/vyajena-server target/server/rathole && deploy/server/deploy.sh --no-build
    ```
 
    (Making `deploy.sh` do this itself is open item O1.)
@@ -334,7 +334,7 @@ If you still release by hand (`docs/release.md`), pushing that tag also starts
 | Play access | `gcloud iam workload-identity-pools providers disable <provider> --project=vyajena --location=global --workload-identity-pool=github-pool`; Play Console › Users and permissions › remove the service account. |
 | Distribution certificate | developer.apple.com › Certificates › **Revoke**; redo step 7. Installed builds keep working. |
 | App Store Connect key | App Store Connect › Integrations › Keys › **Revoke** (immediate); redo step 8. |
-| A rogue GitHub Release | Delete it (Releases › … › Delete); `deploy/pi/deploy.sh --rollback` if it was deployed. |
+| A rogue GitHub Release | Delete it (Releases › … › Delete); `deploy/server/deploy.sh --rollback` if it was deployed. |
 | A compromised action | Revert its pin; rotate the secrets of every job that ran it. |
 
 More detail: `openspec/changes/ci-release/design.md` D12.

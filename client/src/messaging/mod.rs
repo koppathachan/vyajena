@@ -76,7 +76,7 @@ pub struct ImageContent {
     pub height: u32,
     /// The ThumbHash blur.
     pub thumbhash: Vec<u8>,
-    /// The blob's size on the Pi.
+    /// The blob's size on the server.
     pub blob_size: u64,
     /// The caption, if any.
     pub caption: Option<String>,
@@ -495,12 +495,12 @@ pub(crate) enum Received {
     /// equal to the stored one (a re-send after an add, qa-fixes D2).
     Nothing,
     /// It could not be read (it does not decrypt, or its MLS sender is not
-    /// the device the Pi says sent it). Not dropped silently: the UI shows
+    /// the device the server says sent it). Not dropped silently: the UI shows
     /// that a message could not be read.
     Unreadable {
-        /// Who the Pi says sent it.
+        /// Who the server says sent it.
         sender: Option<UserId>,
-        /// When the Pi accepted it.
+        /// When the server accepted it.
         accepted_at: Option<SystemTime>,
         /// The chat it was for.
         chat: crate::events::ChatId,
@@ -508,7 +508,7 @@ pub(crate) enum Received {
 }
 
 /// Decrypts an `APPLICATION` envelope, checks that its MLS sender is the
-/// device the Pi names, stores it and applies a profile or group settings,
+/// device the server names, stores it and applies a profile or group settings,
 /// inside the caller's store transaction (client-runtime: Local message
 /// store). `admin` is the admin's user id from the group context.
 pub(crate) fn receive_application(
@@ -522,7 +522,7 @@ pub(crate) fn receive_application(
     // change `dms`: the chat the envelope's group is (0 for the main group).
     let chat = store.chat_of(&envelope.group_id)?;
     let seq = envelope.server_seq;
-    let pi_sender = envelope.sender.as_ref().and_then(|sender| {
+    let server_sender = envelope.sender.as_ref().and_then(|sender| {
         let user = UserId::from_pb(sender.user_id.as_ref()?);
         let device = DeviceId::try_from(sender.device_id.as_slice()).ok()?;
         Some((user, device))
@@ -531,12 +531,12 @@ pub(crate) fn receive_application(
     let unreadable = |why: &str| -> Result<Received, EngineError> {
         tracing::warn!(server_seq = seq, why, "cannot read an application message");
         Ok(Received::Unreadable {
-            sender: pi_sender.as_ref().map(|(user, _)| user.clone()),
+            sender: server_sender.as_ref().map(|(user, _)| user.clone()),
             accepted_at,
             chat: crate::events::ChatId(chat),
         })
     };
-    let Some((sender_user, sender_device)) = pi_sender.clone() else {
+    let Some((sender_user, sender_device)) = server_sender.clone() else {
         return unreadable("no sender");
     };
     let Ok(msg_id) = <[u8; 16]>::try_from(envelope.msg_id.as_slice()) else {
@@ -555,7 +555,7 @@ pub(crate) fn receive_application(
             return unreadable("it does not decrypt");
         }
     };
-    // The MLS sender's certificate must name the device the Pi says sent it.
+    // The MLS sender's certificate must name the device the server says sent it.
     let Sender::Member(leaf) = *processed.sender() else {
         return unreadable("not from a member");
     };
@@ -563,7 +563,7 @@ pub(crate) fn receive_application(
     if from_leaf.as_ref().is_none_or(|claim| {
         claim.claimed.user != sender_user || claim.claimed.device_id != sender_device
     }) {
-        return unreadable("its MLS sender is not the device the Pi names");
+        return unreadable("its MLS sender is not the device the server names");
     }
     let ProcessedMessageContent::ApplicationMessage(content) = processed.into_content() else {
         return unreadable("an APPLICATION envelope without an application message");

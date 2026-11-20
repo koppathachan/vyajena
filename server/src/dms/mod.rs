@@ -2,7 +2,7 @@
 //! closing DMs when a user is removed (direct-messages, change `dms`).
 //!
 //! Any member opens a DM with any other member; the admin has no extra power
-//! here (owner, 2026-11-17). The Pi learns the pair, never the text.
+//! here (owner, 2026-11-17). The server learns the pair, never the text.
 
 use std::time::SystemTime;
 
@@ -52,7 +52,7 @@ fn create(
     tx: &Transaction<'_>,
     caller: &Caller,
     server_id: &str,
-    pi: &openmls::prelude::ExternalSender,
+    server: &openmls::prelude::ExternalSender,
     request: &pb::CreateDmRequest,
     now: SystemTime,
 ) -> Result<Result<Created, Status>, StoreError> {
@@ -89,7 +89,7 @@ fn create(
     if let Some(open) = group::open_dm_between(tx, &caller.username, &peer.username)? {
         return Ok(Ok(Created::Existing(open.group_id)));
     }
-    match GroupState::create_dm(tx, caller, &peer.username, server_id, pi, request, now) {
+    match GroupState::create_dm(tx, caller, &peer.username, server_id, server, request, now) {
         Ok(_) => {}
         Err(CreateGroupError::Store(error)) => return Err(error),
         Err(error) => return Ok(Err(Status::from(error))),
@@ -110,7 +110,7 @@ impl Dms for DmsService {
         let caller = caller(&request)?.clone();
         let request = request.into_inner();
         let server_id = self.state.config.server_id.clone();
-        let pi = external_sender(&server_id, &self.state.keys);
+        let server = external_sender(&server_id, &self.state.keys);
         let now = self.state.clock.now();
         let group_id = request.group_id.clone();
         let created = self
@@ -118,7 +118,7 @@ impl Dms for DmsService {
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
-                let created = create(&tx, &caller, &server_id, &pi, &request, now)?;
+                let created = create(&tx, &caller, &server_id, &server, &request, now)?;
                 if matches!(created, Ok(Created::New(_))) {
                     tx.commit()?;
                 }

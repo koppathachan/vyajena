@@ -1,9 +1,9 @@
 ## Why
 
-The Pi is reachable only on the home Wi-Fi (`192.168.1.8:8443`, the home-LAN
-phase of `pi-deployment`). Nobody can chat away from home, and Play reviewers
+The server is reachable only on the home Wi-Fi (`<server-address>:<server-port>`, the home-LAN
+phase of `server-deployment`). Nobody can chat away from home, and Play reviewers
 cannot reach the server. The planned connectivity was always a dumb TCP relay on
-a free GCP VM that the Pi dials out to, so no port opens at home. The owner
+a free GCP VM that the server dials out to, so no port opens at home. The owner
 decided the details on 2026-11-15 (relay only; push is the next change).
 
 ## What Changes
@@ -14,18 +14,18 @@ decided the details on 2026-11-15 (relay only; push is the next change).
   `vyajarelay.purplechaamba.com` (an A record at the owner's DNS host). Firewall: 443
   and the tunnel port public, SSH only from Google IAP, everything else dropped.
   VPC flow logs off, no service account, a volatile journal: the VM keeps nothing.
-- **Tunnel:** a sandboxed `vyajena-tunnel.service` on the Pi (rathole client)
-  dials out to the relay, authenticated with a token and Noise (the Pi pins the
-  relay's Noise key). TLS still ends on the Pi, so the relay sees TLS bytes only.
-- **Pi:** `listen_address = "127.0.0.1:8443"`; invites name `vyajarelay.purplechaamba.com:443`. The
-  LAN 8443 rule and the subnet `IPAddressAllow` go: nftables drops all inbound
+- **Tunnel:** a sandboxed `vyajena-tunnel.service` on the server (rathole client)
+  dials out to the relay, authenticated with a token and Noise (the server pins the
+  relay's Noise key). TLS still ends on the server, so the relay sees TLS bytes only.
+- **server:** `listen_address = "127.0.0.1:<server-port>"`; invites name `vyajarelay.purplechaamba.com:443`. The
+  LAN <server-port> rule and the subnet `IPAddressAllow` go: nftables drops all inbound
   again except SSH from home.
-- **Fresh start, no migration:** a scripted reset (`deploy/pi/deploy.sh
-  --reset`) backs up first, then deletes the Pi's database and keys and starts
+- **Fresh start, no migration:** a scripted reset (`deploy/server/deploy.sh
+  --reset`) backs up first, then deletes the server's database and keys and starts
   fresh. New TLS pin, new bootstrap invite; every device re-joins.
 - **Scripts:** `deploy/relay/` with one command each (`build.sh`, `secrets.sh`,
-  `create.sh`, `deploy.sh`, `check.sh`), like `deploy/pi/`; `deploy/pi/` builds
-  and installs rathole and checks the new Pi state. All pass shellcheck.
+  `create.sh`, `deploy.sh`, `check.sh`), like `deploy/server/`; `deploy/server/` builds
+  and installs rathole and checks the new server state. All pass shellcheck.
 - **Secrets:** the rathole token, the relay's Noise key pair and the relay SSH key
   are made on the Mac in `~/.vyajena-relay/` (0700/0600), never in the repo.
 - No `.proto` changes. Real push (FCM/APNs) is the next change, not this one.
@@ -44,26 +44,26 @@ decided the details on 2026-11-15 (relay only; push is the next change).
 
 ### Modified Capabilities
 
-- `pi-deployment`: build and install rathole; the tunnel service sandboxed;
+- `server-deployment`: build and install rathole; the tunnel service sandboxed;
   nftables back to "drop all inbound"; reachable through the relay instead of
   the home network (Reachable on the home network is removed); scripted reset;
   the hardening check covers the tunnel and the relay path.
-- `pi-runtime`: Configuration gains the "behind the relay" scenario.
+- `server-runtime`: Configuration gains the "behind the relay" scenario.
 - `client-runtime`: Connection lifecycle gains the "relay without a tunnel"
   scenario.
 
 ## Impact
 
 - **New files:** `deploy/relay/` (scripts, rathole unit, server config template),
-  `deploy/pi/vyajena-tunnel.service`, `deploy/pi/tunnel.toml` (template).
-- **Changed:** `deploy/pi/{build,deploy,check,harden}.sh`, `config.toml`,
+  `deploy/server/vyajena-tunnel.service`, `deploy/server/tunnel.toml` (template).
+- **Changed:** `deploy/server/{build,deploy,check,harden}.sh`, `config.toml`,
   `nftables.conf`, `vyajena.service`.
 - **Tests:** `server/tests/configuration.rs`, `server/tests/deploy_files.rs`,
   `client/tests/relay.rs`.
 - **GCP (`vyajena`):** Compute and IAP APIs, VPC `vyajena-relay`, three
   firewall rules, a static IPv4, VM `vyajena-relay`. Needs billing on the
   project (owner).
-- **Pi:** wiped and started fresh (backup first); `rathole` and
+- **server:** wiped and started fresh (backup first); `rathole` and
   `vyajena-tunnel.service` installed.
 - **Devices:** every device re-joins with a new invite naming `vyajarelay.purplechaamba.com:443`.
 - **Docs:** README, `CLAUDE.md`, `docs/architecture-decisions.md` (home-LAN phase

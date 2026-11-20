@@ -1,4 +1,4 @@
-//! pi-runtime (relay-sni-fix): the Pi's default log filter.
+//! server-runtime (relay-sni-fix): the server's default log filter.
 //!
 //! On top of the env-or-`info` base it quiets rustls server-handshake warnings
 //! (`rustls::server::hs`) — the benign "IP address presented as hostname"

@@ -41,8 +41,8 @@ build/
 *.sqlite-wal
 *.sqlite-shm
 
-# Local Pi server data (server/local.toml): database and private keys.
-.pi-local/
+# Local server data (server/local.toml): database and private keys.
+.server-local/
 
 # Release signing (app-release design D3): keys, certificates, profiles and
 # store API keys live with the owner, outside the repo, never in git or CI.
@@ -68,11 +68,11 @@ fcm-service-account.json
 *.dSYM/
 
 # Owner-only material that must stay outside the repo: relay and push
-# secrets (~/.vyajena-relay/, ~/.vyajena-push/), Pi backups and bootstrap
-# invites (~/vyajena-pi-backups/). Ignored here too in case a copy lands in
+# secrets (~/.vyajena-relay/, ~/.vyajena-push/), server backups and bootstrap
+# invites (~/vyajena-server-backups/). Ignored here too in case a copy lands in
 # the checkout.
 .vyajena-relay/
 .vyajena-push/
 .vyajena-release/
-vyajena-pi-backups/
+vyajena-server-backups/
 *bootstrap-invite*.txt

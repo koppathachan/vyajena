@@ -15,7 +15,7 @@ final missedSince = DateTime(2026, 11, 2, 9, 30).millisecondsSinceEpoch;
 bool above(WidgetTester tester, Finder first, Finder second) =>
     tester.getTopLeft(first).dy < tester.getTopLeft(second).dy;
 
-const carol = UserRef(username: 'carol', serverId: 'pi');
+const carol = UserRef(username: 'carol', serverId: 'chat');
 
 MemberDevice dev(UserRef user, String device) =>
     MemberDevice(user: user, device: device);
@@ -75,7 +75,7 @@ void main() {
   testWidgets('Key changed: every member sees a warning naming Bob; only '
       'the admin\'s device offers to accept it', (tester) async {
     final core = FakeCoreService(storedUser: alice)
-      ..displayNames = {'bob@pi': 'Bob (bob)'};
+      ..displayNames = {'bob@chat': 'Bob (bob)'};
     await openApp(tester, core);
     core.emit(const CoreEvent.identityKeyChanged(user: bob));
     await settle(tester);
@@ -88,7 +88,7 @@ void main() {
       'accept_identity_key', (tester) async {
     final core = FakeCoreService(storedUser: akhil)
       ..admin = true
-      ..displayNames = {'bob@pi': 'Bob (bob)'};
+      ..displayNames = {'bob@chat': 'Bob (bob)'};
     await openApp(tester, core);
     core.emit(const CoreEvent.identityKeyChanged(user: bob));
     // The core warns again each time it meets the key: one warning.
@@ -161,7 +161,7 @@ void main() {
     // Bob waits to be added: the chat is not on screen.
     final core = FakeCoreService(storedUser: bob)
       ..epochValue = null
-      ..displayNames = {'alice@pi': 'Ali (alice)'};
+      ..displayNames = {'alice@chat': 'Ali (alice)'};
     await openApp(tester, core);
     expect(find.textContaining("Waiting for the admin's device"), findsOne);
 
@@ -276,7 +276,7 @@ void main() {
   testWidgets('Membership changes: "carol joined", "bob added a device" and '
       '"akhil removed carol", in that order', (tester) async {
     final core = FakeCoreService(storedUser: bob)
-      ..displayNames = {'akhil@pi': 'Akhil (akhil)'}
+      ..displayNames = {'akhil@chat': 'Akhil (akhil)'}
       ..memberDevices = group();
     await openApp(tester, core);
     core.receive(akhil, 'first');
@@ -363,7 +363,7 @@ void main() {
     final core = FakeCoreService(storedUser: alice)
       ..memberDevices = [...group(), dev(alice, 'l1')];
     await openApp(tester, core);
-    // The Pi's inactivity Remove of Bob's phone, committed by the admin.
+    // The server's inactivity Remove of Bob's phone, committed by the admin.
     core.emit(
       CoreEvent.membersChanged(
         added: const [],

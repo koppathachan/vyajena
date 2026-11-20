@@ -62,7 +62,7 @@ import UserNotifications
 }
 
 /// APNs for the app (app-ui: Push notifications; push design D8, D9): no
-/// Firebase. The Pi sends a visible alert with the fixed text "New message";
+/// Firebase. The server sends a visible alert with the fixed text "New message";
 /// iOS shows it, and tapping it opens the app. While the app is in front no
 /// alert is shown (no UNUserNotificationCenter delegate): it is connected.
 enum Push {

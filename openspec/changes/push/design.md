@@ -1,6 +1,6 @@
 ## Context
 
-- The Pi already decides when to ping: `messaging::notify` → `PingLimiter`
+- The server already decides when to ping: `messaging::notify` → `PingLimiter`
   (60 s per device) → `PushProvider::wake(device_id, token)`. Only a
   `LoggingProvider` exists (`server/src/push/mod.rs`).
 - The wire already has `Devices.UpdatePushToken` with `PushToken { platform:
@@ -9,10 +9,10 @@
 - `vyajena.service` may reach loopback only (`IPAddressAllow=localhost`);
   devices come in through the rathole tunnel.
 - The app is on Play internal testing and TestFlight internal testing
-  (app-release). The review server (`vyajena-review.service`, `:8444`) is for
+  (app-release). The review server (`vyajena-review.service`, `:<review-server-port>`) is for
   store reviewers only.
 - Owner decisions (2026-11-16): FCM HTTP v1 with Firebase added to the GCP
-  project `vyajena`; direct APNs with a `.p8` key the Pi signs with; no Firebase
+  project `vyajena`; direct APNs with a `.p8` key the server signs with; no Firebase
   SDK on iOS; fixed text "New message"; previews later; review server keeps the
   stub; `google-services.json` stays out of the repo.
 
@@ -20,7 +20,7 @@
 
 **Goals:** a closed app wakes up with a generic "New message"; nothing about
 the message reaches Google or Apple; credentials only on the owner's Mac and
-the Pi; the server stays loopback-only; everything tested against fake
+the server; the server stays loopback-only; everything tested against fake
 FCM/APNs servers.
 
 **Non-Goals:** decrypted previews, badges or counts, background fetch, the
@@ -33,19 +33,19 @@ review server, Play/App Store form edits (owner + app-release).
 ```mermaid
 sequenceDiagram
   participant A as Alice's phone
-  participant P as Pi (vyajena.service)
+  participant P as server (vyajena.service)
   participant E as vyajena-egress (CONNECT proxy)
   participant G as FCM / APNs
   participant B as Bob's closed phone
   A->>P: Send (ciphertext)
   P->>P: queue for Bob's phone; no open stream; token set; 60 s limiter
   P->>E: CONNECT fcm.googleapis.com:443 (or api.push.apple.com)
-  E->>G: TLS bytes only (the Pi's TLS, end to end)
+  E->>G: TLS bytes only (the server's TLS, end to end)
   P-->>G: POST "New message", collapse key "wake", no data
   G->>B: notification "New message"
   B->>B: tap → app opens → core connects
   B->>P: Connect, catch up (decrypt locally)
-  Note over P,G: on 404 UNREGISTERED / 410: Pi clears Bob's token (if unchanged)
+  Note over P,G: on 404 UNREGISTERED / 410: server clears Bob's token (if unchanged)
 ```
 
 ### D2. FCM HTTP v1
@@ -55,7 +55,7 @@ sequenceDiagram
   with only `roles/firebasecloudmessaging.admin` (the predefined role that
   holds `cloudmessaging.messages.create`), not the Firebase Admin SDK account
   Firebase creates (that one is project-wide admin).
-- Sign-in: OAuth 2.0 JWT bearer grant. The Pi signs `{iss: client_email,
+- Sign-in: OAuth 2.0 JWT bearer grant. The server signs `{iss: client_email,
   scope: https://www.googleapis.com/auth/firebase.messaging, aud: token_uri,
   iat, exp: iat+3600}` with RS256 (`ring`, the key's PKCS#8 PEM) and posts it
   to `https://oauth2.googleapis.com/token`. The access token is cached until
@@ -81,7 +81,7 @@ sequenceDiagram
 - Credentials: the owner's `AuthKey_<KEYID>.p8` (PKCS#8 P-256). The key id
   comes from the file name, exactly as Apple names the download, so the owner
   only copies the file. Team id `XMVHK3YASX` and topic (bundle id)
-  `com.purplechaamba.vyajena` are not secret and sit in `deploy/pi/push.toml`.
+  `com.purplechaamba.vyajena` are not secret and sit in `deploy/server/push.toml`.
 - JWT: header `{alg: ES256, kid}`, claims `{iss: team id, iat}`, signed with
   `ring` (fixed-size r||s). Reused for 50 minutes (Apple: refresh no more than
   every 20 minutes, valid for 60); `ExpiredProviderToken` or
@@ -92,11 +92,11 @@ sequenceDiagram
   A visible alert (owner), not a silent push: iOS throttles silent pushes and
   never launches a force-quit app for them.
 - Environment: TestFlight and store builds use production APNs, Xcode debug
-  builds use sandbox, and the token does not say which. The Pi tries
+  builds use sandbox, and the token does not say which. The server tries
   `api.push.apple.com` first and, only on `400 BadDeviceToken`, the sandbox
   host. A token is cleared only when both say `BadDeviceToken` (or on 410 /
   `DeviceTokenNotForTopic`). No proto change.
-- The token is in the URL path, so both the Pi (`UpdatePushToken`) and the
+- The token is in the URL path, so both the server (`UpdatePushToken`) and the
   provider accept only 64–200 hex characters.
 
 ### D4. Errors, backoff, logging
@@ -137,7 +137,7 @@ Options for how `vyajena.service` reaches Google and Apple:
 flowchart LR
   s["vyajena.service<br/>IPAddressAllow=localhost<br/>(unchanged)"] -->|"CONNECT host:443"| e
   e["vyajena-egress.service<br/>127.0.0.1:8445, DynamicUser<br/>allow: fcm.googleapis.com, oauth2.googleapis.com,<br/>api.push.apple.com, api.sandbox.push.apple.com"]
-  e -->|"DNS"| r["router 192.168.1.1"]
+  e -->|"DNS"| r["router <router>"]
   e -->|"TLS bytes"| g["Google / Apple"]
   rv["vyajena-review.service<br/>(no --push: logs only)"]
 ```
@@ -151,13 +151,13 @@ flowchart LR
   no DNS rebinding to the LAN). A tunnel ends after an hour at most (the
   providers' pools drop idle connections after 90 s); at most 64 at once.
 - Unit: `DynamicUser=yes`, the same sandbox as the tunnel,
-  `IPAddressAllow=localhost 192.168.1.1/32` (DNS) and `IPAddressDeny` of
+  `IPAddressAllow=localhost <router>/32` (DNS) and `IPAddressDeny` of
   private, link-local, CGNAT and ULA ranges, so it reaches the public internet
   only. `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX` (AF_UNIX for
   glibc's resolver bits).
 - `vyajena.service`'s `IPAddressAllow` therefore does **not** widen; the
   check keeps asserting loopback-only for both servers.
-- Port 8445: 8443/8444 are the servers. Anything local could use the proxy,
+- Port 8445: <server-port>/<review-server-port> are the servers. Anything local could use the proxy,
   but it only reaches the four push hosts.
 
 ### D6. Configuration and credentials
@@ -166,7 +166,7 @@ flowchart LR
   — a separate file and flag, not new `config.toml` fields: the review server
   just has no `--push`, and `config.rs` (also changed by review-mode, PR #1)
   stays untouched.
-- `deploy/pi/push.toml` (in the repo, no secrets):
+- `deploy/server/push.toml` (in the repo, no secrets):
 
   ```toml
   credentials_dir = "/var/lib/vyajena/push"
@@ -181,8 +181,8 @@ flowchart LR
   stop the start.
 - Mac: `~/.vyajena-push/` (0700, files 0600) holds those two files plus
   `google-services.json` (for app builds, D8). `deploy.sh` refuses looser
-  modes, copies the two Pi files over the open SSH session into
-  `/var/lib/vyajena/push/` with `install -m 0600 -o vyajena`, removes Pi files
+  modes, copies the two server files over the open SSH session into
+  `/var/lib/vyajena/push/` with `install -m 0600 -o vyajena`, removes server files
   that are gone on the Mac, and never prints them.
 - `backup.sh` keeps taking only the database and `keys/`: the push keys are
   re-copyable from the Mac and the password manager, so they stay out of
@@ -249,7 +249,7 @@ flowchart TD
 - Sent on every process's first connect (one cheap RPC), so rotation while the
   app was dead is covered; the "last sent" value is in memory only.
 - Failures (offline) retry on the next connect.
-- The Pi side clears tokens itself on revoke (`auth::revoke_device`), because a
+- The server side clears tokens itself on revoke (`auth::revoke_device`), because a
   revoked device can no longer call `UpdatePushToken`.
 
 ### D11. Opening the app
@@ -301,7 +301,7 @@ checks in D3 are server-side only.
 
    ```
    gcloud services enable fcm.googleapis.com --project vyajena
-   gcloud iam service-accounts create vyajena-push --project vyajena --display-name "vyajena Pi wake pings"
+   gcloud iam service-accounts create vyajena-push --project vyajena --display-name "vyajena server wake pings"
    gcloud projects add-iam-policy-binding vyajena --member serviceAccount:vyajena-push@vyajena.iam.gserviceaccount.com --role roles/firebasecloudmessaging.admin --condition None
    gcloud iam service-accounts keys create ~/.vyajena-push/fcm-service-account.json --iam-account vyajena-push@vyajena.iam.gserviceaccount.com
    chmod 600 ~/.vyajena-push/fcm-service-account.json
@@ -322,7 +322,7 @@ checks in D3 are server-side only.
 
 ## Rollback
 
-- Server: `deploy/pi/deploy.sh --rollback` swaps back the previous binary; if
+- Server: `deploy/server/deploy.sh --rollback` swaps back the previous binary; if
   that binary has no `--push` (`--help` does not list it), the rollback also
   drops `--push` from the installed `vyajena.service` so it starts. The data
   and pin are untouched either way.

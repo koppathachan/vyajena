@@ -1,4 +1,4 @@
-//! Messaging on the device, end to end against the real Pi (client-core
+//! Messaging on the device, end to end against the real server (client-core
 //! tasks 6.1–6.3, 5.7): content bodies (message-content), send status
 //! (client-runtime: Send status), the local store around crashes
 //! (client-runtime: Local message store), and one ordered event stream
@@ -13,13 +13,13 @@ use client::store::{OutgoingMessage, Store};
 use client::{ClientError, Clock as _, ConnectionState, Event, MessageBody, MessageId, SendStatus};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The admin, Alice and Bob, all in the group and seeing each other.
-async fn chat(pi: &TestPi) -> (Device, Device, Device) {
-    let admin = device::admin_with_group(pi).await;
+async fn chat(server: &TestServer) -> (Device, Device, Device) {
+    let admin = device::admin_with_group(server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -87,10 +87,10 @@ fn store_raw_outgoing(device: &Device, content: &[u8]) {
         .check("store a raw message");
 }
 
-/// Stops `device` and waits until the Pi has seen its stream close.
-async fn go_offline(pi: &TestPi, device: &Device) {
+/// Stops `device` and waits until the server has seen its stream close.
+async fn go_offline(server: &TestServer, device: &Device) {
     device.client.stop();
-    pi.wait_offline_recorded(&device.device_id()).await;
+    server.wait_offline_recorded(&device.device_id()).await;
 }
 
 // spec: message-content/inner-content-format
@@ -98,8 +98,8 @@ async fn go_offline(pi: &TestPi, device: &Device) {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn text_messages_reach_everyone_in_order() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let ids: Vec<MessageId> = ["one", "two", "three"]
         .iter()
@@ -150,8 +150,8 @@ async fn text_messages_reach_everyone_in_order() {
 // spec: wire-transport/size-limits
 #[tokio::test(flavor = "multi_thread")]
 async fn a_very_long_paste_is_refused_and_the_longest_allowed_text_is_accepted() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
 
     let paste = "x".repeat(protocol::wire_transport::MAX_APPLICATION_CIPHERTEXT_BYTES);
     let refused = alice.client.send_text(&paste);
@@ -159,7 +159,7 @@ async fn a_very_long_paste_is_refused_and_the_longest_allowed_text_is_accepted()
     assert!(texts(&alice).is_empty(), "nothing is stored");
 
     // The longest text that fits (UTF-8, with multi-byte characters)
-    // encrypts within the cap: the Pi accepts it.
+    // encrypts within the cap: the server accepts it.
     let mut longest = "é".repeat(MAX_CONTENT_BYTES / 2);
     while messaging::encode_text(&longest, alice.clock.now()).is_err() {
         longest.pop();
@@ -184,8 +184,8 @@ async fn an_unknown_content_body_decodes_as_unset_and_shows_a_placeholder() {
 
     // End to end: a newer app's message reaches Bob as a placeholder, and
     // Bob goes on reading what follows.
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     store_raw_outgoing(&alice, unknown);
     let placeholder = bob
         .wait_event(
@@ -208,8 +208,8 @@ async fn an_unknown_content_body_decodes_as_unset_and_shows_a_placeholder() {
 // spec: message-content/group-settings-travel-encrypted
 #[tokio::test(flavor = "multi_thread")]
 async fn only_admin_devices_change_the_group_settings() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let id = admin
         .client
@@ -266,8 +266,8 @@ async fn only_admin_devices_change_the_group_settings() {
 // spec: message-content/user-owned-profiles
 #[tokio::test(flavor = "multi_thread")]
 async fn profiles_apply_to_their_sender_and_always_show_the_username() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
     assert_eq!(
         bob.client.display_name(&user("alice")).check("name"),
         "alice",
@@ -318,14 +318,14 @@ async fn profiles_apply_to_their_sender_and_always_show_the_username() {
 // spec: message-delivery/strict-epoch-rule
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_sent_across_a_commit_is_resent_in_the_new_epoch() {
-    let pi = TestPi::start().await;
-    let (admin, mut alice, _bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (admin, mut alice, _bob) = chat(&server).await;
     let epoch = alice.epoch().check("epoch");
 
     // Alice's laptop is away while the admin adds Carol; she writes "hi"
     // meanwhile. On reconnect the core sends it before it read the commit,
-    // so the Pi answers STALE_EPOCH.
-    go_offline(&pi, &alice).await;
+    // so the server answers STALE_EPOCH.
+    go_offline(&server, &alice).await;
     let mut carol = device::member_of_group(&admin, "carol").await;
     let id = alice.client.send_text("hi").check("send while away");
     assert_eq!(
@@ -359,10 +359,10 @@ async fn a_message_sent_across_a_commit_is_resent_in_the_new_epoch() {
 // spec: message-delivery/accepted-means-durable
 #[tokio::test(flavor = "multi_thread")]
 async fn an_own_message_survives_a_crash_before_accepted() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
 
-    pi.relay.cut();
+    server.relay.cut();
     alice
         .wait_event("the drop", |e| {
             matches!(e, Event::Connection(ConnectionState::Connecting))
@@ -378,13 +378,13 @@ async fn an_own_message_survives_a_crash_before_accepted() {
     assert_eq!(history[0].status, Some(SendStatus::Sending));
 
     // Back online, the core resends it with the same msg_id.
-    pi.relay.restore();
+    server.relay.restore();
     wait_accepted(&mut alice, id).await;
     wait_text(&mut bob, "hi").await;
     assert!(!bob.sees_within_quiet(|e| is_text(e, "hi")).await);
     assert_eq!(texts(&bob), ["hi"]);
     let alice_id = alice.device_id();
-    let stored: i64 = pi
+    let stored: i64 = server
         .query(move |db| {
             db.query_row(
                 "SELECT count(*) FROM dedup WHERE sender_device_id = ?1",
@@ -393,23 +393,23 @@ async fn an_own_message_survives_a_crash_before_accepted() {
             )
         })
         .await;
-    assert_eq!(stored, 1, "the Pi accepted it once");
+    assert_eq!(stored, 1, "the server accepted it once");
 }
 
 // spec: client-runtime/local-message-store
 // spec: message-delivery/acknowledgement
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_redelivered_after_a_crash_before_the_ack_is_seen_once() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
-    go_offline(&pi, &bob).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
+    go_offline(&server, &bob).await;
     let id = alice.client.send_text("hi").check("send");
     wait_accepted(&mut alice, id).await;
 
-    // Keep what the Pi holds for Bob, so it can be put back as if his ack
+    // Keep what the server holds for Bob, so it can be put back as if his ack
     // never arrived.
     let bob_id = bob.device_id();
-    let held: i64 = pi
+    let held: i64 = server
         .query(move |db| {
             db.execute(
                 "CREATE TABLE saved_deliveries AS SELECT * FROM deliveries WHERE device_id = ?1",
@@ -429,7 +429,7 @@ async fn a_message_redelivered_after_a_crash_before_the_ack_is_seen_once() {
     wait_text(&mut bob, "hi").await;
     let deadline = tokio::time::Instant::now() + device::WAIT;
     loop {
-        let acked: i64 = pi
+        let acked: i64 = server
             .query(move |db| {
                 db.query_row(
                     "SELECT acked_seq FROM cursors WHERE device_id = ?1",
@@ -445,24 +445,25 @@ async fn a_message_redelivered_after_a_crash_before_the_ack_is_seen_once() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 
-    // The ack is lost in a crash: the Pi delivers it again after restart.
-    go_offline(&pi, &bob).await;
-    pi.query(move |db| {
-        db.execute_batch(
-            "INSERT OR IGNORE INTO envelopes SELECT * FROM saved_envelopes;
+    // The ack is lost in a crash: the server delivers it again after restart.
+    go_offline(&server, &bob).await;
+    server
+        .query(move |db| {
+            db.execute_batch(
+                "INSERT OR IGNORE INTO envelopes SELECT * FROM saved_envelopes;
              INSERT OR IGNORE INTO deliveries SELECT * FROM saved_deliveries;",
-        )?;
-        db.execute(
-            "UPDATE cursors SET acked_seq = ?2 - 1 WHERE device_id = ?1",
-            rusqlite::params![bob_id.as_slice(), held],
-        )
-    })
-    .await;
+            )?;
+            db.execute(
+                "UPDATE cursors SET acked_seq = ?2 - 1 WHERE device_id = ?1",
+                rusqlite::params![bob_id.as_slice(), held],
+            )
+        })
+        .await;
     bob.restart().await;
     bob.wait_connected().await;
     assert!(!bob.sees_within_quiet(|e| is_text(e, "hi")).await);
     assert_eq!(texts(&bob), ["hi"]);
-    let acked: i64 = pi
+    let acked: i64 = server
         .query(move |db| {
             db.query_row(
                 "SELECT acked_seq FROM cursors WHERE device_id = ?1",
@@ -478,10 +479,10 @@ async fn a_message_redelivered_after_a_crash_before_the_ack_is_seen_once() {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn after_a_network_drop_messages_arrive_in_order() {
-    let pi = TestPi::start().await;
-    let (mut admin, _alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, _alice, mut bob) = chat(&server).await;
 
-    pi.relay.cut();
+    server.relay.cut();
     bob.wait_event("the drop", |e| {
         matches!(e, Event::Connection(ConnectionState::Connecting))
     })
@@ -490,7 +491,7 @@ async fn after_a_network_drop_messages_arrive_in_order() {
         .map(|n| admin.client.send_text(&format!("m{n}")).check("send"))
         .collect();
     tokio::time::sleep(Duration::from_millis(300)).await;
-    pi.relay.restore();
+    server.relay.restore();
     for id in ids {
         wait_accepted(&mut admin, id).await;
     }
@@ -504,20 +505,20 @@ async fn after_a_network_drop_messages_arrive_in_order() {
 // spec: group-membership/automatic-re-add
 #[tokio::test(flavor = "multi_thread")]
 async fn back_from_holiday_the_ui_hears_of_the_removal_then_newer_messages() {
-    let pi = TestPi::start().await;
-    let (mut admin, _alice, mut bob) = chat(&pi).await;
-    go_offline(&pi, &bob).await;
+    let server = TestServer::start().await;
+    let (mut admin, _alice, mut bob) = chat(&server).await;
+    go_offline(&server, &bob).await;
 
-    // Ten days away: the Pi marks Bob's laptop inactive and the admin
+    // Ten days away: the server marks Bob's laptop inactive and the admin
     // commits its Remove.
-    pi.clock.advance(10 * DAY);
+    server.clock.advance(10 * DAY);
     admin
         .wait_event("the stream to be closed", |e| {
             matches!(e, Event::Connection(ConnectionState::Connecting))
         })
         .await;
     admin.wait_connected().await;
-    pi.sweep().await;
+    server.sweep().await;
     admin
         .wait_until("Bob's laptop removed", |c| {
             c.members()
@@ -547,17 +548,17 @@ async fn back_from_holiday_the_ui_hears_of_the_removal_then_newer_messages() {
     let Some(Event::RemovedForInactivity { missed_since }) = events.get(removed) else {
         unreachable!()
     };
-    assert!(*missed_since <= pi.now());
+    assert!(*missed_since <= server.now());
 }
 
 // spec: message-delivery/ordered-delivery-and-catch-up
 // spec: group-membership/own-leaf-rotation
 #[tokio::test(flavor = "multi_thread")]
 async fn messages_around_an_own_commit_are_all_read() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     let epoch = alice.epoch().check("epoch");
-    let first = pi.last_resort(&alice.device_id()).await;
+    let first = server.last_resort(&alice.device_id()).await;
 
     // Alice's leaf is due for rotation: it happens within the next hour of
     // her clock (from the timer check that finds it due, the same one that
@@ -565,7 +566,8 @@ async fn messages_around_an_own_commit_are_all_read() {
     // jobs wait for 100 ms of quiet, so Bob writes about that often: his
     // messages land just before and just after her commit.
     alice.clock.advance(8 * DAY);
-    pi.wait_last_resort_replaced(&alice.device_id(), &first)
+    server
+        .wait_last_resort_replaced(&alice.device_id(), &first)
         .await;
     alice.clock.advance(Duration::from_secs(61 * 60));
     let mut ids = Vec::new();
@@ -595,22 +597,23 @@ async fn messages_around_an_own_commit_are_all_read() {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_whose_mls_sender_is_not_the_named_device_is_shown_as_unreadable() {
-    let pi = TestPi::start().await;
-    let (admin, mut alice, mut bob) = chat(&pi).await;
-    go_offline(&pi, &bob).await;
+    let server = TestServer::start().await;
+    let (admin, mut alice, mut bob) = chat(&server).await;
+    go_offline(&server, &bob).await;
 
-    // A Pi that lies about the sender: Alice's message, stored as the
+    // A server that lies about the sender: Alice's message, stored as the
     // admin's.
     let id = alice.client.send_text("from alice").check("send");
     wait_accepted(&mut alice, id).await;
     let (alice_id, admin_id) = (alice.device_id(), admin.device_id());
-    pi.query(move |db| {
-        db.execute(
-            "UPDATE envelopes SET sender_device_id = ?2 WHERE sender_device_id = ?1",
-            rusqlite::params![alice_id.as_slice(), admin_id.as_slice()],
-        )
-    })
-    .await;
+    server
+        .query(move |db| {
+            db.execute(
+                "UPDATE envelopes SET sender_device_id = ?2 WHERE sender_device_id = ?1",
+                rusqlite::params![alice_id.as_slice(), admin_id.as_slice()],
+            )
+        })
+        .await;
 
     bob.client.start().await.check("start bob");
     let unreadable = bob
@@ -641,16 +644,16 @@ async fn a_message_whose_mls_sender_is_not_the_named_device_is_shown_as_unreadab
 // spec: group-membership/commit-authority
 // spec: group-membership/inactive-devices-are-kept-out
 #[tokio::test(flavor = "multi_thread")]
-async fn a_member_commits_pending_pi_removes_before_sending() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, bob) = chat(&pi).await;
+async fn a_member_commits_pending_server_removes_before_sending() {
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, bob) = chat(&server).await;
     let epoch = alice.epoch().check("epoch");
-    go_offline(&pi, &bob).await;
+    go_offline(&server, &bob).await;
 
-    // Ten days pass on the Pi (Alice and the admin stay online), then the
-    // admin's device goes away just before the Pi removes Bob's laptop, so
-    // nobody commits the Pi's Remove proposal at once.
-    pi.clock.advance(10 * DAY);
+    // Ten days pass on the server (Alice and the admin stay online), then the
+    // admin's device goes away just before the server removes Bob's laptop, so
+    // nobody commits the server's Remove proposal at once.
+    server.clock.advance(10 * DAY);
     for device in [&mut admin, &mut alice] {
         device
             .wait_event("the stream to be closed", |e| {
@@ -659,13 +662,13 @@ async fn a_member_commits_pending_pi_removes_before_sending() {
             .await;
         device.wait_connected().await;
     }
-    go_offline(&pi, &admin).await;
-    pi.sweep().await;
+    go_offline(&server, &admin).await;
+    server.sweep().await;
     tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(alice.epoch(), Some(epoch), "the Remove is only proposed");
 
     // Alice writes: OpenMLS encrypts nothing while a proposal is pending, so
-    // her core commits the Pi's Remove first, then sends.
+    // her core commits the server's Remove first, then sends.
     let id = alice.client.send_text("still here").check("send");
     wait_accepted(&mut alice, id).await;
     assert_eq!(alice.epoch(), Some(epoch + 1));
@@ -680,25 +683,26 @@ async fn a_member_commits_pending_pi_removes_before_sending() {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn a_gap_notice_reaches_the_ui_before_newer_messages() {
-    let pi = TestPi::start().await;
-    let (mut admin, _alice, mut bob) = chat(&pi).await;
-    go_offline(&pi, &bob).await;
+    let server = TestServer::start().await;
+    let (mut admin, _alice, mut bob) = chat(&server).await;
+    go_offline(&server, &bob).await;
 
     let id = admin.client.send_text("too old").check("send");
     wait_accepted(&mut admin, id).await;
-    // Bob's entry is 8 days old by the time the Pi sweeps (as for a device
-    // that stays connected but never acknowledges): the Pi deletes it and
+    // Bob's entry is 8 days old by the time the server sweeps (as for a device
+    // that stays connected but never acknowledges): the server deletes it and
     // owes Bob a gap notice. Bob was seen recently, so he is not inactive.
     let eight_days = i64::try_from((8 * DAY).as_millis()).check("millis");
-    pi.query(move |db| {
-        db.execute(
-            "UPDATE envelopes SET accepted_at = accepted_at - ?1 WHERE kind = 1",
-            [eight_days],
-        )
-    })
-    .await;
-    pi.sweep().await;
-    let expired_at: i64 = pi
+    server
+        .query(move |db| {
+            db.execute(
+                "UPDATE envelopes SET accepted_at = accepted_at - ?1 WHERE kind = 1",
+                [eight_days],
+            )
+        })
+        .await;
+    server.sweep().await;
+    let expired_at: i64 = server
         .query(|db| db.query_row("SELECT newest_expired_at FROM gaps", [], |row| row.get(0)))
         .await;
 
@@ -734,8 +738,8 @@ async fn a_gap_notice_reaches_the_ui_before_newer_messages() {
 // spec: message-delivery/per-device-queues
 #[tokio::test(flavor = "multi_thread")]
 async fn an_own_message_reaches_the_senders_other_device() {
-    let pi = TestPi::start().await;
-    let (_admin, mut phone, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut phone, mut bob) = chat(&server).await;
     // Alice links a tablet; her phone adds it.
     let mut tablet = Device::new().await;
     let request = tablet.client.link_request().await.check("link request");

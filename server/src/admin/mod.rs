@@ -1,4 +1,4 @@
-//! Admin service: invites, the group and user removal (pi-server-core tasks
+//! Admin service: invites, the group and user removal (server-core tasks
 //! 6.1, 6.2). Every RPC is for admin devices only; any other device gets
 //! `PERMISSION_DENIED` (device-identity: Invites). The bootstrap invite
 //! (device-identity: Bootstrap admin) uses [`invites`] at first start.
@@ -148,13 +148,13 @@ impl Admin for AdminService {
         let caller = admin(&request)?;
         let request = request.into_inner();
         let admin_user_id = self.state.config.admin_user_id();
-        let pi = membership::external_sender(&self.state.config.server_id, &self.state.keys);
+        let server = membership::external_sender(&self.state.config.server_id, &self.state.keys);
         let now = self.state.clock.now();
         self.state
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
-                match GroupState::create(&tx, &caller, &admin_user_id, &pi, &request, now) {
+                match GroupState::create(&tx, &caller, &admin_user_id, &server, &request, now) {
                     Ok(_) => {
                         tx.commit()?;
                         Ok(Ok(()))

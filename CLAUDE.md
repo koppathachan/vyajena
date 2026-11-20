@@ -24,10 +24,10 @@ must never break, and the Rust conventions. This file only adds how to work here
 
 ```
 proto/vyajena/v1/       wire contract (package vyajena.v1); buf.yaml at the root
-protocol/               rules the Pi and core share (limits, timings, signing labels,
+protocol/               rules the server and core share (limits, timings, signing labels,
                         certificate checks, commit authority), one module per spec
                         capability; tests in protocol/tests/
-server/                 the Pi server: one folder per feature in src/, src/pb.rs
+server/                 the server: one folder per feature in src/, src/pb.rs
                         (generated server stubs), tests/ with tests/support/pb.rs
                         (generated client stubs); example config server/local.toml
 client/                 the device core (library): one folder per feature in src/
@@ -45,14 +45,16 @@ app/                    the Flutter app, iOS + Android only: lib/<feature>/ scre
                         lib/src/rust/ (generated Dart bindings), rust_builder/
                         (cargokit: builds bridge/ from Xcode and Gradle); test/
                         widget tests on a fake core (test/support/), integration_test/
-                        the real app on a simulator (run.sh starts a temp Pi)
+                        the real app on a simulator (run.sh starts a temp server)
 pbgen/                  regenerates the committed pb.rs files from proto/
-deploy/pi/              the real Pi: build.sh (arm64 container builds: server +
+deploy/server/              the real server: build.sh (arm64 container builds: server +
                         rathole), deploy.sh (harden + install/upgrade/--rollback/
                         --reset over SSH), check.sh (hardening check), backup.sh,
                         harden.sh (run by deploy), vyajena.service,
                         vyajena-tunnel.service, nftables.conf, config.toml and
                         tunnel.toml (templates, filled by deploy/relay/render.sh)
+deploy/network.conf.example  the real addresses/ports are NOT in the repo: copy it to
+                        ~/.vyajena-relay/network.conf; deploy/network.sh loads it
 deploy/relay/           the GCP relay (rathole): relay.conf (names, sizes,
                         versions), secrets.sh, create.sh (gcloud, --dry-run),
                         build.sh, deploy.sh, check.sh, ssh.sh (IAP), render.sh,
@@ -71,36 +73,38 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 openspec validate <change> --strict
-cargo run -p server -- --config server/local.toml   # local Pi on 127.0.0.1:8443
+cargo run -p server -- --config server/local.toml   # local server on 127.0.0.1:8443
 cd app && flutter analyze
 cd app && flutter test                       # widget tests (what CI runs)
 app/integration_test/run.sh <device id>      # the app on a simulator/emulator
-shellcheck deploy/pi/*.sh deploy/relay/*.sh
-deploy/pi/build.sh && deploy/pi/deploy.sh --no-build   # the real Pi (192.168.1.8)
-deploy/pi/check.sh                           # the Pi's hardening; must pass
-deploy/pi/backup.sh                          # DB + keys -> ~/vyajena-pi-backups/
+shellcheck deploy/server/*.sh deploy/relay/*.sh
+deploy/server/build.sh && deploy/server/deploy.sh --no-build   # the real server (its address is in ~/.vyajena-relay/network.conf)
+deploy/server/check.sh                           # the server's hardening; must pass
+deploy/server/backup.sh                          # DB + keys -> ~/vyajena-server-backups/
 deploy/relay/create.sh --dry-run             # the relay's gcloud commands, run nothing
 deploy/relay/deploy.sh                       # the relay VM (needs gcloud auth login)
 deploy/relay/check.sh                        # the relay's hardening; must pass
 ```
 
-The real Pi holds the owner's group: deploy to it only when a change says so,
+The real server holds the owner's group: deploy to it only when a change says so,
 never run tests against it, and never touch its `/var/lib/vyajena` by hand.
 Its first start saved the owner's bootstrap invite to an owner-only file; a
 fresh database there (only ever through `deploy.sh --reset`, which backs up
 first) means a new pin and re-joining every device. Before any `gcloud`
 action that creates or changes something, show the owner the commands
 (`create.sh --dry-run`) and the cost and wait for a yes; the owner runs
-`gcloud auth login` themselves. The relay's secrets live only in
+`gcloud auth login` themselves. No real IP or port of the deployment goes into the repo, docs or
+specs: they live in `~/.vyajena-relay/network.conf` (placeholders in the text).
+The relay's secrets live only in
 `~/.vyajena-relay/`: never in the repo, never printed.
 
 Dart tests live in `app/test/` and `app/integration_test/`, never in `lib/`,
 tagged `// spec: <capability>/<title-slug>` like the Rust ones. `run.sh`
-starts its own temp Pi and the admin's device on the host; README "Run the
+starts its own temp server and the admin's device on the host; README "Run the
 app locally" covers simulators, `adb reverse` and the Xcode 27.2 caveat.
 
 The local server prints its one-time bootstrap invite only on first start, and
-its data lives in the git-ignored `server/.pi-local/` (README: "Run the server
+its data lives in the git-ignored `server/.server-local/` (README: "Run the server
 locally"). Never start it with `server/local.toml` for testing: that uses up the
 owner's invite. Tests start their own servers in temp folders.
 

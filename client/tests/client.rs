@@ -109,7 +109,7 @@ async fn the_client_reads_time_from_its_clock() {
 fn user_ids_print_as_username_at_server() {
     let alice = UserId {
         username: "alice".into(),
-        server_id: "pi".into(),
+        server_id: "chat".into(),
     };
-    assert_eq!(alice.to_string(), "alice@pi");
+    assert_eq!(alice.to_string(), "alice@chat");
 }

@@ -28,7 +28,7 @@ storage key that itself lives in the key store; messages stay unencrypted.
 The core SHALL store messages in a local SQLite database. It SHALL store the
 plaintext of a message the user sends before sending it, because the sender
 cannot decrypt its own ciphertext, and SHALL store each received message before
-acknowledging it to the Pi.
+acknowledging it to the server.
 
 #### Scenario: Own message survives a crash
 - **WHEN** Alice sends "hi" and her laptop crashes before `Accepted` arrives
@@ -37,16 +37,16 @@ acknowledging it to the Pi.
 
 #### Scenario: Crash before ack
 - **WHEN** Bob's core crashes after storing a received message but before acking
-- **THEN** the Pi redelivers it and Bob sees it once
+- **THEN** the server redelivers it and Bob sees it once
 
 ### Requirement: Connection lifecycle
-The core SHALL connect to the relay address from the invite, accept the Pi only
+The core SHALL connect to the relay address from the invite, accept the server only
 by its pinned TLS key, authenticate with its device auth key, renew its session
 token before it expires, keep one `Connect` stream open with heartbeats, and
 reconnect with backoff when the connection drops.
 
 #### Scenario: Wrong pin
-- **WHEN** the Pi presents a TLS key that does not match the invite's pin
+- **WHEN** the server presents a TLS key that does not match the invite's pin
 - **THEN** the core does not connect and reports a server identity error to the UI
 
 #### Scenario: Network drop
@@ -54,7 +54,7 @@ reconnect with backoff when the connection drops.
 - **THEN** the core reconnects on its own and catches up in order
 
 ### Requirement: Send status
-The core SHALL report each sent message as sending until the Pi accepts it, then
+The core SHALL report each sent message as sending until the server accepts it, then
 as accepted. On `STALE_EPOCH` or a reconnect it SHALL process pending commits,
 re-encrypt and resend with the same `msg_id`; on any other rejection it SHALL
 report the message as failed with the reason.

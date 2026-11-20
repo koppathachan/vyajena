@@ -119,7 +119,7 @@ impl Store {
     }
 
     /// Replaces the pinned key of `user_id` with `key` without the user
-    /// accepting it first: only for a key the Pi confirmed for a device the
+    /// accepting it first: only for a key the server confirmed for a device the
     /// admin added (key-directory: Clients verify the identity chain, "Admin
     /// re-adds a reset user"). The UI is warned that the key changed.
     pub fn repin_identity_key(

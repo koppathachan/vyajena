@@ -1,10 +1,10 @@
 ## Context
 
-QA runs 1 and 2 through the real Pi found seven gaps (F1–F7) plus the look of
+QA runs 1 and 2 through the real server found seven gaps (F1–F7) plus the look of
 own messages. The owner decided (2026-11-14): fix them all before
 `qa-verification`; own messages get no label; a reset user's old profile is
 cleared; all notices (removed, rename, member/device); reconnect on network
-return; the Pi kernel check.
+return; the server kernel check.
 
 ## Goals / Non-Goals
 
@@ -33,8 +33,8 @@ left-aligned. The fix sizes the bubble to its content.
 ### D2. Late joiners get the group name and profiles (F1)
 
 Group name and profiles are only sent when they change, so a device added later
-never sees them. MLS has no channel for app state in a Welcome that the Pi can't
-read: group-context extensions travel in the commit, which the Pi checks
+never sees them. MLS has no channel for app state in a Welcome that the server can't
+read: group-context extensions travel in the commit, which the server checks
 (breaks "group settings and profiles travel only inside encrypted messages").
 
 So after a device merges a commit that adds one or more devices:
@@ -45,7 +45,7 @@ So after a device merges a commit that adds one or more devices:
 ```mermaid
 sequenceDiagram
   participant A as Admin phone
-  participant P as Pi
+  participant P as server
   participant B as Bob phone
   participant T as Bob tablet (new)
   A->>P: COMMIT Add(tablet) + Welcome
@@ -74,7 +74,7 @@ stored profile at once, so the warning and later messages show the username only
 Today a revoked device's `Authenticate` gets the same `UNAUTHENTICATED` as a
 replayed nonce, so the core retries forever.
 
-- **Pi:** `Authenticate` checks the signature first; only for a valid signature
+- **server:** `Authenticate` checks the signature first; only for a valid signature
   from a revoked device does it return `PERMISSION_DENIED` ("device revoked").
   Without the device's auth key nobody learns whether a device is revoked. An open
   `Connect` stream of a device being revoked closes with `PERMISSION_DENIED`.
@@ -106,7 +106,7 @@ removed.
 | another device of a member added | "bob added a device" |
 | all devices of a user removed by another user | "akhil removed bob" |
 | one device removed by its own user | "bob removed a device" |
-| inactivity Remove (Pi proposal) or re-add of the same device id | none |
+| inactivity Remove (server proposal) or re-add of the same device id | none |
 
 A device that has just joined shows no notices for the commit that added it.
 
@@ -114,12 +114,12 @@ Implementation (part A), the shapes the app gets:
 
 - `MembersChanged { added, removed, by, automatic }`: `added` and `removed`
   list every device the commit changed; `automatic` lists those of them that
-  changed on their own (a Remove the Pi proposed for inactivity, and the
+  changed on their own (a Remove the server proposed for inactivity, and the
   re-add of such a device id, also a Remove + Add of the same id in one
   commit). The UI shows no notice for a device in `automatic`. For a Welcome
   (this device joined or rejoined) all lists are empty and `by` is `None`; for
   creating the group they are empty with `by` the admin.
-- To know a re-add, each device records the device ids the Pi's Removes took
+- To know a re-add, each device records the device ids the server's Removes took
   out (client migration `0004_inactive_devices.sql`) and drops the row when
   the id is added again. A device that joined after the inactivity Remove has
   no row, so it would show the re-add as "bob added a device"; acceptable for
@@ -161,15 +161,15 @@ opens no connection, so the requirement still holds.
 
 ### D7. Pending kernel reboot (F7)
 
-Raspberry Pi kernel packages don't create `/run/reboot-required`. `check.sh`
+the host's kernel packages don't create `/run/reboot-required`. `check.sh`
 warns `kernel-reboot` when `/lib/modules/` has a kernel with the running
 kernel's flavour suffix (e.g. `+rpt-rpi-v8`) whose version sorts above
-`uname -r`. Other flavours (`-2712` for the Pi 5) are ignored. A warning, not a
+`uname -r`. Other flavours (`-2712` for the server 5) are ignored. A warning, not a
 failure, like `reboot-required`.
 
 ### D8. Invite revoke is logged
 
-The Pi logs `revoked an invite` (the kind of event and ids, never content), like
+The server logs `revoked an invite` (the kind of event and ids, never content), like
 `created an invite`.
 
 ## Risks / Trade-offs
@@ -178,10 +178,10 @@ The Pi logs `revoked an invite` (the kind of event and ids, never content), like
   small and adds are rare.
 - [A removed device keeps old history] → expected; it was readable before. It no
   longer receives anything.
-- [`PERMISSION_DENIED` from an old Pi] → old Pis send `UNAUTHENTICATED`; the core
+- [`PERMISSION_DENIED` from an old server] → old Pis send `UNAUTHENTICATED`; the core
   behaves as before (retries).
 
 ## Migration Plan
 
-Deploy the new server to the Pi after `backup.sh`. Old apps keep working (they
+Deploy the new server to the server after `backup.sh`. Old apps keep working (they
 retry on `PERMISSION_DENIED` as on any error). The group is kept; no re-join.

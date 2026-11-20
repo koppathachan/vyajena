@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use super::clients::{TestDevice, TestUser};
 use super::harness::{Conn, authed};
 use super::messaging::{GROUP_ID, Stream};
-use super::{Check, config_text, pi_external_sender, register};
+use super::{Check, config_text, register, server_external_sender};
 
 /// How long the binary gets to start listening or to exit.
 pub const WAIT: Duration = Duration::from_secs(20);
@@ -29,16 +29,16 @@ pub struct Binary {
     pub log: Vec<String>,
 }
 
-/// A temp folder with a config for the binary (admin `akhil@pi`).
+/// A temp folder with a config for the binary (admin `akhil@chat`).
 pub struct Home {
     dir: tempfile::TempDir,
 }
 
 impl Home {
-    /// A fresh folder with `pi.toml` in it.
+    /// A fresh folder with `server.toml` in it.
     pub fn new() -> Self {
         let dir = tempfile::tempdir().check("temp dir");
-        std::fs::write(dir.path().join("pi.toml"), config_text()).check("write pi.toml");
+        std::fs::write(dir.path().join("server.toml"), config_text()).check("write server.toml");
         Self { dir }
     }
 
@@ -49,10 +49,10 @@ impl Home {
 
     /// The config file.
     pub fn config(&self) -> PathBuf {
-        self.dir.path().join("pi.toml")
+        self.dir.path().join("server.toml")
     }
 
-    /// Starts `server --config pi.toml` and waits until it listens.
+    /// Starts `server --config server.toml` and waits until it listens.
     pub fn start(&self) -> Binary {
         let mut child = Command::new(env!("CARGO_BIN_EXE_server"))
             .arg("--config")
@@ -155,17 +155,20 @@ impl Drop for Binary {
 
 /// The admin registered from the binary's bootstrap invite, with the group
 /// created and a stream open.
-pub async fn admin_on(pi: &Binary) -> (Conn, TestUser, TestDevice, Stream) {
-    let conn = Conn::open(pi.addr, pi.pin).await;
+pub async fn admin_on(server: &Binary) -> (Conn, TestUser, TestDevice, Stream) {
+    let conn = Conn::open(server.addr, server.pin).await;
     let admin = TestUser::new("akhil");
     let mut device = admin.new_device();
-    let code = pi.invite_code.clone().check("bootstrap invite in the log");
+    let code = server
+        .invite_code
+        .clone()
+        .check("bootstrap invite in the log");
     register(&conn, &code, &admin, &device)
         .await
         .check("Register (bootstrap)");
     device.authenticate(&conn).await;
-    let pi_sender = pi_external_sender(&conn).await;
-    let request = device.create_group(GROUP_ID, &pi_sender, "akhil@pi");
+    let server_sender = server_external_sender(&conn).await;
+    let request = device.create_group(GROUP_ID, &server_sender, "akhil@chat");
     conn.admin()
         .create_group(authed(device.token(), request))
         .await

@@ -1,13 +1,13 @@
 ## Context
 
-A device connects to the Pi over a pinned-TLS HTTP/2 channel and then, in
+A device connects to the server over a pinned-TLS HTTP/2 channel and then, in
 `client/src/engine/mod.rs::open_link`, does four round trips before messages
 flow:
 
 1. `Devices.GetServerInfo` — protocol versions, limits, external sender.
 2. `Devices.GetChallenge` — a 32-byte nonce.
 3. `Devices.Authenticate` — a signature over the nonce and this connection's
-   TLS exporter; the Pi returns a session token and expiry.
+   TLS exporter; the server returns a session token and expiry.
 4. `Messaging.Connect` — opens the stream, first frame `Hello`.
 
 Over the US relay each round trip from India is ~0.5 s, so a cold connect spends
@@ -25,7 +25,7 @@ The session token already exists (`SESSION_TOKEN_MAX_LIFETIME = 1 h`,
 - Cut reconnect latency by reusing a still-valid session token to skip
   `GetChallenge` and `Authenticate`, opening `Connect` directly.
 - Fall back to the full handshake with no behaviour change when there is no
-  usable token or the Pi rejects the token.
+  usable token or the server rejects the token.
 - Keep the wire contract backward-compatible (no proto change).
 
 **Non-Goals:**
@@ -44,12 +44,12 @@ unauthenticated ones (`GetServerInfo`, `Register`, `GetChallenge`,
 SHA-256 in the `sessions` table (unexpired, device not revoked) and attaches the
 `Caller`. `Messaging.Connect` is an authenticated path, and its handler takes
 the caller straight from that layer (`let caller = caller(&request)?`). There is
-**no per-connection challenge state**: the Pi never ties a token to the TLS
+**no per-connection challenge state**: the server never ties a token to the TLS
 connection that minted it. The `sessions` row has no connection column.
 
 So a token minted on connection A already authenticates `Connect` opened on a
 new connection B. Resume needs the client to keep the token across a drop and
-re-send it — nothing on the wire or the Pi changes.
+re-send it — nothing on the wire or the server changes.
 
 The brief anticipated a `.proto` edit, `pbgen`, and a server change. On reading
 the code none is needed (CLAUDE.md workflow rule 5: fix the understanding in the
@@ -58,7 +58,7 @@ spec/design, record why here). `buf breaking` is therefore trivially clean, and
 untouched.
 
 **Alternative considered:** add a `resume` hint to `Hello` or a dedicated field
-so the Pi could distinguish a resumed open. Rejected: the Pi already accepts the
+so the server could distinguish a resumed open. Rejected: the server already accepts the
 token with no hint, and the project's rule is that no wire message exists that
 is not needed (wire-transport: Protobuf contract is the source of truth).
 
@@ -75,7 +75,7 @@ is not needed (wire-transport: Protobuf contract is the source of truth).
   still valid with the full renewal margin left), the core re-binds it to the
   new connection (`Conn::resume`) and opens `Connect` with it.
   - Accepted → connected in one fewer pair of round trips.
-  - `UNAUTHENTICATED` from the stream open → the token is gone on the Pi (evicted,
+  - `UNAUTHENTICATED` from the stream open → the token is gone on the server (evicted,
     or clock skew at the boundary); the core falls through to the full handshake
     in the same attempt, which mints a fresh token.
   - Any other transport error → treated as a connect failure, as today.
@@ -92,36 +92,36 @@ handshake, and `Authenticate` answers `PERMISSION_DENIED` → `removed()`
 ```mermaid
 sequenceDiagram
   participant C as Core
-  participant Pi
-  Note over C,Pi: Cold connect (no usable token)
-  C->>Pi: GetServerInfo
-  Pi-->>C: versions, limits
-  C->>Pi: GetChallenge
-  Pi-->>C: nonce
-  C->>Pi: Authenticate(sig over nonce + TLS exporter)
-  Pi-->>C: session token + expiry
-  C->>Pi: Connect + Hello  (token in authorization)
-  Pi-->>C: catch-up, then live
-  Note over C,Pi: Reconnect with a still-valid token (resume)
-  C->>Pi: GetServerInfo
-  Pi-->>C: versions, limits
-  C->>Pi: Connect + Hello  (reused token in authorization)
+  participant server
+  Note over C,server: Cold connect (no usable token)
+  C->>server: GetServerInfo
+  server-->>C: versions, limits
+  C->>server: GetChallenge
+  server-->>C: nonce
+  C->>server: Authenticate(sig over nonce + TLS exporter)
+  server-->>C: session token + expiry
+  C->>server: Connect + Hello  (token in authorization)
+  server-->>C: catch-up, then live
+  Note over C,server: Reconnect with a still-valid token (resume)
+  C->>server: GetServerInfo
+  server-->>C: versions, limits
+  C->>server: Connect + Hello  (reused token in authorization)
   alt token accepted
-    Pi-->>C: catch-up, then live
+    server-->>C: catch-up, then live
   else UNAUTHENTICATED
-    C->>Pi: GetChallenge / Authenticate / Connect (full handshake)
+    C->>server: GetChallenge / Authenticate / Connect (full handshake)
   end
 ```
 
 ### D3: `GetServerInfo` still runs each reconnect; token reuse is within the security model
 
 Resume keeps `GetServerInfo` on reconnect because `Hello` needs the negotiated
-protocol version and `pi_knows_dms` is read from it. So a resumed reconnect is
+protocol version and `server_knows_dms` is read from it. So a resumed reconnect is
 two round trips (`GetServerInfo` + `Connect`), a cold one four; the two saved
 are exactly `GetChallenge` + `Authenticate`, as the brief asked.
 
 **Security.** Reusing an already-minted token on a new connection does not widen
-the model. The token already travels over pinned TLS and the Pi already accepts
+the model. The token already travels over pinned TLS and the server already accepts
 it on any connection for every other RPC. The TLS-exporter binding in
 `Authenticate` protects the *challenge signature* — it stops a signature from
 being replayed on another connection to mint a token — not the token itself,
@@ -153,19 +153,19 @@ region. Recorded here for the owner to decide separately.
   time left; a boundary rejection still falls back to the full handshake in the
   same attempt, costing the two round trips it would have cost anyway.
 - [A dead-but-unexpired token wastes one stream-open per reconnect while the
-  backoff loop runs] → Narrow window (only if the Pi evicted the token or under
+  backoff loop runs] → Narrow window (only if the server evicted the token or under
   clock skew); each wasted attempt immediately falls back and succeeds, and a
   successful connect overwrites `self.resume`.
 - [Resume could mask a revoked device if `Connect` returned `PERMISSION_DENIED`
   instead of `UNAUTHENTICATED`] → It does not: a revoked device's token is
-  deleted, so the Pi returns `UNAUTHENTICATED` on lookup; the fallback reaches
+  deleted, so the server returns `UNAUTHENTICATED` on lookup; the fallback reaches
   `Authenticate`, which is where `PERMISSION_DENIED` is raised. Covered by a
   test.
 
 ## Migration Plan
 
 Client-only, backward-compatible. Older cores keep doing the full handshake; the
-Pi is unchanged, so new and old cores interoperate with any Pi. No data
+Server is unchanged, so new and old cores interoperate with any server. No data
 migration, no deploy step. Rollback is reverting the client commit.
 
 ## Open Questions

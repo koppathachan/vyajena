@@ -32,11 +32,11 @@ byte-identical. When the user sends an image the core SHALL keep its WebP in the
 device media cache and store the message, waiting for its blob, at once and
 whether or not it is connected, like a text message. When the outbox reaches the
 message with a connection the core SHALL upload the blob (idempotent on
-`blob_id`) first and send the `APPLICATION` envelope only after the Pi accepted
+`blob_id`) first and send the `APPLICATION` envelope only after the server accepted
 the blob, keeping the chat's later messages behind it until then. It SHALL try
-again an upload that failed in a way that can pass (the Pi's blob store
+again an upload that failed in a way that can pass (the server's blob store
 unavailable, an expired session, the network), SHALL fail the message with a
-reason when the Pi refuses the blob for good or the picture is no longer in the
+reason when the server refuses the blob for good or the picture is no longer in the
 cache, and SHALL fail a message still waiting `protocol::blob_store::BLOB_TTL`
 after it was written. A resend of the stored message SHALL reuse the same
 `msg_id`. The core enforces this.
@@ -61,8 +61,8 @@ after it was written. A resend of the stored message SHALL reuse the same
 - **THEN** after restart the envelope resends under the same `msg_id` and the
   blob is not uploaded again
 
-#### Scenario: The Pi's drive is away
-- **WHEN** Alice sends an image while the Pi's blob store answers `UNAVAILABLE`
+#### Scenario: The server's drive is away
+- **WHEN** Alice sends an image while the server's blob store answers `UNAVAILABLE`
 - **THEN** nothing is sent for it, it stays sending, and it goes out after the
   blob store is back
 
@@ -97,7 +97,7 @@ the message, never in the cache. The core enforces this.
 
 ### Requirement: Expired media
 When `Blobs.DownloadBlob` answers `NOT_FOUND`, the core SHALL mark that image
-message expired, report it as expired from then on without asking the Pi again,
+message expired, report it as expired from then on without asking the server again,
 and SHALL keep showing its ThumbHash placeholder, which lives in the message,
 not the blob. The core that sent an image, which keeps its plaintext in the media
 cache, SHALL resend it on request as a new message with a fresh `blob_id`, key and
@@ -105,9 +105,9 @@ cache, SHALL resend it on request as a new message with a fresh `blob_id`, key a
 picture is no longer in its cache. The core enforces this.
 
 #### Scenario: Receiver opens an expired image
-- **WHEN** Bob opens an image whose blob the Pi has deleted
+- **WHEN** Bob opens an image whose blob the server has deleted
 - **THEN** the core reports it expired and the blur stays visible
 
 #### Scenario: Sender can resend
-- **WHEN** Alice's image has expired on the Pi and she still has it cached
+- **WHEN** Alice's image has expired on the server and she still has it cached
 - **THEN** her core can resend it as a new image with a new blob

@@ -1,7 +1,7 @@
 ## Context
 
-The Pi (`server/`) and the device core (`client/`, archived change client-core)
-are done: 267 tests, all against a real Pi in-process. `client::Client` is a
+The server (`server/`) and the device core (`client/`, archived change client-core)
+are done: 267 tests, all against a real server in-process. `client::Client` is a
 plain-type async API with one ordered event stream, made for a UI to sit on. Its
 `KeyStore` trait has OS keychain (desktop), opt-in file and memory stores; the
 Android Keystore and iOS Keychain stores were left for this change. The owner
@@ -13,7 +13,7 @@ targets.
 ## Goals / Non-Goals
 
 **Goals:** two people chat by hand on an iOS Simulator and an Android emulator
-against a local Pi; every app-ui requirement has a test; the look stays very light.
+against a local server; every app-ui requirement has a test; the look stays very light.
 
 **Non-Goals:** desktop builds, real push (FCM / APNs), QR codes, Q&A verification,
 store releases, the relay.
@@ -29,14 +29,14 @@ app/                    Flutter project, iOS + Android only
   lib/<feature>/        onboarding, chat, members, profile, devices, admin
   lib/src/rust/         generated Dart bindings (committed)
   test/                 widget tests against the fake core
-  integration_test/     app on a simulator against a real local Pi
+  integration_test/     app on a simulator against a real local server
 bridge/                 Rust crate in the workspace: wraps client::Client
   src/api/              functions and plain types exposed to Dart
   src/frb_generated.rs  generated (committed)
   tests/                Rust tests of the bridge API
 ```
 
-Folders follow features, as on the Pi and in the core. Tests stay out of `lib/`
+Folders follow features, as on the server and in the core. Tests stay out of `lib/`
 (Dart's own convention matches the owner's rule).
 
 **App id (owner, 2026-11-12): `com.purplechaamba.vyajena`** (the owner owns
@@ -149,8 +149,8 @@ closed when the sink was dropped.
 - The real `app/` with this bridge (client, OpenMLS, SQLite) builds from the
   workspace with `flutter build apk --debug` (cargokit builds `bridge` for
   arm64, x86 and x86_64 Android) and launches on the API 35 emulator.
-- Tests: `bridge/tests/support` includes `client/tests/support/{pi,relay}.rs`
-  by `#[path]`, so the in-process Pi has one copy.
+- Tests: `bridge/tests/support` includes `client/tests/support/{server,relay}.rs`
+  by `#[path]`, so the in-process server has one copy.
 - The `client` crate does not build for iOS yet: `keyring`'s default `v1`
   feature enables `apple-native-keyring-store/keychain`, which refuses iOS
   without `protected` (task 3.1 adds it). Android builds.
@@ -162,7 +162,7 @@ flowchart LR
   br --> core["client::Client"]
   core -->|"events"| br
   br -->|"StreamSink"| svc
-  core -->|"pinned TLS gRPC"| pi["Pi"]
+  core -->|"pinned TLS gRPC"| server["server"]
 ```
 
 ### D3. State in Dart
@@ -249,17 +249,17 @@ killed and relaunched it reported "existing" with the same fingerprint.
   before `super.onCreate` (`android/app/src/main/kotlin/io/crates/keyring/Keyring.kt`).
 
 **How the real stores were checked (2026-11-12).** Each phone ran the real
-app (`com.purplechaamba.vyajena`, debug) against its own temporary Pi
+app (`com.purplechaamba.vyajena`, debug) against its own temporary server
 (`target/debug/server` with a config in a temp folder, never
 `server/local.toml`), through a throwaway entry point that registered from
-the Pi's bootstrap invite (deleted, never committed). Then the app was killed
+the server's bootstrap invite (deleted, never committed). Then the app was killed
 and started again from the launcher with the normal `main.dart` path, which
 opens the core, loads the device keys from the key store and starts: the
-screen showed `alice@pi` and the indicator Connected, so the Pi accepted a
+screen showed `alice@chat` and the indicator Connected, so the server accepted a
 login signed with the device auth key read back from the phone store.
 
 - iOS Simulator (iPhone 16, iOS 26.5): registered, killed (`flutter run`
-  stopped), relaunched with `simctl launch`: `alice@pi`, Connected. The
+  stopped), relaunched with `simctl launch`: `alice@chat`, Connected. The
   simulator's keychain database held four items in access group
   `FAKETEAMID.com.purplechaamba.vyajena` with `pdmn = aku`
   (`WhenUnlockedThisDeviceOnly`) and `sync = 0`. The data folder
@@ -267,8 +267,8 @@ login signed with the device auth key read back from the phone store.
   (`com.apple.metadata:com_apple_backup_excludeItem`). The Simulator has no
   data protection, so `NSFileProtectionComplete` is checked in code only
   (D10).
-- Android emulator (API 35, arm64, `adb reverse` to the Pi's port):
-  registered, `am force-stop`, relaunched with `am start`: `alice@pi`,
+- Android emulator (API 35, arm64, `adb reverse` to the server's port):
+  registered, `am force-stop`, relaunched with `am start`: `alice@chat`,
   Connected. `shared_prefs/keyring-vyajena2.xml` held four entries
   `app/<key name>` with base64 ciphertext only; the database was in
   `no_backup/core`; `dumpsys package` showed no `ALLOW_BACKUP` flag.
@@ -283,7 +283,7 @@ short prefix). QR codes come later.
 
 As built: `vyajena-invite:`, `vyajena-link:` and `vyajena-approval:`, each
 followed by base64url without padding (`bridge/src/api/text.rs`). Text
-without a prefix is accepted too, because the Pi prints its bootstrap invite
+without a prefix is accepted too, because the server prints its bootstrap invite
 bare and the admin pastes that on their first device; text with another
 kind's prefix is refused naming what it is ("this is a link approval, not an
 invite"). `parse_invite` (sync) returns the user and relay address to show
@@ -294,7 +294,7 @@ before joining.
 - The iOS Simulator reaches the Mac's `127.0.0.1:8443` directly.
 - The Android emulator reaches it after `adb reverse tcp:8443 tcp:8443`, so the
   invite's `127.0.0.1:8443` works unchanged.
-- Integration tests start their own Pi in a temp folder, never with
+- Integration tests start their own server in a temp folder, never with
   `server/local.toml`, and run on both simulators.
 
 ### D7. Tests
@@ -302,9 +302,9 @@ before joining.
 - Widget tests in `app/test/` use a fake `CoreService`, tagged
   `// spec: app-ui/<title-slug>`.
 - Bridge tests in `bridge/tests/` drive the bridge API against a real in-process
-  Pi (reusing the client test approach).
+  Server (reusing the client test approach).
 - `integration_test/`: the app on a simulator chats with a second member that
-  the test drives through the core directly, end to end against a temp Pi.
+  the test drives through the core directly, end to end against a temp server.
 - "UI goes through the core" is checked by a test that scans `app/lib/` imports.
 - CI gains `flutter analyze` and `flutter test` (widget tests); simulators stay
   local.
@@ -344,7 +344,7 @@ method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
   provisioning change. Consequence: about ten seconds after the phone locks
   the database cannot be opened; the engine is stopped in the background
   anyway (D9), and a received message that could not be stored is not
-  acked, so the Pi redelivers it.
+  acked, so the server redelivers it.
 - **Android** (`MainActivity.kt`): `noBackupFilesDir/core`, which Android
   never backs up, plus `allowBackup="false"`, `fullBackupContent="false"`
   and `dataExtractionRules` excluding every domain from cloud backup and
@@ -359,7 +359,7 @@ method channel, `vyajena/platform` `dataDir`, so Dart never picks a path:
 ```mermaid
 sequenceDiagram
   participant B as Bob's phone
-  participant P as Pi
+  participant P as server
   participant A as Admin's phone
   B->>P: Devices.Register, then Keys.UploadKeyPackages
   P-->>A: JoinNotice {group_id, Bob's phone} (if connected)
@@ -378,7 +378,7 @@ As built:
 - **When "on registration" fires:** the signup registers, then uploads
   KeyPackages in the same `register` call. A notice sent at
   `Devices.Register` would reach the admin before there is a KeyPackage to
-  fetch, so the Pi sends it after the device's KeyPackage upload
+  fetch, so the server sends it after the device's KeyPackage upload
   (`keys/mod.rs`), and only for devices that have KeyPackages. The admin's
   connect-time notices (`messaging/stream.rs`) follow the same rule.
 - **"Never been a group member"** is a new column `devices.was_member`
@@ -446,8 +446,8 @@ As built:
   add (2026-11-12): new `JoinNotice` frame and group-membership: Automatic add of
   new users (tasks 4.3–4.5). It follows the RejoinNotice pattern; a changed
   identity key still needs the admin's accept, as key-directory already says.
-- The requirement said the Pi sends `JoinNotice` when the device registers; a
-  device has no KeyPackage until its first upload, so the Pi sends it after that
+- The requirement said the server sends `JoinNotice` when the device registers; a
+  device has no KeyPackage until its first upload, so the server sends it after that
   upload (D11). Spec reworded to match (tracker, 2026-11-12).
 
 ### D13. Tests and local run (tasks 6.1–6.3)
@@ -496,11 +496,11 @@ an own message pass, and finds the kinds but none of the texts.
 ```mermaid
 sequenceDiagram
   participant R as run.sh (Mac)
-  participant P as temp Pi (target/debug/server, temp folder)
+  participant P as temp server (target/debug/server, temp folder)
   participant A as admin device (bridge/tests/app_peer.rs)
   participant B as the app on the simulator (Bob)
   R->>P: start on a free port (never server/local.toml)
-  R->>A: bootstrap payload from the Pi log
+  R->>A: bootstrap payload from the server log
   A->>P: register akhil, CreateGroup, CreateInvite(bob)
   A-->>R: invite.txt
   R->>B: adb reverse (Android); flutter test --dart-define=VYAJENA_INVITE
@@ -518,13 +518,13 @@ sequenceDiagram
 - The admin is the host side because the app can hand nothing back to the
   Mac on Android, while the Mac can pass the invite in with
   `--dart-define`. The peer runs the bridge's own `Core` (memory keys, the
-  system clock: the Pi binary uses real time, unlike the test Pi). It is an
+  system clock: the server binary uses real time, unlike the test server). It is an
   `#[ignore]` test in `bridge/tests/`, so `cargo test` skips it.
 - ⏳ is made visible on purpose: the test stops the engine, sends, sees ⏳,
-  starts it and waits for ✓ (on localhost the Pi accepts faster than a frame).
+  starts it and waits for ✓ (on localhost the server accepts faster than a frame).
 - The app's data folder is emptied first; the key store keeps its keys
   (Keychain items survive uninstall), which the core's get-or-create reuses
-  for the new Pi.
+  for the new server.
 - `adb` comes from `PATH` or `$ANDROID_HOME/platform-tools`
   (`~/Library/Android/sdk` by default).
 
@@ -541,7 +541,7 @@ sequenceDiagram
 
 ## Migration Plan
 
-None: new code only. The owner's local Pi data in `server/.pi-local/` keeps
+None: new code only. The owner's local server data in `server/.server-local/` keeps
 working; the app joins with a new invite.
 
 ## Open Questions
@@ -555,10 +555,10 @@ deployment. The seed colour is a muted slate constant the owner can change (D8).
 
 Every requirement of both deltas and the tests that name it
 (`// spec: <capability>/<title-slug>`). Widget tests (`app/test/`) run on the
-fake core; bridge tests (`bridge/tests/`) on a real in-process Pi; the
+fake core; bridge tests (`bridge/tests/`) on a real in-process server; the
 integration test (`app/integration_test/`, with `bridge/tests/app_peer.rs` as
 the admin) runs the real app on the iOS Simulator and the Android emulator
-against a temp Pi binary.
+against a temp server binary.
 
 | Requirement | Scenarios | Tests |
 | --- | --- | --- |

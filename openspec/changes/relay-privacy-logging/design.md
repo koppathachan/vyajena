@@ -1,6 +1,6 @@
 ## Context
 
-The Pi uses `tracing` with an `EnvFilter` (`info` by default; the service sets
+The server uses `tracing` with an `EnvFilter` (`info` by default; the service sets
 `RUST_LOG=info`). Ids are formatted for logs with
 `runtime::server_keys::hex(&bytes)` — full hex. A `device_id` is a 16-byte stable
 id; several `info!`/`debug!`/`warn!` lines print it in full. There is no metrics
@@ -41,7 +41,7 @@ part of the real id.
 
 ### D2 — Metrics as structured tracing events, not an exporter
 
-The Pi is loopback-only and privacy-first; adding a Prometheus endpoint means a
+The server is loopback-only and privacy-first; adding a Prometheus endpoint means a
 new port, surface and dependency. Instead, emit `tracing` events with numeric
 fields at the lifecycle points, so `journalctl -u vyajena -o json` yields the
 numbers. On a `Connect` stream opening, one event carries:
@@ -52,14 +52,14 @@ numbers. On a `Connect` stream opening, one event carries:
   connect latency and the signal a "slow to connect over the relay" report needs.
 - `reopens`: how many times this device's stream has (re)opened this process run
   (a reconnect counter), from a per-device count in the hub.
-- `active_streams`: the hub's live-stream count — the Pi-side "pool" gauge (D3).
+- `active_streams`: the hub's live-stream count — the server-side "pool" gauge (D3).
 - `device = %redact(id)`.
 
 **Why not `auth_ms` / `connect_ms` (changed from the first draft — code review,
-CLAUDE.md "fix the spec first"):** the Pi cannot usefully measure them. Per-RPC
+CLAUDE.md "fix the spec first"):** the server cannot usefully measure them. Per-RPC
 auth is a single indexed SQLite token lookup (sub-millisecond, never the
 slow-connect cause), and the client's multi-round-trip handshake
-(`GetChallenge` → `Authenticate` → `Connect`) arrives as separate RPCs the Pi
+(`GetChallenge` → `Authenticate` → `Connect`) arrives as separate RPCs the server
 does not stitch into one per-device timeline. `open_ms` captures the
 server-visible part of the connect latency; the rest is a client-side concern
 (faster-connect already addresses the round trips).
@@ -67,27 +67,27 @@ server-visible part of the connect latency; the rest is a client-side concern
 ```mermaid
 sequenceDiagram
   participant C as Client
-  participant Pi as Pi Connect task
-  Pi->>Pi: task starts (t0)
-  C->>Pi: Hello over the relay
-  Pi->>Pi: register stream (t1 → open_ms = t1-t0)
-  Note over Pi: event: device=redact, open_ms, reopens=n, active_streams=k
+  participant server as server Connect task
+  server->>server: task starts (t0)
+  C->>server: Hello over the relay
+  server->>server: register stream (t1 → open_ms = t1-t0)
+  Note over server: event: device=redact, open_ms, reopens=n, active_streams=k
 ```
 
 **Alternative:** a real metrics crate (`metrics`/`prometheus`) — deferred; the
 journal-event approach fits the loopback model and needs no new surface.
 
-### D3 — "Backhaul pool" on the Pi = the active-stream count
+### D3 — "Backhaul pool" on the server = the active-stream count
 
-The relay↔Pi backhaul is rathole, a separate process; the Rust server cannot see
-rathole's connection pool. The Pi-side signal for "pool health" is the hub's
+The relay↔server backhaul is rathole, a separate process; the Rust server cannot see
+rathole's connection pool. The server-side signal for "pool health" is the hub's
 `active_streams` gauge (D2). The design records this boundary so the metric is
 not mistaken for rathole's pool.
 
 ### D4 — A test proves the redaction
 
 A `server/tests/` test captures the subscriber output while it runs a real
-connect → auth → stream (temp Pi), then asserts the captured text contains
+connect → auth → stream (temp server), then asserts the captured text contains
 neither the raw `device_id` hex, nor any body/token/invite, and does contain the
 `redact(id)` value plus the timing fields. A shared `tracing` capture layer
 (a `Vec<String>` writer) makes the assertion deterministic.
@@ -98,7 +98,7 @@ neither the raw `device_id` hex, nor any body/token/invite, and does contain the
   journal still correlates one device's lines. That is intended (needed to debug
   a single device); it just no longer reveals the real id. Acceptable.
 - **[Journal-based metrics]** → no scraping/dashboards out of the box; fine for a
-  single Pi debugged over SSH, and revisitable if an exporter is ever wanted.
+  single server debugged over SSH, and revisitable if an exporter is ever wanted.
 - **[Timing overhead]** → three `Instant` reads per connect; negligible.
 
 ## Open Questions

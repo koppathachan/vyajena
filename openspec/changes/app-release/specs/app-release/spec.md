@@ -155,7 +155,7 @@ safety answers and the App Store privacy answers, kept in one committed file, an
 what leaves the phone: message content, group settings and profiles only as
 end-to-end encrypted ciphertext; the username, identity and device public keys,
 device certificates and KeyPackages, the IP address, and (once push exists) a push
-token, all only to the owner's Pi; nothing to the developer otherwise, nothing
+token, all only to the owner's server; nothing to the developer otherwise, nothing
 sold, shared or used for tracking or ads. The policy SHALL name its owner and say
 how to have one's account and data removed. A change that sends new data off the
 phone SHALL update these answers in the same change. Reviewers of each change

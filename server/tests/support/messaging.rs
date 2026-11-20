@@ -10,12 +10,12 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::clients::{TestDevice, TestUser, random32};
-use super::harness::{Conn, TestPi, authed};
+use super::harness::{Conn, TestServer, authed};
 use super::pb;
 use super::pb::client_frame::Frame as In;
 use super::pb::envelope::Kind;
 use super::pb::server_frame::Frame as Out;
-use super::{Check, bootstrap_admin, invite_user, pi_external_sender};
+use super::{Check, bootstrap_admin, invite_user, server_external_sender};
 
 /// How long a test waits for a frame it expects.
 pub const WAIT: Duration = Duration::from_secs(10);
@@ -355,7 +355,7 @@ pub async fn receive(stream: &mut Stream, device: &mut TestDevice) -> pb::Envelo
 /// The admin with the group created, and Alice's laptop and Bob's phone
 /// added over `Connect`, each with an open stream.
 pub struct World {
-    pub pi: TestPi,
+    pub server: TestServer,
     pub conn: Conn,
     pub admin_user: TestUser,
     pub admin: TestDevice,
@@ -443,10 +443,10 @@ pub async fn offline(conn: &Conn, device: &TestDevice) -> Stream {
         .check("Connect without Hello")
 }
 
-/// Waits until the Pi no longer has a stream for `device`.
-pub async fn wait_offline(pi: &TestPi, device: &TestDevice) {
+/// Waits until the server no longer has a stream for `device`.
+pub async fn wait_offline(server: &TestServer, device: &TestDevice) {
     let deadline = tokio::time::Instant::now() + WAIT;
-    while pi.state.hub.is_connected(&device.device_id) {
+    while server.state.hub.is_connected(&device.device_id) {
         assert!(
             tokio::time::Instant::now() < deadline,
             "the device's stream did not close"
@@ -457,15 +457,15 @@ pub async fn wait_offline(pi: &TestPi, device: &TestDevice) {
 
 /// Builds the [`World`] on a fresh test server.
 pub async fn world() -> World {
-    world_on(TestPi::start().await).await
+    world_on(TestServer::start().await).await
 }
 
-/// Builds the [`World`] on `pi`.
-pub async fn world_on(pi: TestPi) -> World {
-    let conn = pi.connect().await;
-    let (admin_user, mut admin) = bootstrap_admin(&pi, &conn).await;
-    let pi_sender = pi_external_sender(&conn).await;
-    let request = admin.create_group(GROUP_ID, &pi_sender, "akhil@pi");
+/// Builds the [`World`] on `server`.
+pub async fn world_on(server: TestServer) -> World {
+    let conn = server.connect().await;
+    let (admin_user, mut admin) = bootstrap_admin(&server, &conn).await;
+    let server_sender = server_external_sender(&conn).await;
+    let request = admin.create_group(GROUP_ID, &server_sender, "akhil@chat");
     conn.admin()
         .create_group(authed(admin.token(), request))
         .await
@@ -500,7 +500,7 @@ pub async fn world_on(pi: TestPi) -> World {
     admin_stream.sync().await;
     admin_stream.forget_join_notices();
     World {
-        pi,
+        server,
         conn,
         admin_user,
         admin,

@@ -30,7 +30,7 @@ void main() {
     await enterGroup(tester);
     // In the group as Alice's second device.
     expect(find.byKey(const Key('composer')), findsOneWidget);
-    expect(find.text('alice@pi'), findsOneWidget);
+    expect(find.text('alice@chat'), findsOneWidget);
   });
 
   // spec: app-ui/link-a-device

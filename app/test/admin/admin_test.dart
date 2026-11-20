@@ -76,24 +76,24 @@ void main() {
         InviteInfo(code: 'c-bob', user: bob, expiresAtMs: 0),
         InviteInfo(
           code: 'c-carol',
-          user: UserRef(username: 'carol', serverId: 'pi'),
+          user: UserRef(username: 'carol', serverId: 'chat'),
           expiresAtMs: 0,
         ),
       ];
     await openApp(tester, core);
     await menu(tester, 'Invites');
-    expect(find.text('bob@pi'), findsOneWidget);
-    expect(find.text('carol@pi'), findsOneWidget);
+    expect(find.text('bob@chat'), findsOneWidget);
+    expect(find.text('carol@chat'), findsOneWidget);
 
     final row = find.ancestor(
-      of: find.text('bob@pi'),
+      of: find.text('bob@chat'),
       matching: find.byType(ListTile),
     );
     await tap(tester, find.descendant(of: row, matching: find.text('Revoke')));
     await tap(tester, find.widgetWithText(FilledButton, 'Revoke'));
     expect(core.args['revokeInvite'], 'c-bob');
-    expect(find.text('bob@pi'), findsNothing);
-    expect(find.text('carol@pi'), findsOneWidget);
+    expect(find.text('bob@chat'), findsNothing);
+    expect(find.text('carol@chat'), findsOneWidget);
   });
 
   // spec: app-ui/admin-screens

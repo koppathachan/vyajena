@@ -1,13 +1,13 @@
-//! pi-runtime: Durable storage. One SQLite database (bundled SQLite) in WAL mode
+//! server-runtime: Durable storage. One SQLite database (bundled SQLite) in WAL mode
 //! with `synchronous = FULL`, file mode 0600, and schema migrations embedded in
-//! the binary and applied at start (pi-server-core design D5).
+//! the binary and applied at start (server-core design D5).
 //!
 //! All database work runs on one dedicated thread fed by a channel. That thread
 //! is the only writer, which also gives design D4 its single writer: jobs run
 //! one at a time, in the order they were sent, and a job that commits a
 //! transaction has made it durable when its result comes back.
 //! [`Store::close`] closes the database after the jobs sent before it
-//! (pi-runtime: Graceful stop).
+//! (server-runtime: Graceful stop).
 
 use std::fs::OpenOptions;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};

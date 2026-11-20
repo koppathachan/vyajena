@@ -1,5 +1,5 @@
 //! Joining through the bridge (flutter-app task 2.3): register from invite
-//! text against the real Pi, the server identity error, bad invite text.
+//! text against the real server, the server identity error, bad invite text.
 
 mod support;
 
@@ -8,13 +8,13 @@ use bridge::api::text::parse_invite;
 use bridge::api::types::CoreEvent;
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 // spec: app-ui/join-from-an-invite
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_sees_whom_the_invite_names_then_joins_and_lands_in_the_chat() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     assert!(admin.core.is_admin().check("is admin"));
 
     let invite = admin
@@ -29,7 +29,7 @@ async fn bob_sees_whom_the_invite_names_then_joins_and_lands_in_the_chat() {
     // What the app shows before joining.
     let preview = parse_invite(text.clone()).check("parse invite");
     assert_eq!(preview.user, user("bob"));
-    assert_eq!(preview.relay_address, pi.relay.addr.to_string());
+    assert_eq!(preview.relay_address, server.relay.addr.to_string());
 
     let mut bob = Device::new().await;
     assert_eq!(bob.core.user_id().check("user id"), None);
@@ -51,24 +51,24 @@ async fn bob_sees_whom_the_invite_names_then_joins_and_lands_in_the_chat() {
 
 // spec: app-ui/join-from-an-invite
 #[tokio::test(flavor = "multi_thread")]
-async fn the_admin_joins_with_the_bootstrap_invite_the_pi_printed() {
-    let pi = TestPi::start().await;
-    // The Pi prints it bare, without the bridge's prefix.
-    let preview = parse_invite(device::bootstrap_text(&pi)).check("parse bootstrap");
+async fn the_admin_joins_with_the_bootstrap_invite_the_server_printed() {
+    let server = TestServer::start().await;
+    // The server prints it bare, without the bridge's prefix.
+    let preview = parse_invite(device::bootstrap_text(&server)).check("parse bootstrap");
     assert_eq!(preview.user, user(ADMIN));
-    let admin = device::admin_with_group(&pi).await;
+    let admin = device::admin_with_group(&server).await;
     assert!(admin.core.is_admin().check("is admin"));
 }
 
 // spec: app-ui/join-from-an-invite
 #[tokio::test(flavor = "multi_thread")]
-async fn a_pi_with_another_tls_key_is_a_server_identity_error() {
-    let mut pi = TestPi::start().await;
-    pi.restart_with_new_keys().await;
+async fn a_server_with_another_tls_key_is_a_server_identity_error() {
+    let mut server = TestServer::start().await;
+    server.restart_with_new_keys().await;
     let mut admin = Device::new().await;
     let error = admin
         .core
-        .register(device::bootstrap_text(&pi))
+        .register(device::bootstrap_text(&server))
         .await
         .expect_err("the pin must not match");
     assert_eq!(error.kind, CoreErrorKind::ServerIdentity, "{error:?}");
@@ -103,13 +103,13 @@ async fn text_that_is_not_an_invite_is_refused_before_any_call() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_used_invite_is_refused_by_the_pi() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+async fn a_used_invite_is_refused_by_the_server() {
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let error = Device::new()
         .await
         .core
-        .register(device::bootstrap_text(&pi))
+        .register(device::bootstrap_text(&server))
         .await
         .expect_err("the bootstrap invite is used");
     assert_eq!(error.kind, CoreErrorKind::Refused, "{error:?}");

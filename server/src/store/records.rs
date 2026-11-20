@@ -1,6 +1,6 @@
 //! Rows several services read: users and devices. Each service writes its own
 //! tables; these readers are shared so the services need not call each other
-//! (pi-server-core design D1).
+//! (server-core design D1).
 
 use protocol::device_identity::DeviceId;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -129,7 +129,7 @@ pub fn push_token(
     })
 }
 
-/// Clears `device_id`'s push token if it is still `token` (pi-runtime: Push
+/// Clears `device_id`'s push token if it is still `token` (server-runtime: Push
 /// errors, "New token raced the error"). Returns whether it was cleared.
 pub fn clear_push_token(
     conn: &Connection,
@@ -144,7 +144,7 @@ pub fn clear_push_token(
     Ok(changed > 0)
 }
 
-/// One-time KeyPackages the Pi holds for `device_id`, for the low-KeyPackages
+/// One-time KeyPackages the server holds for `device_id`, for the low-KeyPackages
 /// notice (key-directory: Replenishment signal).
 pub fn one_time_key_packages(conn: &Connection, device_id: &DeviceId) -> Result<u32, StoreError> {
     Ok(conn.query_row(

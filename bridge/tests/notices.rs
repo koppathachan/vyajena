@@ -10,7 +10,7 @@ use std::time::Duration;
 use bridge::api::types::{ChatBody, ConnectionStatus, CoreEvent, MemberDevice, SendState};
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 async fn wait_accepted(device: &mut Device, id: i64) {
     device
@@ -34,8 +34,8 @@ fn member_of(device: &Device, username: &str) -> MemberDevice {
 // spec: app-ui/chat-screen
 #[tokio::test(flavor = "multi_thread")]
 async fn own_user_marks_messages_of_this_devices_user() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice
@@ -62,8 +62,8 @@ async fn own_user_marks_messages_of_this_devices_user() {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn members_changed_and_renames_name_what_changed_and_who() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     let bob_member = member_of(&bob, "bob");
 
@@ -173,8 +173,8 @@ async fn members_changed_and_renames_name_what_changed_and_who() {
 // spec: app-ui/foreground-and-background
 #[tokio::test(flavor = "multi_thread")]
 async fn reconnect_now_while_connected_does_nothing() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let seen = admin.events().len();
     admin.core.reconnect_now();
     tokio::time::sleep(Duration::from_millis(800)).await;

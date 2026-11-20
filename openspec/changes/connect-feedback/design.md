@@ -24,7 +24,7 @@ entirely in how the indicator looks and what tapping it does.
 colour), give the user a one-tap way to skip the backoff, and add
 pull-to-refresh as the first familiar manual-refresh gesture.
 
-**Non-Goals:** any core/bridge/Pi/protocol change; a live "retrying in N s"
+**Non-Goals:** any core/bridge/server/protocol change; a live "retrying in N s"
 countdown (the next-attempt time is not exposed to Dart); changing the
 removed state.
 

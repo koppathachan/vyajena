@@ -7,9 +7,9 @@ when the client starts, so a start within the token's life reuses it (the
 session-resume path of `wire-transport`) instead of running the full
 challenge/auth handshake. It SHALL reuse a loaded token only while it is before
 its renewal point, and SHALL fall back to the full handshake when the token is
-missing, unreadable, past its renewal point or rejected by the Pi with
+missing, unreadable, past its renewal point or rejected by the server with
 `UNAUTHENTICATED`. The core SHALL keep the token only in the key store, never in
-SQLite, a log or any other file, and SHALL delete it when the Pi answers
+SQLite, a log or any other file, and SHALL delete it when the server answers
 `Authenticate` or the stream with `PERMISSION_DENIED` and when it creates fresh
 device keys. A key store failure SHALL NOT stop the client: it connects with the
 full handshake.
@@ -18,7 +18,7 @@ full handshake.
 - **WHEN** Bob's app goes to the background, so the host calls `stop()`, and he
   reopens it two hours later, so the host calls `start()`, with his six-hour
   session token still before its renewal point
-- **THEN** the core opens the new `Connect` stream with the saved token, the Pi
+- **THEN** the core opens the new `Connect` stream with the saved token, the server
   issues no new session, and no `GetChallenge` or `Authenticate` is sent
 
 #### Scenario: Reopen after the token is due for renewal
@@ -36,8 +36,8 @@ full handshake.
 - **THEN** the session token is in the key store and appears in no SQLite row,
   log line or file
 
-#### Scenario: Token the Pi no longer holds
-- **WHEN** Bob reopens the app with a saved token the Pi has since dropped, so the
+#### Scenario: Token the server no longer holds
+- **WHEN** Bob reopens the app with a saved token the server has since dropped, so the
   stream open is refused with `UNAUTHENTICATED`
 - **THEN** the core runs the full handshake on the same attempt and connects
 

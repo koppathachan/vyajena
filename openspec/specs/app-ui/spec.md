@@ -4,7 +4,7 @@
 TBD - created by archiving change flutter-app. Update Purpose after archive.
 ## Requirements
 ### Requirement: UI goes through the core
-The app SHALL reach the Pi only through the Rust core over `flutter_rust_bridge`;
+The app SHALL reach the server only through the Rust core over `flutter_rust_bridge`;
 Dart code SHALL open no network connection and SHALL hold no key. Decrypted text
 SHALL reach Dart only to be shown, and the app SHALL never write it to a file, a
 log or a crash report, or send it anywhere. The app enforces this; the core keeps
@@ -13,7 +13,7 @@ the only copy of messages in its SQLite store.
 #### Scenario: No socket in Dart
 - **WHEN** the app's Dart code under `app/lib/` is checked
 - **THEN** it imports no `dart:io` socket or HTTP client and no network package,
-  and every Pi call goes through a bridge function
+  and every server call goes through a bridge function
 
 #### Scenario: Nothing logged
 - **WHEN** Alice receives "hi" and the app writes its debug log
@@ -22,12 +22,12 @@ the only copy of messages in its SQLite store.
 ### Requirement: Join from an invite
 The app SHALL let a new user join by pasting the invite text the admin shared,
 SHALL show the username and server address the invite names before joining, and
-SHALL call the core's `register` with it. A Pi that fails the invite's TLS pin
+SHALL call the core's `register` with it. A server that fails the invite's TLS pin
 SHALL be shown as a server identity error, not as a network error.
 
 #### Scenario: Bob joins
 - **WHEN** Bob pastes the invite the admin made for `bob` and taps Join
-- **THEN** he sees `bob@pi` on `127.0.0.1:8443` first, the core registers his
+- **THEN** he sees `bob@chat` on `127.0.0.1:8443` first, the core registers his
   phone with `Devices.Register`, and he lands in the chat
 
 #### Scenario: Waiting to be added
@@ -36,7 +36,7 @@ SHALL be shown as a server identity error, not as a network error.
   once the core emits `JoinedGroup`
 
 #### Scenario: Wrong pin
-- **WHEN** the Pi at the invite's address presents a different TLS key
+- **WHEN** the server at the invite's address presents a different TLS key
 - **THEN** the app shows a server identity error and does not join
 
 #### Scenario: Bad invite text
@@ -104,7 +104,7 @@ this device. The admin's device SHALL offer to accept a changed key, which calls
   and then the new messages
 
 #### Scenario: Key changed
-- **WHEN** the core emits `IdentityKeyChanged` for `bob@pi`
+- **WHEN** the core emits `IdentityKeyChanged` for `bob@chat`
 - **THEN** every member sees a warning in the chat that Bob's key changed
 
 #### Scenario: Bob is removed
@@ -129,7 +129,7 @@ this device. The admin's device SHALL offer to accept a changed key, which calls
 The app SHALL show admin screens only on the admin's devices: create the group on
 first start, invite a user by username (showing the invite text to share), list
 and revoke unused invites, remove a user, and change the group name. Other devices
-SHALL not show them; the Pi rejects their admin RPCs anyway.
+SHALL not show them; the server rejects their admin RPCs anyway.
 
 #### Scenario: Admin invites Bob
 - **WHEN** the admin enters `bob` and taps Invite
@@ -235,7 +235,7 @@ user tap to try again. The app enforces this.
   that opens the viewer
 
 #### Scenario: Expired image
-- **WHEN** Bob opens an image the Pi has deleted
+- **WHEN** Bob opens an image the server has deleted
 - **THEN** the bubble shows the blur with "Media expired — resend"
 
 #### Scenario: Alice resends

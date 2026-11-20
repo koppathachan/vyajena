@@ -129,7 +129,7 @@ void main() {
   });
 
   // spec: app-ui/ui-goes-through-the-core
-  test('every Pi call goes through a bridge function: only the core '
+  test('every server call goes through a bridge function: only the core '
       'service and main.dart reach the bindings', () {
     final bad = <String>[];
     for (final file in libFiles()) {

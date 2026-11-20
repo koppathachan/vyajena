@@ -1,4 +1,4 @@
-//! pi-runtime: Egress proxy (push design D5). `vyajena-server egress-proxy
+//! server-runtime: Egress proxy (push design D5). `vyajena-server egress-proxy
 //! --listen 127.0.0.1:8445` tunnels HTTP `CONNECT` to the push hosts on port
 //! 443 and nothing else, so `vyajena.service` itself stays loopback-only. It
 //! only copies TLS bytes: the server's TLS runs end to end through it.

@@ -90,7 +90,7 @@ class ChatMessage {
   /// The sender's clock when sent.
   final PlatformInt64? sentAtMs;
 
-  /// When the Pi accepted it; unset while sending.
+  /// When the server accepted it; unset while sending.
   final PlatformInt64? acceptedAtMs;
 
   /// For own messages, where it stands; unset for received ones.
@@ -193,7 +193,7 @@ class ChatSummary {
           lastMessageAtMs == other.lastMessageAtMs;
 }
 
-/// The connection to the Pi.
+/// The connection to the server.
 enum ConnectionStatus {
   /// Connecting or reconnecting with backoff.
   connecting,
@@ -253,10 +253,10 @@ sealed class CoreEvent with _$CoreEvent {
 
   /// A message arrived that this device cannot read.
   const factory CoreEvent.unreadable({
-    /// Who the Pi says sent it.
+    /// Who the server says sent it.
     UserRef? sender,
 
-    /// When the Pi accepted it.
+    /// When the server accepted it.
     PlatformInt64? acceptedAtMs,
 
     /// The chat it was for.
@@ -292,7 +292,7 @@ sealed class CoreEvent with _$CoreEvent {
     required UserRef user,
   }) = CoreEvent_IdentityKeyChanged;
 
-  /// The Pi's TLS key does not match the pin; the core stopped connecting.
+  /// The server's TLS key does not match the pin; the core stopped connecting.
   const factory CoreEvent.serverIdentityError() = CoreEvent_ServerIdentityError;
 
   /// This device was removed from the group (revoked); the core stopped
@@ -326,10 +326,10 @@ sealed class CoreEvent with _$CoreEvent {
     required String reason,
   }) = CoreEvent_CommitRefused;
 
-  /// This device asked the Pi to be added again (group-membership: Re-add
+  /// This device asked the server to be added again (group-membership: Re-add
   /// after an unusable Welcome).
   const factory CoreEvent.readdRequested({
-    /// What the Pi answered.
+    /// What the server answered.
     required ReaddAnswer outcome,
   }) = CoreEvent_ReaddRequested;
 
@@ -355,7 +355,7 @@ class ImageView {
   /// The ThumbHash blur to draw until the picture is downloaded.
   final Uint8List thumbhash;
 
-  /// The picture's size on the Pi in bytes, to show before downloading.
+  /// The picture's size on the server in bytes, to show before downloading.
   final BigInt size;
 
   /// The caption, only to be shown; its mentions are the message's
@@ -464,7 +464,7 @@ enum MediaStatus {
   /// Cached on this device: it opens at once.
   available,
 
-  /// The Pi no longer has it: "media expired".
+  /// The server no longer has it: "media expired".
   expired,
 }
 
@@ -570,7 +570,7 @@ enum PushPlatform {
   apns,
 }
 
-/// The Pi's answer when this device asked to be added again
+/// The server's answer when this device asked to be added again
 /// (group-membership: Re-add after an unusable Welcome).
 enum ReaddAnswer {
   /// The admin's device (or another of the user's) will re-add it.
@@ -619,13 +619,13 @@ class ReplyQuote {
 sealed class SendState with _$SendState {
   const SendState._();
 
-  /// Stored; the Pi has not accepted it yet (⏳).
+  /// Stored; the server has not accepted it yet (⏳).
   const factory SendState.sending() = SendState_Sending;
 
-  /// The Pi accepted it (✓).
+  /// The server accepted it (✓).
   const factory SendState.accepted() = SendState_Accepted;
 
-  /// The Pi rejected it.
+  /// The server rejected it.
   const factory SendState.failed({
     /// Why, for display.
     required String reason,
@@ -637,7 +637,7 @@ class UserRef {
   /// The local part, chosen by the admin.
   final String username;
 
-  /// The Pi's server id.
+  /// The server's server id.
   final String serverId;
 
   const UserRef({required this.username, required this.serverId});

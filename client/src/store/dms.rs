@@ -30,7 +30,7 @@ pub struct DmRow {
     pub joined: bool,
     /// The group bookkeeping, as for the main group.
     pub state: GroupRow,
-    /// When the Pi closed it (direct-messages: DM closed on user removal).
+    /// When the server closed it (direct-messages: DM closed on user removal).
     pub closed_at: Option<SystemTime>,
 }
 
@@ -151,7 +151,7 @@ impl Store {
     }
 
     /// Records a DM this device waits to join (both users opened it at once:
-    /// the Pi kept the other's). Returns its chat id.
+    /// the server kept the other's). Returns its chat id.
     pub fn set_dm_waiting(
         &self,
         group_id: &[u8],
@@ -171,7 +171,7 @@ impl Store {
             .ok_or_else(|| StoreError::Inconsistent("a DM row vanished".into()))
     }
 
-    /// The Pi closed the DM at `at`.
+    /// The server closed the DM at `at`.
     pub fn close_dm(&self, group_id: &[u8], at: SystemTime) -> Result<(), StoreError> {
         self.db.with(|conn| {
             conn.execute(

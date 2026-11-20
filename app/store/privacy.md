@@ -6,18 +6,18 @@ and `docs/privacy-policy.md` all come from this file. A change that sends new
 data off the phone updates this file, the policy and the manifest in the same
 change.
 
-The "developer" is the owner, who also runs the server (the Pi) the app talks
+The "developer" is the owner, who also runs the server (the server) the app talks
 to. Nothing goes to anyone else.
 
 ## What leaves the phone
 
 | Data | Leaves the phone as | Goes to | Kept |
 |---|---|---|---|
-| Message text, group name, display names, "about" text | End-to-end encrypted (MLS, RFC 9420) ciphertext; the server cannot read it | The owner's Pi | Until every recipient device has it, at most 7 days |
-| Username (chosen by the group's admin) | Readable | The owner's Pi | While the user is in the group |
-| Identity and device public keys, device certificates, KeyPackages | Readable (public keys) | The owner's Pi | While the user or device is in the group |
-| IP address | The network connection itself | The owner's Pi | Not stored (only in a debug log when a TLS handshake fails, off by default) |
-| Push token (FCM registration token on Android, APNs device token on iPhone) | Readable | The owner's Pi, which sends Google (FCM) or Apple (APNs) a wake-up whose only text is "New message": no sender, group or content | While the device is in the group; cleared when notifications are refused or the device is removed |
+| Message text, group name, display names, "about" text | End-to-end encrypted (MLS, RFC 9420) ciphertext; the server cannot read it | The owner's server | Until every recipient device has it, at most 7 days |
+| Username (chosen by the group's admin) | Readable | The owner's server | While the user is in the group |
+| Identity and device public keys, device certificates, KeyPackages | Readable (public keys) | The owner's server | While the user or device is in the group |
+| IP address | The network connection itself | The owner's server | Not stored (only in a debug log when a TLS handshake fails, off by default) |
+| Push token (FCM registration token on Android, APNs device token on iPhone) | Readable | The owner's server, which sends Google (FCM) or Apple (APNs) a wake-up whose only text is "New message": no sender, group or content | While the device is in the group; cleared when notifications are refused or the device is removed |
 
 Nothing else: no contacts, location, photos, files, analytics, crash reports,
 advertising ids or tracking. The only third-party SDK is Google's Firebase

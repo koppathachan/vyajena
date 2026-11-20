@@ -5,7 +5,7 @@
 //! device is connected; its plaintext WebP is in the media cache and its key and
 //! blob id are in its stored `Content`. When the outbox reaches it with a
 //! connection, it uploads the blob first and sends the envelope only after the
-//! Pi accepted the blob, so a receiver never sees an `Image` whose blob is
+//! Server accepted the blob, so a receiver never sees an `Image` whose blob is
 //! missing, however long the message waited.
 //!
 //! The upload runs in a task of its own, so a slow link does not stall the
@@ -37,9 +37,9 @@ pub(super) enum Upload {
 /// How an upload ended.
 #[derive(Debug)]
 pub(crate) enum Outcome {
-    /// The Pi has the blob.
+    /// The server has the blob.
     Done,
-    /// It did not work now (no connection, the Pi's blob store is away, the
+    /// It did not work now (no connection, the server's blob store is away, the
     /// session ran out): try again.
     Retry(String),
     /// It will never work: the message fails with this reason.
@@ -50,7 +50,7 @@ pub(crate) enum Outcome {
 fn classify(status: &tonic::Status) -> Outcome {
     use tonic::Code::{AlreadyExists, InvalidArgument, NotFound, PermissionDenied};
     match status.code() {
-        // Not a member of the group, a blob the Pi will not take: no retry
+        // Not a member of the group, a blob the server will not take: no retry
         // changes that.
         PermissionDenied | InvalidArgument | AlreadyExists | NotFound => Outcome::Fail(format!(
             "the server refused the picture ({})",

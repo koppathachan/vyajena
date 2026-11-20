@@ -8,13 +8,13 @@ use bridge::api::text::{INVITE_PREFIX, LINK_APPROVAL_PREFIX, LINK_REQUEST_PREFIX
 use bridge::api::types::CoreEvent;
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 // spec: app-ui/link-a-device
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_links_a_tablet_by_text() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
 
     let mut tablet = Device::new().await;
     let request = tablet.core.link_request().await.check("link request");
@@ -39,7 +39,7 @@ async fn the_admin_links_a_tablet_by_text() {
         .wait_event("joined", |e| matches!(e, CoreEvent::JoinedGroup))
         .await;
     // The tablet can join from the Welcome before the admin's device hears
-    // the Pi accepted its commit.
+    // the server accepted its commit.
     admin
         .wait_until("the admin's two devices", |core| {
             core.members()
@@ -50,8 +50,8 @@ async fn the_admin_links_a_tablet_by_text() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn each_text_form_is_refused_where_another_kind_belongs() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let invite = admin
         .core
         .create_invite("bob".to_owned())
@@ -65,7 +65,7 @@ async fn each_text_form_is_refused_where_another_kind_belongs() {
     let request = tablet.core.link_request().await.check("link request");
 
     // A link request where an approval belongs, and an invite where a link
-    // request belongs: refused by kind, before any call to the Pi.
+    // request belongs: refused by kind, before any call to the server.
     let error = tablet
         .core
         .complete_link(request.clone())

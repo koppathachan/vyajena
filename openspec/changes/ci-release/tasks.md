@@ -6,7 +6,7 @@ changes (design D2, D14).
 ## 1. Guard and checks
 
 - [x] 1.1 `.github/scripts/release-guard.sh`: `pins`, `tag` (on `origin/main`, HEAD is the tag, version = pubspec / server Cargo.toml, app build above earlier tags), `version` (D5, D6) (release-automation: Actions pinned to commit SHAs; Release tag matches the repository)
-- [x] 1.2 `.github/scripts/release-workflows-check.sh`: triggers, `permissions: {}`, environment-only secrets and writes, tag-only environment jobs, no caches, `persist-credentials: false`, no ssh/scp/deploy.sh, pins (D3, D9–D11) (release-automation: Release triggers; Owner approval gate; Pi deploys stay manual)
+- [x] 1.2 `.github/scripts/release-workflows-check.sh`: triggers, `permissions: {}`, environment-only secrets and writes, tag-only environment jobs, no caches, `persist-credentials: false`, no ssh/scp/deploy.sh, pins (D3, D9–D11) (release-automation: Release triggers; Owner approval gate; server deploys stay manual)
 - [x] 1.3 `.github/scripts/release-scripts-test.sh`: fixtures for every rule and guard case, each tagged `# spec: release-automation/<slug>`
 
 ## 2. Build and upload scripts
@@ -17,7 +17,7 @@ changes (design D2, D14).
 
 ## 3. Workflows
 
-- [x] 3.1 `.github/workflows/release-server.yml`: arm64 build with `deploy/pi/build.sh`, three files, `publish` in `release` with provenance and `gh release create` (D4) (release-automation: Server release files)
+- [x] 3.1 `.github/workflows/release-server.yml`: arm64 build with `deploy/server/build.sh`, three files, `publish` in `release` with provenance and `gh release create` (D4) (release-automation: Server release files)
 - [x] 3.2 `.github/workflows/release-app.yml`: guard, dry-run jobs, `android` and `ios` in `release` (D7–D9) (release-automation: Dry run builds without secrets)
 - [x] 3.3 `.github/workflows/release-lint.yml` on pull requests; `.github/actionlint.yaml` for the `xcode-27` label (D11)
 - [x] 3.4 Every action pinned to a full SHA of a release at least two weeks old (D10 table)

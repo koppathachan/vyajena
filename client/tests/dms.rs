@@ -1,4 +1,4 @@
-//! DMs end to end against the real Pi (change `dms`): opening one, the
+//! DMs end to end against the real server (change `dms`): opening one, the
 //! peer's devices added with no one tapping anything, messages that reach
 //! only the DM, both users opening at once, several groups on one core,
 //! closing on removal, and that the push stays content-free.
@@ -11,11 +11,11 @@ use client::{
 };
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 /// The admin, Alice and Bob, all in the group and seeing each other.
-async fn group(pi: &TestPi) -> (Device, Device, Device) {
-    let admin = device::admin_with_group(pi).await;
+async fn group(server: &TestServer) -> (Device, Device, Device) {
+    let admin = device::admin_with_group(server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -78,8 +78,8 @@ async fn wait_dm_ready(device: &Device, peer: &str) -> ChatId {
 // spec: direct-messages/several-groups-in-the-core
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_and_bob_talk_in_a_dm_and_the_admin_sees_nothing() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = group(&server).await;
     assert!(alice.client.dms_available());
 
     let chat = alice.client.open_dm(&user("bob")).await.check("open DM");
@@ -156,14 +156,14 @@ async fn alice_and_bob_talk_in_a_dm_and_the_admin_sees_nothing() {
 // spec: direct-messages/opening-a-dm
 #[tokio::test(flavor = "multi_thread")]
 async fn both_open_at_once_and_end_up_in_one_dm() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = group(&server).await;
     let (to_bob, to_alice) = (user("bob"), user("alice"));
     let (a, b) = tokio::join!(alice.client.open_dm(&to_bob), bob.client.open_dm(&to_alice));
     let (a, b) = (a.check("Alice opens"), b.check("Bob opens"));
     let a = wait_dm_ready(&alice, "bob").await.max(a);
     let b = wait_dm_ready(&bob, "alice").await.max(b);
-    let dms: i64 = pi
+    let dms: i64 = server
         .query(|db| {
             db.query_row(
                 "SELECT count(*) FROM mls_groups WHERE kind = 'dm'",
@@ -184,8 +184,8 @@ async fn both_open_at_once_and_end_up_in_one_dm() {
 // spec: direct-messages/several-groups-in-the-core
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restart_keeps_both_groups() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = group(&server).await;
     let chat = alice.client.open_dm(&user("bob")).await.check("open");
     let id = alice
         .client
@@ -213,8 +213,8 @@ async fn a_restart_keeps_both_groups() {
 // spec: direct-messages/dm-closed-on-user-removal
 #[tokio::test(flavor = "multi_thread")]
 async fn removing_bob_closes_alices_dm_with_him() {
-    let pi = TestPi::start().await;
-    let (admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (admin, mut alice, mut bob) = group(&server).await;
     let chat = alice.client.open_dm(&user("bob")).await.check("open");
     let id = alice
         .client
@@ -247,8 +247,8 @@ async fn removing_bob_closes_alices_dm_with_him() {
 // spec: direct-messages/dm-content-stays-encrypted
 #[tokio::test(flavor = "multi_thread")]
 async fn a_dm_push_is_the_same_content_free_ping() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = group(&server).await;
     let chat = alice.client.open_dm(&user("bob")).await.check("open");
     let id = alice
         .client
@@ -266,7 +266,7 @@ async fn a_dm_push_is_the_same_content_free_ping() {
         .check("push token");
     let bob_device = bob.device_id();
     bob.client.stop();
-    pi.wait_disconnected(&bob_device).await;
+    server.wait_disconnected(&bob_device).await;
 
     let id = alice
         .client
@@ -274,15 +274,15 @@ async fn a_dm_push_is_the_same_content_free_ping() {
         .check("send");
     wait_accepted(&mut alice, id).await;
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    while pi.pushes.count(&bob_device) == 0 {
+    while server.pushes.count(&bob_device) == 0 {
         assert!(tokio::time::Instant::now() < deadline, "no wake ping");
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
-    let pings = pi.pushes.sent();
+    let pings = server.pushes.sent();
     assert!(pings.iter().all(|(device, token)| {
         device.as_slice() == bob_device.as_slice() && token == "bob-token"
     }));
-    let stored: Vec<Vec<u8>> = pi
+    let stored: Vec<Vec<u8>> = server
         .query(|db| {
             let mut stmt = db.prepare("SELECT ciphertext FROM envelopes")?;
             let rows = stmt.query_map([], |r| r.get(0))?;
@@ -299,8 +299,8 @@ async fn a_dm_push_is_the_same_content_free_ping() {
 // spec: direct-messages/dm-members-kept-complete
 #[tokio::test(flavor = "multi_thread")]
 async fn bobs_new_tablet_joins_the_dm_with_no_one_tapping() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = group(&server).await;
     let chat = alice.client.open_dm(&user("bob")).await.check("open");
     let id = alice
         .client
@@ -343,8 +343,8 @@ async fn bobs_new_tablet_joins_the_dm_with_no_one_tapping() {
 // spec: direct-messages/inactivity-across-groups
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_back_from_holiday_is_re_added_to_the_dm_too() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = group(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = group(&server).await;
     let chat = alice.client.open_dm(&user("bob")).await.check("open");
     let id = alice
         .client
@@ -354,8 +354,9 @@ async fn bob_back_from_holiday_is_re_added_to_the_dm_too() {
     let bobs_chat = wait_text(&mut bob, "see you").await.chat;
 
     bob.client.stop();
-    pi.wait_offline_recorded(&bob.device_id()).await;
-    pi.clock
+    server.wait_offline_recorded(&bob.device_id()).await;
+    server
+        .clock
         .advance(std::time::Duration::from_secs(10 * 24 * 60 * 60));
     for device in [&mut admin, &mut alice] {
         device
@@ -365,8 +366,8 @@ async fn bob_back_from_holiday_is_re_added_to_the_dm_too() {
             .await;
         device.wait_connected().await;
     }
-    pi.sweep().await;
-    // The admin commits the Pi's Remove in the group, Alice in the DM.
+    server.sweep().await;
+    // The admin commits the server's Remove in the group, Alice in the DM.
     admin.wait_members(&[member(&admin), member(&alice)]).await;
     alice
         .wait_until("Bob's phone out of the DM", |c| {

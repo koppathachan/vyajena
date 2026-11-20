@@ -66,10 +66,10 @@ pub fn join_config() -> MlsGroupJoinConfig {
         .build()
 }
 
-/// The Pi's external sender entry from `ServerInfo.external_sender`.
-pub fn pi_external_sender(key: &[u8], credential: &[u8]) -> Result<ExternalSender, MlsError> {
+/// The server's external sender entry from `ServerInfo.external_sender`.
+pub fn server_external_sender(key: &[u8], credential: &[u8]) -> Result<ExternalSender, MlsError> {
     let credential = Credential::tls_deserialize_exact(credential)
-        .map_err(|e| MlsError::new("the Pi's external sender credential", e))?;
+        .map_err(|e| MlsError::new("the server's external sender credential", e))?;
     Ok(ExternalSender::new(
         SignaturePublicKey::from(key.to_vec()),
         credential,
@@ -84,7 +84,7 @@ pub fn new_group_id() -> Result<GroupId, MlsError> {
 }
 
 /// Creates the group at epoch 0 with this device as its only member
-/// (group-membership: Group creation): the Pi as the only external sender,
+/// (group-membership: Group creation): the server as the only external sender,
 /// the `0xF0A1` extension naming `admin_user_id`, handshakes as
 /// `PublicMessage`.
 pub fn create(
@@ -92,11 +92,11 @@ pub fn create(
     signer: &impl Signer,
     credential: CredentialWithKey,
     group_id: GroupId,
-    pi: ExternalSender,
+    server: ExternalSender,
     admin_user_id: &str,
 ) -> Result<MlsGroup, MlsError> {
     let extensions = Extensions::from_vec(vec![
-        Extension::ExternalSenders(vec![pi]),
+        Extension::ExternalSenders(vec![server]),
         Extension::Unknown(
             ADMIN_EXTENSION_TYPE,
             UnknownExtension(admin_extension_data(admin_user_id)),
@@ -116,7 +116,7 @@ pub fn create(
 }
 
 /// Creates a DM at epoch 0 with this device as its only member
-/// (direct-messages: Opening a DM): the Pi as the only external sender, the
+/// (direct-messages: Opening a DM): the server as the only external sender, the
 /// `0xF0A2` extension naming `users`, no admin, handshakes as
 /// `PublicMessage`.
 pub fn create_dm(
@@ -124,11 +124,11 @@ pub fn create_dm(
     signer: &impl Signer,
     credential: CredentialWithKey,
     group_id: GroupId,
-    pi: ExternalSender,
+    server: ExternalSender,
     users: (&str, &str),
 ) -> Result<MlsGroup, MlsError> {
     let extensions = Extensions::from_vec(vec![
-        Extension::ExternalSenders(vec![pi]),
+        Extension::ExternalSenders(vec![server]),
         Extension::Unknown(
             DM_EXTENSION_TYPE,
             UnknownExtension(dm_extension_data(users.0, users.1)),
@@ -176,14 +176,14 @@ pub fn admin_user_id(extensions: &Extensions<openmls::prelude::GroupContext>) ->
         .and_then(|ext| String::from_utf8(ext.0.clone()).ok())
 }
 
-/// Position of the Pi in the group context's external senders.
+/// Position of the server in the group context's external senders.
 pub fn pi_sender_index(
     extensions: &Extensions<openmls::prelude::GroupContext>,
-    pi: &ExternalSender,
+    server: &ExternalSender,
 ) -> Option<u32> {
     extensions
         .external_senders()
-        .and_then(|senders| senders.iter().position(|s| s == pi))
+        .and_then(|senders| senders.iter().position(|s| s == server))
         .and_then(|index| u32::try_from(index).ok())
 }
 

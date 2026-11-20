@@ -1,7 +1,7 @@
-//! pi-deployment (push): the committed deploy files for the egress proxy and
+//! server-deployment (push): the committed deploy files for the egress proxy and
 //! the push credentials, checked as written; `deploy.sh`'s credential guards
-//! run in temp folders and stop before any SSH. The Pi itself is checked by
-//! `deploy/pi/check.sh`.
+//! run in temp folders and stop before any SSH. The server itself is checked by
+//! `deploy/server/check.sh`.
 
 mod support;
 
@@ -27,24 +27,24 @@ fn has_line(text: &str, line: &str) -> bool {
     text.lines().any(|l| l == line)
 }
 
-// spec: pi-deployment/sandboxed-service
+// spec: server-deployment/sandboxed-service
 #[test]
 fn the_server_stays_loopback_only_and_only_the_egress_proxy_reaches_out() {
-    let server = read("deploy/pi/vyajena.service");
+    let server = read("deploy/server/vyajena.service");
     assert!(has_line(&server, "IPAddressAllow=localhost"));
     assert!(has_line(&server, "IPAddressDeny=any"));
     assert!(has_line(
         &server,
         "ExecStart=/usr/local/bin/vyajena-server --config /etc/vyajena/config.toml --push /etc/vyajena/push.toml"
     ));
-    let review = read("deploy/pi/vyajena-review.service");
+    let review = read("deploy/server/vyajena-review.service");
     assert!(!review.contains("--push"), "the review server has no push");
     assert!(has_line(&review, "IPAddressAllow=localhost"));
 
-    let egress = read("deploy/pi/vyajena-egress.service");
+    let egress = read("deploy/server/vyajena-egress.service");
     for line in [
         "DynamicUser=yes",
-        "ExecStart=/usr/local/bin/vyajena-server egress-proxy --listen 127.0.0.1:8445",
+        "ExecStart=/usr/local/bin/vyajena-server egress-proxy --listen 127.0.0.1:@EGRESS_PORT@",
         "NoNewPrivileges=yes",
         "ProtectSystem=strict",
         "ProtectHome=yes",
@@ -55,7 +55,7 @@ fn the_server_stays_loopback_only_and_only_the_egress_proxy_reaches_out() {
         "AmbientCapabilities=",
         "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX",
         "Restart=always",
-        "IPAddressAllow=localhost 192.168.1.1/32",
+        "IPAddressAllow=localhost @ROUTER@/32",
         "IPAddressDeny=0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 fc00::/7 fe80::/10",
     ] {
         assert!(
@@ -70,13 +70,16 @@ fn the_server_stays_loopback_only_and_only_the_egress_proxy_reaches_out() {
     );
 }
 
-// spec: pi-deployment/push-credentials
+// spec: server-deployment/push-credentials
 #[test]
 fn push_toml_names_the_real_servers_folder_and_holds_no_secret() {
-    let text = read("deploy/pi/push.toml");
+    let text = render_file("push.toml");
     let settings = PushSettings::from_toml(&text, Path::new("/etc/vyajena")).check("push.toml");
     assert_eq!(settings.credentials_dir, Path::new("/var/lib/vyajena/push"));
-    assert_eq!(settings.proxy.as_deref(), Some("http://127.0.0.1:8445"));
+    assert_eq!(
+        settings.proxy.as_deref(),
+        Some(format!("http://127.0.0.1:{}", network("EGRESS_PORT")).as_str())
+    );
     assert_eq!(settings.apns_topic, "com.purplechaamba.vyajena");
     for secret in ["PRIVATE KEY", "private_key", "AIza"] {
         assert!(!text.contains(secret));
@@ -104,13 +107,13 @@ fn push_toml_names_the_real_servers_folder_and_holds_no_secret() {
     }
 }
 
-// spec: pi-deployment/push-credentials
+// spec: server-deployment/push-credentials
 #[test]
 fn deploy_copies_the_keys_owner_only_and_never_prints_them() {
-    let deploy = read("deploy/pi/deploy.sh");
+    let deploy = read("deploy/server/deploy.sh");
     for line in [
         "PUSH_DIR=\"${PUSH_DIR:-$HOME/.vyajena-push}\"",
-        "    pi \"umask 077; cat > '$staging/push/${key##*/}'\" <\"$key\"",
+        "    server \"umask 077; cat > '$staging/push/${key##*/}'\" <\"$key\"",
         "  install -d -m 0700 -o vyajena -g vyajena \"$dir\"",
         "    install -m 0600 -o vyajena -g vyajena \"$f\" \"$dir/${f##*/}\"",
         "  local staged=\"$1\" dir=/var/lib/vyajena/push f name",
@@ -126,15 +129,56 @@ fn deploy_copies_the_keys_owner_only_and_never_prints_them() {
     ));
 }
 
+/// A value of the example network settings (the real ones are outside the
+/// repository, change generic-deployment).
+fn network(key: &str) -> String {
+    read("deploy/network.conf.example")
+        .lines()
+        .find_map(|line| line.strip_prefix(&format!("{key}=")))
+        .map(str::to_owned)
+        .check(key)
+}
+
+/// A folder with the example `network.conf`, as `RELAY_SECRETS`.
+fn network_secrets() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().check("secrets");
+    std::fs::write(
+        dir.path().join("network.conf"),
+        read("deploy/network.conf.example"),
+    )
+    .check("network.conf");
+    dir
+}
+
+/// A host-side template with the example network settings filled in.
+fn render_file(name: &str) -> String {
+    let secrets = network_secrets();
+    let out = Command::new("bash")
+        .arg(repo().join("deploy/relay/render.sh"))
+        .args(["server-file", name])
+        .env("RELAY_SECRETS", secrets.path())
+        .env("HOME", secrets.path())
+        .output()
+        .check("render.sh");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).check("utf-8")
+}
+
 /// Runs `deploy.sh --no-build` with `PUSH_DIR=dir`; it must stop before SSH.
 fn deploy_with(dir: &Path) -> (bool, String) {
     let backups = tempfile::tempdir().check("backups");
+    let secrets = network_secrets();
     let out = Command::new("bash")
-        .arg(repo().join("deploy/pi/deploy.sh"))
+        .arg(repo().join("deploy/server/deploy.sh"))
         .arg("--no-build")
         .env("PUSH_DIR", dir)
         .env("BACKUP_ROOT", backups.path())
-        .env("PI", "nobody@192.0.2.1")
+        .env("RELAY_SECRETS", secrets.path())
+        .env("SERVER", "nobody@192.0.2.1")
         .env("PATH", "/usr/bin:/bin")
         .output()
         .check("deploy.sh");
@@ -148,7 +192,7 @@ fn chmod(path: &Path, mode: u32) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).check("chmod");
 }
 
-// spec: pi-deployment/push-credentials
+// spec: server-deployment/push-credentials
 #[test]
 fn deploy_refuses_push_keys_open_to_others() {
     let home = tempfile::tempdir().check("temp");
@@ -198,10 +242,10 @@ fn deploy_refuses_push_keys_open_to_others() {
     );
 }
 
-// spec: pi-deployment/hardening-check
+// spec: server-deployment/hardening-check
 #[test]
-fn the_pi_check_covers_the_egress_proxy_and_the_push_keys() {
-    let check = read("deploy/pi/check.sh");
+fn the_server_check_covers_the_egress_proxy_and_the_push_keys() {
+    let check = read("deploy/server/check.sh");
     for needle in [
         "egress-running",
         "egress sandbox $prop",
@@ -212,8 +256,8 @@ fn the_pi_check_covers_the_egress_proxy_and_the_push_keys() {
         "warn push-fcm",
         "warn push-apns",
         "review no push",
-        "egress listening 127.0.0.1:8445",
-        "for port in 8443 8444 8445; do",
+        "egress listening on loopback",
+        "for port in \"$SERVER_PORT\" \"$REVIEW_SERVER_PORT\" \"$EGRESS_PORT\"; do",
     ] {
         assert!(check.contains(needle), "check.sh lacks {needle}");
     }

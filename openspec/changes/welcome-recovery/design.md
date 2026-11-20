@@ -5,18 +5,18 @@
 | time  | what |
 |-------|------|
 | 21:24:23 | the tester's iPhone registers |
-| 21:24:33 | its 21 KeyPackages reach the Pi → `JoinNotice` to the admin's iPhone |
+| 21:24:33 | its 21 KeyPackages reach the server → `JoinNotice` to the admin's iPhone |
 | 21:24:40 | admin's iPhone commits seq 31 (epoch 3 → 4) with the Welcome |
 | 21:24–21:48 | tester reconnects 13 times, acks 31…39, sends nothing |
 
 The core refused the Welcome (both refusal paths log, emit `CommitRefused` and
-ACK), the app showed it only in the chat, and the Pi kept counting the device
+ACK), the app showed it only in the chat, and the server kept counting the device
 as a member (`was_member = 1`, in `mls_members`), so no new `JoinNotice` came.
 
 ```mermaid
 sequenceDiagram
   participant T as Tester's iPhone
-  participant P as Pi
+  participant P as server
   participant A as Admin's iPhone
   T->>P: Register, UploadKeyPackages
   P->>A: JoinNotice(T)
@@ -33,8 +33,8 @@ sequenceDiagram
 - Goal: the reason is visible on the waiting screen.
 - Goal: a device that cannot use its Welcome gets re-added without a wipe, a
   new invite or anyone tapping anything (owner decision, D6).
-- Goal: the Pi learns the error text, so the owner can read the cause in the
-  Pi's journal without asking the tester.
+- Goal: the server learns the error text, so the owner can read the cause in the
+  server's journal without asking the tester.
 - Non-goal: fixing the root cause blind. It is not proven yet (D1).
 
 ## Decisions
@@ -47,28 +47,28 @@ What was checked (2026-11-16):
 |---|---|---|
 | Entitlements (4a55ba3) | exported IPA: `application-identifier`, `team-identifier`, `aps-environment = production`, no `keychain-access-groups` (default group = app id, as in build 2) | not it |
 | Keychain unreadable on device | tester's phone re-authenticated 13 times (auth key from the keychain); storage key is read once at `Store::open` | not it |
-| Phone clock (lifetimes) | tester's certificate `created_at` 5.7 s before the Pi's registration time | not it |
+| Phone clock (lifetimes) | tester's certificate `created_at` 5.7 s before the server's registration time | not it |
 | Identity check of a leaf | the admin's Android phone joined at epoch 4 → 5 from a Welcome with the same leaves plus the tester's | unlikely |
 | Crypto provider | `openmls_rust_crypto` (portable), no `cfg(target_os)` in storage or MLS code | unlikely |
 | Release on a simulator | Flutter has no release mode on iOS simulators | could not run |
 
 Still open: why `StagedWelcome` (or the identity check) failed on that phone.
-Only the error text tells. With this change it reaches the Pi's journal
+Only the error text tells. With this change it reaches the server's journal
 (`RequestReaddRequest.reason`, D3) and the waiting screen (D5). If it is
 deterministic on that phone, the re-add fails again (bounded by D4), and the
 text is then in hand.
 
-Also checked: two other new members showed no sign of the bug on the Pi
+Also checked: two other new members showed no sign of the bug on the server
 (one had simply not reconnected yet, one had joined; owner, 2026-11-17). Had
 either been stuck, D2 covers them the same way, including at the first
 start on build 4 (`refused_welcome_seq = 0`).
 
-### D2. The stuck device asks the Pi: `Keys.RequestReadd`
+### D2. The stuck device asks the server: `Keys.RequestReadd`
 
 Alternatives:
-- (a) Pi detects "never sent anything" → guesses. Wrong for quiet members.
+- (a) server detects "never sent anything" → guesses. Wrong for quiet members.
 - (b) Admin removes and re-invites → a wipe and a new invite: what we avoid.
-- (c) **The device says it is stuck; the Pi checks it** ← chosen.
+- (c) **The device says it is stuck; the server checks it** ← chosen.
 
 The core calls it:
 - right after refusing a Welcome (`refused_welcome_seq` = that `server_seq`);
@@ -78,7 +78,7 @@ The core calls it:
   creates it (its ask would only cost a round trip at every start), and a
   linked admin device still asks when it refuses its Welcome.
 
-The Pi answers `ASKED` only if all hold, else changes nothing:
+The server answers `ASKED` only if all hold, else changes nothing:
 
 | check | else |
 |---|---|
@@ -95,8 +95,8 @@ RPC on its own HTTP/2 stream: the refused Welcome itself never counts.
 One transaction:
 1. replace all of the device's KeyPackages with the request's (checked like
    `UploadKeyPackages`). If the refusal came from missing KeyPackage private
-   keys, the old ones on the Pi are suspect too.
-2. `write::mark_inactive` (drops its queue, issues the Pi's external Remove).
+   keys, the old ones on the server are suspect too.
+2. `write::mark_inactive` (drops its queue, issues the server's external Remove).
 3. `inactivity::mark_returned(now)`; after the commit, record the ask in the
    in-memory limit (D4).
 4. log `reason` (error text only, never content) with the device id.
@@ -104,18 +104,18 @@ One transaction:
 Then send a `RejoinNotice` for the device to connected helpers (`can_readd`:
 the user's other devices, the admin's devices). Helpers that connect later get
 it from `connect_info` as today. The helper's existing `Readd` job commits
-Remove + Add with a fresh KeyPackage. The Pi clears the inactive mark when the
+Remove + Add with a fresh KeyPackage. The server clears the inactive mark when the
 add is accepted, and the Welcome reaches the device on its open stream.
 
 ```mermaid
 sequenceDiagram
   participant T as Stuck device
-  participant P as Pi
+  participant P as server
   participant A as Admin's device
   T->>P: Keys.RequestReadd(seq, reason, fresh KPs)
   P->>P: checks (D2); replace KPs; mark inactive + returned; log reason
   P-->>T: ASKED
-  P->>A: PROPOSAL (Pi Remove of T's leaf), RejoinNotice(T)
+  P->>A: PROPOSAL (server Remove of T's leaf), RejoinNotice(T)
   A->>P: FetchKeyPackages(T only)
   A->>A: verify cert vs pinned identity key
   A->>P: COMMIT Remove(old leaf) + Add(T) + Welcome
@@ -123,14 +123,14 @@ sequenceDiagram
   T->>T: JoinedGroup
 ```
 
-A device in no group ignores the `RemovedNotice` the Pi sends it on its next
+A device in no group ignores the `RemovedNotice` the server sends it on its next
 connect: there is no group or history it was removed from.
 
 ### D4. Limits
 
-- Pi: 3 asks per device per sliding 24 h (`protocol::group_membership`),
+- server: 3 asks per device per sliding 24 h (`protocol::group_membership`),
   counted in memory (`membership::readd::ReaddAsks` in `State`). It only
-  stops a commit loop: a Pi restart that forgets it is harmless, and with no
+  stops a commit loop: a server restart that forgets it is harmless, and with no
   schema change `deploy.sh --rollback` keeps working.
 - Core: one ask per refused Welcome, one per engine start; `LIMIT_REACHED` is
   shown and the core does not retry until its next start.
@@ -150,9 +150,9 @@ Asked through the tracker; the owner answered in their own words:
 | question | owner's answer |
 |---|---|
 | Re-add | automatic and silent: the admin's device commits Remove + Add from a fresh KeyPackage, no tap |
-| Trigger on the stuck device | automatic: right after a refusal, and at start when it has no group but the Pi counts it a member; no button |
+| Trigger on the stuck device | automatic: right after a refusal, and at start when it has no group but the server counts it a member; no button |
 | Waiting-screen text | "Your phone couldn't open the admin's invitation to the group. It has asked to be added again; this happens on its own. Reason: <error> (<time>)" |
-| Limit | at most 3 automatic asks a day per device, enforced by the Pi; after that it waits for the admin |
+| Limit | at most 3 automatic asks a day per device, enforced by the server; after that it waits for the admin |
 
 The app shows the owner's text, from the newest refusal and the ask's
 outcome:
@@ -161,7 +161,7 @@ outcome:
 - limit reached: "It has asked to be added again too often today and now
   waits for the admin." instead of the middle sentence.
 
-"Waits for the admin": after the limit the Pi changes nothing more that
+"Waits for the admin": after the limit the server changes nothing more that
 day. The admin can remove and re-invite the user, or the device asks again
 at a start after the 24-hour window.
 
@@ -171,11 +171,11 @@ Who enforces what:
 
 | threat | why it does not work |
 |---|---|
-| Pi forges membership with `RejoinNotice` | it adds no one: the helper fetches the KeyPackage and verifies its certificate against the user's pinned identity key (client, key-directory), as for every add |
-| Pi swaps in its own KeyPackage | same check: the KeyPackage's credential must carry a certificate signed by the user's identity key, and its signature key must equal the certificate's MLS key |
-| Pi fakes an ask to kick a device out | the Pi can already do that (inactivity Removes); no new power |
+| Server forges membership with `RejoinNotice` | it adds no one: the helper fetches the KeyPackage and verifies its certificate against the user's pinned identity key (client, key-directory), as for every add |
+| Server swaps in its own KeyPackage | same check: the KeyPackage's credential must carry a certificate signed by the user's identity key, and its signature key must equal the certificate's MLS key |
+| Server fakes an ask to kick a device out | the server can already do that (inactivity Removes); no new power |
 | A device asks for someone else | the caller is the session's device; there is no device id in the request |
-| A member loops asks to churn epochs | Pi limit, 3 a day; each costs one commit |
+| A member loops asks to churn epochs | server limit, 3 a day; each costs one commit |
 | A removed or revoked device asks to get back in | `NOT_A_MEMBER` (not in the tree), and revoked devices are never re-added (`inactivity::waiting` filters revoked) |
 | The reason leaks content | it is the core's error text (OpenMLS / identity-check errors), never plaintext; cut to 512 bytes |
 
@@ -184,7 +184,7 @@ or by the user's own device for its own devices.
 
 ### D8. Fresh keys for a new signup (the owner's re-invite failed)
 
-What the owner saw (2026-11-16 22:45-23:02, Pi journal): they removed
+What the owner saw (2026-11-16 22:45-23:02, server journal): they removed
 the iPhone tester (22:45:10) and made a new invite (22:45:37). The phone
 never reached a registration (no "registered a user" line), and the invite
 was revoked at 23:02:50.
@@ -212,7 +212,7 @@ reused at 21:24. The error text will settle it.
 ## Risks / Trade-offs
 
 - If the cause is deterministic on that phone, every re-add fails until it is
-  fixed. Bounded by D4, and the error text then reaches the Pi's log.
+  fixed. Bounded by D4, and the error text then reaches the server's log.
 - Messages sent between the first add and the re-add are lost for that device,
   as for any inactive device. A device that never joined had none anyway.
 - Old one-time KeyPackage private keys stay in the device's local storage
@@ -220,9 +220,9 @@ reused at 21:24. The error text will settle it.
 
 ## Migration
 
-- No schema change on the Pi or the core.
-- Deploy the Pi before build 4 reaches testers. An old Pi answers
+- No schema change on the server or the core.
+- Deploy the server before build 4 reaches testers. An old server answers
   `UNIMPLEMENTED`; the core then deletes the unused KeyPackages, logs it and
   waits as before.
-- KeyPackages the Pi does not take (any answer but `ASKED`) are deleted from
+- KeyPackages the server does not take (any answer but `ASKED`) are deleted from
   the device's storage, so asking at every start does not pile them up.

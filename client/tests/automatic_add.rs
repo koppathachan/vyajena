@@ -1,6 +1,6 @@
 //! group-membership: Automatic add of new users, the core's side, end to end
-//! against the real Pi (flutter-app task 4.5): the admin's device adds a new
-//! user's device on the Pi's `JoinNotice` with no `add_user` call, pins the
+//! against the real server (flutter-app task 4.5): the admin's device adds a new
+//! user's device on the server's `JoinNotice` with no `add_user` call, pins the
 //! user's identity key on first sight, waits for the admin to accept a
 //! changed key, and a losing admin device does nothing more.
 
@@ -9,7 +9,7 @@ mod support;
 use client::{Event, SendStatus};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 fn joined(e: &Event) -> bool {
     matches!(e, Event::JoinedGroup)
@@ -18,8 +18,8 @@ fn joined(e: &Event) -> bool {
 // spec: group-membership/automatic-add-of-new-users
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_joins_while_the_admin_is_online() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     // Nobody calls add_user: Bob signs up and the admin's device adds him.
     let mut bob = device::invited(&admin, "bob").await;
     bob.wait_event("bob joined", joined).await;
@@ -49,8 +49,8 @@ async fn bob_joins_while_the_admin_is_online() {
 // spec: group-membership/automatic-add-of-new-users
 #[tokio::test(flavor = "multi_thread")]
 async fn admin_offline_when_bob_joins_adds_him_on_connect() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut bob = device::invited_while_admin_away(&admin, "bob").await;
     // Waiting to be added: no Welcome while no admin device is online.
     assert!(!bob.sees_within_quiet(joined).await);
@@ -65,8 +65,8 @@ async fn admin_offline_when_bob_joins_adds_him_on_connect() {
 // spec: key-directory/clients-verify-the-identity-chain
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reset_user_is_added_once_the_admin_accepts_the_key() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::invited(&admin, "bob").await;
     bob.wait_event("bob joined", joined).await;
 
@@ -104,8 +104,8 @@ async fn a_reset_user_is_added_once_the_admin_accepts_the_key() {
 // spec: group-membership/automatic-add-of-new-users
 #[tokio::test(flavor = "multi_thread")]
 async fn two_admin_devices_race_and_the_loser_does_nothing() {
-    let pi = TestPi::start().await;
-    let mut phone = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut phone = device::admin_with_group(&server).await;
     // The admin's tablet, linked and in the group.
     let mut tablet = Device::new().await;
     let request = tablet.client.link_request().await.check("link request");

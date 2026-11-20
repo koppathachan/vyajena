@@ -1,4 +1,4 @@
-//! client-runtime: Resume across restart, end to end against the real Pi: the
+//! client-runtime: Resume across restart, end to end against the real server: the
 //! session token the core last held is kept in the key store, so `stop()` then
 //! `start()` (the app going to the background and coming back) resumes without
 //! `Authenticate`.
@@ -14,7 +14,7 @@ use client::{Client, ClientConfig, ConnectionState, Event};
 use protocol::wire_transport::SESSION_TOKEN_MAX_LIFETIME;
 use support::Check;
 use support::device::{self, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 /// The device's clock reaches its token's renewal point: the lifetime less the
 /// 5 minute margin, plus one minute.
@@ -22,9 +22,9 @@ fn past_renewal() -> Duration {
     SESSION_TOKEN_MAX_LIFETIME - Duration::from_secs(4 * 60)
 }
 
-/// How many session rows the Pi holds for `device`: one per `Authenticate`.
-async fn session_count(pi: &TestPi, device: [u8; 16]) -> i64 {
-    let state = pi.state.clone();
+/// How many session rows the server holds for `device`: one per `Authenticate`.
+async fn session_count(server: &TestServer, device: [u8; 16]) -> i64 {
+    let state = server.state.clone();
     state
         .store
         .call(move |conn| {
@@ -51,10 +51,10 @@ fn saved(keys: &MemoryKeyStore) -> Option<Secret> {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reopen_within_the_tokens_life_resumes_without_authenticate() {
-    let pi = TestPi::start().await;
-    let mut alice = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let mut alice = device::admin(&server).await;
     let id = alice.device_id();
-    let before = session_count(&pi, id).await;
+    let before = session_count(&server, id).await;
     assert!(
         saved(&alice.keys).is_some(),
         "the token is saved on connect"
@@ -65,10 +65,10 @@ async fn a_reopen_within_the_tokens_life_resumes_without_authenticate() {
     alice.clock.advance(Duration::from_secs(2 * 60 * 60));
     alice.client.start().await.check("start");
     alice.wait_connected().await;
-    pi.wait_connected(&id).await;
+    server.wait_connected(&id).await;
 
     assert_eq!(
-        session_count(&pi, id).await,
+        session_count(&server, id).await,
         before,
         "the restart must resume, not authenticate"
     );
@@ -77,19 +77,23 @@ async fn a_reopen_within_the_tokens_life_resumes_without_authenticate() {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reopen_after_the_renewal_point_runs_the_full_handshake() {
-    let pi = TestPi::start().await;
-    let mut alice = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let mut alice = device::admin(&server).await;
     let id = alice.device_id();
-    let before = session_count(&pi, id).await;
+    let before = session_count(&server, id).await;
     let first = saved(&alice.keys).check("saved");
 
     alice.client.stop();
     alice.clock.advance(past_renewal());
     alice.client.start().await.check("start");
     alice.wait_connected().await;
-    pi.wait_connected(&id).await;
+    server.wait_connected(&id).await;
 
-    assert_eq!(session_count(&pi, id).await, before + 1, "a fresh session");
+    assert_eq!(
+        session_count(&server, id).await,
+        before + 1,
+        "a fresh session"
+    );
     let second = saved(&alice.keys).check("saved again");
     assert_ne!(*first, *second, "the fresh token replaces the old one");
 }
@@ -97,18 +101,18 @@ async fn a_reopen_after_the_renewal_point_runs_the_full_handshake() {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn the_renewed_token_is_the_one_saved() {
-    let pi = TestPi::start().await;
-    let mut alice = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let mut alice = device::admin(&server).await;
     let id = alice.device_id();
     let first = saved(&alice.keys).check("saved");
-    let before = session_count(&pi, id).await;
+    let before = session_count(&server, id).await;
 
-    // The token nears its end while connected: the core renews it. The Pi's
+    // The token nears its end while connected: the core renews it. The server's
     // clock moves with the device's, so the renewed token is a full one.
-    pi.clock.advance(past_renewal());
+    server.clock.advance(past_renewal());
     alice.clock.advance(past_renewal());
     let deadline = tokio::time::Instant::now() + support::device::WAIT;
-    while session_count(&pi, id).await <= before {
+    while session_count(&server, id).await <= before {
         assert!(tokio::time::Instant::now() < deadline, "no renewal");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -120,12 +124,12 @@ async fn the_renewed_token_is_the_one_saved() {
         assert!(tokio::time::Instant::now() < deadline, "renewal not saved");
         tokio::time::sleep(Duration::from_millis(50)).await;
     };
-    let after_renewal = session_count(&pi, id).await;
+    let after_renewal = session_count(&server, id).await;
 
     restart(&mut alice).await;
-    pi.wait_connected(&id).await;
+    server.wait_connected(&id).await;
     assert_eq!(
-        session_count(&pi, id).await,
+        session_count(&server, id).await,
         after_renewal,
         "the restart resumed with the renewed token"
     );
@@ -135,8 +139,8 @@ async fn the_renewed_token_is_the_one_saved() {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn the_token_is_in_the_key_store_and_nowhere_else() {
-    let pi = TestPi::start().await;
-    let alice = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let alice = device::admin_with_group(&server).await;
     let value = saved(&alice.keys).check("saved");
     // version byte, two u64 times, then the token's text.
     let token = std::str::from_utf8(&value[17..])
@@ -164,13 +168,13 @@ async fn the_token_is_in_the_key_store_and_nowhere_else() {
 // spec: client-runtime/resume-across-restart
 // spec: client-runtime/connection-lifecycle
 #[tokio::test(flavor = "multi_thread")]
-async fn a_token_the_pi_no_longer_holds_falls_back_after_a_restart() {
-    let pi = TestPi::start().await;
-    let mut alice = device::admin(&pi).await;
+async fn a_token_the_server_no_longer_holds_falls_back_after_a_restart() {
+    let server = TestServer::start().await;
+    let mut alice = device::admin(&server).await;
     let id = alice.device_id();
 
     alice.client.stop();
-    let state = pi.state.clone();
+    let state = server.state.clone();
     state
         .store
         .call(move |conn| {
@@ -181,9 +185,9 @@ async fn a_token_the_pi_no_longer_holds_falls_back_after_a_restart() {
 
     alice.client.start().await.check("start");
     alice.wait_connected().await;
-    pi.wait_connected(&id).await;
+    server.wait_connected(&id).await;
     assert_eq!(
-        session_count(&pi, id).await,
+        session_count(&server, id).await,
         1,
         "the full handshake minted one fresh session"
     );
@@ -192,8 +196,8 @@ async fn a_token_the_pi_no_longer_holds_falls_back_after_a_restart() {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_removed_device_deletes_its_saved_token() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     assert!(saved(&bob.keys).is_some(), "Bob saved a token");
 
@@ -213,7 +217,7 @@ async fn a_removed_device_deletes_its_saved_token() {
         );
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
-    // A later start does not resume: the Pi answers Authenticate with
+    // A later start does not resume: the server answers Authenticate with
     // PERMISSION_DENIED and Bob is told again.
     bob.client.stop();
     bob.client.start().await.check("start bob");
@@ -258,10 +262,10 @@ impl KeyStore for Flaky {
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_key_store_that_fails_only_costs_the_full_handshake() {
-    let pi = TestPi::start().await;
-    let alice = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let alice = device::admin(&server).await;
     let id = alice.device_id();
-    let before = session_count(&pi, id).await;
+    let before = session_count(&server, id).await;
     alice.client.stop();
 
     // Same data and keys, but the key store refuses the session token.
@@ -289,9 +293,9 @@ async fn a_key_store_that_fails_only_costs_the_full_handshake() {
     .await
     .check("timed out");
     assert!(connected, "the core connects without the key store's help");
-    pi.wait_connected(&id).await;
+    server.wait_connected(&id).await;
     assert_eq!(
-        session_count(&pi, id).await,
+        session_count(&server, id).await,
         before + 1,
         "no token could be read, so it authenticated"
     );
@@ -301,8 +305,8 @@ async fn a_key_store_that_fails_only_costs_the_full_handshake() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_saved_token_that_cannot_be_read_is_no_token() {
     use client::net::ResumeToken;
-    let pi = TestPi::start().await;
-    let mut alice = device::admin(&pi).await;
+    let server = TestServer::start().await;
+    let mut alice = device::admin(&server).await;
     let id = alice.device_id();
 
     // What the core saved reads back to the same bytes.
@@ -320,7 +324,7 @@ async fn a_saved_token_that_cannot_be_read_is_no_token() {
     assert!(ResumeToken::decode(&not_text).is_none());
 
     // A damaged entry at start is ignored: the core authenticates and connects.
-    let before = session_count(&pi, id).await;
+    let before = session_count(&server, id).await;
     alice.client.stop();
     alice
         .keys
@@ -328,6 +332,6 @@ async fn a_saved_token_that_cannot_be_read_is_no_token() {
         .check("damage");
     alice.client.start().await.check("start");
     alice.wait_connected().await;
-    pi.wait_connected(&id).await;
-    assert_eq!(session_count(&pi, id).await, before + 1);
+    server.wait_connected(&id).await;
+    assert_eq!(session_count(&server, id).await, before + 1);
 }

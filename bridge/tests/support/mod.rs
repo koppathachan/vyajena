@@ -1,14 +1,14 @@
-//! Shared helpers for the bridge tests: the real Pi in-process, with the
-//! client tests' own helpers (`client/tests/support/{pi,relay}.rs`, included
+//! Shared helpers for the bridge tests: the real server in-process, with the
+//! client tests' own helpers (`client/tests/support/{server,relay}.rs`, included
 //! by path so there is one copy), and a [`device::Device`] around the
 //! bridge's `Core`.
 #![allow(dead_code)]
 
 pub mod device;
-#[path = "../../../client/tests/support/pi.rs"]
-pub mod pi;
 #[path = "../../../client/tests/support/relay.rs"]
 pub mod relay;
+#[path = "../../../client/tests/support/server.rs"]
+pub mod server;
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -50,7 +50,7 @@ impl<T> Check<T> for Option<T> {
 }
 
 /// 2026-11-10T00:00:00Z, the start of every manual clock (as in the client
-/// tests, so devices and the test Pi agree on the time).
+/// tests, so devices and the test server agree on the time).
 pub fn start_time() -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(1_794_268_800)
 }

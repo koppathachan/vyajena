@@ -9,7 +9,7 @@ import 'package:vyajena/core/core_service.dart';
 
 import '../support/fake_core_service.dart';
 
-const bob = UserRef(username: 'bob', serverId: 'pi');
+const bob = UserRef(username: 'bob', serverId: 'chat');
 
 Future<FakeCoreService> openApp(WidgetTester tester, {UserRef? user}) async {
   final core = FakeCoreService(storedUser: user);
@@ -25,7 +25,7 @@ void main() {
     final core = await openApp(tester, user: bob);
     expect(core.calls, ['open', 'start']);
     expect(core.state.value, CoreState.ready);
-    expect(find.text('bob@pi'), findsOneWidget);
+    expect(find.text('bob@chat'), findsOneWidget);
     expect(find.byTooltip('Connecting…'), findsOneWidget);
 
     core.emit(const CoreEvent.connection(status: ConnectionStatus.connected));
@@ -49,7 +49,7 @@ void main() {
     await core.register('vyajena-invite:bob');
     await tester.pump();
     expect(core.calls, ['open', 'register', 'start']);
-    expect(find.text('bob@pi'), findsOneWidget);
+    expect(find.text('bob@chat'), findsOneWidget);
   });
 
   // spec: app-ui/foreground-and-background

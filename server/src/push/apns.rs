@@ -1,4 +1,4 @@
-//! APNs over HTTP/2 with a token-based `.p8` key (push design D3): the Pi signs
+//! APNs over HTTP/2 with a token-based `.p8` key (push design D3): the server signs
 //! its own ES256 provider JWT and sends a visible alert with the fixed text.
 //! Production first; only `BadDeviceToken` there tries the sandbox (Xcode
 //! builds), and the token is cleared only if both refuse it.
@@ -101,7 +101,7 @@ impl ApnsProvider {
                 Answer::BadDeviceToken => continue,
             }
         }
-        // Both hosts said BadDeviceToken (pi-runtime: Push errors).
+        // Both hosts said BadDeviceToken (server-runtime: Push errors).
         self.sandbox_tokens
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

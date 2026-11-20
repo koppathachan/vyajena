@@ -1,5 +1,5 @@
-//! pi-server-core design D7: the injectable clock. Supports the time-based
-//! requirements (pi-runtime: Running locally runs on the system clock; tests
+//! server-core design D7: the injectable clock. Supports the time-based
+//! requirements (server-runtime: Running locally runs on the system clock; tests
 //! move a manual one).
 
 mod support;
@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use server::runtime::clock::{from_unix_millis, unix_millis};
 use server::runtime::{Clock, ManualClock, SystemClock};
 
-// spec: pi-runtime/running-locally
+// spec: server-runtime/running-locally
 #[test]
 fn manual_clock_moves_only_when_told() {
     let clock = support::manual_clock();
@@ -28,7 +28,7 @@ fn manual_clock_moves_only_when_told() {
     assert_eq!(shared.now(), UNIX_EPOCH);
 }
 
-// spec: pi-runtime/running-locally
+// spec: server-runtime/running-locally
 #[test]
 fn system_clock_reads_the_wall_clock() {
     let before = SystemTime::now();
@@ -37,7 +37,7 @@ fn system_clock_reads_the_wall_clock() {
     assert!(now <= SystemTime::now());
 }
 
-// spec: pi-runtime/running-locally
+// spec: server-runtime/running-locally
 #[test]
 fn database_times_round_trip_in_milliseconds() {
     let t = support::test_epoch() + Duration::from_millis(1_234);

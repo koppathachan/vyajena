@@ -1,7 +1,7 @@
 ## Context
 
-- **Today the Pi and the core assume one group.**
-  - Pi: `mls_group` has a single row (`id = 1`). Members, public state and
+- **Today the server and the core assume one group.**
+  - server: `mls_group` has a single row (`id = 1`). Members, public state and
     the commit log belong to that one group.
   - Core: the store holds one group (`store.group()`). The engine keeps one
     `MlsGroup`.
@@ -12,7 +12,7 @@
   extension, and the commit authority rule depends on it.
 - **Owner decisions (2026-11-17):**
   - Any member may DM any member.
-  - The Pi may know the pairs.
+  - The server may know the pairs.
   - The admin has no power over DMs; removing a user closes their DMs.
   - No block.
 
@@ -35,20 +35,20 @@
 
 - **Members:** all devices of the two users.
 - **Same machinery as the main group:**
-  - external sender: the Pi
+  - external sender: the server
   - strict epoch rule, Welcome inside the commit, queues, acks, expiry
   - inactivity and leaf rotation
 - **Why:** this reuses every rule already tested. The alternative, pairwise
   sealed messages inside the main group, would leak to the other members
   that a message exists, and would need a second encryption scheme.
 
-### D2. DM group id: random 16 bytes; the Pi keeps one open DM per pair
+### D2. DM group id: random 16 bytes; the server keeps one open DM per pair
 
 - **Not a hash of the pair, as the doc sketched.**
-  - The admin can reset a user: remove `bob@pi`, invite `bob@pi` again.
+  - The admin can reset a user: remove `bob@chat`, invite `bob@chat` again.
   - The old DM is then closed, and a new one must get a new id.
   - A hash of the pair would collide with the closed one.
-- **The Pi stores the pair** (two usernames, sorted). It keeps
+- **The server stores the pair** (two usernames, sorted). It keeps
   `UNIQUE(user_a, user_b) WHERE closed_at IS NULL`.
 - **Race:** Alice and Bob both open the DM at once.
   - The second `Dms.CreateDm` gets `created = false` and the open DM's
@@ -64,9 +64,9 @@
   `<username>@<server_id>`, sorted, joined by `\n`. Defined once in
   `protocol::group_membership`.
 - **A DM has no `0xF0A1` admin extension.**
-- **The Pi checks on `CreateDm`:**
+- **The server checks on `CreateDm`:**
   - the extension names the caller's user and `peer`
-  - the Pi is listed as external sender
+  - the server is listed as external sender
   - the caller's device is the only member at epoch 0
 - **Clients check on every Welcome and commit:** every leaf belongs to one
   of the two named users. A client refuses a DM Welcome that doesn't name
@@ -78,11 +78,11 @@
   - an update of its own leaf
   - an Add of a device certified for **either** of the two users
   - a Remove of a device of its own user
-  - a Remove the Pi issued as external sender
+  - a Remove the server issued as external sender
 - **Nothing else.** In particular:
   - No admin override. The admin is not a member.
   - No third user, ever.
-- **Who enforces it:** the Pi and every client, like the main-group rule.
+- **Who enforces it:** the server and every client, like the main-group rule.
 - **The main-group rule is unchanged.**
 - **Why both users may add the other's devices:** the creator must add the
   peer, and a re-add must work when only the peer is online.
@@ -99,11 +99,11 @@
     row (`id = 1`), so the main group would be lost.
   - **A DM application envelope:** the core decrypts it with its one
     group. That fails and shows "a message could not be read".
-  - So the Pi must not queue DM envelopes, Welcomes included, for a
+  - So the server must not queue DM envelopes, Welcomes included, for a
     version 1 device.
 - **The rules:**
-  - `PROTOCOL_VERSION = 2`; the Pi supports `[1, 2]`. Both behave the same
-    on the stream. Version 2 in `GetServerInfo` tells the app that the Pi
+  - `PROTOCOL_VERSION = 2`; the server supports `[1, 2]`. Both behave the same
+    on the stream. Version 2 in `GetServerInfo` tells the app that the server
     knows `Dms`.
   - **DM-capable comes from the KeyPackages, not from `Hello`** (changed
     while writing `protocol/`, 2026-11-17).
@@ -112,11 +112,11 @@
       KeyPackage to a DM, and the key is the real proof.
     - A version 2 core lists `0xF0A2` in every KeyPackage and leaf. On its
       first run it uploads a fresh set, last-resort included.
-    - The Pi stores a `dm_capable` flag per KeyPackage. A device is
+    - The server stores a `dm_capable` flag per KeyPackage. A device is
       DM-capable when its last-resort KeyPackage is.
     - This drops the need to record the `Hello` version: a device that last
-      said version 2 could still have only 1.0.0 KeyPackages on the Pi.
-- **The Pi enforces:**
+      said version 2 could still have only 1.0.0 KeyPackages on the server.
+- **The server enforces:**
   - `FetchKeyPackages` with `group_id` set to a DM returns only DM-capable
     KeyPackages of the pair.
   - A DM `COMMIT` that adds a leaf without `0xF0A2` is rejected with
@@ -128,14 +128,14 @@
 
 ### D6. Automatic add and re-add per group
 
-- **`JoinNotice` for a DM:** the Pi sends `JoinNotice(group_id = dm)` to
+- **`JoinNotice` for a DM:** the server sends `JoinNotice(group_id = dm)` to
   the DM's connected member devices for each device that:
   - is a non-revoked, DM-capable device of either user
   - is in the main group already, so a core never gets a DM Welcome
-    before the main group's (added while writing the Pi, 2026-11-17)
+    before the main group's (added while writing the server, 2026-11-17)
   - is not a member of that DM
   - is not inactive
-- **The Pi sends it:**
+- **The server sends it:**
   - after the device's first KeyPackage upload
   - when it uploads a DM-capable last-resort KeyPackage
   - each time a member device of that DM connects
@@ -155,7 +155,7 @@
 ### D7. Closing a DM when a user is removed
 
 - **`Admin.RemoveUser(bob)` stays one call.** Besides revoking Bob's
-  devices, the Pi:
+  devices, the server:
   - sets `closed_at` on every open DM with Bob
   - deletes their queued entries and public state
   - rejects later envelopes for them with `REJECTION_REASON_GROUP_CLOSED`
@@ -168,7 +168,7 @@
   was removed".
 - **No one commits** in a closed DM.
 
-### D8. The Pi store
+### D8. The server store
 
 - **Migration `000N_groups.sql`:**
   - Rebuild `mls_group` without `CHECK (id = 1)`, keyed by `group_id`.
@@ -181,7 +181,7 @@
   - **Core:** `EncryptedStorage` slots are `label + serialized key`, and
     every group-scoped key contains the `GroupId`. Two `MlsGroup`s share one
     storage safely.
-  - **Pi:** `membership::group` loads the whole `mls_public_state` table
+  - **server:** `membership::group` loads the whole `mls_public_state` table
     into one `MemoryStorage`, and on save deletes and rewrites all rows. So
     the table gets a `group_id` column, and each group is loaded and saved
     on its own: a save of one group never rewrites another. An end-to-end
@@ -244,7 +244,7 @@
 ### D12. Nothing new leaves the device
 
 - DM text, names and profiles travel only inside MLS application messages.
-- **What the Pi learns** (accepted by the owner):
+- **What the server learns** (accepted by the owner):
   - the pair
   - when the DM was created
   - envelope sizes and times per group, which it already sees for the main
@@ -252,7 +252,7 @@
 
 ### D13. One sequence and one cursor across groups
 
-- **Decided while writing the Pi, 2026-11-17.**
+- **Decided while writing the server, 2026-11-17.**
 - **One sequence:** `server_seq` stays one counter for every group.
 - **One order per device:** a device receives its entries of every group in
   that one order.
@@ -266,7 +266,7 @@
 ### D14. Known limits (not built)
 
 - **A refused DM Welcome:** the core acks it and does not ask to be
-  re-added (`Keys.RequestReadd` is about the main group). The Pi then counts
+  re-added (`Keys.RequestReadd` is about the main group). The server then counts
   that device as a member, so it is not offered again. It is rare: a
   certificate that does not verify. Fixing it needs a DM variant of the
   re-add request.
@@ -277,22 +277,22 @@
 ```mermaid
 sequenceDiagram
     participant A as Alice's phone (v2)
-    participant Pi
+    participant server
     participant B as Bob's phone (v2)
     participant T as Bob's tablet (v1)
-    A->>A: new MLS group, ext 0xF0A2 {alice, bob}, Pi as external sender
-    A->>Pi: Dms.CreateDm(peer bob, GroupInfo, tree)
-    Pi-->>A: ok (pair recorded, epoch 0)
-    A->>Pi: Keys.FetchKeyPackages(bob, group_id = dm)
-    Pi-->>A: Bob's phone only (tablet's KeyPackages lack 0xF0A2)
-    A->>Pi: COMMIT Add(Bob's phone) + Welcome
-    Pi-->>A: accepted
-    Pi->>B: WELCOME (dm)
+    A->>A: new MLS group, ext 0xF0A2 {alice, bob}, server as external sender
+    A->>server: Dms.CreateDm(peer bob, GroupInfo, tree)
+    server-->>A: ok (pair recorded, epoch 0)
+    A->>server: Keys.FetchKeyPackages(bob, group_id = dm)
+    server-->>A: Bob's phone only (tablet's KeyPackages lack 0xF0A2)
+    A->>server: COMMIT Add(Bob's phone) + Welcome
+    server-->>A: accepted
+    server->>B: WELCOME (dm)
     Note over T: never gets the DM
-    T->>Pi: UploadKeyPackages (0xF0A2 listed, after app update)
-    Pi->>A: JoinNotice(dm, Bob's tablet)
-    A->>Pi: COMMIT Add(Bob's tablet) + Welcome
-    Pi->>T: WELCOME (dm)
+    T->>server: UploadKeyPackages (0xF0A2 listed, after app update)
+    server->>A: JoinNotice(dm, Bob's tablet)
+    A->>server: COMMIT Add(Bob's tablet) + Welcome
+    server->>T: WELCOME (dm)
 ```
 
 ## Spikes (before code that relies on them)
@@ -307,24 +307,24 @@ sequenceDiagram
   cover bursts. We watch `LowKeyPackages` in tests with 5 users.
 - **A big refactor of one-group code** on both sides. Tests run per group
   for every existing rule (expiry, inactivity, re-add, rotation).
-- **Metadata:** the Pi sees who talks to whom and when. The owner accepted
+- **Metadata:** the server sees who talks to whom and when. The owner accepted
   this.
-- **Pi first, app second:** a version 2 app needs a Pi that knows `Dms`. The
+- **Server first, app second:** a version 2 app needs a server that knows `Dms`. The
   app hides "Message" when `GetServerInfo` lists no version 2.
 
 ## Migration Plan
 
-1. Deploy the Pi (backs up first). Version 1 apps keep working.
+1. Deploy the server (backs up first). Version 1 apps keep working.
 2. Release the app (owner step).
 3. Devices that update get their DMs through D6.
 
-**Rollback:** the Pi rollback restores the backup. DMs created since are
+**Rollback:** the server rollback restores the backup. DMs created since are
 lost, and the main group is unaffected.
 
 ## Open Questions (owner)
 
 1. **Mute per chat:** worth a later change where the ping carries an opaque
-   per-device chat tag? That tells the Pi nothing new, but changes the push
+   per-device chat tag? That tells the server nothing new, but changes the push
    invariant.
 2. **Leave a DM:** later, or never? Today a DM lives until a user is
    removed.

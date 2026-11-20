@@ -3,7 +3,7 @@
 ### Requirement: Join from an invite
 The app SHALL let a new user join by pasting the invite text the admin shared,
 SHALL show the username and server address the invite names before joining, and
-SHALL call the core's `register` with it. A Pi that fails the invite's TLS pin
+SHALL call the core's `register` with it. A server that fails the invite's TLS pin
 SHALL be shown as a server identity error, not as a network error. While the
 device is in no group, the waiting screen SHALL show the newest refusal the
 core reported (`CommitRefused`, e.g. a Welcome it could not use) with its
@@ -13,7 +13,7 @@ this.
 
 #### Scenario: Bob joins
 - **WHEN** Bob pastes the invite the admin made for `bob` and taps Join
-- **THEN** he sees `bob@pi` on `127.0.0.1:8443` first, the core registers his
+- **THEN** he sees `bob@chat` on `127.0.0.1:8443` first, the core registers his
   phone with `Devices.Register`, and he lands in the chat
 
 #### Scenario: Waiting to be added
@@ -35,7 +35,7 @@ this.
   asked too often today and now waits for the admin
 
 #### Scenario: Wrong pin
-- **WHEN** the Pi at the invite's address presents a different TLS key
+- **WHEN** the server at the invite's address presents a different TLS key
 - **THEN** the app shows a server identity error and does not join
 
 #### Scenario: Bad invite text

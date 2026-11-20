@@ -25,7 +25,7 @@
   crate choices and the result in `design.md` under D5/D6, then delete the
   spike (config.yaml: spikes are throwaway)
 
-## 3. Pi blob store
+## 3. Server blob store
 
 - [x] 3.1 `server/src/blobs/` (new feature): a `BlobStore` backend trait
   (`put`/`get`/`delete`/`exists` by id, opaque bytes) with a filesystem backend
@@ -41,7 +41,7 @@
   graceful degradation (backend absent/unwritable → start, serve text, `Blobs`
   RPCs `UNAVAILABLE`, nothing on main storage). Tests
   `blob-store/blob-storage-and-graceful-degradation`,
-  `pi-runtime/blob-storage-degrades-gracefully`, `pi-runtime/configuration`
+  `server-runtime/blob-storage-degrades-gracefully`, `server-runtime/configuration`
 
 ## 4. Core media
 
@@ -58,17 +58,17 @@
   `message-content/image-messages`, `message-content/image-caption-and-mentions`,
   old-client decode (D11)
 - [x] 4.2a The outbox uploads a queued image's blob first, in a task of its own,
-  and sends the envelope only after the Pi accepted it; later messages of the
+  and sends the envelope only after the server accepted it; later messages of the
   chat wait; retry, refusal, missing-picture and 7-day rules (D7). Tests
   `client-runtime/blob-crypto-and-send-order`: offline queue and order, a
-  restart, the Pi's drive away, the picture cleared, waited too long
+  restart, the server's drive away, the picture cleared, waited too long
 - [x] 4.3 `Client::download_image` (download, decrypt + AAD check, decode,
   cache, ack), device media cache (separate store, OS file encryption, excluded
   from backup, LRU cap), expired handling + sender resend. Tests
   `client-runtime/image-download-and-cache`, `client-runtime/expired-media`
 - [x] 4.4 End-to-end across two cores against the real server: send + receive an
   image with a caption mention; `message-content/image-messages-stay-encrypted`
-  (Pi push sink records "New message")
+  (server push sink records "New message")
 
 ## 5. Bridge
 
@@ -86,18 +86,18 @@
   resend", download retry, and "Resend picture" on the sender's long-press menu.
   Widget tests `app-ui/image-bubble-and-viewer`
 
-## 7. Deploy (Pi)
+## 7. Deploy (server)
 
-- [x] 7.1 `deploy/pi/`: `pi.conf` `BLOB_DIR` (empty: images off) renders
+- [x] 7.1 `deploy/server/`: `server.conf` `BLOB_DIR` (empty: images off) renders
   `[blob_store]`; a systemd drop-in lets the service write the path; deploy gives
   the path to `vyajena` (0700) only if it is on a mount of its own, never makes
   it and never mounts it (the owner's auto-mount does); a reset deletes the
   blobs. `shellcheck`
 - [x] 7.2 `check.sh` verifies the mount, ownership, mode and that the running
   service can write, and warns (no fail) when the drive is absent; `backup.sh`
-  excludes blobs. `shellcheck`. Tests `pi-deployment/blob-store-deployment`,
-  `pi-deployment/sandboxed-service`, `pi-deployment/backup-to-the-mac`,
-  `pi-deployment/hardening-check`, `pi-deployment/scripted-reset`
+  excludes blobs. `shellcheck`. Tests `server-deployment/blob-store-deployment`,
+  `server-deployment/sandboxed-service`, `server-deployment/backup-to-the-mac`,
+  `server-deployment/hardening-check`, `server-deployment/scripted-reset`
 
 ## 8. Check and docs
 

@@ -53,7 +53,7 @@ impl FcmProvider {
         })
     }
 
-    /// One wake ping to `token` (pi-runtime: Push errors for the retries).
+    /// One wake ping to `token` (server-runtime: Push errors for the retries).
     pub async fn send(&self, token: &str) -> WakeOutcome {
         if push_token_problem(PushTokenKind::Fcm, token).is_some() {
             return WakeOutcome::TokenInvalid;

@@ -3,9 +3,9 @@
 # Linux container on the Mac, with rathole's own Cargo.lock (--locked):
 #
 #   deploy/relay/build.sh           linux/amd64 for the relay -> target/relay/rathole
-#   deploy/relay/build.sh arm64     linux/arm64 for the Pi    -> target/pi/rathole
+#   deploy/relay/build.sh arm64     linux/arm64 for the server    -> target/server/rathole
 #
-# deploy/pi/build.sh runs the arm64 build itself.
+# deploy/server/build.sh runs the arm64 build itself.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,7 +16,7 @@ repo="$(cd "$HERE/../.." && pwd)"
 
 case "${1:-amd64}" in
   amd64) arch=amd64 out="$repo/target/relay/rathole" ;;
-  arm64) arch=arm64 out="$repo/target/pi/rathole" ;;
+  arm64) arch=arm64 out="$repo/target/server/rathole" ;;
   *) echo "usage: build.sh [amd64|arm64]" >&2; exit 1 ;;
 esac
 

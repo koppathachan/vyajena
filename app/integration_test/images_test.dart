@@ -1,10 +1,10 @@
-// Pictures on a simulator or emulator against a real temp Pi (change
+// Pictures on a simulator or emulator against a real temp server (change
 // `media-blobs`). Run it with `integration_test/run.sh <device> images`: the
-// script starts the Pi (with a picture store) and the admin's device on the
+// script starts the server (with a picture store) and the admin's device on the
 // host (`bridge/tests/app_peer_images.rs`). This app is Bob's phone, and the
 // picker is a fake that returns a fixed PNG, so no gallery is needed.
 //
-// End to end, through the real core, relay path and Pi:
+// End to end, through the real core, relay path and server:
 //   1. Bob sends a picture with the caption "cat" (sending, then accepted);
 //   2. the admin's picture arrives as a blur, a tap downloads it, a tap on the
 //      loaded picture opens the viewer;

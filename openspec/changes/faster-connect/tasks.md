@@ -26,10 +26,10 @@
       auth and on renewal, not cleared by `drop_link`, cleared on `removed`);
       `open_link` resume branch before the full handshake; fall back on a
       `Connect` open that returns `UNAUTHENTICATED`
-- [x] 3.3 End-to-end tests in `client/tests/connection.rs` against the real Pi:
+- [x] 3.3 End-to-end tests in `client/tests/connection.rs` against the real server:
       `client-runtime/connection-lifecycle` — a valid token is reused on
-      reconnect (no new session on the Pi); an expired/renewal-due token falls
-      back to the full handshake (a new session); a token the Pi no longer holds
+      reconnect (no new session on the server); an expired/renewal-due token falls
+      back to the full handshake (a new session); a token the server no longer holds
       is rejected on the stream and the core falls back and connects
 
 ## 4. Server (`server/`) — test only

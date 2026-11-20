@@ -26,7 +26,7 @@ fn staged(commit: usize, welcome: usize) -> StagedOwnCommit {
 // spec: message-delivery/welcome-travels-with-its-commit
 #[test]
 fn a_commit_with_a_large_welcome_is_refused_before_sending() {
-    let carol = UserId::new("carol", "pi");
+    let carol = UserId::new("carol", "chat");
     let recipients = || vec![device_ref(&carol, &[3; 16])];
 
     // The spec's example: a 200,000-byte commit whose Welcome adds 70,000.

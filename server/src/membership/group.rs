@@ -1,10 +1,10 @@
-//! group-membership: the group's public state on the Pi (Membership state on
-//! the Pi), built at `Admin.CreateGroup` (Group creation) and advanced by every
-//! accepted commit (Pi validates handshakes without group secrets; Commit
+//! group-membership: the group's public state on the server (Membership state on
+//! the server), built at `Admin.CreateGroup` (Group creation) and advanced by every
+//! accepted commit (server validates handshakes without group secrets; Commit
 //! authority).
 //!
-//! The Pi tracks the group with an OpenMLS `PublicGroup` (core-wire-protocol
-//! design D5). OpenMLS keeps its state in a key-value store; the Pi uses
+//! The server tracks the group with an OpenMLS `PublicGroup` (core-wire-protocol
+//! design D5). OpenMLS keeps its state in a key-value store; the server uses
 //! OpenMLS's in-memory store and saves its contents to the `mls_public_state`
 //! table, in the same transaction as everything else an accepted commit
 //! writes. All of it runs on the store's single writer thread (design D4).
@@ -55,7 +55,7 @@ use super::certificate::{self, claimed_device_id};
 /// KeyPackage upload).
 pub const CIPHERSUITE: Ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
-/// The Pi's MLS external sender entry: its Ed25519 key and a basic credential
+/// The server's MLS external sender entry: its Ed25519 key and a basic credential
 /// whose identity is the server id. `GetServerInfo` publishes it, and the group
 /// context must list it (Group creation).
 pub fn external_sender(server_id: &str, keys: &ServerKeys) -> ExternalSender {
@@ -93,7 +93,7 @@ pub enum GroupKind {
     Dm {
         /// The two usernames, sorted.
         users: (String, String),
-        /// When the Pi closed it (direct-messages: DM closed on user removal).
+        /// When the server closed it (direct-messages: DM closed on user removal).
         closed_at: Option<std::time::SystemTime>,
     },
 }
@@ -187,7 +187,7 @@ pub struct AcceptedCommit {
 #[derive(Debug, thiserror::Error)]
 pub enum CreateGroupError {
     /// A group exists already (`ALREADY_EXISTS`).
-    #[error("the Pi already holds a group")]
+    #[error("the server already holds a group")]
     AlreadyExists,
     /// The public state is not acceptable (`INVALID_ARGUMENT`).
     #[error("invalid group state: {0}")]
@@ -245,7 +245,7 @@ fn parse_exact<T: openmls::prelude::tls_codec::Deserialize>(bytes: &[u8]) -> Opt
 }
 
 impl GroupState {
-    /// The group `group_id`, if the Pi holds it (a closed DM has no state).
+    /// The group `group_id`, if the server holds it (a closed DM has no state).
     pub fn load(conn: &Connection, group_id: &[u8]) -> Result<Option<Self>, StoreError> {
         let Some(row) = row(conn, group_id)? else {
             return Ok(None);
@@ -313,7 +313,7 @@ impl GroupState {
         tx: &Transaction<'_>,
         caller: &Caller,
         admin_user_id: &str,
-        pi: &ExternalSender,
+        server: &ExternalSender,
         request: &pb::CreateGroupRequest,
         now: std::time::SystemTime,
     ) -> Result<Self, CreateGroupError> {
@@ -323,7 +323,7 @@ impl GroupState {
         let mut state = Self::from_epoch_zero(
             tx,
             caller,
-            pi,
+            server,
             &request.group_id,
             &request.group_info,
             &request.ratchet_tree,
@@ -361,14 +361,14 @@ impl GroupState {
         caller: &Caller,
         peer: &str,
         server_id: &str,
-        pi: &ExternalSender,
+        server: &ExternalSender,
         request: &pb::CreateDmRequest,
         now: std::time::SystemTime,
     ) -> Result<Self, CreateGroupError> {
         let mut state = Self::from_epoch_zero(
             tx,
             caller,
-            pi,
+            server,
             &request.group_id,
             &request.group_info,
             &request.ratchet_tree,
@@ -414,13 +414,13 @@ impl GroupState {
     /// The public state of a new group at epoch 0, not stored.
     ///
     /// Checks: the GroupInfo and tree parse and verify (OpenMLS), `group_id`
-    /// matches and is new, epoch 0, our ciphersuite, the Pi's
+    /// matches and is new, epoch 0, our ciphersuite, the server's
     /// [`external_sender`] is in `external_senders`, and the only member is
     /// `caller`'s device with its registered certificate and MLS key.
     fn from_epoch_zero(
         tx: &Transaction<'_>,
         caller: &Caller,
-        pi: &ExternalSender,
+        server: &ExternalSender,
         group_id: &[u8],
         group_info: &[u8],
         ratchet_tree: &[u8],
@@ -457,8 +457,8 @@ impl GroupState {
         let pi_sender_index = context
             .extensions()
             .external_senders()
-            .and_then(|senders| senders.iter().position(|s| s == pi))
-            .ok_or_else(|| invalid("external_senders does not list the Pi"))?;
+            .and_then(|senders| senders.iter().position(|s| s == server))
+            .ok_or_else(|| invalid("external_senders does not list the server"))?;
         let pi_sender_index =
             u32::try_from(pi_sender_index).map_err(|_| invalid("too many external senders"))?;
 
@@ -521,7 +521,7 @@ impl GroupState {
                 .ok_or_else(|| StoreError::Inconsistent("member leaf without a device".into()))?;
             insert.execute(params![group_id, member.index.u32(), device_id.as_slice()])?;
         }
-        // A leaf that left the tree needs no more Pi Removes.
+        // A leaf that left the tree needs no more server Removes.
         tx.execute(
             "DELETE FROM pi_removes WHERE group_id = ?1
                AND device_id NOT IN (SELECT device_id FROM mls_members WHERE group_id = ?1)",
@@ -550,7 +550,7 @@ impl GroupState {
         self.group.group_context().epoch().as_u64()
     }
 
-    /// Position of the Pi in `external_senders`.
+    /// Position of the server in `external_senders`.
     pub fn pi_sender_index(&self) -> u32 {
         self.pi_sender_index
     }
@@ -601,7 +601,7 @@ impl GroupState {
     }
 
     /// Checks a `COMMIT` envelope's MLS message from the authenticated device
-    /// `caller` (group-membership: Pi validates handshakes without group
+    /// `caller` (group-membership: Server validates handshakes without group
     /// secrets; Commit authority) and, if it passes, merges it into this
     /// in-memory state. Persist it with [`GroupState::save`], or drop the state
     /// if anything else makes the envelope fail.
@@ -718,9 +718,9 @@ impl GroupState {
     }
 
     /// Checks a member's `PROPOSAL` envelope MLS message from the
-    /// authenticated device `caller` and adds it to the Pi's proposal store, so
+    /// authenticated device `caller` and adds it to the server's proposal store, so
     /// a later commit can include it by reference (core-wire-protocol design
-    /// D5: the Pi keeps its own proposal store). Same parsing, epoch and sender
+    /// D5: the server keeps its own proposal store). Same parsing, epoch and sender
     /// checks as [`GroupState::check_commit`]; commit authority applies only
     /// when it is committed. Persist with [`GroupState::save`].
     pub fn check_proposal(
@@ -741,9 +741,9 @@ impl GroupState {
         }
     }
 
-    /// Issues the Pi's MLS external Remove proposal for the member at `leaf`
-    /// in the current epoch, signed with the Pi's external sender key, and
-    /// adds it to the Pi's own proposal store so a member's commit can include
+    /// Issues the server's MLS external Remove proposal for the member at `leaf`
+    /// in the current epoch, signed with the server's external sender key, and
+    /// adds it to the server's own proposal store so a member's commit can include
     /// it by reference (group-membership: Inactive devices are kept out;
     /// core-wire-protocol design D5). Returns the TLS-serialized `MLSMessage`
     /// (a `PublicMessage`) for the `PROPOSAL` envelope. Persist with
@@ -756,7 +756,7 @@ impl GroupState {
         let inconsistent = |what: &str, e: &dyn std::fmt::Debug| {
             StoreError::Inconsistent(format!("issuing an external Remove ({what}): {e:?}"))
         };
-        let signer = PiSigner(keys.external_sender_key());
+        let signer = ServerSigner(keys.external_sender_key());
         let message = ExternalProposal::new_remove::<OpenMlsRustCrypto>(
             LeafNodeIndex::new(leaf),
             self.group.group_id().clone(),
@@ -768,7 +768,7 @@ impl GroupState {
         let bytes = message
             .tls_serialize_detached()
             .map_err(|e| inconsistent("serialize", &e))?;
-        // Run it through the Pi's own PublicGroup, as for a member's proposal.
+        // Run it through the server's own PublicGroup, as for a member's proposal.
         let protocol_message = MlsMessageIn::tls_deserialize_exact(bytes.as_slice())
             .map_err(|e| inconsistent("parse", &e))?
             .try_into_protocol_message()
@@ -924,7 +924,7 @@ impl GroupState {
                 Sender::External(index)
                     if *index == SenderExtensionIndex::new(self.pi_sender_index) =>
                 {
-                    ProposalSender::Pi
+                    ProposalSender::Server
                 }
                 _ => ProposalSender::Other,
             };
@@ -990,7 +990,7 @@ impl GroupState {
     }
 
     /// The registered device an Add's leaf is for, if its certificate checks
-    /// out (group-membership: Device-level membership; the Pi checks it too, so
+    /// out (group-membership: Device-level membership; the server checks it too, so
     /// it never sequences an Add honest members would reject for it).
     fn check_added_leaf(
         &self,
@@ -1098,10 +1098,10 @@ fn leaf_is_device(credential: &Credential, signature_key: &[u8], device: &Device
         && !device.revoked
 }
 
-/// The Pi's external sender key as an OpenMLS signer.
-struct PiSigner<'a>(&'a ed25519_dalek::SigningKey);
+/// The server's external sender key as an OpenMLS signer.
+struct ServerSigner<'a>(&'a ed25519_dalek::SigningKey);
 
-impl Signer for PiSigner<'_> {
+impl Signer for ServerSigner<'_> {
     fn sign(&self, payload: &[u8]) -> Result<Vec<u8>, SignerError> {
         use ed25519_dalek::Signer as _;
         Ok(self.0.sign(payload).to_bytes().to_vec())

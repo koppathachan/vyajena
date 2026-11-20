@@ -1,4 +1,4 @@
-//! pi-runtime: Durable storage.
+//! server-runtime: Durable storage.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -42,11 +42,11 @@ async fn pragma(store: &Store, name: &'static str) -> String {
     }
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn database_uses_wal_full_sync_and_current_schema() {
     let tmp = temp();
-    let store = open(&tmp.path().join("pi.sqlite"));
+    let store = open(&tmp.path().join("server.sqlite"));
 
     assert_eq!(pragma(&store, "journal_mode").await, "wal");
     // 2 = FULL: every commit is fsynced before it returns.
@@ -58,11 +58,11 @@ async fn database_uses_wal_full_sync_and_current_schema() {
     );
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn database_files_have_mode_0600() {
     let tmp = temp();
-    let path = tmp.path().join("data").join("pi.sqlite");
+    let path = tmp.path().join("data").join("server.sqlite");
     let store = open(&path);
     // A write creates the WAL file.
     let written = store
@@ -74,27 +74,27 @@ async fn database_files_have_mode_0600() {
     assert!(written.is_ok(), "{written:?}");
 
     assert_eq!(mode(&path), 0o600);
-    let wal = tmp.path().join("data").join("pi.sqlite-wal");
+    let wal = tmp.path().join("data").join("server.sqlite-wal");
     assert!(wal.exists());
     assert_eq!(mode(&wal), 0o600);
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn existing_file_with_loose_mode_is_tightened() {
     let tmp = temp();
-    let path = tmp.path().join("pi.sqlite");
+    let path = tmp.path().join("server.sqlite");
     fs::write(&path, b"").ok();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).ok();
     let _store = open(&path);
     assert_eq!(mode(&path), 0o600);
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn committed_data_survives_reopening_and_migrations_run_once() {
     let tmp = temp();
-    let path = tmp.path().join("pi.sqlite");
+    let path = tmp.path().join("server.sqlite");
     {
         let store = open(&path);
         let written = store
@@ -127,11 +127,11 @@ async fn committed_data_survives_reopening_and_migrations_run_once() {
     );
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn newer_schema_is_refused() {
     let tmp = temp();
-    let path = tmp.path().join("pi.sqlite");
+    let path = tmp.path().join("server.sqlite");
     {
         let store = open(&path);
         let set = store
@@ -146,12 +146,12 @@ async fn newer_schema_is_refused() {
     );
 }
 
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn jobs_run_one_at_a_time_in_order() {
     // The single writer (design D4/D5): concurrent callers are serialized.
     let tmp = temp();
-    let store = open(&tmp.path().join("pi.sqlite"));
+    let store = open(&tmp.path().join("server.sqlite"));
     let created = store
         .call(|conn| Ok(conn.execute_batch("CREATE TABLE log (n INTEGER) STRICT")?))
         .await;
@@ -188,11 +188,11 @@ async fn jobs_run_one_at_a_time_in_order() {
     assert_eq!(distinct.ok(), Some(50));
 }
 
-// spec: pi-runtime/graceful-stop
+// spec: server-runtime/graceful-stop
 #[tokio::test]
 async fn close_runs_queued_jobs_then_closes_the_database() {
     let tmp = temp();
-    let path = tmp.path().join("pi.sqlite");
+    let path = tmp.path().join("server.sqlite");
     let store = open(&path);
     // Queued before the close, so it commits before the database closes.
     let write = {
@@ -215,7 +215,7 @@ async fn close_runs_queued_jobs_then_closes_the_database() {
         store.call(|_| Ok(())).await,
         Err(StoreError::Closed)
     ));
-    assert!(!tmp.path().join("pi.sqlite-wal").exists());
+    assert!(!tmp.path().join("server.sqlite-wal").exists());
 
     let store = open(&path);
     let value = store

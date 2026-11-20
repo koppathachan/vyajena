@@ -3,7 +3,7 @@
 // an unread mark and the count of unseen mentions of this user.
 //
 // app-ui: Create affordance (change `create-affordance`). A `+` button opens a
-// menu to start a new conversation: New DM (everyone, when the Pi offers DMs)
+// menu to start a new conversation: New DM (everyone, when the server offers DMs)
 // and New group (admin devices only).
 import 'dart:async';
 
@@ -43,7 +43,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   late final UserNames _names = UserNames(widget.core);
   List<ChatSummary> _chats = const [];
 
-  /// Whether the Pi offers DMs: New DM is offered only then (app-ui: Create
+  /// Whether the server offers DMs: New DM is offered only then (app-ui: Create
   /// affordance).
   bool _dms = false;
   StreamSubscription<CoreEvent>? _subscription;
@@ -108,7 +108,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   /// The `+` menu: the actions this device can start (app-ui: Create
-  /// affordance). A non-admin on a Pi without DMs has none, so no button.
+  /// affordance). A non-admin on a server without DMs has none, so no button.
   void _showNewMenu() {
     showModalBottomSheet<void>(
       context: context,
@@ -189,7 +189,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   /// New group: create the group through the core's `createGroup` (admin
-  /// devices only; the Pi rejects a non-admin's group RPCs anyway).
+  /// devices only; the server rejects a non-admin's group RPCs anyway).
   Future<void> _newGroup() async {
     try {
       await widget.core.createGroup();

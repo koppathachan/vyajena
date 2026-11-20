@@ -1,0 +1,30 @@
+# rathole on the server (relay design D5), rendered by deploy/relay/render.sh with
+# the secrets from ~/.vyajena-relay/ and installed by deploy/server/deploy.sh as
+# /etc/vyajena/tunnel.toml (0600 root, passed to the service as a credential).
+# The server dials out; nothing listens at home.
+
+[client]
+remote_addr = "@RELAY_IP@:@TUNNEL_PORT@"
+heartbeat_timeout = 40
+retry_interval = 1
+
+[client.transport]
+type = "noise"
+
+[client.transport.noise]
+pattern = "Noise_NK_25519_ChaChaPoly_BLAKE2s"
+# Pinned: the server attaches only to a relay that proves this key.
+remote_public_key = "@NOISE_PUBLIC_KEY@"
+
+[client.services.vyajena]
+type = "tcp"
+token = "@TOKEN@"
+local_addr = "127.0.0.1:@SERVER_PORT@"
+nodelay = true
+
+# The review server (review-server design D1), its own token.
+[client.services.review]
+type = "tcp"
+token = "@REVIEW_TOKEN@"
+local_addr = "127.0.0.1:@REVIEW_SERVER_PORT@"
+nodelay = true

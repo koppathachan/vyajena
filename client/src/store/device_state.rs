@@ -13,9 +13,9 @@ use crate::events::DeviceId;
 /// The account this device registered or was linked into.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountRow {
-    /// Where the Pi is reached (the relay), from the invite or link approval.
+    /// Where the server is reached (the relay), from the invite or link approval.
     pub relay_address: String,
-    /// SHA-256 of the Pi's TLS SubjectPublicKeyInfo.
+    /// SHA-256 of the server's TLS SubjectPublicKeyInfo.
     pub tls_pin: [u8; 32],
     /// This device's user: username.
     pub username: String,

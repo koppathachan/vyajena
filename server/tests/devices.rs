@@ -5,16 +5,16 @@
 mod support;
 
 use support::clients::TestDevice;
-use support::harness::{TestPi, authed};
+use support::harness::{TestServer, authed};
 use support::{Check, bootstrap_admin, invite_user, link_device, pb};
 use tonic::Code;
 
 // spec: device-identity/device-linking
 #[tokio::test]
 async fn linked_phone_authenticates_and_gets_its_certificate() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, laptop) = invite_user(&conn, &admin, "alice").await;
 
     let phone = link_device(&conn, &alice, &laptop).await;
@@ -31,12 +31,12 @@ async fn linked_phone_authenticates_and_gets_its_certificate() {
 // spec: device-identity/device-linking
 #[tokio::test]
 async fn linking_without_the_identity_key_is_rejected() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (_alice, laptop) = invite_user(&conn, &admin, "alice").await;
 
-    // A certificate for alice@pi signed by a key that is not Alice's identity.
+    // A certificate for alice@chat signed by a key that is not Alice's identity.
     let impostor = TestDevice::new("alice", &support::clients::new_key());
     let result = conn
         .devices()
@@ -55,9 +55,9 @@ async fn linking_without_the_identity_key_is_rejected() {
 // spec: device-identity/device-linking
 #[tokio::test]
 async fn linking_a_device_for_another_user_is_rejected() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (_alice, laptop) = invite_user(&conn, &admin, "alice").await;
     let (bob, _) = invite_user(&conn, &admin, "bob").await;
     // A genuine certificate of Bob's, uploaded by Alice's device.
@@ -77,9 +77,9 @@ async fn linking_a_device_for_another_user_is_rejected() {
 // spec: device-identity/device-linking
 #[tokio::test]
 async fn linking_the_same_device_twice_is_already_exists() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, laptop) = invite_user(&conn, &admin, "alice").await;
     let phone = link_device(&conn, &alice, &laptop).await;
     let again = conn
@@ -97,12 +97,12 @@ async fn linking_the_same_device_twice_is_already_exists() {
 // spec: device-identity/device-revocation
 #[tokio::test]
 async fn lost_phone_is_revoked_from_the_tablet() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, tablet) = invite_user(&conn, &admin, "alice").await;
     let phone = link_device(&conn, &alice, &tablet).await;
-    let mut revocations = pi.state.revocations.subscribe();
+    let mut revocations = server.state.revocations.subscribe();
 
     conn.devices()
         .revoke_device(authed(
@@ -137,9 +137,9 @@ async fn lost_phone_is_revoked_from_the_tablet() {
 // spec: device-identity/device-revocation
 #[tokio::test]
 async fn devices_of_other_users_cannot_be_revoked() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (_, alice) = invite_user(&conn, &admin, "alice").await;
     let (_, bob) = invite_user(&conn, &admin, "bob").await;
     let result = conn
@@ -158,9 +158,10 @@ async fn devices_of_other_users_cannot_be_revoked() {
         .check("Bob is unaffected");
 }
 
-async fn stored_push_token(pi: &TestPi, device: &TestDevice) -> Option<pb::PushToken> {
+async fn stored_push_token(server: &TestServer, device: &TestDevice) -> Option<pb::PushToken> {
     let id = device.device_id;
-    pi.state
+    server
+        .state
         .store
         .call(move |db| server::store::records::push_token(db, &id))
         .await
@@ -174,9 +175,9 @@ async fn stored_push_token(pi: &TestPi, device: &TestDevice) -> Option<pb::PushT
 // spec: device-identity/push-token-registration
 #[tokio::test]
 async fn new_fcm_token_replaces_the_old_one_and_can_be_cleared() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let token = admin.token().to_owned();
     let update = |push_token: Option<pb::PushToken>| {
         let mut client = conn.devices();
@@ -189,18 +190,21 @@ async fn new_fcm_token_replaces_the_old_one_and_can_be_cleared() {
     };
 
     update(Some(fcm("first"))).await.check("set");
-    assert_eq!(stored_push_token(&pi, &admin).await, Some(fcm("first")));
+    assert_eq!(stored_push_token(&server, &admin).await, Some(fcm("first")));
     update(Some(fcm("second"))).await.check("replace");
-    assert_eq!(stored_push_token(&pi, &admin).await, Some(fcm("second")));
+    assert_eq!(
+        stored_push_token(&server, &admin).await,
+        Some(fcm("second"))
+    );
     let apns = pb::PushToken {
         platform: pb::PushPlatform::Apns as i32,
         // 64 hex characters: APNs tokens go into the request path.
         token: "ab".repeat(32),
     };
     update(Some(apns.clone())).await.check("APNs");
-    assert_eq!(stored_push_token(&pi, &admin).await, Some(apns));
+    assert_eq!(stored_push_token(&server, &admin).await, Some(apns));
     update(None).await.check("clear");
-    assert_eq!(stored_push_token(&pi, &admin).await, None);
+    assert_eq!(stored_push_token(&server, &admin).await, None);
 
     let unspecified = update(Some(pb::PushToken {
         platform: pb::PushPlatform::Unspecified as i32,
@@ -216,9 +220,9 @@ async fn new_fcm_token_replaces_the_old_one_and_can_be_cleared() {
 // spec: device-identity/admin-awareness
 #[tokio::test]
 async fn admins_first_device_is_told_it_is_the_admin() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (admin, device) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (admin, device) = bootstrap_admin(&server, &conn).await;
     let me = conn
         .devices()
         .get_self(authed(device.token(), pb::GetSelfRequest {}))
@@ -233,9 +237,9 @@ async fn admins_first_device_is_told_it_is_the_admin() {
 // spec: device-identity/admin-awareness
 #[tokio::test]
 async fn ordinary_member_is_not_the_admin() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (_, alice) = invite_user(&conn, &admin, "alice").await;
     let me = conn
         .devices()

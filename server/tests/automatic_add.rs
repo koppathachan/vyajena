@@ -1,4 +1,4 @@
-//! group-membership: Automatic add of new users, the Pi's side: who gets a
+//! group-membership: Automatic add of new users, the server's side: who gets a
 //! `JoinNotice`, when, and until when (flutter-app task 4.4). The admin's
 //! device adding on the notice is tested in the core (client/tests).
 
@@ -98,7 +98,7 @@ async fn bob_joins_while_the_admin_is_online() {
 async fn admin_offline_when_bob_joins_hears_on_connect() {
     let mut w = world().await;
     w.admin_stream = offline(&w.conn, &w.admin).await;
-    wait_offline(&w.pi, &w.admin).await;
+    wait_offline(&w.server, &w.admin).await;
     let (_, phone) = carol_registers(&w).await;
     phone.upload_key_packages(&w.conn, 10).await;
 
@@ -189,7 +189,7 @@ async fn a_reset_user_joining_again_is_announced() {
     new_phone.authenticate(&w.conn).await;
     new_phone.upload_key_packages(&w.conn, 10).await;
 
-    // The Pi announces it; the admin's device checks the changed key.
+    // The server announces it; the admin's device checks the changed key.
     names(&w.admin_stream.join_notice().await, &new_phone);
 }
 
@@ -205,7 +205,7 @@ async fn two_admin_devices_race_and_the_loser_is_stale() {
     names(&w.admin_stream.join_notice().await, &phone);
     names(&tablet_stream.join_notice().await, &phone);
 
-    // Both commit the Add in the same epoch; the Pi accepts one.
+    // Both commit the Add in the same epoch; the server accepts one.
     let mut carol_stream = Stream::open(&w.conn, &phone).await;
     let epoch = w.admin.epoch();
     let first = fetch_device(&w, &w.admin, &carol, &phone).await;

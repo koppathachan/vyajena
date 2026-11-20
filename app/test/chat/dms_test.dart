@@ -15,13 +15,13 @@ FakeCoreService aliceInGroup() => FakeCoreService(storedUser: alice)
     MemberDevice(user: bob, device: '03'),
   ]
   ..displayNames = {
-    'alice@pi': 'Ali (alice)',
-    'bob@pi': 'Bobby (bob)',
-    'akhil@pi': 'akhil',
+    'alice@chat': 'Ali (alice)',
+    'bob@chat': 'Bobby (bob)',
+    'akhil@chat': 'akhil',
   }
   ..profiles = {
-    'alice@pi': const ProfileInfo(displayName: 'Ali'),
-    'bob@pi': const ProfileInfo(displayName: 'Bobby'),
+    'alice@chat': const ProfileInfo(displayName: 'Ali'),
+    'bob@chat': const ProfileInfo(displayName: 'Bobby'),
   };
 
 /// The DM with Bob, as chat 1.
@@ -114,7 +114,7 @@ void main() {
   });
 
   // spec: app-ui/open-a-dm
-  testWidgets('Old Pi: no "Message" action', (tester) async {
+  testWidgets('Old server: no "Message" action', (tester) async {
     final core = aliceInGroup()..dms = false;
     await openApp(tester, core);
     await menu(tester, 'Members');

@@ -1,4 +1,4 @@
-// app-ui: Admin screens. Remove a user from the group and the Pi.
+// app-ui: Admin screens. Remove a user from the group and the server.
 import 'package:flutter/material.dart';
 
 import '../app/errors.dart';

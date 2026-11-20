@@ -14,7 +14,7 @@ is one tap away.
   for every device in the group, instead of only when the user already has a DM.
   The group's chat opens on top of the list.
 - A `+` **FloatingActionButton** on the chat list starts a new conversation:
-  - **New DM** (every device, only when the Pi offers DMs via `dmsAvailable()`):
+  - **New DM** (every device, only when the server offers DMs via `dmsAvailable()`):
     pick another member, then open the DM through the core's `openDm` and show it
     at once — the same core path the members-list "Message" action already uses.
   - **New group** (admin devices only, via `isAdmin()`): create the group through
@@ -48,4 +48,4 @@ No wire-protocol, proto, or core change: the core already exposes `chats`,
 - New widget tests in `app/test/` tagged `// spec: app-ui/<slug>`.
 - Open decisions / owner decisions this records: the home is always the chat list;
   groups are admin-only to create (`+` "New group" gated by `isAdmin()`).
-- No `.proto` files touched; no core, Pi, or relay change.
+- No `.proto` files touched; no core, server, or relay change.

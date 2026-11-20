@@ -8,7 +8,7 @@ mentions and replies.
 ## What Changes
 
 - **A DM is its own MLS group** with all devices of exactly two users,
-  next to the one main group. Same encryption, same Pi, same delivery
+  next to the one main group. Same encryption, same server, same delivery
   rules.
 - **Who:** any member may open a DM with any other member, with no approval
   (owner, 2026-11-17).
@@ -16,14 +16,14 @@ mentions and replies.
   not in them, and the admin cannot see, read or close them. Removing a user
   from the server closes every DM of that user (owner, 2026-11-17). The
   other side keeps its history, read-only.
-- **Pi metadata:** the Pi knows which two users share a DM, because it
+- **Server metadata:** the server knows which two users share a DM, because it
   routes it. It never sees the text (owner accepted, 2026-11-17).
 - **No block** in this change (owner, 2026-11-17).
 - **Protocol version 2:**
   - An old (version 1) app would replace its main group with any second
     group it is welcomed to (design D7), so DMs only reach devices that
     speak version 2.
-  - A version 2 core lists the DM extension in its KeyPackages. The Pi
+  - A version 2 core lists the DM extension in its KeyPackages. The server
     hands out only such KeyPackages for a DM, so a version 1 device is never
     put into one.
   - A device that upgrades uploads new KeyPackages and is added to its DMs
@@ -48,7 +48,7 @@ mentions and replies.
 ## Open decisions resolved
 
 - Who may DM whom: any member, any member (owner, 2026-11-17).
-- Pi knowing DM pairs: accepted (owner, 2026-11-17).
+- Server knowing DM pairs: accepted (owner, 2026-11-17).
 - Admin power over DMs: none; removing a user closes their DMs (owner,
   2026-11-17).
 - Blocking: not in this change (owner, 2026-11-17).
@@ -78,12 +78,12 @@ mentions and replies.
 ### New Capabilities
 
 - `direct-messages`: opening a DM, who is in it, closing it, and how the
-  core and the Pi keep several groups.
+  core and the server keep several groups.
 
 ### Modified Capabilities
 
 - `group-membership`: group creation, commit authority, membership state
-  on the Pi, automatic add and re-add now per group.
+  on the server, automatic add and re-add now per group.
 - `wire-transport`: protocol version 2 next to 1.
 - `key-directory`: KeyPackage fetch for a DM returns only KeyPackages
   that list the DM extension.
@@ -91,7 +91,7 @@ mentions and replies.
 
 ## Impact
 
-- **Pi (`server/`):**
+- **Server (`server/`):**
   - A store migration: many groups and their kind; the DM pair; members,
     public state, commit log and queues keyed by group; a DM-capable flag
     per KeyPackage.
@@ -102,6 +102,6 @@ mentions and replies.
   - The engine handles several groups.
   - Per-chat API and events.
 - **Bridge and app:** chat ids everywhere; chat list and DM screens.
-- **Ops:** Pi upgrade before the app update. The Pi upgrade is backwards
+- **Ops:** server upgrade before the app update. The server upgrade is backwards
   compatible (version 1 apps keep working, in the main group only).
 - **Depends on:** `mentions` (PR #4) merged first. The app code builds on it.

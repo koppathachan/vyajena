@@ -1,8 +1,8 @@
 ## Why
 
-Releases are manual today (change `app-release`, `deploy/pi/build.sh`): the
+Releases are manual today (change `app-release`, `deploy/server/build.sh`): the
 owner builds the Android bundle and the iOS archive on the Mac, uploads them by
-hand, and builds the Pi server in a local container. That is slow, depends on
+hand, and builds the server in a local container. That is slow, depends on
 one Mac's state, and leaves no public record of what was built from which
 commit. The repo is public (koppathachan/vyajena), so release builds can come
 from GitHub Actions, where anyone can see the source, the workflow and the
@@ -15,11 +15,11 @@ that alone holds the secrets.
 
 ## What Changes
 
-- **Server release:** pushing tag `server-v<version>` builds the arm64 Pi
-  server and rathole with `deploy/pi/build.sh` on an arm64 runner, and, after
+- **Server release:** pushing tag `server-v<version>` builds the arm64 server
+  Server and rathole with `deploy/server/build.sh` on an arm64 runner, and, after
   the owner approves, publishes them as GitHub Release files with
   `SHA256SUMS` and a build provenance attestation. The files hold no config,
-  pin, invite or key; `deploy/pi/deploy.sh` fills those in on the Pi, as today.
+  pin, invite or key; `deploy/server/deploy.sh` fills those in on the server, as today.
 - **App release:** pushing tag `app-v<name>+<build>` builds, after the owner
   approves, the signed Android App Bundle and uploads it to the Play
   **internal** track, and the signed IPA on a macOS runner and uploads it to
@@ -38,7 +38,7 @@ that alone holds the secrets.
   `pull_request` trigger and nothing uses `pull_request_target`. A new
   `release-lint` workflow checks the release workflows and scripts on pull
   requests, with read-only permissions and no secrets.
-- **Pi deploys stay manual** (`deploy/pi/`). Letting `deploy.sh` fetch and
+- **Server deploys stay manual** (`deploy/server/`). Letting `deploy.sh` fetch and
   verify a release file is an open item in `design.md`, not built here.
 - `docs/ci-release.md`: the owner's step-by-step (secrets, roles, environment,
   cutting a release, undoing a leak).
@@ -76,4 +76,4 @@ given to CI; this change contradicts it (design D2, Q1).
   Distribution certificate and an App Store profile, an App Store Connect API
   key (`docs/ci-release.md`).
 - Unchanged: `ci.yml`, the manual release path (`app/store/*.sh`,
-  `deploy/pi/build.sh`), the Pi and the relay.
+  `deploy/server/build.sh`), the server and the relay.

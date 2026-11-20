@@ -28,7 +28,7 @@ pub struct OutgoingMessage<'a> {
     pub created_at: SystemTime,
 }
 
-/// A message received from the Pi and decrypted.
+/// A message received from the server and decrypted.
 #[derive(Debug, Clone, Copy)]
 pub struct IncomingMessage<'a> {
     /// Its place in the group's sequence.
@@ -41,7 +41,7 @@ pub struct IncomingMessage<'a> {
     pub sender_device: DeviceId,
     /// The decrypted, encoded `Content`.
     pub content: &'a [u8],
-    /// When the Pi accepted it.
+    /// When the server accepted it.
     pub accepted_at: SystemTime,
     /// Now, on the local clock.
     pub received_at: SystemTime,
@@ -78,9 +78,9 @@ pub struct StoredMessage {
     pub content: Vec<u8>,
     /// When this device stored it (local clock).
     pub created_at: SystemTime,
-    /// Its place in the group's sequence, once the Pi accepted it.
+    /// Its place in the group's sequence, once the server accepted it.
     pub server_seq: Option<u64>,
-    /// When the Pi accepted it.
+    /// When the server accepted it.
     pub accepted_at: Option<SystemTime>,
     /// Own messages: where it stands. `None` for received messages.
     pub status: Option<SendStatus>,
@@ -241,7 +241,7 @@ impl Store {
         )
     }
 
-    /// Drops the ciphertext of an own message the Pi rejected with
+    /// Drops the ciphertext of an own message the server rejected with
     /// `STALE_EPOCH` (which leaves no dedup record), so it is encrypted again
     /// in the new epoch with the same msg_id (client-runtime: Send status).
     pub fn clear_sent(&self, id: MessageId) -> Result<(), StoreError> {
@@ -383,7 +383,7 @@ impl Store {
 
     /// The newest `limit` chat messages (Text and bodies this version does
     /// not know; not profiles or group settings) in display order: by
-    /// `server_seq`, then own messages the Pi has not accepted, in the order
+    /// `server_seq`, then own messages the server has not accepted, in the order
     /// they were written.
     pub fn history(&self, limit: usize) -> Result<Vec<StoredMessage>, StoreError> {
         self.history_in(super::MAIN_CHAT, limit)

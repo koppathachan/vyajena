@@ -2,7 +2,7 @@
 //! design D5): a short prefix naming the kind, then the payload in base64url
 //! without padding, as `client::identity::payload::to_text` writes it.
 //!
-//! Text without a prefix is accepted too: that is how the Pi prints its
+//! Text without a prefix is accepted too: that is how the server prints its
 //! bootstrap invite, which the admin pastes on their first device. A payload
 //! of another kind is refused by its prefix, so pasting a link approval into
 //! the invite box says so instead of failing to decode.

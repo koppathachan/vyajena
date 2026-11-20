@@ -129,13 +129,13 @@ fail the run with nothing built or uploaded. `release-guard.sh` enforces this.
 - **THEN** the guard passes
 
 ### Requirement: Server release files
-On tag `server-v<version>`, `release-server` SHALL build the Pi server and
-rathole for linux/arm64 with `deploy/pi/build.sh`, and, after approval, publish
+On tag `server-v<version>`, `release-server` SHALL build the server and
+rathole for linux/arm64 with `deploy/server/build.sh`, and, after approval, publish
 a GitHub Release named after the tag with exactly three files:
 `vyajena-server`, `rathole` and `SHA256SUMS`, plus a build provenance
 attestation for both binaries. The files SHALL hold no configuration, pin,
-invite, key or address of the owner's Pi; those are written on the Pi by
-`deploy/pi/deploy.sh`. The workflow enforces the file list; the owner verifies
+invite, key or address of the owner's server; those are written on the server by
+`deploy/server/deploy.sh`. The workflow enforces the file list; the owner verifies
 the attestation before deploying.
 
 #### Scenario: Server release published
@@ -201,14 +201,14 @@ checks that dry-run jobs name no environment and no secret.
 - **THEN** `android-dry-run` builds and checks a throwaway-signed bundle,
   `ios-dry-run` builds and checks an unsigned archive, and nothing is uploaded
 
-### Requirement: Pi deploys stay manual
-No workflow SHALL deploy to, connect to or hold credentials for the Pi or the
+### Requirement: server deploys stay manual
+No workflow SHALL deploy to, connect to or hold credentials for the server or the
 relay: no SSH key, relay secret, invite or pin is a secret of any environment.
-The owner deploys with `deploy/pi/deploy.sh`, as today.
+The owner deploys with `deploy/server/deploy.sh`, as today.
 `release-workflows-check.sh` enforces that no workflow runs `ssh`, `scp` or
-`deploy/pi/deploy.sh`.
+`deploy/server/deploy.sh`.
 
-#### Scenario: Server release does not touch the Pi
+#### Scenario: Server release does not touch the server
 - **WHEN** GitHub Release `server-v0.2.0` is published
-- **THEN** the Pi still runs its previous build until the owner runs
-  `deploy/pi/deploy.sh`
+- **THEN** the server still runs its previous build until the owner runs
+  `deploy/server/deploy.sh`

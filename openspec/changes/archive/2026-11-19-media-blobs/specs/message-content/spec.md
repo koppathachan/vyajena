@@ -4,7 +4,7 @@
 The plaintext of every MLS application message SHALL be a serialized
 `vyajena.v1.Content` message: a client send time and exactly one of `Text`,
 `GroupSettings`, `Profile` or `Image`. Only the Rust core SHALL serialize or
-parse it; the Pi SHALL never see it.
+parse it; the server SHALL never see it.
 
 #### Scenario: Text message
 - **WHEN** a user sends "hello"
@@ -30,7 +30,7 @@ pixel `width` and `height`, a `thumbhash` placeholder of at most
 optional `caption` with `caption_mentions`. It SHALL reference exactly one
 static image; there SHALL be no albums, animation or video. The `blob_key` SHALL
 travel only inside the encrypted `Content` and SHALL never appear in an
-`Envelope` or any RPC, so the Pi and the relay never learn it. A client built
+`Envelope` or any RPC, so the server and the relay never learn it. A client built
 before `Image` SHALL show the unknown-body placeholder (Inner content format).
 The client enforces this.
 
@@ -64,11 +64,11 @@ enforces this.
 
 ### Requirement: Image messages stay encrypted
 An image reference and its caption SHALL travel only inside the encrypted
-`Content`; the blob the Pi stores SHALL be ciphertext with no key. The Pi SHALL
+`Content`; the blob the server stores SHALL be ciphertext with no key. The server SHALL
 send the same wake ping for an image message as for any other, with the one
-fixed text "New message". The client and the Pi enforce this.
+fixed text "New message". The client and the server enforce this.
 
 #### Scenario: Image while Bob is offline
 - **WHEN** Alice sends an image while Bob's phone has no open stream
-- **THEN** the Pi queues one `APPLICATION` envelope and sends Bob's phone one
+- **THEN** the server queues one `APPLICATION` envelope and sends Bob's phone one
   wake ping with the text "New message", the same as for a plain message

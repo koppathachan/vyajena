@@ -7,7 +7,7 @@ use bridge::api::error::CoreErrorKind;
 use bridge::api::types::{ChatBody, ChatKindInfo, ChatMessage, CoreEvent, SendState};
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 async fn wait_text(device: &mut Device, text: &str) -> ChatMessage {
     let event = device
@@ -34,8 +34,8 @@ async fn wait_accepted(device: &mut Device, id: i64) {
 // spec: app-ui/open-a-dm
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_opens_a_dm_with_bob_through_the_bridge() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice
@@ -82,8 +82,8 @@ async fn alice_opens_a_dm_with_bob_through_the_bridge() {
 // spec: app-ui/read-mark
 #[tokio::test(flavor = "multi_thread")]
 async fn the_read_mark_is_the_newest_read_message() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice

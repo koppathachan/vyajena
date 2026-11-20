@@ -2,7 +2,7 @@
 //! design D2–D4). The checks a `Keys.RequestReadd` must pass, and the
 //! per-device limit on how often a device may ask.
 //!
-//! The limit is kept in memory: it only stops a commit loop, so a Pi restart
+//! The limit is kept in memory: it only stops a commit loop, so a server restart
 //! that forgets it is harmless, and no schema change blocks a rollback.
 
 use std::collections::HashMap;

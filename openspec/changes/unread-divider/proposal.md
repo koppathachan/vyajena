@@ -24,7 +24,7 @@ time) and counts unread messages from it. Nothing on the wire changes.
 - **Expose the read mark:** the core gains one read-only accessor,
   `chat_read_mark(chat_id)`, returning the stored `read_up_to` (0 if the chat
   was never read). This is the only new bridge surface. No change to the
-  protocol, the Pi, or any `.proto` file.
+  protocol, the server, or any `.proto` file.
 - The behaviour is identical for the main group and DMs (both use
   `chat_reads`).
 - **Out of scope:** a per-message "seen by" state, unread counts on the app

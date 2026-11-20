@@ -1,7 +1,7 @@
-//! The vyajena2 Pi server: the authority for routing, ordering and membership of
+//! The vyajena2 server: the authority for routing, ordering and membership of
 //! one end-to-end encrypted group. It sees ciphertext only.
 //!
-//! One folder per feature (pi-server-core design D1). Services talk to each
+//! One folder per feature (server-core design D1). Services talk to each
 //! other only through [`store`], [`membership`] and [`auth`], so any of them can
 //! later move into its own binary. [`runtime`] starts the server: config, keys,
 //! storage, the bootstrap invite and the TLS listener.

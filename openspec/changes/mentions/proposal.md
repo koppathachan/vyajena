@@ -19,8 +19,8 @@ The owner put mentions and replies first in the next block of work
   that never had the original still shows who and what was replied to.
   Swipe a message right, or long-press it, to reply; the quote shows above
   the reply, and tapping it jumps to the original when this device has it.
-- **Nothing new for the Pi:** everything rides inside the encrypted
-  `Content`. The Pi, the relay and Apple/Google learn nothing new, and the
+- **Nothing new for the server:** everything rides inside the encrypted
+  `Content`. The server, the relay and Apple/Google learn nothing new, and the
   push text stays exactly "New message" (push invariant); a mention never
   changes it.
 - **Old clients:** new fields are unknown fields to them; they show the text,

@@ -1,4 +1,4 @@
-//! device-identity: Invites. The Pi logs an invite revoke like an invite
+//! device-identity: Invites. The server logs an invite revoke like an invite
 //! create: the kind of event and the username, never the code (qa-fixes D8).
 //! This binary installs a global log capture, so it holds one test.
 
@@ -7,7 +7,7 @@ mod support;
 use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use support::harness::{TestPi, authed};
+use support::harness::{TestServer, authed};
 use support::{Check, bootstrap_admin, pb};
 
 #[derive(Clone, Default)]
@@ -53,9 +53,9 @@ async fn revoking_an_invite_is_logged_without_the_code() {
         .finish();
     tracing::subscriber::set_global_default(subscriber).check("log capture");
 
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let invite = conn
         .admin()
         .create_invite(authed(
