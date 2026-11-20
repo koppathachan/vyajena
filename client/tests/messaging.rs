@@ -224,8 +224,10 @@ async fn the_lobby_name_is_fixed_whoever_sends_group_settings() {
     wait_accepted(&mut admin, id).await;
     let id = bob.client.send_text("and from bob").check("send");
     wait_accepted(&mut bob, id).await;
-    for device in [&mut alice, &mut admin, &mut bob] {
+    for device in [&mut alice, &mut admin] {
         wait_text(device, "and from bob").await;
+    }
+    for device in [&alice, &admin, &bob] {
         let chats = device.client.chats().check("chats");
         assert_eq!(chats[0].kind, client::ChatKind::Lobby);
     }

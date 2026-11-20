@@ -99,7 +99,7 @@ async fn a_linked_tablet_learns_the_group_name_and_profiles() {
     let _ = admin.sees_within_quiet(|_| false).await;
     let seen = (admin.events().len(), phone.events().len());
 
-    let mut tablet = link_tablet(&phone).await;
+    let tablet = link_tablet(&phone).await;
     learns_the_names(&tablet).await;
     // Re-sends of equal values change nothing on the other devices.
     let _ = admin.sees_within_quiet(|_| false).await;
