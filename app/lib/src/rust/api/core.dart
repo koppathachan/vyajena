@@ -88,6 +88,10 @@ abstract class Core implements RustOpaqueInterface {
   /// The group's name, as an admin device last set it.
   Future<String?> groupName();
 
+  /// Whether any own message is still sending (client-runtime: Unsent messages
+  /// query). The app asks it when it goes to the background.
+  Future<bool> hasUnsent();
+
   /// The newest `limit` messages, oldest first.
   Future<List<ChatMessage>> history({required int limit});
 

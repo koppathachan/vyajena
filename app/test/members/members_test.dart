@@ -12,7 +12,10 @@ void main() {
     tester,
   ) async {
     final core = FakeCoreService(storedUser: alice)
-      ..displayNames = {'alice@chat': 'Ali (alice)', 'akhil@chat': 'Akhil (akhil)'}
+      ..displayNames = {
+        'alice@chat': 'Ali (alice)',
+        'akhil@chat': 'Akhil (akhil)',
+      }
       ..memberDevices = const [
         MemberDevice(user: akhil, device: '01'),
         MemberDevice(user: alice, device: '02'),

@@ -1458,6 +1458,13 @@ impl Client {
         Ok(id)
     }
 
+    /// Whether any own message is still sending: stored here, not yet accepted
+    /// or failed by the server (client-runtime: Unsent messages query). The app
+    /// asks it when it goes to the background, to finish sending first.
+    pub fn has_unsent(&self) -> Result<bool, ClientError> {
+        Ok(!self.shared.store.outgoing_in_flight()?.is_empty())
+    }
+
     /// The newest `limit` chat messages, sent and received, oldest first:
     /// by `server_seq`, then own messages still sending or failed.
     pub fn history(&self, limit: usize) -> Result<Vec<Message>, ClientError> {
