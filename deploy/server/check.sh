@@ -74,7 +74,8 @@ remote_checks() {
     for want in "User=$user" NoNewPrivileges=yes ProtectSystem=strict ProtectHome=yes \
       PrivateTmp=yes PrivateDevices=yes CapabilityBoundingSet= AmbientCapabilities= \
       "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX" Restart=on-failure \
-      "StateDirectory=${dir#/var/lib/}" UMask=0077 KillSignal=15; do
+      "StateDirectory=${dir#/var/lib/}" UMask=0077 KillSignal=15 \
+      MemoryHigh=402653184 MemoryMax=536870912 TasksMax=256; do
       prop="${want%%=*}"
       got="$(systemctl show -p "$prop" --value "$unit")"
       if [ "$prop=$got" = "$want" ]; then ok "${pfx}sandbox $prop"; else fail "${pfx}sandbox $prop" "is '$got', want '${want#*=}'"; fi

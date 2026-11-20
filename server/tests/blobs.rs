@@ -13,7 +13,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use protocol::blob_store::{BLOB_TTL, MAX_BLOB_BYTES};
+use protocol::blob_store::{
+    BLOB_TTL, MAX_BLOB_BYTES, MAX_BLOB_STORE_BYTES, MAX_UPLOADS_PER_DEVICE_PER_HOUR,
+};
 use server::blobs::{BackendError, BlobId, BlobStore};
 use support::clients::TestDevice;
 use support::harness::{Blobs, TestServer, authed};
@@ -36,7 +38,7 @@ async fn filesystem() -> World {
     world_on(TestServer::start_with_blobs(Blobs::Filesystem).await).await
 }
 
-/// Session tokens last an hour: after the clock moves further, the devices
+/// Session tokens last six hours: after the clock moves further, the devices
 /// sign in again.
 async fn sign_in_again(w: &mut World) {
     for device in [&mut w.admin, &mut w.laptop, &mut w.phone] {
@@ -565,4 +567,138 @@ async fn a_drive_that_is_pulled_later_stops_the_blobs_and_never_the_text() {
         "nothing was written to the main storage"
     );
     assert_messaging_works(&mut w).await;
+}
+
+// --- upload-limits (change `upload-limits`) ------------------------------------
+
+/// Records a blob row for `device` without any bytes behind it: the limits read
+/// only the metadata.
+async fn seed_row(w: &World, device: &[u8], n: u32, size: i64, age_ms: i64) {
+    let now_ms = i64::try_from(
+        w.server
+            .state
+            .clock
+            .now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .check("time")
+            .as_millis(),
+    )
+    .check("ms");
+    let device = device.to_vec();
+    let mut id = vec![0u8; 16];
+    id[..4].copy_from_slice(&n.to_be_bytes());
+    w.server
+        .state
+        .store
+        .call(move |conn| {
+            Ok(conn.execute(
+                "INSERT INTO blobs (blob_id, group_id, uploader_device_id, size, sha256, uploaded_at, expires_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    id,
+                    GROUP_ID,
+                    device,
+                    size,
+                    vec![7u8; 32],
+                    now_ms - age_ms,
+                    now_ms - age_ms + 7 * 24 * 3_600_000
+                ],
+            )?)
+        })
+        .await
+        .check("seed a blob row");
+}
+
+// spec: blob-store/upload-limits
+#[tokio::test]
+async fn a_full_store_refuses_new_uploads_and_a_retry_still_works() {
+    let w = filesystem().await;
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(1000))
+        .await
+        .check("first upload");
+    // The store is one byte short of full for a 1000-byte blob.
+    let room = i64::try_from(MAX_BLOB_STORE_BYTES).check("cap") - 1000 - 999;
+    seed_row(&w, &w.phone.device_id, 1, room, 0).await;
+    let refused = upload(&w, &w.laptop, GROUP_ID, &blob_id(2), &ciphertext(1000)).await;
+    assert_eq!(
+        refused.err().map(|s| s.code()),
+        Some(Code::ResourceExhausted)
+    );
+    assert_eq!(stored(&w.server), vec![hex(&blob_id(1))], "nothing stored");
+    // An identical re-upload is not a new blob: same answer, no limit.
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(1000))
+        .await
+        .check("idempotent retry");
+    // A smaller blob that fits is accepted.
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(3), &ciphertext(900))
+        .await
+        .check("a blob that fits");
+}
+
+// spec: blob-store/upload-limits
+#[tokio::test]
+async fn expired_blobs_free_room_in_the_store() {
+    let w = filesystem().await;
+    // Full, but the blob that fills it is 8 days old: expired.
+    seed_row(
+        &w,
+        &w.phone.device_id,
+        1,
+        i64::try_from(MAX_BLOB_STORE_BYTES).check("cap"),
+        8 * 24 * 3_600_000,
+    )
+    .await;
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(2), &ciphertext(1000))
+        .await
+        .check("expired rows do not count");
+}
+
+// spec: blob-store/upload-limits
+#[tokio::test]
+async fn one_device_is_limited_per_hour_and_others_are_not() {
+    let w = filesystem().await;
+    for n in 0..MAX_UPLOADS_PER_DEVICE_PER_HOUR {
+        seed_row(&w, &w.laptop.device_id, n + 1, 10, 60_000).await;
+    }
+    let limited = upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(100)).await;
+    assert_eq!(
+        limited.err().map(|s| s.code()),
+        Some(Code::ResourceExhausted)
+    );
+    // Bob's phone is not limited by Alice's count.
+    upload(&w, &w.phone, GROUP_ID, &blob_id(2), &ciphertext(100))
+        .await
+        .check("another device");
+}
+
+// spec: blob-store/upload-limits
+#[tokio::test]
+async fn uploads_older_than_an_hour_do_not_count() {
+    let w = filesystem().await;
+    for n in 0..MAX_UPLOADS_PER_DEVICE_PER_HOUR {
+        seed_row(&w, &w.laptop.device_id, n + 1, 10, 2 * 3_600_000).await;
+    }
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(100))
+        .await
+        .check("old uploads do not count");
+}
+
+// spec: blob-store/upload-limits
+#[tokio::test]
+async fn a_request_far_over_the_cap_is_refused_before_the_handler() {
+    let w = filesystem().await;
+    let huge = upload(
+        &w,
+        &w.laptop,
+        GROUP_ID,
+        &blob_id(1),
+        &ciphertext(5 * 1024 * 1024),
+    )
+    .await;
+    let code = huge.err().map(|s| s.code());
+    assert!(
+        matches!(code, Some(Code::OutOfRange | Code::ResourceExhausted)),
+        "{code:?}"
+    );
+    assert!(stored(&w.server).is_empty(), "nothing was stored");
 }
