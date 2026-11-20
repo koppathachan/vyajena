@@ -90,6 +90,6 @@
 - [x] 7.1 `docs/architecture-decisions.md` (Scope → system lobby + named groups;
       commit authority; protocol v3; named groups out of Future),
       `openspec/config.yaml` context, `CLAUDE.md` first line
-- [ ] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
+- [x] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
       `flutter analyze`, `flutter test`, `openspec validate lobby-multi-group
       --strict`
