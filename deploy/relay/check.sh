@@ -15,7 +15,7 @@ readonly HERE
 # vyajena-relay.service (design D8: the first run on Debian 13 scored 1.4;
 # what is left is the network and the one capability it needs).
 readonly MAX_EXPOSURE="2.0"
-readonly FREE_REGIONS="us-central1 us-east1 us-west1"
+readonly RELAY_REGION="asia-south1"
 
 ok() { echo "ok   $1"; }
 fail() { echo "FAIL $1: $2"; }
@@ -34,8 +34,8 @@ gcp_checks() {
   machine="$(jq -r '.machineType | split("/") | last' <<<"$inst")"
   status="$(jq -r '.status' <<<"$inst")"
   region="${ZONE%-*}"
-  if [ "$machine" = e2-micro ]; then ok "vm type e2-micro"; else fail "vm type" "is $machine, want e2-micro (free tier)"; fi
-  if [[ " $FREE_REGIONS " == *" $region "* ]]; then ok "vm region $region"; else fail "vm region" "$region is not a free-tier region"; fi
+  if [ "$machine" = e2-micro ]; then ok "vm type e2-micro"; else fail "vm type" "is $machine, want e2-micro"; fi
+  if [ "$region" = "$RELAY_REGION" ]; then ok "vm region $region"; else fail "vm region" "$region, want $RELAY_REGION (Mumbai, next to the Pi)"; fi
   if [ "$status" = RUNNING ]; then ok "vm running"; else fail "vm running" "status $status"; fi
   if [ "$(jq '.serviceAccounts // [] | length' <<<"$inst")" = 0 ]; then
     ok "vm no service account"
@@ -89,7 +89,7 @@ gcp_checks() {
   if [ "$dtype" = pd-standard ] && [ "$dsize" -le 30 ]; then
     ok "disk $dtype ${dsize} GB"
   else
-    fail disk "$dtype ${dsize} GB (free tier: pd-standard, at most 30 GB)"
+    fail disk "$dtype ${dsize} GB (want pd-standard, at most 30 GB)"
   fi
 
   sub="$(g compute networks subnets describe "$NAME" --region="$region")"

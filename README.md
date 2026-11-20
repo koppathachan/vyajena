@@ -256,12 +256,13 @@ logs      ssh vyajan@192.168.1.8 sudo journalctl -u vyajena | grep "wake ping"
 
 ## Relay
 
-A GCP free-tier e2-micro (`vyajena-relay`, `us-east1-b`, project
+A GCP e2-micro (`vyajena-relay`, `asia-south1-c` Mumbai, project
 `vyajena`, its own VPC) runs rathole 0.5.0 as a dumb TCP passthrough: 443
 for devices, 2333 for the Pi's tunnel (Noise, the relay's key pinned on the
 Pi, plus a token). TLS ends on the Pi. A reserved static IPv4, named `vyajarelay.purplechaamba.com` (an A record
 the owner keeps at the domain's DNS host; `check.sh` checks it),
-about $3.65/month; the rest is free tier. SSH only through Google IAP. It holds
+about $3.65/month; the VM is not in the free tier (about $11/month in all,
+Mumbai e2-micro + IP + disk). SSH only through Google IAP. It holds
 no state: logs in RAM, no service account. Names and sizes:
 `deploy/relay/relay.conf`. Every script but `secrets.sh` needs a valid
 `gcloud auth login` (run it yourself).

@@ -8,8 +8,14 @@
 #
 # Writes ~/.vyajena-relay/relay.env (RELAY_IP=) and known_hosts (the VM's host
 # keys, read from guest attributes through the API). Names and sizes:
-# deploy/relay/relay.conf. Cost: the static IPv4, about $3.65/month; the rest
-# is in the free tier.
+# deploy/relay/relay.conf. Cost in asia-south1 (Mumbai, not in the free tier),
+# on-demand list prices: e2-micro about $7.3/month, static IPv4 about
+# $3.65/month, 10 GB standard disk about $0.4/month; egress is small (chat
+# ciphertext). About $11/month, roughly Rs 1,120 with 18% GST.
+#
+# It overwrites relay.env and known_hosts with the new VM's. Moving regions:
+# copy both to relay.env.old / known_hosts.old first (design D3, change
+# relay-mumbai), so the old relay can be put back.
 set -euo pipefail
 
 # shellcheck source=lib.sh
@@ -97,7 +103,7 @@ main() {
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$REVIEW_PORT" \
       --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
 
-  say "static external IPv4 $NAME (about \$3.65/month)"
+  say "static external IPv4 $NAME in $REGION (about \$3.65/month)"
   exists compute addresses describe "$NAME" --region="$REGION" ||
     run gcloud compute addresses create "$NAME" --project="$PROJECT" \
       --region="$REGION" --network-tier=PREMIUM

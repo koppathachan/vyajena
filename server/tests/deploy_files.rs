@@ -189,17 +189,20 @@ fn dry_run(sandbox: &Sandbox) -> Vec<String> {
 
 // spec: relay/relay-host
 #[test]
-fn the_relay_is_a_free_tier_e2_micro_in_the_us_on_its_own_network() {
+fn the_relay_is_an_e2_micro_in_mumbai_on_its_own_network() {
+    // relay-mumbai: next to the Pi and its users, not a US region.
     let region = conf("REGION");
-    assert!(
-        ["us-central1", "us-east1", "us-west1"].contains(&region.as_str()),
-        "{region} is not a free-tier region"
-    );
+    assert_eq!(region, "asia-south1");
     assert!(conf("ZONE").starts_with(&format!("{region}-")));
+    // The VPC is shared with the old us-east1 subnet during the move, so the
+    // new subnet must not reuse its range.
+    assert_ne!(conf("SUBNET_RANGE"), "10.42.0.0/28");
+    // The relay check enforces the same region.
+    assert!(read("deploy/relay/check.sh").contains("RELAY_REGION=\"asia-south1\""));
     assert_eq!(conf("MACHINE_TYPE"), "e2-micro");
     assert_eq!(conf("DISK_TYPE"), "pd-standard");
     let disk: u32 = conf("DISK_GB").parse().check("DISK_GB");
-    assert!(disk <= 30, "{disk} GB is over the free 30 GB");
+    assert!(disk <= 30, "{disk} GB is over the 30 GB limit");
     assert_eq!(conf("PROJECT"), "vyajena");
     assert_eq!(conf("PUBLIC_PORT"), "443");
     assert_eq!(conf("RELAY_HOST"), "vyajarelay.purplechaamba.com");
@@ -215,6 +218,7 @@ fn the_relay_is_a_free_tier_e2_micro_in_the_us_on_its_own_network() {
         "--no-service-account",
         "--no-scopes",
         "--boot-disk-type=pd-standard",
+        "--zone=asia-south1-c",
         "subnet=vyajena-relay,address=",
         "block-project-ssh-keys=TRUE",
         "enable-oslogin=FALSE",
@@ -233,6 +237,17 @@ fn the_relay_is_a_free_tier_e2_micro_in_the_us_on_its_own_network() {
             .iter()
             .any(|c| c.starts_with("gcloud compute addresses create vyajena-relay"))
     );
+    // The address and subnet are made in Mumbai.
+    for create in [
+        "compute addresses create",
+        "compute networks subnets create",
+    ] {
+        let line = commands
+            .iter()
+            .find(|c| c.contains(create))
+            .check("regional create");
+        assert!(line.contains("--region=asia-south1"), "{line}");
+    }
     assert!(
         !commands
             .iter()

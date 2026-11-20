@@ -53,7 +53,7 @@ flowchart LR
     core --- ks
   end
 
-  subgraph gcp["GCP e2-micro, us-east1 — sees TLS bytes only"]
+  subgraph gcp["GCP e2-micro, asia-south1 (Mumbai) — sees TLS bytes only"]
     relay["rathole relay<br/>TCP passthrough, no state"]
   end
 
@@ -201,7 +201,7 @@ sequenceDiagram
   C->>P: gRPC over HTTP/2, Messaging.Connect stream
 ```
 
-- **Relay:** its own GCP free-tier e2-micro, `vyajena-relay` in `us-east1-b` (project `vyajena`, its own VPC), running rathole 0.5.0 as a TCP passthrough: 443 for devices, 2333 for the tunnel. A reserved static IPv4 named `vyajarelay.purplechaamba.com` (one A record; owner, 2026-11-16): invites name `vyajarelay.purplechaamba.com:443`, so moving the relay needs a new A record, not a re-join. The Pi's tunnel dials the IP and needs no DNS. It holds no state and can be rebuilt, or moved to any VPS, from `deploy/relay/` and `~/.vyajena-relay/` (change `relay`).
+- **Relay:** its own GCP e2-micro, `vyajena-relay` in `asia-south1-c` (Mumbai; moved from `us-east1-b` in change `relay-mumbai`, owner 2026-11-20, to cut ~260 ms per round trip to tens of ms; not free tier, about $11/month) (project `vyajena`, its own VPC), running rathole 0.5.0 as a TCP passthrough: 443 for devices, 2333 for the tunnel. A reserved static IPv4 named `vyajarelay.purplechaamba.com` (one A record; owner, 2026-11-16): invites name `vyajarelay.purplechaamba.com:443`, so moving the relay needs a new A record, not a re-join. The Pi's tunnel dials the IP and needs no DNS. It holds no state and can be rebuilt, or moved to any VPS, from `deploy/relay/` and `~/.vyajena-relay/` (change `relay`).
 - **Tunnel auth:** rathole's Noise NK transport with the relay's static key pinned on the Pi (a fake relay cannot attach the Pi), plus a service token (nobody else can attach in the Pi's place). The tunnel port is open to all because the home IPv4 is dynamic.
 - **TLS:** the client pins the Pi's TLS public key. No domain or certificate authority needed.
 - **Transport:** gRPC over HTTP/2 + TLS on TCP 443. HTTP/3 (tonic-h3) stays deferred while it is experimental.
@@ -310,6 +310,6 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 - [x] Desktop clients in the MVP, or mobile only? **Mobile now, desktop later** (owner, 2026-11-11; flutter-app): the Flutter app targets iOS and Android only; desktop builds come in a later change.
 - [x] Key rotation for idle groups? **Every 7 days, with jitter** (client-core): each device commits an update of its own leaf once it is 7 days old and replaces its last-resort KeyPackage once that is 7 days old, checking on connect and daily, with a random delay of up to an hour.
 - [x] Max message size? **64 KB** of application ciphertext (core-wire-protocol); Commit envelopes, Welcome included, up to 256 KB.
-- [x] Relay on the shared VM or its own VM? **Its own VM** (owner, 2026-11-15; relay): a new free-tier e2-micro in `us-east1`, project `vyajena` (owner, 2026-11-16; first built in `purple-eccdf`), used by nothing else; a static IPv4 (about $3.65/month) named `vyajarelay.purplechaamba.com`. Real push comes in the next change.
+- [x] Relay on the shared VM or its own VM? **Its own VM** (owner, 2026-11-15; relay): a new free-tier e2-micro in `us-east1`, project `vyajena` (owner, 2026-11-16; first built in `purple-eccdf`), used by nothing else; a static IPv4 (about $3.65/month) named `vyajarelay.purplechaamba.com`. Real push comes in the next change. (2026-11-20, change `relay-mumbai`: moved to `asia-south1`, no longer free tier.)
 - [x] Build order? **Changed** (owner, 2026-11-11; flutter-app): 1. Pi server ✅, 2. Rust core library ✅, 3. Flutter app (iOS and Android; the first point where two people can chat locally, on two simulators), 4. question-and-answer verification (`qa-verification`), 5. relay and Pi deployment ✅ (relay first, real push (FCM/APNs) in the next change; owner, 2026-11-15), 6. the terminal client. (Was, pi-server-core: Pi, core, terminal client, deployment, then the app with push.)
 - [x] How is the app distributed? **Privately first** (owner, 2026-11-15; app-release): a new Play app `com.purplechaamba.vyajena` on internal testing now, TestFlight internal testing once the owner's individual Apple account exists; Android 7.0+ and iOS 15.0+, iPhone only; name "Vyajena", icon "വ്യ"; export compliance `ITSAppUsesNonExemptEncryption = NO` on App Store Connect's own answer for standard algorithms outside France (was YES; France left out); upload key and certificate held only by the owner (Keychain + password manager), never in the repo or CI; policy at https://www.purplechaamba.com/vyajena/privacy/. The old vyajena Play app and its CI deployment are deleted once this app runs. A **public** listing waits for: the relay (reviewers must reach the server), in-app account deletion, report/block, real push, and Play's 12-tester closed test. Steps: `docs/release.md`.
