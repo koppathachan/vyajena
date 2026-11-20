@@ -1,9 +1,9 @@
 schema: spec-driven
 
 context: |
-  vyajena2: end-to-end encrypted chat (text, and one picture per message) for one admin-run group plus DMs
-  between its members (change `dms`; admin and
-  owner: Akhil). Flutter UI (view only, never opens a connection) -> Rust core on
+  vyajena2: end-to-end encrypted chat (text, and one picture per message) for a system lobby and admin-created
+  named groups, plus DMs between its members (changes `dms`, `lobby-multi-group`;
+  admin and owner: Akhil). Flutter UI (view only, never opens a connection) -> Rust core on
   each device (OpenMLS RFC 9420, networking, SQLite, keys in the OS key store, via
   flutter_rust_bridge) -> dumb GCP TCP relay (rathole) -> Rust server (tokio +
   tonic, SQLite WAL). gRPC over HTTP/2 with pinned TLS on port 443.
@@ -20,12 +20,14 @@ context: |
   - The server is the authority for routing, ordering and membership, never history.
     Group settings and profiles travel only inside encrypted messages.
   - Strict epoch rule; OpenMLS max_past_epochs = 0.
-  - Commit authority: in the main group admin devices commit anything; other
+  - Commit authority: in the lobby and in a named group admin devices commit anything; other
     devices only their own leaf update, adding or removing their own user's
     devices, and server-issued inactivity Removes. In a DM every member device
     commits only its own leaf update, Adds of either user's devices, Removes of
     its own user's devices and server-issued Removes; no admin, never a third user
-    (change `dms`, owner 2026-11-17). The server and every client both check it.
+    (change `dms`, owner 2026-11-17); a named group uses the admin rule above
+    (change `lobby-multi-group`, owner 2026-11-20). The server and every client both
+    check it.
   - OpenMLS skips credential checks: verify each leaf's device certificate against
     the user's pinned identity key, and that its MLS key equals the leaf key.
   - Accepted means durable. Nothing is dropped silently.

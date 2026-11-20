@@ -139,6 +139,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  List<UserRef> dco_decode_list_user_ref(dynamic raw);
+
+  @protected
   MediaStatus dco_decode_media_status(dynamic raw);
 
   @protected
@@ -324,6 +327,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<UserRef> sse_decode_list_user_ref(SseDeserializer deserializer);
 
   @protected
   MediaStatus sse_decode_media_status(SseDeserializer deserializer);
@@ -558,6 +564,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     Uint8List self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_user_ref(List<UserRef> self, SseSerializer serializer);
 
   @protected
   void sse_encode_media_status(MediaStatus self, SseSerializer serializer);

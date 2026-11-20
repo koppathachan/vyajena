@@ -206,61 +206,30 @@ async fn an_unknown_content_body_decodes_as_unset_and_shows_a_placeholder() {
 }
 
 // spec: message-content/group-settings-travel-encrypted
+// spec: multi-group/the-system-lobby
 #[tokio::test(flavor = "multi_thread")]
-async fn only_admin_devices_change_the_group_settings() {
+async fn the_lobby_name_is_fixed_whoever_sends_group_settings() {
     let server = TestServer::start().await;
     let (mut admin, mut alice, mut bob) = chat(&server).await;
 
-    let id = admin
-        .client
-        .set_group_settings(Some("Family"))
-        .check("rename");
+    // Even the admin's device sends no GroupSettings for the lobby through the
+    // API; one it sends anyway (an old app) changes nothing, and neither does a
+    // non-admin's.
+    for (sender, name) in [(&admin, "Home chat"), (&bob, "Bob's club")] {
+        let forged =
+            messaging::encode_group_settings(Some(name), sender.clock.now()).check("encode");
+        store_raw_outgoing(sender, &forged);
+    }
+    let id = admin.client.send_text("after the settings").check("send");
     wait_accepted(&mut admin, id).await;
-    for device in [&mut admin, &mut alice, &mut bob] {
-        device
-            .wait_event("the new name", |e| {
-                matches!(e, Event::GroupSettingsChanged { name, .. } if name.as_deref() == Some("Family"))
-            })
-            .await;
-        assert_eq!(
-            device
-                .client
-                .group_settings()
-                .check("settings")
-                .name
-                .as_deref(),
-            Some("Family")
-        );
-    }
-    assert!(texts(&alice).is_empty(), "settings are not chat messages");
-
-    // A non-admin's app refuses; and a GroupSettings a non-admin device
-    // sends anyway is ignored by everyone.
-    let refused = bob.client.set_group_settings(Some("Bob's club"));
-    assert!(matches!(refused, Err(ClientError::NotAdmin)), "{refused:?}");
-    let forged =
-        messaging::encode_group_settings(Some("Bob's club"), bob.clock.now()).check("encode");
-    store_raw_outgoing(&bob, &forged);
-    let id = bob.client.send_text("after the rename").check("send");
+    let id = bob.client.send_text("and from bob").check("send");
     wait_accepted(&mut bob, id).await;
-    for device in [&mut alice, &mut admin] {
-        wait_text(device, "after the rename").await;
-        assert!(
-            !device
-                .events()
-                .iter()
-                .any(|e| matches!(e, Event::GroupSettingsChanged { name, .. } if name.as_deref() == Some("Bob's club")))
-        );
-        assert_eq!(
-            device
-                .client
-                .group_settings()
-                .check("settings")
-                .name
-                .as_deref(),
-            Some("Family")
-        );
+    for device in [&mut alice, &mut admin, &mut bob] {
+        wait_text(device, "and from bob").await;
+        let chats = device.client.chats().check("chats");
+        assert_eq!(chats[0].kind, client::ChatKind::Lobby);
     }
+    assert!(texts(&alice).len() == 2, "settings are not chat messages");
 }
 
 // spec: message-content/user-owned-profiles

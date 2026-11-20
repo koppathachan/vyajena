@@ -34,7 +34,6 @@ ChatMessage text(int id, UserRef from, String body, {bool mine = false}) =>
 /// The sample group: three people, a short family chat.
 FakeCoreService sampleCore() => FakeCoreService(storedUser: me)
   ..admin = true
-  ..group = 'Home'
   ..displayNames = {
     'ammu@home': 'Amma',
     'appu@home': 'Appu',

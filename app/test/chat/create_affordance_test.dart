@@ -36,11 +36,11 @@ void main() {
   // spec: app-ui/chat-list
   testWidgets('Opens on the chat list even with no DM: the group is the first '
       'row and the group composer is not shown', (tester) async {
-    final core = aliceInGroup()..group = 'Family';
+    final core = aliceInGroup();
     await openHome(tester, core);
 
     expect(find.byKey(const ValueKey('chat-main')), findsOneWidget);
-    expect(find.text('Family'), findsOneWidget);
+    expect(find.text('lobby'), findsOneWidget);
     expect(composer, findsNothing, reason: 'the list, not the group chat');
   });
 
@@ -86,15 +86,27 @@ void main() {
   });
 
   // spec: app-ui/create-affordance
-  testWidgets('Admin creates the group: + then New group calls createGroup', (
-    tester,
-  ) async {
+  testWidgets('Admin creates a group: + then New group opens the member '
+      'picker', (tester) async {
     final core = aliceInGroup()..admin = true;
     await openHome(tester, core);
 
     await tapFab(tester);
     await tap(tester, find.byKey(const Key('new-group')));
-    expect(core.calls, contains('createGroup'));
+    expect(find.byKey(const Key('create-group-confirm')), findsOneWidget);
+    expect(core.calls, isNot(contains('createGroup')));
+  });
+
+  // spec: app-ui/create-affordance
+  testWidgets('New group is not offered when the server lacks version 3', (
+    tester,
+  ) async {
+    final core = aliceInGroup()
+      ..admin = true
+      ..namedGroups = false;
+    await openHome(tester, core);
+    await tapFab(tester);
+    expect(find.byKey(const Key('new-group')), findsNothing);
   });
 
   // spec: app-ui/create-affordance

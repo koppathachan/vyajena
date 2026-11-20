@@ -314,9 +314,6 @@ abstract class CoreService {
   /// The group's member devices.
   Future<List<MemberDevice>> members();
 
-  /// The group's name.
-  Future<String?> groupName();
-
   /// The group's epoch on this device.
   Future<BigInt?> epoch();
 
@@ -341,8 +338,28 @@ abstract class CoreService {
   /// Admin: removes [user] from the group and the server.
   Future<void> removeUser(UserRef user);
 
-  /// Admin: sets the group's name.
-  Future<int> setGroupName(String? name);
+  /// Whether the server knows named groups (it lists protocol version 3):
+  /// "New group", "Rename" and "Close group" are offered only then.
+  Future<bool> namedGroupsAvailable();
+
+  /// Admin: creates a named group called [name] (optional) and adds the
+  /// devices of [members]; returns its chat id.
+  Future<int> createNamedGroup(String? name, List<UserRef> members);
+
+  /// Admin: adds all devices of [user] to the named group [chatId].
+  Future<void> addToGroup(int chatId, UserRef user);
+
+  /// Admin: removes [user] from the named group [chatId] (not from the lobby).
+  Future<void> removeFromGroup(int chatId, UserRef user);
+
+  /// Admin: sets the name of the named group [chatId].
+  Future<int> renameGroup(int chatId, String name);
+
+  /// Admin: closes the named group [chatId]; it becomes read-only.
+  Future<void> closeGroup(int chatId);
+
+  /// The member devices of the named group [chatId].
+  Future<List<MemberDevice>> groupMembers(int chatId);
 
   /// Admin: accepts [user]'s changed identity key.
   Future<bool> acceptIdentityKey(UserRef user);

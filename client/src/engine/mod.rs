@@ -118,6 +118,9 @@ pub(crate) struct Shared {
     /// Whether the server last connected to lists protocol version 2, so knows
     /// DMs (wire-transport: Protocol version negotiation, change `dms`).
     pub(crate) server_knows_dms: std::sync::atomic::AtomicBool,
+    /// Whether it lists protocol version 3, so knows named groups (change
+    /// `lobby-multi-group`).
+    pub(crate) server_knows_named_groups: std::sync::atomic::AtomicBool,
     /// The decrypted images this device keeps (client-runtime: Image download
     /// and cache).
     pub(crate) media: crate::media::MediaCache,
@@ -264,8 +267,9 @@ fn automatic_changes(
 }
 
 /// The [`Store::flag`] set once this core uploaded KeyPackages that list the
-/// DM extension.
-pub(crate) const DM_KEY_PACKAGES_FLAG: &str = "dm_key_packages";
+/// DM and named-group extensions (version 3; a version 2 core's "dm_key_packages"
+/// flag does not count, so it uploads a fresh set on its first version 3 run).
+pub(crate) const DM_KEY_PACKAGES_FLAG: &str = "named_key_packages";
 
 /// The group with id `group_id` among the main group and the DMs, mutably;
 /// borrows only those two fields, so other engine fields stay usable.
@@ -391,7 +395,7 @@ impl Engine {
 
     // --- Groups (change `dms`: the main group and the DMs) ---
 
-    /// The group with id `group_id`: the main group or a DM.
+    /// The group with id `group_id`: the lobby, a named group or a DM.
     fn group_ref(&self, group_id: &[u8]) -> Option<&MlsGroup> {
         match &self.group {
             Some(group) if group.group_id().as_slice() == group_id => Some(group),
@@ -417,10 +421,10 @@ impl Engine {
         self.dms.remove(group_id)
     }
 
-    /// Puts a group back where it belongs: a DM by its context, else the
-    /// main group.
+    /// Puts a group back where it belongs: a DM or named group by its context,
+    /// else the lobby.
     fn put_group(&mut self, group: MlsGroup) {
-        if mls_group::is_dm(group.extensions()) {
+        if mls_group::kind_of(group.extensions()) != protocol::group_membership::GroupKind::System {
             self.dms.insert(group.group_id().as_slice().to_vec(), group);
         } else {
             self.group = Some(group);
@@ -692,6 +696,10 @@ impl Engine {
                     "the server speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
                 ))
             })?;
+        self.shared.server_knows_named_groups.store(
+            protocol::wire_transport::server_knows_named_groups(&info.supported_protocol_versions),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.shared.server_knows_dms.store(
             protocol::wire_transport::server_knows_dms(&info.supported_protocol_versions),
             std::sync::atomic::Ordering::Relaxed,
@@ -934,7 +942,14 @@ impl Engine {
         match frame.frame {
             Some(In::Envelope(envelope)) => self.on_envelope(envelope).await,
             Some(In::SendResult(result)) => self.on_send_result(result).await,
-            Some(In::DmClosed(notice)) => self.on_dm_closed(notice).await,
+            Some(In::DmClosed(notice)) => {
+                self.on_closed(notice.group_id, notice.closed_at, "DM")
+                    .await
+            }
+            Some(In::GroupClosed(notice)) => {
+                self.on_closed(notice.group_id, notice.closed_at, "group")
+                    .await
+            }
             Some(In::GapNotice(notice)) => {
                 if let Some(at) = notice.newest_expired_at.as_ref() {
                     let chat = crate::events::ChatId(self.store().chat_of(&notice.group_id)?);
@@ -1080,7 +1095,18 @@ impl Engine {
     /// direct-messages: DM closed on user removal. The peer was removed: the
     /// chat keeps its history, read-only; own messages still sending there
     /// fail. Acknowledged with `server_seq` 0 so the server stops telling.
-    async fn on_dm_closed(&mut self, notice: pb::DmClosed) -> Result<(), EngineError> {
+    /// `what` says whether it was a "DM" or a named "group" (multi-group:
+    /// Closing a named group).
+    async fn on_closed(
+        &mut self,
+        group_id: Vec<u8>,
+        closed_at: Option<prost_types::Timestamp>,
+        what: &str,
+    ) -> Result<(), EngineError> {
+        let notice = pb::DmClosed {
+            group_id,
+            closed_at,
+        };
         if let Some(dm) = self.store().dm_by_group(&notice.group_id)?
             && dm.closed_at.is_none()
         {
@@ -1095,16 +1121,15 @@ impl Engine {
             }
             for message in self.store().outgoing_in_flight()? {
                 if message.chat == dm.chat {
-                    self.store().mark_failed(message.id, "the DM was closed")?;
+                    let reason = format!("the {what} was closed");
+                    self.store().mark_failed(message.id, &reason)?;
                     self.emit(Event::SendStatus {
                         id: message.id,
-                        status: crate::events::SendStatus::Failed {
-                            reason: "the DM was closed".into(),
-                        },
+                        status: crate::events::SendStatus::Failed { reason },
                     });
                 }
             }
-            tracing::info!("a DM was closed: its peer was removed");
+            tracing::info!(what, "a chat was closed");
             self.emit(Event::ChatsChanged);
         }
         self.ack(&notice.group_id, 0).await
@@ -1341,10 +1366,11 @@ impl Engine {
             removed = review.removed.len(),
             "merged a commit"
         );
-        if mls_group::is_dm(group.extensions()) {
+        if mls_group::kind_of(group.extensions()) != protocol::group_membership::GroupKind::System {
             if !review.added.is_empty() || !review.removed.is_empty() {
                 self.emit(Event::ChatsChanged);
             }
+            self.named_devices_added(&envelope.group_id, &review);
         } else {
             self.members_changed(&review, by, automatic);
         }
@@ -1357,7 +1383,12 @@ impl Engine {
         let seq = envelope.server_seq;
         let server = self.server.clone();
         let is_admin = self.account.is_admin;
-        let is_dm = self.dms.contains_key(&envelope.group_id);
+        let side = self
+            .dms
+            .get(&envelope.group_id)
+            .map(|g| mls_group::kind_of(g.extensions()));
+        let is_dm = side == Some(protocol::group_membership::GroupKind::Dm);
+        let is_named = side == Some(protocol::group_membership::GroupKind::Named);
         let Some(group) = group_in(&mut self.group, &mut self.dms, &envelope.group_id) else {
             return self.ack(&envelope.group_id, seq).await;
         };
@@ -1393,9 +1424,10 @@ impl Engine {
                 return Err(error);
             }
         };
-        if from_server && is_dm {
+        if from_server && (is_dm || (is_named && is_admin)) {
             // direct-messages: Inactivity across groups. No admin is in a
-            // DM, so its members commit the server's Removes.
+            // DM, so its members commit the server's Removes; in a named
+            // group the admin does, as in the lobby.
             self.push_job(Job::CommitServerRemovesIn {
                 group_id: envelope.group_id.clone(),
             });
@@ -1473,7 +1505,9 @@ impl Engine {
         };
         // change `dms`: a DM's Welcome names its two users instead of an
         // admin.
-        let is_dm = mls_group::is_dm(staged.group_context().extensions());
+        let group_kind = mls_group::kind_of(staged.group_context().extensions());
+        let is_dm = group_kind == protocol::group_membership::GroupKind::Dm;
+        let is_named = group_kind == protocol::group_membership::GroupKind::Named;
         let dm_peer: Option<UserId>;
         let needed = verify::users_in_welcome(staged.members());
         let mut pinned = self.resolve_users(needed.into_keys()).await?;
@@ -1523,9 +1557,9 @@ impl Engine {
             let Some((user, key)) = new_key else {
                 self.note_key_change(&problem).await;
                 tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
-                if is_dm {
-                    // Nothing to ask the server for: the DM is not worth a
-                    // re-add of this device to the main group.
+                if is_dm || is_named {
+                    // Nothing to ask the server for: a DM or named group is
+                    // not worth a re-add of this device to the lobby.
                     return self.ack(&envelope.group_id, seq).await;
                 }
                 return self
@@ -1538,6 +1572,9 @@ impl Engine {
         }
         if let Some(peer) = dm_peer {
             return self.join_dm(&envelope, staged, peer, repinned).await;
+        }
+        if is_named {
+            return self.join_named(&envelope, staged, repinned).await;
         }
         let rejoined = self.store().group()?.is_some();
         let now = self.now();
@@ -1626,6 +1663,59 @@ impl Engine {
         }
         self.emit(Event::ChatsChanged);
         self.ack(&envelope.group_id, seq).await
+    }
+
+    /// Joins a named group from its checked Welcome (multi-group: Named group
+    /// membership): only this group's state changes, the lobby's stays.
+    async fn join_named(
+        &mut self,
+        envelope: &pb::Envelope,
+        staged: StagedWelcome,
+        repinned: Vec<(UserId, Vec<u8>)>,
+    ) -> Result<(), EngineError> {
+        let seq = envelope.server_seq;
+        let now = self.now();
+        let store = Arc::clone(&self.shared.store);
+        let joined = store.transaction(|| -> Result<MlsGroup, EngineError> {
+            for (user, key) in &repinned {
+                store.repin_identity_key(&user.to_string(), key, now)?;
+            }
+            let group = staged
+                .into_group(store.mls())
+                .map_err(|e| MlsError::new("joining a named group from a Welcome", e))?;
+            store.set_named_joined(group.group_id().as_slice(), now, seq)?;
+            Ok(group)
+        });
+        let group = match joined {
+            Ok(group) => group,
+            Err(error) => {
+                self.reload_group_in(&envelope.group_id)?;
+                return Err(error);
+            }
+        };
+        tracing::info!(
+            server_seq = seq,
+            epoch = group.epoch().as_u64(),
+            "joined a named group"
+        );
+        self.dms.insert(group.group_id().as_slice().to_vec(), group);
+        for (user, _) in repinned {
+            self.identity_key_changed(user);
+        }
+        self.emit(Event::ChatsChanged);
+        self.ack(&envelope.group_id, seq).await
+    }
+
+    /// multi-group: after a commit added devices to the named group
+    /// `group_id`, an admin device re-sends the group's name so they learn it
+    /// (message-content: Group settings travel encrypted).
+    pub(super) fn named_devices_added(&self, group_id: &[u8], review: &verify::CommitReview) {
+        if review.added.is_empty() || !self.account.is_admin {
+            return;
+        }
+        if let Err(error) = self.resend_named_name(group_id) {
+            tracing::error!(%error, "cannot queue the re-send of a group's name");
+        }
     }
 
     /// A Welcome this device cannot use: say why, ACK it, and ask the server to
@@ -1934,6 +2024,7 @@ impl Engine {
             if !review.added.is_empty() || !review.removed.is_empty() {
                 self.emit(Event::ChatsChanged);
             }
+            self.named_devices_added(&group_id, &review);
         } else {
             self.members_changed(&review, Some(self.user()), automatic);
         }

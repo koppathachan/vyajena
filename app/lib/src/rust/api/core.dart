@@ -29,6 +29,12 @@ abstract class Core implements RustOpaqueInterface {
   /// the chat). `false` if no new key is pending.
   Future<bool> acceptIdentityKey({required UserRef user});
 
+  /// Admin: adds all of `user`'s devices to the named group `chat_id`.
+  Future<void> addToGroup({
+    required PlatformInt64 chatId,
+    required UserRef user,
+  });
+
   /// Admin: adds all devices of `user` to the group.
   Future<void> addUser({required UserRef user});
 
@@ -45,12 +51,16 @@ abstract class Core implements RustOpaqueInterface {
   /// opens to place the "New messages" divider (app-ui: Unread divider).
   Future<PlatformInt64> chatReadMark({required PlatformInt64 chatId});
 
-  /// The chats: the main group first, then DMs, newest first, closed last.
+  /// The chats: the lobby first, then named groups and DMs, newest first,
+  /// closed last.
   Future<List<ChatSummary>> chats();
 
   /// Clears this device's push token on the server: no more wake pings
   /// (notifications not allowed).
   Future<void> clearPushToken();
+
+  /// Admin: closes the named group `chat_id`; it becomes read-only.
+  Future<void> closeGroup({required PlatformInt64 chatId});
 
   /// New device, step 2: completes linking with the approval text. Call
   /// [`Core::start`] next.
@@ -61,6 +71,13 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Admin: a new invite for `username`, with its text to share.
   Future<InviteInfo> createInvite({required String username});
+
+  /// Admin: creates a named group with `name` and adds `members`; its chat
+  /// id. The adds finish in the background (a chats-changed event follows).
+  Future<PlatformInt64> createNamedGroup({
+    String? name,
+    required List<UserRef> members,
+  });
 
   /// This device's id (hex), once registered or linked.
   Future<String?> deviceId();
@@ -85,8 +102,8 @@ abstract class Core implements RustOpaqueInterface {
   /// [`CoreErrorKind::EventsTaken`].
   Stream<CoreEvent> events();
 
-  /// The group's name, as an admin device last set it.
-  Future<String?> groupName();
+  /// The member devices of the named group `chat_id`.
+  Future<List<MemberDevice>> groupMembers({required PlatformInt64 chatId});
 
   /// Whether any own message is still sending (client-runtime: Unsent messages
   /// query). The app asks it when it goes to the background.
@@ -126,6 +143,10 @@ abstract class Core implements RustOpaqueInterface {
   /// One message by local id.
   Future<ChatMessage?> message({required PlatformInt64 id});
 
+  /// Whether the server knows named groups: the app offers "Create group"
+  /// only then.
+  Future<bool> namedGroupsAvailable();
+
   /// Opens the core: the database in `data_dir` (the app's private
   /// storage) and the keys in the OS key store. The decrypted pictures
   /// are cached in `data_dir/media`: `data_dir` is the folder the platform
@@ -149,8 +170,20 @@ abstract class Core implements RustOpaqueInterface {
   /// invite). Call [`Core::start`] next.
   Future<UserRef> register({required String inviteText});
 
+  /// Admin: removes `user` from the named group `chat_id` (not from the lobby).
+  Future<void> removeFromGroup({
+    required PlatformInt64 chatId,
+    required UserRef user,
+  });
+
   /// Admin: removes `user` from the group and the server.
   Future<void> removeUser({required UserRef user});
+
+  /// Admin: sets the name of the named group `chat_id` for every member.
+  Future<PlatformInt64> renameGroup({
+    required PlatformInt64 chatId,
+    required String name,
+  });
 
   /// Resends the picture of the own image message `id` as a new message
   /// with a new blob, when the first one expired (client-runtime: Expired
@@ -203,9 +236,6 @@ abstract class Core implements RustOpaqueInterface {
   /// Sends a text message; returns its local id. Its status arrives as
   /// [`CoreEvent::SendStatus`].
   Future<PlatformInt64> sendText({required String text});
-
-  /// Admin: sets the group's name for every member.
-  Future<PlatformInt64> setGroupName({String? name});
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});

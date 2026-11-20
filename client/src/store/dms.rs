@@ -32,6 +32,12 @@ pub struct DmRow {
     pub state: GroupRow,
     /// When the server closed it (direct-messages: DM closed on user removal).
     pub closed_at: Option<SystemTime>,
+    /// Whether this is a named group rather than a DM (multi-group); then
+    /// `peer` is empty.
+    pub named: bool,
+    /// A named group's last-known name (message-content: Group settings travel
+    /// encrypted).
+    pub name: Option<String>,
 }
 
 fn seq_sql(seq: u64) -> i64 {
@@ -39,7 +45,7 @@ fn seq_sql(seq: u64) -> i64 {
 }
 
 const DM_COLUMNS: &str = "chat_id, group_id, peer, created_at, joined, own_leaf_updated_at, \
-                          processed_seq, stalled, closed_at";
+                          processed_seq, stalled, closed_at, kind, name";
 
 type RawDm = (
     i64,
@@ -51,6 +57,8 @@ type RawDm = (
     i64,
     Option<String>,
     Option<i64>,
+    String,
+    Option<String>,
 );
 
 fn raw_dm(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDm> {
@@ -64,11 +72,13 @@ fn raw_dm(row: &rusqlite::Row<'_>) -> rusqlite::Result<RawDm> {
         row.get(6)?,
         row.get(7)?,
         row.get(8)?,
+        row.get(9)?,
+        row.get(10)?,
     ))
 }
 
 fn dm(
-    (chat, group_id, peer, created_at, joined, leaf, processed, stalled, closed): RawDm,
+    (chat, group_id, peer, created_at, joined, leaf, processed, stalled, closed, kind, name): RawDm,
 ) -> DmRow {
     DmRow {
         chat,
@@ -83,6 +93,8 @@ fn dm(
             stalled,
         },
         closed_at: closed.map(from_unix_millis),
+        named: kind == "named",
+        name,
     }
 }
 
@@ -121,7 +133,10 @@ impl Store {
     /// The open DM with `peer` (`<username>@<server_id>`), if any.
     pub fn open_dm_with(&self, peer: &str) -> Result<Option<DmRow>, StoreError> {
         Ok(self
-            .dm_where("WHERE peer = ?1 AND closed_at IS NULL", params![peer])?
+            .dm_where(
+                "WHERE peer = ?1 AND closed_at IS NULL AND kind = 'dm'",
+                params![peer],
+            )?
             .pop())
     }
 
@@ -169,6 +184,43 @@ impl Store {
         self.dm_by_group(group_id)?
             .map(|row| row.chat)
             .ok_or_else(|| StoreError::Inconsistent("a DM row vanished".into()))
+    }
+
+    /// Records a named group this device has MLS state for (it created it, or
+    /// joined from a Welcome having processed up to `processed_seq`). Returns
+    /// its chat id.
+    pub fn set_named_joined(
+        &self,
+        group_id: &[u8],
+        now: SystemTime,
+        processed_seq: u64,
+    ) -> Result<i64, StoreError> {
+        self.db.with(|conn| {
+            conn.execute(
+                "INSERT INTO dm_groups (group_id, peer, created_at, joined, own_leaf_updated_at,
+                                        processed_seq, kind)
+                 VALUES (?1, '', ?2, 1, ?2, ?3, 'named')
+                 ON CONFLICT (group_id) DO UPDATE SET joined = 1, own_leaf_updated_at = ?2,
+                     processed_seq = max(processed_seq, ?3), stalled = NULL",
+                params![group_id, unix_millis(now), seq_sql(processed_seq)],
+            )
+        })?;
+        self.dm_by_group(group_id)?
+            .map(|row| row.chat)
+            .ok_or_else(|| StoreError::Inconsistent("a named group row vanished".into()))
+    }
+
+    /// Sets a named group's name (from the admin's `GroupSettings`). Returns
+    /// whether it changed.
+    pub fn set_named_name(&self, group_id: &[u8], name: &str) -> Result<bool, StoreError> {
+        let changed = self.db.with(|conn| {
+            conn.execute(
+                "UPDATE dm_groups SET name = ?2
+                 WHERE group_id = ?1 AND kind = 'named' AND coalesce(name, '') <> ?2",
+                params![group_id, name],
+            )
+        })?;
+        Ok(changed > 0)
     }
 
     /// The server closed the DM at `at`.

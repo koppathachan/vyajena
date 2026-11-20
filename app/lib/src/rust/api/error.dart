@@ -125,6 +125,9 @@ enum CoreErrorKind {
   /// The server does not support DMs yet.
   dmsUnavailable,
 
+  /// The server does not support named groups yet.
+  groupsUnavailable,
+
   /// The picked file is not an image the app can send (JPEG, PNG, GIF or
   /// WebP).
   imageUnsupported,

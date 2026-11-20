@@ -37,14 +37,9 @@ async fn link_tablet(phone: &Device) -> Device {
     tablet
 }
 
-/// The admin names the group "Home chat" and calls themself "Akhil"; Bob
-/// calls himself "Bobby". Everyone has seen it.
+/// The admin calls themself "Akhil"; Bob calls himself "Bobby". Everyone has
+/// seen it.
 async fn named(admin: &mut Device, bob: &mut Device) {
-    let id = admin
-        .client
-        .set_group_settings(Some("Home chat"))
-        .check("rename");
-    wait_accepted(admin, id).await;
     let id = admin
         .client
         .set_profile(Some("Akhil"), None)
@@ -52,11 +47,9 @@ async fn named(admin: &mut Device, bob: &mut Device) {
     wait_accepted(admin, id).await;
     let id = bob.client.set_profile(Some("Bobby"), None).check("profile");
     wait_accepted(bob, id).await;
-    bob.wait_until("the name and Akhil's profile", |c| {
-        c.group_settings()
-            .is_ok_and(|s| s.name.as_deref() == Some("Home chat"))
-            && c.display_name(&user(ADMIN))
-                .is_ok_and(|n| n == "Akhil (akhil)")
+    bob.wait_until("Akhil's profile", |c| {
+        c.display_name(&user(ADMIN))
+            .is_ok_and(|n| n == "Akhil (akhil)")
     })
     .await;
     admin
@@ -70,11 +63,9 @@ async fn named(admin: &mut Device, bob: &mut Device) {
 /// Waits until `device` shows the group name and both display names.
 async fn learns_the_names(device: &Device) {
     device
-        .wait_until("the group name and profiles", |c| {
-            c.group_settings()
-                .is_ok_and(|s| s.name.as_deref() == Some("Home chat"))
-                && c.display_name(&user(ADMIN))
-                    .is_ok_and(|n| n == "Akhil (akhil)")
+        .wait_until("the profiles", |c| {
+            c.display_name(&user(ADMIN))
+                .is_ok_and(|n| n == "Akhil (akhil)")
                 && c.display_name(&user("bob"))
                     .is_ok_and(|n| n == "Bobby (bob)")
         })
@@ -82,10 +73,7 @@ async fn learns_the_names(device: &Device) {
 }
 
 fn changes_state(event: &Event) -> bool {
-    matches!(
-        event,
-        Event::ProfileChanged { .. } | Event::GroupSettingsChanged { .. }
-    )
+    matches!(event, Event::ProfileChanged { .. })
 }
 
 fn texts(device: &Device) -> Vec<MessageBody> {
@@ -113,20 +101,6 @@ async fn a_linked_tablet_learns_the_group_name_and_profiles() {
 
     let mut tablet = link_tablet(&phone).await;
     learns_the_names(&tablet).await;
-    // The tablet's first sync is no rename: nothing was stored before.
-    let first = tablet
-        .wait_event("the name", |e| {
-            matches!(e, Event::GroupSettingsChanged { .. })
-        })
-        .await;
-    assert_eq!(
-        first,
-        Event::GroupSettingsChanged {
-            name: Some("Home chat".into()),
-            previous: None,
-            by: user(ADMIN),
-        }
-    );
     // Re-sends of equal values change nothing on the other devices.
     let _ = admin.sees_within_quiet(|_| false).await;
     for (device, from) in [(&admin, seen.0), (&phone, seen.1)] {

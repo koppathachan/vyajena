@@ -481,15 +481,8 @@ pub(crate) enum Received {
         /// What they set.
         profile: ProfileRow,
     },
-    /// An admin device changed the group settings.
-    GroupSettings {
-        /// The group's name.
-        name: Option<String>,
-        /// The name stored before.
-        previous: Option<String>,
-        /// The sending (admin) user.
-        by: UserId,
-    },
+    /// The admin renamed a named group; the chat list shows the new name.
+    ChatRenamed,
     /// Stored but nothing for the UI: a redelivery, `GroupSettings` from a
     /// non-admin device (which clients ignore), or a profile or group name
     /// equal to the stored one (a re-send after an add, qa-fixes D2).
@@ -633,17 +626,17 @@ pub(crate) fn receive_application(
                     "ignored group settings from a non-admin device"
                 );
                 Received::Nothing
+            } else if chat == crate::store::MAIN_CHAT {
+                // multi-group: The system lobby. Its name is fixed ("lobby");
+                // a `GroupSettings` name for it is ignored.
+                Received::Nothing
             } else {
-                let previous = store.group_name()?;
-                store.set_group_name(name.as_deref(), now)?;
-                if previous == name {
-                    Received::Nothing
-                } else {
-                    Received::GroupSettings {
-                        name,
-                        previous,
-                        by: sender_user,
+                // A named group's name, from its admin.
+                match name.as_deref() {
+                    Some(name) if store.set_named_name(&envelope.group_id, name)? => {
+                        Received::ChatRenamed
                     }
+                    _ => Received::Nothing,
                 }
             }
         }

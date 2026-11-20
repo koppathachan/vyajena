@@ -4,13 +4,16 @@ Nov 7, 2026 · updated Nov 8, 2026 (core-wire-protocol), Nov 12, 2026 (flutter-a
 
 ## Scope
 
-The MVP is old-school messaging, text and one picture at a time, in one admin-run group plus DMs between its members, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
+The MVP is old-school messaging, text and one picture at a time, in a system lobby and admin-created named groups, plus DMs between its members, end-to-end encrypted with OpenMLS. It replaces Vyajena, which was a learning experiment.
 
 **In**
 
 - Text messages, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
 - Picture messages (change `media-blobs`, owner 2026-11-19): one static image per message with an optional caption (which takes mentions). The core turns every picture into a WebP of at most 2048 px and 2 MB with no metadata; it travels as an encrypted blob on the server and the MLS message carries only its id, key, size and a ThumbHash blur. The full picture downloads on tap and is cached on the device; the server keeps a blob 7 days or until every member device has it
-- One group, created and managed by the admin (Akhil)
+- A system lobby and named groups (change `lobby-multi-group`, owner 2026-11-20):
+  - the group the admin created is the lobby: every member is in it, its name is the fixed "lobby" (clients ignore `GroupSettings.name` for it), and it can never be closed
+  - the admin (Akhil) creates named groups holding any subset of the members, renames them and closes them ("delete" is a close, like a DM's); a new member joins the lobby only
+  - no user-created groups, no roles, no leaving a named group
 - DMs (change `dms`, owner 2026-11-17):
   - each is its own MLS group holding all devices of two users
   - any member may DM any member, with no approval
@@ -27,7 +30,7 @@ The MVP is old-school messaging, text and one picture at a time, in one admin-ru
 
 **Out**
 
-- More groups, user-created groups; blocking, muting one chat, leaving a DM
+- User-created groups, roles or co-admins in a group; blocking, muting one chat, leaving a DM
 - Read receipts, presence, typing indicators
 - Voice, video; albums, GIFs and animated images; stickers, cutouts and picture editing (the next media changes)
 - Server-side message history
@@ -109,11 +112,16 @@ flowchart TB
 - **Devices:** every MLS member is a device. Each user has one Ed25519 identity key, held by their first device, which signs a certificate for each device; the certificate is the device's MLS credential. Losing the first device means an admin-driven reset (remove the user, new invite).
 - **Credentials:** OpenMLS does not check credentials, so the core verifies every new or changed leaf's certificate against the user's pinned identity key, and that the certificate's MLS key equals the leaf's signature key.
 - **Handshakes in the clear:** Commits and Proposals are MLS `PublicMessage`, so the server can check them with OpenMLS `PublicGroup` (signature, sender, commit rule) without any group secret. Application messages stay `PrivateMessage`.
-- **Commit rule:** in the main group, admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the server's inactivity Removes.
+- **Commit rule:** in the lobby and in a named group (change `lobby-multi-group`, owner-approved 2026-11-20), admin devices may commit anything. Other devices may commit only their own leaf update, adding or removing their own user's devices, and the server's inactivity Removes.
   - **In a DM** (change `dms`, owner-approved 2026-11-17):
     - any member device may commit its own leaf update, an Add of a device of either of the two users, a Remove of its own user's devices, and the server's Removes
     - nobody has more: there is no admin, and never a third user
   - The server and every client check the same rules.
+- **Named groups (change `lobby-multi-group`):**
+  - **Group context:** `0xF0A1` names the admin (so the admin commit rule applies unchanged) and `0xF0A3` marks a named group. The lobby is the old main group, relabelled `system` on the server, with no re-key.
+  - **Old apps kept out:** protocol version 3, and a version 3 core lists `0xF0A3` in every KeyPackage and leaf. OpenMLS refuses to add a leaf without it to a named group, at the committer (spike S1), so a version 1 or 2 core never gets a named group's Welcome; the server also hands out only such KeyPackages for a named group.
+  - **Closing:** `Admin.CloseGroup` mirrors the DM close: `closed_at`, no more routing, a `GroupClosed` notice until acknowledged.
+  - **Known gap:** a device that was inactive and is back is re-added to the lobby and its DMs automatically; the admin re-adds it to a named group by hand.
 - **DMs (change `dms`):**
   - **Group id:** random, and the server keeps one open DM per pair. It is not a hash of the pair: after a user reset, the new DM needs a new id.
   - **Group context:** the DM extension `0xF0A2` names the two users; a DM has no admin extension.
@@ -277,10 +285,10 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 
 | Service | RPCs |
 | --- | --- |
-| `Messaging` | `Connect` (bidi stream): protocol version hello (1 or 2; the server lists both, and 2 means it knows `Dms`), envelopes of every group both ways (one `server_seq` across groups), send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage / `DmClosed` notices (`JoinNotice`: a new user's device waits for the admin's device to add it, or a DM waits for a device), heartbeats |
+| `Messaging` | `Connect` (bidi stream): protocol version hello (1, 2 or 3; the server lists them all, 2 means it knows `Dms` and 3 means named groups), envelopes of every group both ways (one `server_seq` across groups), send results, acks, catch-up, gap / removed / rejoin / join / low-KeyPackage / `DmClosed` / `GroupClosed` notices (`JoinNotice`: a new user's device waits for the admin's device to add it, or a DM waits for a device), heartbeats |
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
-| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices; with a DM's `group_id`, only KeyPackages that list `0xF0A2`), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
-| `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `RemoveUser` (also closes the user's DMs) |
+| `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices; with a DM's `group_id`, only KeyPackages that list `0xF0A2`; with a named group's, only those that list `0xF0A3`), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
+| `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `CreateNamedGroup`, `CloseGroup`, `RemoveUser` (also closes the user's DMs) |
 | `Blobs` | `UploadBlob`, `DownloadBlob`, `AckBlob` (change `media-blobs`): unary, a blob up to 2 MB, only for a member device of the blob's group; `UNAVAILABLE` while the blob backend is absent or off |
 | `Dms` | `CreateDm` (any member; `created = false` with the open DM's id when the peer opened it first; change `dms`) |
 
@@ -295,7 +303,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 Nothing here is built in the MVP, but the protocol leaves room for each.
 
 - Muting one chat (the push would need an opaque per-device chat tag), leaving a DM, blocking
-- More groups, then Discord-style servers; admin-only creation at first
+- User-created groups, then Discord-style servers (named groups are admin-only today)
 - More media on the blob store built in `media-blobs`: picture transforms and stickers (the next two changes), albums, voice, video, thumbnails
 - A second blob backend (an object-storage bucket) behind the same trait
 - P2P under conditions (media, voice, video) via iroh, server or relay as iroh-relay

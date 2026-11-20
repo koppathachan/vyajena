@@ -38,9 +38,6 @@ String noticeText(
     "The server's identity does not match. Not connecting: someone may be "
         'pretending to be the server.',
   DeviceRemovedNotice() => deviceRemovedText,
-  RenamedNotice(:final by, name: final groupName?) =>
-    '${name(by)} renamed the group to “$groupName”',
-  RenamedNotice(:final by) => '${name(by)} removed the group name',
   MemberNotice(:final change, :final user, :final by) => switch (change) {
     MemberChange.joined => '${name(user)} joined',
     MemberChange.addedDevice => '${name(user)} added a device',

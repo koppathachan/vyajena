@@ -160,7 +160,8 @@ pub(crate) fn chat(chat: client::Chat) -> ChatSummary {
     ChatSummary {
         chat_id: chat.id.0,
         kind: match chat.kind {
-            client::ChatKind::Main => ChatKindInfo::Main,
+            client::ChatKind::Lobby => ChatKindInfo::Lobby,
+            client::ChatKind::Group { name, closed } => ChatKindInfo::Group { name, closed },
             client::ChatKind::Dm {
                 peer,
                 waiting,
@@ -210,11 +211,6 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             user: user(&u),
             display_name,
             about,
-        },
-        Event::GroupSettingsChanged { name, previous, by } => CoreEvent::GroupSettingsChanged {
-            name,
-            previous,
-            by: user(&by),
         },
         Event::Unreadable {
             sender,
@@ -305,6 +301,7 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::NoSuchChat => K::NoSuchChat,
         ClientError::ChatClosed => K::ChatClosed,
         ClientError::DmsUnavailable => K::DmsUnavailable,
+        ClientError::GroupsUnavailable => K::GroupsUnavailable,
         ClientError::MediaExpired => K::MediaExpired,
         ClientError::MediaNotOnDevice => K::MediaNotOnDevice,
         ClientError::Media(client::media::MediaError::Image(image)) => match image {

@@ -10,8 +10,8 @@ use openmls::prelude::{
 };
 use openmls_traits::signatures::Signer;
 use protocol::group_membership::{
-    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, admin_extension_data, dm_extension_data,
-    parse_dm_extension,
+    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, GroupKind, NAMED_EXTENSION_TYPE, admin_extension_data,
+    dm_extension_data, named_extension_data, parse_dm_extension,
 };
 
 use super::MlsProvider;
@@ -41,7 +41,8 @@ impl MlsError {
 /// Leaf capabilities of every leaf and KeyPackage this device makes: the
 /// admin group-context extension `0xF0A1` (without which it could not be
 /// added), the DM extension `0xF0A2` (direct-messages: Old apps never join a
-/// DM) and `LastResort` (which the last-resort KeyPackage carries).
+/// DM), the named-group extension `0xF0A3` (multi-group: Named groups reach only
+/// v3 apps) and `LastResort` (which the last-resort KeyPackage carries).
 pub fn capabilities() -> Capabilities {
     Capabilities::new(
         None,
@@ -49,6 +50,7 @@ pub fn capabilities() -> Capabilities {
         Some(&[
             ExtensionType::Unknown(ADMIN_EXTENSION_TYPE),
             ExtensionType::Unknown(DM_EXTENSION_TYPE),
+            ExtensionType::Unknown(NAMED_EXTENSION_TYPE),
             ExtensionType::LastResort,
         ]),
         None,
@@ -145,6 +147,57 @@ pub fn create_dm(
         .with_group_context_extensions(extensions)
         .build(provider, signer, credential)
         .map_err(|e| MlsError::new("creating a DM", e))
+}
+
+/// Creates a named group at epoch 0 with this device (the admin's) as its only
+/// member (multi-group: Named group creation): the server as the only external
+/// sender, the `0xF0A1` extension naming `admin_user_id` (so the admin commit
+/// authority rule applies) and the `0xF0A3` marker, handshakes as
+/// `PublicMessage`.
+pub fn create_named_group(
+    provider: &MlsProvider,
+    signer: &impl Signer,
+    credential: CredentialWithKey,
+    group_id: GroupId,
+    server: ExternalSender,
+    admin_user_id: &str,
+) -> Result<MlsGroup, MlsError> {
+    let extensions = Extensions::from_vec(vec![
+        Extension::ExternalSenders(vec![server]),
+        Extension::Unknown(
+            ADMIN_EXTENSION_TYPE,
+            UnknownExtension(admin_extension_data(admin_user_id)),
+        ),
+        Extension::Unknown(
+            NAMED_EXTENSION_TYPE,
+            UnknownExtension(named_extension_data()),
+        ),
+    ])
+    .map_err(|e| MlsError::new("named group context extensions", e))?;
+    MlsGroup::builder()
+        .with_group_id(group_id)
+        .ciphersuite(CIPHERSUITE)
+        .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+        .use_ratchet_tree_extension(true)
+        .max_past_epochs(MAX_PAST_EPOCHS)
+        .with_capabilities(capabilities())
+        .with_group_context_extensions(extensions)
+        .build(provider, signer, credential)
+        .map_err(|e| MlsError::new("creating a named group", e))
+}
+
+/// The kind a group context says (multi-group: the 3-way classifier): `0xF0A2`
+/// is a DM, else `0xF0A3` a named group, else the system lobby.
+pub fn kind_of(extensions: &Extensions<openmls::prelude::GroupContext>) -> GroupKind {
+    GroupKind::from_extensions(
+        extensions.unknown(DM_EXTENSION_TYPE).is_some(),
+        extensions.unknown(NAMED_EXTENSION_TYPE).is_some(),
+    )
+}
+
+/// Whether the group context marks a named group.
+pub fn is_named(extensions: &Extensions<openmls::prelude::GroupContext>) -> bool {
+    kind_of(extensions) == GroupKind::Named
 }
 
 /// The two user ids a DM's `0xF0A2` extension names, sorted; `None` for the

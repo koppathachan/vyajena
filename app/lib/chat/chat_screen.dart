@@ -16,10 +16,14 @@ import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import 'chat_model.dart';
 import 'composer.dart';
+import 'group_menu.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+
+/// The banner of a closed named group (app-ui: Named group screen).
+const groupClosedText = 'This group was closed';
 
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
@@ -184,7 +188,9 @@ class _ChatScreenState extends State<ChatScreen> {
             _model.names.short(user),
             _model.names.of(user),
           ),
-      if (_model.isMain) const MentionChoice.everyone(),
+      // `@everyone` means everyone in this chat: the lobby or a named group
+      // (a DM has just the two).
+      if (_model.isMain || _model.isGroup) const MentionChoice.everyone(),
     ];
   }
 
@@ -364,11 +370,20 @@ class _ChatScreenState extends State<ChatScreen> {
       return Scaffold(
         appBar: shellAppBar(
           widget.core,
-          title: peer == null ? _model.groupName ?? 'Vyajena' : peerName,
+          title: peer == null ? _model.title : peerName,
           actions: [
             _mentionBadge(),
-            // A DM shows no admin actions (app-ui: DM screen).
-            ChatMenu(admin: widget.admin && _model.isMain),
+            // A DM shows no admin actions (app-ui: DM screen); a named
+            // group has its own menu (app-ui: Named group screen).
+            if (_model.isGroup)
+              GroupMenu(
+                core: widget.core,
+                chatId: _model.chatId,
+                admin: widget.admin,
+                names: _model.names,
+              )
+            else
+              ChatMenu(admin: widget.admin && _model.isMain),
           ],
         ),
         body: Column(
@@ -450,7 +465,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
-            if (_model.closed)
+            if (_model.closed && _model.isGroup)
+              const MaterialBanner(
+                key: Key('group-closed'),
+                content: Text(groupClosedText),
+                actions: [SizedBox.shrink()],
+              )
+            else if (_model.closed)
               MaterialBanner(
                 key: const Key('dm-closed'),
                 content: Text(dmClosedText(peerName)),
@@ -524,8 +545,7 @@ enum MenuEntry {
   linkDevice('Link a new device', Routes.approveLink),
   invite('Invite a user', Routes.invite),
   invites('Invites', Routes.invites),
-  removeUser('Remove a user', Routes.removeUser),
-  groupName('Group name', Routes.groupName);
+  removeUser('Remove a user', Routes.removeUser);
 
   const MenuEntry(this.label, this.route);
 
@@ -534,7 +554,7 @@ enum MenuEntry {
 
   /// Whether only admin devices show it.
   bool get adminOnly => switch (this) {
-    invite || invites || removeUser || groupName => true,
+    invite || invites || removeUser => true,
     members || profile || linkDevice => false,
   };
 }

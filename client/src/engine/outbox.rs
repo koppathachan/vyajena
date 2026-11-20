@@ -40,9 +40,7 @@ impl Engine {
                 display_name: profile.display_name,
                 about: profile.about,
             }),
-            Received::GroupSettings { name, previous, by } => {
-                self.emit(Event::GroupSettingsChanged { name, previous, by });
-            }
+            Received::ChatRenamed => self.emit(Event::ChatsChanged),
             Received::Unreadable {
                 sender,
                 accepted_at,
@@ -56,22 +54,46 @@ impl Engine {
         }
     }
 
-    /// qa-fixes D2: a commit added devices, which never saw the group name or
-    /// the profiles (they travel only when they change). Admin devices queue
-    /// the current `GroupSettings` if a name is set; every device queues its
-    /// own user's `Profile` if one is set. They go out through the outbox like
-    /// any own message; receivers ignore an equal value.
+    /// multi-group: queues the named group `group_id`'s current name as a
+    /// `GroupSettings` in its chat (an admin device after devices were added to
+    /// it); nothing for the lobby or when no name is set.
+    pub(super) fn resend_named_name(&self, group_id: &[u8]) -> Result<(), EngineError> {
+        let Some(row) = self.store().dm_by_group(group_id)? else {
+            return Ok(());
+        };
+        let Some(name) = row.name.filter(|_| row.named) else {
+            return Ok(());
+        };
+        let now = self.now();
+        let content = match crate::messaging::encode_group_settings(Some(&name), now) {
+            Ok(content) => content,
+            Err(error) => {
+                tracing::warn!(%error, "cannot re-send the group's name");
+                return Ok(());
+            }
+        };
+        let user = self.user().to_string();
+        self.store().insert_outgoing_in(
+            row.chat,
+            &OutgoingMessage {
+                msg_id: super::random_msg_id()?,
+                sender_user: &user,
+                sender_device: self.account.device_id,
+                content: &content,
+                created_at: now,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// qa-fixes D2: a commit added devices, which never saw the profiles
+    /// (they travel only when they change). Every device queues its own user's
+    /// `Profile` if one is set. They go out through the outbox like any own
+    /// message; receivers ignore an equal value. (The lobby has no settings
+    /// to re-send: its name is fixed.)
     pub(super) fn resend_state(&self) -> Result<(), EngineError> {
         let now = self.now();
         let mut contents = Vec::new();
-        if self.account.is_admin
-            && let Some(name) = self.store().group_name()?
-        {
-            match crate::messaging::encode_group_settings(Some(&name), now) {
-                Ok(content) => contents.push(content),
-                Err(error) => tracing::warn!(%error, "cannot re-send the group settings"),
-            }
-        }
         if let Some(profile) = self.store().profile(&self.user().to_string())?
             && (profile.display_name.is_some() || profile.about.is_some())
         {
@@ -186,6 +208,14 @@ impl Engine {
         };
         if !dm.joined || dm.closed_at.is_some() || dm.state.stalled.is_some() {
             return Ok(None);
+        }
+        if dm.named {
+            // multi-group: a named group sends once someone else is in it.
+            let others = self
+                .dms
+                .get(&dm.group_id)
+                .is_some_and(|g| g.members().count() > 1);
+            return Ok(others.then_some(dm.group_id));
         }
         let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
             return Ok(None);
@@ -330,15 +360,15 @@ impl Engine {
                     });
                 }
             }
-            Decoded::GroupSettings { name } if self.account.is_admin => {
-                let previous = self.store().group_name()?;
-                self.store().set_group_name(name.as_deref(), now)?;
-                if previous != name {
-                    self.emit(Event::GroupSettingsChanged {
-                        name,
-                        previous,
-                        by: self.user(),
-                    });
+            Decoded::GroupSettings { name: Some(name) } if self.account.is_admin => {
+                // multi-group: a named group's name applies here too; the
+                // lobby's name is fixed.
+                if stored.chat != crate::store::MAIN_CHAT
+                    && let Some(group_id) =
+                        self.store().dm_by_chat(stored.chat)?.map(|g| g.group_id)
+                    && self.store().set_named_name(&group_id, &name)?
+                {
+                    self.emit(Event::ChatsChanged);
                 }
             }
             _ => {}

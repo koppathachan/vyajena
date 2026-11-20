@@ -31,7 +31,7 @@ Future<FakeCoreService> openApp(
   FakeCoreService? core,
 ]) async {
   final fake = await openHome(tester, core);
-  if (fake.dmChats.isEmpty) {
+  if (fake.dmChats.isEmpty && fake.groupChats.isEmpty) {
     final group = find.byKey(const ValueKey('chat-main'));
     if (group.evaluate().isNotEmpty) await tap(tester, group);
   }
@@ -67,7 +67,9 @@ Future<FakeCoreService> openAppWithPictures(
   await core.open();
   await settle(tester);
   final group = find.byKey(const ValueKey('chat-main'));
-  if (core.dmChats.isEmpty && group.evaluate().isNotEmpty) {
+  if (core.dmChats.isEmpty &&
+      core.groupChats.isEmpty &&
+      group.evaluate().isNotEmpty) {
     await tap(tester, group);
   }
   return core;

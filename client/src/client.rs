@@ -7,7 +7,7 @@
 //! actions ([`Client::create_group`], [`Client::add_user`],
 //! [`Client::remove_user`], invites) and linking other devices need the
 //! client to be started and connected. Messaging ([`Client::send_text`],
-//! [`Client::set_profile`], [`Client::set_group_settings`]) stores the
+//! [`Client::set_profile`], [`Client::rename_group`]) stores the
 //! message first and sends it whenever the engine can, so it works offline;
 //! its status arrives as [`Event::SendStatus`].
 
@@ -22,8 +22,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
-    self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member,
-    Message, MessageId, Profile, PushPlatform, PushToken, UserId,
+    self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
+    MessageId, Profile, PushPlatform, PushToken, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -211,6 +211,11 @@ pub enum ClientError {
     #[error("this DM is closed")]
     ChatClosed,
 
+    /// The server does not know named groups yet (it lists no protocol
+    /// version 3).
+    #[error("the server does not support groups yet")]
+    GroupsUnavailable,
+
     /// The server does not know DMs yet (it lists no protocol version 2).
     #[error("the server does not support DMs yet")]
     DmsUnavailable,
@@ -322,6 +327,7 @@ impl Client {
                 events,
                 session: Mutex::new(None),
                 server_knows_dms: std::sync::atomic::AtomicBool::new(false),
+                server_knows_named_groups: std::sync::atomic::AtomicBool::new(false),
                 media,
             }),
             stream: Some(stream),
@@ -968,8 +974,16 @@ impl Client {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// The chats: the main group first, then the DMs, newest message first,
-    /// closed DMs last.
+    /// Whether the server this device last connected to knows named groups (it
+    /// lists protocol version 3); the app offers "Create group" only then.
+    pub fn named_groups_available(&self) -> bool {
+        self.shared
+            .server_knows_named_groups
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The chats: the lobby first, then the named groups and the DMs, newest
+    /// message first, closed ones last (app-ui: Chat list).
     pub fn chats(&self) -> Result<Vec<Chat>, ClientError> {
         let store = &self.shared.store;
         let summary = |id: ChatId, kind: ChatKind| -> Result<Chat, ClientError> {
@@ -984,16 +998,26 @@ impl Client {
         };
         let mut chats = Vec::new();
         if store.group()?.is_some() {
-            chats.push(summary(ChatId::MAIN, ChatKind::Main)?);
+            chats.push(summary(ChatId::MAIN, ChatKind::Lobby)?);
         }
-        let mut dms = Vec::new();
+        let mut others = Vec::new();
         for dm in store.dms()? {
+            let closed = dm.closed_at.is_some();
+            if dm.named {
+                others.push(summary(
+                    ChatId(dm.chat),
+                    ChatKind::Group {
+                        name: dm.name,
+                        closed,
+                    },
+                )?);
+                continue;
+            }
             let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
                 continue;
             };
-            let closed = dm.closed_at.is_some();
             let waiting = !closed && !self.dm_has_peer(&dm.group_id, &peer)?;
-            dms.push(summary(
+            others.push(summary(
                 ChatId(dm.chat),
                 ChatKind::Dm {
                     peer,
@@ -1002,15 +1026,137 @@ impl Client {
                 },
             )?);
         }
-        dms.sort_by(|a, b| {
-            let closed = |c: &Chat| matches!(c.kind, ChatKind::Dm { closed: true, .. });
+        others.sort_by(|a, b| {
+            let closed = |c: &Chat| {
+                matches!(
+                    c.kind,
+                    ChatKind::Dm { closed: true, .. } | ChatKind::Group { closed: true, .. }
+                )
+            };
             closed(a)
                 .cmp(&closed(b))
                 .then(b.last_message_at.cmp(&a.last_message_at))
                 .then(a.id.cmp(&b.id))
         });
-        chats.extend(dms);
+        chats.extend(others);
         Ok(chats)
+    }
+
+    // --- Named groups (multi-group; admin only to create and moderate) ---
+
+    /// Admin: creates a named group with `name` (if given) and adds the
+    /// version 3 devices of `members`, which finishes in the background
+    /// ([`Event::ChatsChanged`]); returns its chat. Fails with
+    /// [`ClientError::NotAdmin`] on other devices and
+    /// [`ClientError::GroupsUnavailable`] on a server below version 3.
+    pub async fn create_named_group(
+        &self,
+        name: Option<&str>,
+        members: &[UserId],
+    ) -> Result<ChatId, ClientError> {
+        let mut group_id = [0u8; 16];
+        getrandom::fill(&mut group_id)
+            .map_err(|e| ClientError::Mls(MlsError::new("randomness", e)))?;
+        let (name, members) = (name.map(str::to_owned), members.to_vec());
+        self.job(move |reply| Job::CreateNamedGroup {
+            group_id: group_id.to_vec(),
+            name,
+            members,
+            reply,
+        })
+        .await?;
+        let chat = self
+            .shared
+            .store
+            .dm_by_group(&group_id)?
+            .ok_or(ClientError::NoSuchChat)?;
+        Ok(ChatId(chat.chat))
+    }
+
+    fn named_group(&self, chat: ChatId) -> Result<crate::store::DmRow, ClientError> {
+        self.shared
+            .store
+            .dm_by_chat(chat.0)?
+            .filter(|row| row.named)
+            .ok_or(ClientError::NoSuchChat)
+    }
+
+    /// Admin: adds the version 3 devices of `user` to the named group `chat`.
+    pub async fn add_to_group(&self, chat: ChatId, user: &UserId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        let user = user.clone();
+        self.job(move |reply| Job::AddToGroup {
+            group_id: row.group_id,
+            user,
+            reply,
+        })
+        .await
+    }
+
+    /// Admin: removes all devices of `user` from the named group `chat`; they
+    /// stay in the lobby.
+    pub async fn remove_from_group(&self, chat: ChatId, user: &UserId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        let user = user.clone();
+        self.job(move |reply| Job::RemoveFromGroup {
+            group_id: row.group_id,
+            user,
+            reply,
+            after: None,
+        })
+        .await
+    }
+
+    /// Admin: sets the name of the named group `chat` for every member
+    /// (message-content: Group settings travel encrypted). The lobby's name is
+    /// fixed: it is [`ClientError::NoSuchChat`] here.
+    pub fn rename_group(&self, chat: ChatId, name: &str) -> Result<MessageId, ClientError> {
+        if !self.account()?.is_admin {
+            return Err(ClientError::NotAdmin);
+        }
+        let row = self.named_group(chat)?;
+        if row.closed_at.is_some() {
+            return Err(ClientError::ChatClosed);
+        }
+        let content =
+            crate::messaging::encode_group_settings(Some(name), self.now()).map_err(too_long)?;
+        self.shared.store.set_named_name(&row.group_id, name)?;
+        let id = self.queue_content(chat.0, &content)?;
+        self.shared.events.emit(Event::ChatsChanged);
+        Ok(id)
+    }
+
+    /// Admin: closes the named group `chat` (`Admin.CloseGroup`). It becomes
+    /// read-only for everyone; the lobby cannot be closed.
+    pub async fn close_group(&self, chat: ChatId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        self.job(move |reply| Job::CloseGroup {
+            group_id: row.group_id,
+            reply,
+        })
+        .await
+    }
+
+    /// The member devices of the named group `chat`, as this device sees
+    /// them (the admin's member picker); empty once the group is closed.
+    pub fn group_members(&self, chat: ChatId) -> Result<Vec<Member>, ClientError> {
+        let row = self.named_group(chat)?;
+        let store = &self.shared.store;
+        let group = store.transaction(|| -> Result<_, ClientError> {
+            Ok(crate::mls::group::load(store.mls(), &row.group_id)?)
+        })?;
+        let Some(group) = group else {
+            return Ok(Vec::new());
+        };
+        let mut members: Vec<Member> = verify::members(&group)
+            .into_iter()
+            .map(|(_, claim)| Member {
+                user: claim.claimed.user,
+                device: claim.claimed.device_id,
+            })
+            .collect();
+        members.sort();
+        Ok(members)
     }
 
     /// Whether one of `peer`'s devices is in the DM `group_id` on this
@@ -1395,18 +1541,6 @@ impl Client {
         self.send_content(&content)
     }
 
-    /// Admin: sets the group's name for every member (message-content: Group
-    /// settings travel encrypted). Members ignore settings from non-admin
-    /// devices, so other devices get [`ClientError::NotAdmin`].
-    pub fn set_group_settings(&self, name: Option<&str>) -> Result<MessageId, ClientError> {
-        if !self.account()?.is_admin {
-            return Err(ClientError::NotAdmin);
-        }
-        let content =
-            crate::messaging::encode_group_settings(name, self.now()).map_err(too_long)?;
-        self.send_content(&content)
-    }
-
     fn send_content(&self, content: &[u8]) -> Result<MessageId, ClientError> {
         self.account()?;
         if self.shared.store.group()?.is_none() {
@@ -1515,13 +1649,6 @@ impl Client {
         Ok(match self.profile(user)?.display_name {
             Some(name) if !name.is_empty() => format!("{name} ({})", user.username),
             _ => user.username.clone(),
-        })
-    }
-
-    /// The group's settings, as an admin device last set them.
-    pub fn group_settings(&self) -> Result<GroupSettings, ClientError> {
-        Ok(GroupSettings {
-            name: self.shared.store.group_name()?,
         })
     }
 

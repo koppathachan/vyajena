@@ -1,22 +1,25 @@
-// app-ui: Chat list (change `dms`). The group first, then the DMs by the
+// app-ui: Chat list (changes `dms`, `lobby-multi-group`). The lobby first,
+// labelled "lobby", then the admin's named groups by name and the DMs by the
 // peer's name, newest message first, closed ones last and greyed, each with
 // an unread mark and the count of unseen mentions of this user.
 //
 // app-ui: Create affordance (change `create-affordance`). A `+` button opens a
 // menu to start a new conversation: New DM (everyone, when the server offers DMs)
-// and New group (admin devices only).
+// and New group (admin devices only, when the server offers named groups).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
 import '../app/names.dart';
+import '../admin/create_named_group_screen.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import '../members/members_screen.dart';
 import 'chat_model.dart';
 import 'chat_screen.dart';
 import 'dm_screen.dart';
+import 'group_screen.dart';
 
 /// The chat list.
 class ChatListScreen extends StatefulWidget {
@@ -46,6 +49,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
   /// Whether the server offers DMs: New DM is offered only then (app-ui: Create
   /// affordance).
   bool _dms = false;
+
+  /// Whether the server offers named groups: New group is offered only then.
+  bool _groups = false;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -58,8 +64,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _load();
         case CoreEvent_ChatsChanged() ||
             CoreEvent_Message() ||
-            CoreEvent_SendStatus() ||
-            CoreEvent_GroupSettingsChanged():
+            CoreEvent_SendStatus():
           _load();
         default:
           break;
@@ -77,6 +82,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Future<void> _load() async {
     final chats = await widget.core.chats();
     final dms = await widget.core.dmsAvailable();
+    final groups = await widget.core.namedGroupsAvailable();
     await _names.load([
       for (final c in chats)
         if (c.kind case ChatKindInfo_Dm(:final peer)) peer,
@@ -85,13 +91,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
       setState(() {
         _chats = chats;
         _dms = dms;
+        _groups = groups;
       });
     }
   }
 
   Future<void> _open(ChatSummary chat) async {
     switch (chat.kind) {
-      case ChatKindInfo_Main():
+      case ChatKindInfo_Lobby():
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => ChatScreen(
@@ -101,6 +108,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ),
           ),
         );
+      case ChatKindInfo_Group():
+        await showGroup(context, widget.core, chat.chatId, admin: widget.admin);
       case ChatKindInfo_Dm(:final peer):
         await showDm(context, widget.core, chat.chatId, peer);
     }
@@ -126,7 +135,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   _newDm();
                 },
               ),
-            if (widget.admin)
+            if (widget.admin && _groups)
               ListTile(
                 key: const Key('new-group'),
                 leading: const Icon(Icons.group_add),
@@ -188,19 +197,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
     await _load();
   }
 
-  /// New group: create the group through the core's `createGroup` (admin
-  /// devices only; the server rejects a non-admin's group RPCs anyway).
+  /// New group: the admin names it and picks its members; the core creates
+  /// a named group and adds them (admin devices only; the server rejects a
+  /// non-admin's group RPCs anyway).
   Future<void> _newGroup() async {
-    try {
-      await widget.core.createGroup();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(errorText(error))));
-      }
-    }
+    final chatId = await Navigator.of(context).push<int>(
+      MaterialPageRoute<int>(
+        builder: (_) => CreateNamedGroupScreen(core: widget.core),
+      ),
+    );
     await _load();
+    if (chatId != null && mounted) {
+      await showGroup(context, widget.core, chatId, admin: widget.admin);
+      await _load();
+    }
   }
 
   Widget? _trailing(ChatSummary chat) {
@@ -236,7 +246,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         title: 'Chats',
         actions: [ChatMenu(admin: widget.admin)],
       ),
-      floatingActionButton: (_dms || widget.admin)
+      floatingActionButton: (_dms || (widget.admin && _groups))
           ? FloatingActionButton(
               key: const Key('new-chat-fab'),
               tooltip: 'New chat',
@@ -253,10 +263,23 @@ class _ChatListScreenState extends State<ChatListScreen> {
           children: [
             for (final chat in _chats)
               switch (chat.kind) {
-                ChatKindInfo_Main() => ListTile(
+                ChatKindInfo_Lobby() => ListTile(
                   key: const ValueKey('chat-main'),
                   leading: const Icon(Icons.groups_outlined),
-                  title: Text(widget.chat.groupName ?? 'Group'),
+                  title: const Text(lobbyName),
+                  trailing: _trailing(chat),
+                  onTap: () => _open(chat),
+                ),
+                ChatKindInfo_Group(:final name, :final closed) => ListTile(
+                  key: ValueKey('chat-${chat.chatId}'),
+                  leading: const Icon(Icons.group_outlined),
+                  title: Text(
+                    name ?? unnamedGroupName,
+                    style: closed
+                        ? TextStyle(color: Theme.of(context).disabledColor)
+                        : null,
+                  ),
+                  subtitle: closed ? const Text(groupClosedText) : null,
                   trailing: _trailing(chat),
                   onTap: () => _open(chat),
                 ),

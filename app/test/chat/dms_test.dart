@@ -42,9 +42,7 @@ void main() {
   // spec: app-ui/chat-list
   testWidgets('Two chats: the group first, then "Bobby (bob)" with an unread '
       'mark; tapping it opens the DM', (tester) async {
-    final core = aliceInGroup()
-      ..group = 'Family'
-      ..dmChats = [dmWithBob(unread: 1)];
+    final core = aliceInGroup()..dmChats = [dmWithBob(unread: 1)];
     core.receive(bob, 'hi from the DM', chatId: 1, emitEvent: false);
     await openApp(tester, core);
 
@@ -57,7 +55,7 @@ void main() {
       lessThan(tester.getTopLeft(dm).dy),
       reason: 'the group comes first',
     );
-    expect(find.text('Family'), findsOneWidget);
+    expect(find.text('lobby'), findsOneWidget);
     expect(find.text('Bobby (bob)'), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
 
