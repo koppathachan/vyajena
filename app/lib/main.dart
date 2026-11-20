@@ -5,6 +5,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 
 import 'app/app.dart';
+import 'app/background_task.dart';
 import 'core/rust_core_service.dart';
 import 'push/push_platform.dart';
 import 'src/rust/frb_generated.dart';
@@ -17,7 +18,12 @@ Future<void> main() async {
     (results) => results.any((r) => r != ConnectivityResult.none),
   );
   runApp(
-    VyajenaApp(core: core, networkChanges: network, push: MethodChannelPush()),
+    VyajenaApp(
+      core: core,
+      networkChanges: network,
+      push: MethodChannelPush(),
+      background: MethodChannelBackgroundTask(),
+    ),
   );
   await core.open();
 }

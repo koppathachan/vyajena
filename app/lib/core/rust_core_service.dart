@@ -94,6 +94,9 @@ class RustCoreService extends CoreService {
   Future<void> clearPushToken() => _c.clearPushToken();
 
   @override
+  Future<bool> hasUnsent() => _c.hasUnsent();
+
+  @override
   Future<List<ChatMessage>> history(int limit) => _c.history(limit: limit);
 
   @override

@@ -385,6 +385,12 @@ impl Core {
             .collect())
     }
 
+    /// Whether any own message is still sending (client-runtime: Unsent messages
+    /// query). The app asks it when it goes to the background.
+    pub fn has_unsent(&self) -> Result<bool, CoreError> {
+        forward(self.client.has_unsent())
+    }
+
     /// One message by local id.
     pub fn message(&self, id: i64) -> Result<Option<ChatMessage>, CoreError> {
         Ok(forward(self.client.message(MessageId(id)))?.map(map::message))

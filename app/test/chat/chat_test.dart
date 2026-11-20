@@ -217,7 +217,10 @@ void main() {
   ) async {
     final core = await aliceInChat(tester);
     final id = await send(tester, core, 'hi');
-    core.setStatus(id, const SendState.failed(reason: 'too large for the server'));
+    core.setStatus(
+      id,
+      const SendState.failed(reason: 'too large for the server'),
+    );
     await settle(tester);
     expect(find.text('Failed: too large for the server'), findsOneWidget);
   });

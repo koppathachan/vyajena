@@ -310,6 +310,12 @@ class FakeCoreService extends CoreService {
   @override
   Future<void> clearPushToken() async => _call('clearPushToken');
 
+  /// What [hasUnsent] answers.
+  bool unsent = false;
+
+  @override
+  Future<bool> hasUnsent() async => unsent;
+
   @override
   Future<List<ChatMessage>> history(int limit) => historyIn(0, limit);
 

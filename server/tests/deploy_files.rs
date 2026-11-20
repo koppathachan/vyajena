@@ -1312,3 +1312,58 @@ fn no_real_address_or_port_of_the_deployment_is_committed() {
         }
     }
 }
+
+// spec: relay/provision-and-deploy-the-relay
+#[test]
+fn update_ports_changes_the_shared_rules_only_when_asked() {
+    let sandbox = Sandbox::new().with_secrets();
+    let plain = dry_run(&sandbox);
+    assert!(!plain.iter().any(|c| c.contains("firewall-rules update")));
+    let out = sandbox.run(
+        "deploy/relay/create.sh",
+        &["--dry-run", "--update-ports"],
+        "",
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let printed = String::from_utf8(out.stdout).check("utf-8");
+    let updates: Vec<&str> = printed
+        .lines()
+        .filter(|l| l.starts_with("gcloud compute firewall-rules update"))
+        .collect();
+    assert_eq!(updates.len(), 2, "{printed}");
+    assert!(
+        updates
+            .iter()
+            .any(|u| u.contains(&format!("--rules=tcp:{}", conf("TUNNEL_PORT"))))
+    );
+    assert!(
+        updates
+            .iter()
+            .any(|u| u.contains(&format!("--rules=tcp:{}", conf("REVIEW_PORT"))))
+    );
+    // The public and SSH rules are never updated.
+    assert!(
+        !updates
+            .iter()
+            .any(|u| u.contains("-public") || u.contains("-iap-ssh"))
+    );
+}
+
+// spec: server-deployment/service-resource-limits
+#[test]
+fn both_servers_have_memory_and_task_ceilings_and_the_check_verifies_them() {
+    for unit in [
+        "deploy/server/vyajena.service",
+        "deploy/server/vyajena-review.service",
+    ] {
+        let text = read(unit);
+        for line in ["MemoryHigh=384M", "MemoryMax=512M", "TasksMax=256"] {
+            assert!(text.lines().any(|l| l == line), "{unit} lacks {line}");
+        }
+    }
+    // The check compares what systemd reports (bytes) for both servers.
+    let check = read("deploy/server/check.sh");
+    assert!(check.contains("MemoryHigh=402653184 MemoryMax=536870912 TasksMax=256"));
+    assert_eq!(384 * 1024 * 1024, 402_653_184);
+    assert_eq!(512 * 1024 * 1024, 536_870_912);
+}

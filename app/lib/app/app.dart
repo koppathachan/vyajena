@@ -9,6 +9,7 @@ import '../chat/picture_picker.dart';
 import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../push/push_platform.dart';
+import 'background_task.dart';
 import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
@@ -24,6 +25,7 @@ class VyajenaApp extends StatefulWidget {
     required this.core,
     this.networkChanges,
     this.push,
+    this.background,
     this.pictures = const GalleryPicker(),
   });
 
@@ -39,6 +41,10 @@ class VyajenaApp extends StatefulWidget {
   /// The phone's push service (app-ui: Push notifications); none in most
   /// widget tests.
   final PushPlatformApi? push;
+
+  /// The phone's short background time for finishing a send (app-ui: Finish
+  /// sends in the background); none in most widget tests.
+  final BackgroundTaskApi? background;
 
   @override
   State<VyajenaApp> createState() => _VyajenaAppState();
@@ -69,6 +75,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
     core: widget.core,
     networkChanges: widget.networkChanges,
     push: widget.push,
+    background: widget.background,
     child: PicturePickerScope(
       picker: widget.pictures,
       child: MaterialApp(

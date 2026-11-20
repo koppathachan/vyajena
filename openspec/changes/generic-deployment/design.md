@@ -61,12 +61,12 @@ in tests stay: they are not the deployment.
 ### D4: Changing ports touches the live system
 
 - The relay's tunnel and review firewall rules are VPC-wide and shared with the
-  old relay. `create.sh` now *updates* an existing rule to the new port. After
-  it runs, the old relay's tunnel and review ports are closed to new connections
-  until the server is redeployed against the new relay. Run create, relay deploy,
-  DNS change and server deploy back to back (change `relay-mumbai`, tasks 4.x).
-  Rollback needs the old ports (the owner has them) and
-  `gcloud compute firewall-rules update ... --rules=tcp:<old>`.
+  old relay. `create.sh` leaves an existing rule's port alone; `create.sh
+  --update-ports` brings the two rules to the new ports, once, at the cut-over.
+  Established tunnel connections survive the change, so the old relay keeps
+  serving until the server is redeployed against the new relay. Rollback needs the
+  old ports (the owner has them) and `gcloud compute firewall-rules update
+  ... --rules=tcp:<old>`.
 - The server's loopback ports change at its next deploy: units, configs, the
   tunnel's `local_addr` and the hardening check all follow `network.conf`.
 - The TLS SNI name the client sends is `vyajena2-server`; the server's single

@@ -6,6 +6,11 @@
 // Push notifications): tapping it opens the app, which starts the core
 // here; opening the app removes the shown notifications.
 //
+// Going to the background with a message still sending does not stop the core
+// at once: it keeps running until the message is accepted or failed, or one
+// minute after it connected, whichever comes first (app-ui: Finish sends in the
+// background; change finish-sends-in-background).
+//
 // It also follows the phone's network (qa-fixes design D6, "Network
 // back"): on any change to a connection it calls `reconnectNow`, so the
 // core reconnects at once instead of waiting out its backoff.
@@ -15,9 +20,18 @@ import 'package:flutter/widgets.dart';
 
 import '../core/core_service.dart';
 import '../push/push_platform.dart';
+import 'background_task.dart';
 
-/// Stops the core when the app is paused and restarts it on resume;
-/// tells it to reconnect when the network changes.
+/// How long the core may keep running in the background, counted from when it
+/// connected, to finish sending (app-ui: Finish sends in the background).
+const kBackgroundSendLimit = Duration(minutes: 1);
+
+/// How long the core may take to connect in the background before the app stops
+/// it anyway.
+const kBackgroundConnectWait = Duration(minutes: 1);
+
+/// Stops the core when the app is paused (after finishing any unsent message)
+/// and restarts it on resume; tells it to reconnect when the network changes.
 class CoreLifecycle extends StatefulWidget {
   const CoreLifecycle({
     super.key,
@@ -25,6 +39,7 @@ class CoreLifecycle extends StatefulWidget {
     required this.child,
     this.networkChanges,
     this.push,
+    this.background,
   });
 
   final CoreService core;
@@ -38,6 +53,10 @@ class CoreLifecycle extends StatefulWidget {
   /// The phone's push service: its shown notifications go away when the app
   /// opens or comes back. Null in widget tests that do not need it.
   final PushPlatformApi? push;
+
+  /// The phone's short background time (iOS); null in widget tests that do not
+  /// need it.
+  final BackgroundTaskApi? background;
 
   @override
   State<CoreLifecycle> createState() => _CoreLifecycleState();
@@ -65,21 +84,119 @@ class _CoreLifecycleState extends State<CoreLifecycle> {
     if (online) widget.core.reconnectNow();
   }
 
+  /// Counts pauses, so a wait that was cancelled by a resume (or replaced by
+  /// a later pause) does nothing when its futures complete.
+  int _pause = 0;
+  final List<StreamSubscription<Object?>> _waiting = [];
+  Timer? _connectCap;
+  Timer? _sendCap;
+  VoidCallback? _connectionListener;
+
   void _paused() {
     if (!widget.core.running) return;
+    _cancelWait();
     _stoppedInBackground = true;
+    final pause = ++_pause;
+    // iOS suspends at once unless asked for time, so ask before anything else.
+    unawaited(widget.background?.begin());
+    unawaited(_decide(pause));
+  }
+
+  /// Stops the core now, or keeps it while an own message is still sending.
+  Future<void> _decide(int pause) async {
+    var unsent = false;
+    try {
+      unsent = await widget.core.hasUnsent();
+    } catch (_) {
+      // Cannot tell: stop, as before.
+    }
+    if (pause != _pause) return;
+    if (!unsent) {
+      _finish();
+      return;
+    }
+    _wait(pause);
+  }
+
+  /// Keeps the core running until the sends are done, the minute after it
+  /// connected is up, or it does not connect in time.
+  void _wait(int pause) {
+    final core = widget.core;
+    _waiting.add(
+      core.events.listen((event) {
+        if (event is CoreEvent_SendStatus) unawaited(_recheck(pause));
+      }),
+    );
+    final expired = widget.background?.expired.listen((_) {
+      if (pause == _pause) _finish();
+    });
+    if (expired != null) _waiting.add(expired);
+    _connectCap = Timer(kBackgroundConnectWait, () {
+      if (pause == _pause) _finish();
+    });
+    void startMinute() {
+      if (_sendCap != null ||
+          core.connection.value != ConnectionStatus.connected) {
+        return;
+      }
+      _connectCap?.cancel();
+      _sendCap = Timer(kBackgroundSendLimit, () {
+        if (pause == _pause) _finish();
+      });
+    }
+
+    _connectionListener = startMinute;
+    core.connection.addListener(startMinute);
+    startMinute();
+  }
+
+  Future<void> _recheck(int pause) async {
+    var unsent = true;
+    try {
+      unsent = await widget.core.hasUnsent();
+    } catch (_) {
+      // Cannot tell: keep waiting; the caps end it.
+    }
+    if (pause == _pause && !unsent) _finish();
+  }
+
+  void _cancelWait() {
+    for (final s in _waiting) {
+      s.cancel();
+    }
+    _waiting.clear();
+    _connectCap?.cancel();
+    _sendCap?.cancel();
+    _connectCap = null;
+    _sendCap = null;
+    final listener = _connectionListener;
+    if (listener != null) widget.core.connection.removeListener(listener);
+    _connectionListener = null;
+  }
+
+  /// The wait is over: stop the core and give the background time back.
+  void _finish() {
+    _cancelWait();
+    _pause++;
     widget.core.stop();
+    unawaited(widget.background?.end());
   }
 
   void _resumed() {
+    // Back in the app: any wait ends and the core keeps running.
+    final waited = _waiting.isNotEmpty || _connectCap != null;
+    _cancelWait();
+    _pause++;
+    if (waited) unawaited(widget.background?.end());
     _clearNotifications();
     if (!_stoppedInBackground) return;
     _stoppedInBackground = false;
-    widget.core.start();
+    if (!widget.core.running) widget.core.start();
   }
 
   @override
   void dispose() {
+    _cancelWait();
     _network?.cancel();
     _listener.dispose();
     super.dispose();

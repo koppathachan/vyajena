@@ -2,6 +2,41 @@ import Flutter
 import UIKit
 import UserNotifications
 
+/// Background time for finishing a send (app-ui: Finish sends in the
+/// background; change finish-sends-in-background D3). `begin` asks iOS for a
+/// short window after the app is paused (about 30 seconds); `end` gives it back;
+/// when iOS ends it first, Dart is told with `expired` and stops the core.
+enum BackgroundTask {
+  static let channelName = "vyajena/background"
+  static var channel: FlutterMethodChannel?
+  private static var task: UIBackgroundTaskIdentifier = .invalid
+
+  static func handle(_ call: FlutterMethodCall, _ result: @escaping FlutterResult) {
+    switch call.method {
+    case "begin":
+      if task == .invalid {
+        task = UIApplication.shared.beginBackgroundTask(withName: "finish-sends") {
+          channel?.invokeMethod("expired", arguments: nil)
+          end()
+        }
+      }
+      result(nil)
+    case "end":
+      end()
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  static func end() {
+    if task != .invalid {
+      UIApplication.shared.endBackgroundTask(task)
+      task = .invalid
+    }
+  }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   override func application(
@@ -58,6 +93,11 @@ import UserNotifications
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
     Push.channel = push
     push.setMethodCallHandler(Push.handle)
+    let background = FlutterMethodChannel(
+      name: BackgroundTask.channelName,
+      binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    BackgroundTask.channel = background
+    background.setMethodCallHandler(BackgroundTask.handle)
   }
 }
 
