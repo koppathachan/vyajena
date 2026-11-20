@@ -55,6 +55,30 @@ pub fn find(conn: &Connection, blob_id: &[u8]) -> Result<Option<BlobRow>, StoreE
         .optional()?)
 }
 
+/// The bytes of blobs not yet expired at `now_ms` (Upload limits).
+pub fn live_bytes(conn: &Connection, now_ms: i64) -> Result<u64, StoreError> {
+    let total: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(size), 0) FROM blobs WHERE expires_at > ?1",
+        params![now_ms],
+        |row| row.get(0),
+    )?;
+    Ok(u64::try_from(total).unwrap_or(0))
+}
+
+/// How many blobs `device_id` uploaded at or after `since_ms` (Upload limits).
+pub fn uploads_since(
+    conn: &Connection,
+    device_id: &[u8],
+    since_ms: i64,
+) -> Result<u32, StoreError> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM blobs WHERE uploader_device_id = ?1 AND uploaded_at >= ?2",
+        params![device_id, since_ms],
+        |row| row.get(0),
+    )?;
+    Ok(u32::try_from(count).unwrap_or(u32::MAX))
+}
+
 /// Records a blob. Fails if its id is taken.
 pub fn insert(conn: &Connection, row: &BlobRow) -> Result<(), StoreError> {
     conn.execute(

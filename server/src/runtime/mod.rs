@@ -261,13 +261,16 @@ impl Server {
 /// the [`AuthLayer`] in front of all of them (wire-transport: Session
 /// authentication).
 pub fn routes(state: &State) -> Routes {
+    // Every request is decoded within a cap (blob-store: Upload limits): the
+    // blobs service has its own, the rest share MAX_REQUEST_MESSAGE_BYTES.
+    let cap = protocol::wire_transport::MAX_REQUEST_MESSAGE_BYTES;
     Routes::default()
-        .add_service(crate::devices::service(state))
-        .add_service(crate::keys::service(state))
-        .add_service(crate::admin::service(state))
-        .add_service(crate::dms::service(state))
+        .add_service(crate::devices::service(state).max_decoding_message_size(cap))
+        .add_service(crate::keys::service(state).max_decoding_message_size(cap))
+        .add_service(crate::admin::service(state).max_decoding_message_size(cap))
+        .add_service(crate::dms::service(state).max_decoding_message_size(cap))
         .add_service(crate::blobs::service(state))
-        .add_service(crate::messaging::service(state))
+        .add_service(crate::messaging::service(state).max_decoding_message_size(cap))
 }
 
 /// Records the server id on first start and refuses a different one later.

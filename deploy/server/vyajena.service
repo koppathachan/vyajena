@@ -60,5 +60,11 @@ SystemCallErrorNumber=EPERM
 IPAddressAllow=localhost
 IPAddressDeny=any
 
+# Resource ceilings (change upload-limits): throttled above MemoryHigh, killed and
+# restarted above MemoryMax, so a runaway server cannot take the host down.
+MemoryHigh=384M
+MemoryMax=512M
+TasksMax=256
+
 [Install]
 WantedBy=multi-user.target

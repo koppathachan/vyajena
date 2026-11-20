@@ -1348,3 +1348,22 @@ fn update_ports_changes_the_shared_rules_only_when_asked() {
             .any(|u| u.contains("-public") || u.contains("-iap-ssh"))
     );
 }
+
+// spec: server-deployment/service-resource-limits
+#[test]
+fn both_servers_have_memory_and_task_ceilings_and_the_check_verifies_them() {
+    for unit in [
+        "deploy/server/vyajena.service",
+        "deploy/server/vyajena-review.service",
+    ] {
+        let text = read(unit);
+        for line in ["MemoryHigh=384M", "MemoryMax=512M", "TasksMax=256"] {
+            assert!(text.lines().any(|l| l == line), "{unit} lacks {line}");
+        }
+    }
+    // The check compares what systemd reports (bytes) for both servers.
+    let check = read("deploy/server/check.sh");
+    assert!(check.contains("MemoryHigh=402653184 MemoryMax=536870912 TasksMax=256"));
+    assert_eq!(384 * 1024 * 1024, 402_653_184);
+    assert_eq!(512 * 1024 * 1024, 536_870_912);
+}

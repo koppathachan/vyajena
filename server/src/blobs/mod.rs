@@ -18,7 +18,10 @@ pub mod meta;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::blob_store::{BLOB_ID_LEN, BLOB_TTL, MAX_BLOB_BYTES};
+use protocol::blob_store::{
+    BLOB_ID_LEN, BLOB_TTL, MAX_BLOB_BYTES, MAX_BLOB_STORE_BYTES, MAX_CONCURRENT_UPLOADS,
+    MAX_UPLOAD_REQUEST_BYTES, MAX_UPLOADS_PER_DEVICE_PER_HOUR,
+};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
@@ -50,12 +53,18 @@ pub fn backend_for(config: &Config) -> Option<Arc<dyn BlobStore>> {
 pub fn service(state: &State) -> BlobsServer<BlobsService> {
     BlobsServer::new(BlobsService {
         state: state.clone(),
+        uploads: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_UPLOADS)),
     })
+    // A request over the blob and its ids is refused before it is buffered
+    // (blob-store: Upload limits).
+    .max_decoding_message_size(MAX_UPLOAD_REQUEST_BYTES)
 }
 
 /// Implements `vyajena.v1.Blobs`.
 pub struct BlobsService {
     state: State,
+    /// One permit per upload in progress (blob-store: Upload limits).
+    uploads: Arc<tokio::sync::Semaphore>,
 }
 
 /// A backend failure seen by a client: logged, reported as `UNAVAILABLE`
@@ -95,6 +104,8 @@ enum Decision {
     Existing(i64),
     /// A new blob: store the bytes, then record the row.
     Store,
+    /// A new blob, refused by an upload limit (blob-store: Upload limits).
+    Limited(&'static str),
 }
 
 impl BlobsService {
@@ -129,6 +140,12 @@ impl Blobs for BlobsService {
                 "a blob is at most {MAX_BLOB_BYTES} bytes"
             )));
         }
+        // At most MAX_CONCURRENT_UPLOADS at once: each is buffered whole.
+        let _permit = self
+            .uploads
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Status::resource_exhausted("too many uploads at once; try again"))?;
         let now_ms = unix_millis(self.state.clock.now());
         let row = BlobRow {
             blob_id: id.to_vec(),
@@ -157,11 +174,26 @@ impl Blobs for BlobsService {
                             Err(Status::already_exists("that blob id is taken"))
                         }
                     }
-                    _ => Ok(Decision::Store),
+                    _ => {
+                        // Upload limits: the live total and this device's hour.
+                        let hour_ago = now_ms.saturating_sub(3_600_000);
+                        if meta::live_bytes(conn, now_ms)?.saturating_add(first.size.unsigned_abs())
+                            > MAX_BLOB_STORE_BYTES
+                        {
+                            Ok(Decision::Limited("the blob store is full"))
+                        } else if meta::uploads_since(conn, &first.uploader_device_id, hour_ago)?
+                            >= MAX_UPLOADS_PER_DEVICE_PER_HOUR
+                        {
+                            Ok(Decision::Limited("too many uploads from this device"))
+                        } else {
+                            Ok(Decision::Store)
+                        }
+                    }
                 })
             })
             .await??;
         let expires_at = match decision {
+            Decision::Limited(why) => return Err(Status::resource_exhausted(why)),
             Decision::Existing(expires_at) => expires_at,
             Decision::Store => {
                 backend

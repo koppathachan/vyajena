@@ -54,6 +54,11 @@ pub const AUTHORIZATION_BEARER_PREFIX: &str = "Bearer ";
 /// and reopened through a working day (change `resume-across-restart`).
 pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(6 * 60 * 60);
 
+/// The largest request message the server decodes on any service but `Blobs`: well
+/// above the 256 KiB handshake envelope, far below gRPC's 4 MiB default (change
+/// `upload-limits`).
+pub const MAX_REQUEST_MESSAGE_BYTES: usize = 1024 * 1024;
+
 /// Length of a challenge nonce from `Devices.GetChallenge`
 /// (Session authentication).
 pub const CHALLENGE_NONCE_LEN: usize = 32;
