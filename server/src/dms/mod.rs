@@ -170,50 +170,69 @@ pub fn close_dms_of(
             )?;
             owed.push(member.device_id);
         }
-        tx.execute(
-            "DELETE FROM deliveries WHERE server_seq IN
-                 (SELECT server_seq FROM envelopes WHERE group_id = ?1)",
-            params![dm.group_id],
-        )?;
-        tx.execute(
-            "DELETE FROM envelopes WHERE group_id = ?1",
-            params![dm.group_id],
-        )?;
-        for table in ["mls_public_state", "mls_members", "pi_removes", "gaps"] {
-            tx.execute(
-                &format!("DELETE FROM {table} WHERE group_id = ?1"),
-                params![dm.group_id],
-            )?;
-        }
-        tx.execute(
-            "UPDATE mls_groups SET closed_at = ?2 WHERE group_id = ?1",
-            params![dm.group_id, unix_millis(now)],
-        )?;
+        drop_group_state(tx, &dm.group_id, now)?;
         tracing::info!("closed a DM: one of its users was removed");
     }
     Ok(owed)
 }
 
-/// The `DmClosed` frames `device` still has to acknowledge.
+/// Closes a group for good: drops its queued entries, public state, members
+/// and pending server Removes, and records `closed_at`. Shared by a closed DM
+/// and a closed named group.
+pub(crate) fn drop_group_state(
+    tx: &Transaction<'_>,
+    group_id: &[u8],
+    now: SystemTime,
+) -> Result<(), StoreError> {
+    tx.execute(
+        "DELETE FROM deliveries WHERE server_seq IN
+             (SELECT server_seq FROM envelopes WHERE group_id = ?1)",
+        params![group_id],
+    )?;
+    tx.execute(
+        "DELETE FROM envelopes WHERE group_id = ?1",
+        params![group_id],
+    )?;
+    for table in ["mls_public_state", "mls_members", "pi_removes", "gaps"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE group_id = ?1"),
+            params![group_id],
+        )?;
+    }
+    tx.execute(
+        "UPDATE mls_groups SET closed_at = ?2 WHERE group_id = ?1",
+        params![group_id, unix_millis(now)],
+    )?;
+    Ok(())
+}
+
+/// The close notices (`DmClosed` for a DM, `GroupClosed` for a named group)
+/// `device` still has to acknowledge.
 pub(crate) fn closed_notices(
     conn: &Connection,
     device: &DeviceId,
 ) -> Result<Vec<pb::ServerFrame>, StoreError> {
     let mut stmt = conn.prepare(
-        "SELECT n.group_id, g.closed_at FROM dm_closed_notices n
+        "SELECT n.group_id, g.closed_at, g.kind FROM dm_closed_notices n
          JOIN mls_groups g ON g.group_id = n.group_id
          WHERE n.device_id = ?1 ORDER BY g.closed_at, n.group_id",
     )?;
     let rows = stmt.query_map(params![device.as_slice()], |row| {
-        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Option<i64>>(1)?))
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, Option<i64>>(1)?,
+            row.get::<_, String>(2)?,
+        ))
     })?;
     let mut frames = Vec::new();
     for row in rows {
-        let (group_id, closed_at) = row?;
-        frames.push(closed_frame(
-            group_id,
-            closed_at.map(crate::runtime::clock::from_unix_millis),
-        ));
+        let (group_id, closed_at, kind) = row?;
+        let closed_at = closed_at.map(crate::runtime::clock::from_unix_millis);
+        frames.push(if kind == "named" {
+            named_closed_frame(group_id, closed_at)
+        } else {
+            closed_frame(group_id, closed_at)
+        });
     }
     Ok(frames)
 }
@@ -228,7 +247,20 @@ pub(crate) fn closed_frame(group_id: Vec<u8>, closed_at: Option<SystemTime>) -> 
     }
 }
 
-/// The `DmClosed` frames each of `devices` is owed now, to send to the
+/// One `GroupClosed` frame (multi-group: Closing a named group).
+pub(crate) fn named_closed_frame(
+    group_id: Vec<u8>,
+    closed_at: Option<SystemTime>,
+) -> pb::ServerFrame {
+    pb::ServerFrame {
+        frame: Some(pb::server_frame::Frame::GroupClosed(pb::GroupClosed {
+            group_id,
+            closed_at: closed_at.map(to_timestamp),
+        })),
+    }
+}
+
+/// The close notices each of `devices` is owed now, to send to the
 /// connected ones at once.
 pub fn open_notices(
     conn: &Connection,

@@ -25,7 +25,7 @@ pub fn is_member(conn: &Connection, device: &DeviceId) -> Result<bool, StoreErro
     Ok(conn.query_row(
         "SELECT EXISTS (SELECT 1 FROM mls_members m JOIN devices d ON d.device_id = m.device_id
                         JOIN mls_groups g ON g.group_id = m.group_id
-                        WHERE m.device_id = ?1 AND d.revoked_at IS NULL AND g.kind = 'main')",
+                        WHERE m.device_id = ?1 AND d.revoked_at IS NULL AND g.kind = 'system')",
         params![device.as_slice()],
         |row| row.get(0),
     )?)

@@ -541,7 +541,7 @@ async fn a_dm_is_not_a_second_main_group() {
         .server
         .query(|db| {
             db.query_row(
-                "SELECT count(*) FROM mls_groups WHERE kind = 'main'",
+                "SELECT count(*) FROM mls_groups WHERE kind = 'system'",
                 [],
                 |r| r.get(0),
             )

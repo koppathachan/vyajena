@@ -15,6 +15,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0004_join_notices.sql"),
     include_str!("migrations/0005_groups.sql"),
     include_str!("migrations/0006_blobs.sql"),
+    include_str!("migrations/0007_named_groups.sql"),
 ];
 
 /// The schema version this binary writes.
@@ -29,10 +30,31 @@ pub(super) fn apply(conn: &mut Connection) -> Result<(), StoreError> {
         });
     }
     let start = usize::try_from(current).unwrap_or(0);
+    if start >= MIGRATIONS.len() {
+        return Ok(());
+    }
+    // A migration may rebuild a table other tables point at (the SQLite way to
+    // change a CHECK): foreign keys are off while they run, checked before each
+    // commit, and back on after.
+    conn.execute_batch("PRAGMA foreign_keys = OFF")?;
+    let result = run(conn, start);
+    conn.execute_batch("PRAGMA foreign_keys = ON")?;
+    result
+}
+
+fn run(conn: &mut Connection, start: usize) -> Result<(), StoreError> {
     for (index, sql) in MIGRATIONS.iter().enumerate().skip(start) {
         let version = index + 1;
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        let broken: Option<String> = tx
+            .query_row("PRAGMA foreign_key_check", [], |row| row.get(0))
+            .ok();
+        if let Some(table) = broken {
+            return Err(StoreError::Inconsistent(format!(
+                "migration {version} left a broken foreign key in {table}"
+            )));
+        }
         tx.pragma_update(None, "user_version", version)?;
         tx.commit()?;
         tracing::info!(version, "applied database migration");
