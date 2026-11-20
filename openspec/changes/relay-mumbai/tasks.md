@@ -30,13 +30,15 @@
 
 - [ ] 4.0 Owner: make `~/.vyajena-relay/network.conf` from `deploy/network.conf.example` (change `generic-deployment`): real addresses, new ports, the Mumbai subnet range
 - [ ] 4.1 Owner: `gcloud auth login`; says go after the dry run and cost
-- [ ] 4.2 Owner: lower the A record's TTL (about 5 minutes) a day ahead, if the
-      DNS host allows
+- [ ] 4.2 Owner: lower the A record's TTL to about 5 minutes **and wait out the old TTL**
+      (about 4 hours: it was 14400 s on 2026-11-20) before the cut-over
 - [ ] 4.3 `cp ~/.vyajena-relay/relay.env ~/.vyajena-relay/relay.env.old`; same for
       `known_hosts`; `deploy/server/backup.sh`
 - [ ] 4.4 `deploy/relay/create.sh` (Mumbai address, subnet, VM), `deploy/relay/deploy.sh`,
       `deploy/relay/check.sh` (only the tunnel WARN and the DNS FAIL remain)
-- [ ] 4.5 Owner: repoint the A record to the new IP; `dig` shows it
+- [ ] 4.5 `deploy/relay/create.sh --update-ports` (the tunnel and review rules move to
+      the new ports; open tunnels stay up), then the owner repoints the A record to the
+      new IP; `dig` shows it
 - [ ] 4.6 `deploy/server/deploy.sh --no-build` (new `RELAY_IP` in the tunnel unit);
       `deploy/server/check.sh` 0 failed; `deploy/relay/check.sh` 0 failed, 0 warnings
 - [ ] 4.7 Verify: TCP connect to the relay's 443 about 20–40 ms; a device connects;

@@ -1312,3 +1312,39 @@ fn no_real_address_or_port_of_the_deployment_is_committed() {
         }
     }
 }
+
+// spec: relay/provision-and-deploy-the-relay
+#[test]
+fn update_ports_changes_the_shared_rules_only_when_asked() {
+    let sandbox = Sandbox::new().with_secrets();
+    let plain = dry_run(&sandbox);
+    assert!(!plain.iter().any(|c| c.contains("firewall-rules update")));
+    let out = sandbox.run(
+        "deploy/relay/create.sh",
+        &["--dry-run", "--update-ports"],
+        "",
+    );
+    assert!(out.status.success(), "{}", text(&out));
+    let printed = String::from_utf8(out.stdout).check("utf-8");
+    let updates: Vec<&str> = printed
+        .lines()
+        .filter(|l| l.starts_with("gcloud compute firewall-rules update"))
+        .collect();
+    assert_eq!(updates.len(), 2, "{printed}");
+    assert!(
+        updates
+            .iter()
+            .any(|u| u.contains(&format!("--rules=tcp:{}", conf("TUNNEL_PORT"))))
+    );
+    assert!(
+        updates
+            .iter()
+            .any(|u| u.contains(&format!("--rules=tcp:{}", conf("REVIEW_PORT"))))
+    );
+    // The public and SSH rules are never updated.
+    assert!(
+        !updates
+            .iter()
+            .any(|u| u.contains("-public") || u.contains("-iap-ssh"))
+    );
+}
