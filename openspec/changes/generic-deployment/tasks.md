@@ -22,10 +22,10 @@
 
 ## 5. Verify
 
-- [ ] 5.1 `cargo build`, `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `buf lint`, `shellcheck`, `openspec validate --all --strict`, `flutter analyze`, `flutter test`
-- [ ] 5.2 Report the commit list; do not push without the owner's yes
+- [x] 5.1 `cargo build`, `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`, `buf lint`, `shellcheck`, `openspec validate --all --strict`, `flutter analyze`, `flutter test`
+- [x] 5.2 Report the commit list; do not push without the owner's yes
 
 ## 6. Owner steps (nothing runs without a yes)
 
-- [ ] 6.1 Make `~/.vyajena-relay/network.conf` from the example with real values and new ports; back it up
-- [ ] 6.2 Do `relay-mumbai` 4.x with it; then `deploy/server/deploy.sh --no-build` and both `check.sh` 0 failed
+- [x] 6.1 Make `~/.vyajena-relay/network.conf` from the example with real values and new ports; back it up
+- [x] 6.2 Do `relay-mumbai` 4.x with it; then `deploy/server/deploy.sh --no-build` and both `check.sh` 0 failed
