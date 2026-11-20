@@ -45,7 +45,7 @@ async fn submit(
             let Some(mut group) = GroupState::load_main(&tx)? else {
                 panic!("no group");
             };
-            let result = group.check_commit(&tx, &caller, "server", &commit)?;
+            let result = group.check_commit(&tx, &caller, "chat", &commit)?;
             if result.is_ok() {
                 group.save(&tx)?;
                 tx.commit()?;

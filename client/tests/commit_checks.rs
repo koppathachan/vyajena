@@ -24,7 +24,7 @@ use openmls::prelude::{
 };
 use support::Check;
 
-const SERVER: &str = "server";
+const SERVER: &str = "chat";
 
 fn seed() -> [u8; 32] {
     let mut bytes = [0u8; 32];

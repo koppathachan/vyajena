@@ -38,7 +38,7 @@ async fn server_info_lists_id_versions_limits_and_external_sender() {
     let entry = support::clients::external_sender(&sender);
     assert_eq!(
         entry,
-        server::membership::external_sender("server", &server.state.keys)
+        server::membership::external_sender("chat", &server.state.keys)
     );
 }
 
