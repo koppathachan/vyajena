@@ -251,6 +251,40 @@ pub struct RemoveUserRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RemoveUserResponse {}
+/// multi-group: Named group creation. The admin's device has created an MLS group
+/// whose only member is itself, whose group context lists the server as external
+/// sender, names the admin in the `0xF0A1` extension and carries the named-group
+/// extension `0xF0A3`, and sends its epoch-0 public state. The server records it
+/// with kind `named`. `INVALID_ARGUMENT` if the state does not parse, is not at
+/// epoch 0 with the caller's device as only member, the server is not an external
+/// sender, or `0xF0A1` / `0xF0A3` is missing or wrong; `ALREADY_EXISTS` if the
+/// group id is taken.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateNamedGroupRequest {
+    /// The MLS group id, 16 random bytes.
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+    /// ratchet tree extension.
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_info: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+    #[prost(bytes = "vec", tag = "3")]
+    pub ratchet_tree: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateNamedGroupResponse {}
+/// multi-group: Closing a named group. Sets `closed_at`, deletes the group's queue
+/// and public state, and sends `GroupClosed` to its member devices until acked.
+/// `FAILED_PRECONDITION` for the system group; `NOT_FOUND` for an unknown group,
+/// a DM included; closing a closed group is a no-op.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseGroupRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseGroupResponse {}
 /// Generated client implementations.
 pub mod admin_client {
     #![allow(
@@ -431,6 +465,56 @@ pub mod admin_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("vyajena.v1.Admin", "CreateGroup"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// multi-group: Named group creation (change `lobby-multi-group`).
+        pub async fn create_named_group(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateNamedGroupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateNamedGroupResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Admin/CreateNamedGroup",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Admin", "CreateNamedGroup"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// multi-group: Closing a named group.
+        pub async fn close_group(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloseGroupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseGroupResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Admin/CloseGroup",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Admin", "CloseGroup"));
             self.inner.unary(req, path, codec).await
         }
         /// group-membership: Removing a user.
@@ -1860,7 +1944,7 @@ pub mod client_frame {
 /// A frame from the server to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -1887,6 +1971,9 @@ pub mod server_frame {
         JoinNotice(super::JoinNotice),
         #[prost(message, tag = "9")]
         DmClosed(super::DmClosed),
+        /// multi-group: Closing a named group (change `lobby-multi-group`).
+        #[prost(message, tag = "10")]
+        GroupClosed(super::GroupClosed),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2087,8 +2174,8 @@ pub mod send_result {
 /// durably processed in `group_id`; cumulative. The server then deletes that device's
 /// queue entries up to it, advances its commit-log cursor and does not redeliver
 /// them.
-/// With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
-/// `dms`).
+/// With `server_seq` 0 it acknowledges a `DmClosed` or a `GroupClosed` for
+/// `group_id` (changes `dms`, `lobby-multi-group`).
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Ack {
     #[prost(bytes = "vec", tag = "1")]
@@ -2183,6 +2270,18 @@ pub struct JoinNotice {
 /// never in a DM.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DmClosed {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub closed_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// multi-group: Closing a named group. Sent to each member device of a closed
+/// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.
+/// The client marks the chat closed and keeps its history read-only; envelopes for
+/// it are rejected with `REJECTION_REASON_GROUP_CLOSED`. Never sent to a device
+/// below protocol version 3, which is never in a named group.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GroupClosed {
     #[prost(bytes = "vec", tag = "1")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]

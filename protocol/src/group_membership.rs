@@ -97,6 +97,72 @@ pub fn parse_dm_extension(data: &[u8]) -> Option<(String, String)> {
     (valid(first) && valid(second) && first < second).then(|| (first.to_owned(), second.to_owned()))
 }
 
+/// MLS extension type of the group context extension that marks a named group
+/// (multi-group: Named group creation, change `lobby-multi-group` design D3). It
+/// travels next to [`ADMIN_EXTENSION_TYPE`] and carries no data worth reading
+/// ([`named_extension_data`]). A version 3 core lists this type in the
+/// capabilities of every KeyPackage and leaf, so OpenMLS refuses to add an older
+/// device to a named group (design D7, spike S1); a KeyPackage that lists it is
+/// named-group-capable.
+pub const NAMED_EXTENSION_TYPE: u16 = 0xF0A3;
+
+/// The `extension_data` of the [`NAMED_EXTENSION_TYPE`] extension: the fixed
+/// marker `b"named"`.
+pub fn named_extension_data() -> Vec<u8> {
+    b"named".to_vec()
+}
+
+/// Whether `data` is the [`NAMED_EXTENSION_TYPE`] marker ([`named_extension_data`]).
+pub fn parse_named_extension(data: &[u8]) -> bool {
+    data == b"named"
+}
+
+/// The kind of a group the server holds (group-membership: Membership state on
+/// the server).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupKind {
+    /// The lobby: the one all-members group the admin created at bootstrap.
+    System,
+    /// An admin-created group holding a subset of the members.
+    Named,
+    /// A one-to-one chat.
+    Dm,
+}
+
+impl GroupKind {
+    /// The text the server stores for this kind.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Named => "named",
+            Self::Dm => "dm",
+        }
+    }
+
+    /// The kind stored as `s`, or `None` for an unknown text.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "system" => Some(Self::System),
+            "named" => Some(Self::Named),
+            "dm" => Some(Self::Dm),
+            _ => None,
+        }
+    }
+
+    /// The kind a group context's extensions say: `0xF0A2` makes a DM, else
+    /// `0xF0A3` a named group, else the system lobby. Pass whether each
+    /// extension is present.
+    pub fn from_extensions(has_dm: bool, has_named: bool) -> Self {
+        if has_dm {
+            Self::Dm
+        } else if has_named {
+            Self::Named
+        } else {
+            Self::System
+        }
+    }
+}
+
 /// The device that sent a commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Committer<'a> {
@@ -228,6 +294,16 @@ fn member_violation(committer: &Committer<'_>, proposal: &Proposal<'_>) -> Optio
             (target_user != committer.user).then_some(Violation::RemoveOfAnotherUser)
         }
     }
+}
+
+/// The named-group commit authority rule (group-membership: Commit authority,
+/// change `lobby-multi-group` design D5): the main-group admin rule
+/// ([`check_commit_authority`]), applied with the named group's admin.
+pub fn check_named_commit_authority(
+    committer: &Committer<'_>,
+    proposals: &[Proposal<'_>],
+) -> Result<(), CommitAuthorityError> {
+    check_commit_authority(committer, proposals)
 }
 
 /// The DM commit authority rule (group-membership: Commit authority, change

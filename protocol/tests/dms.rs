@@ -182,11 +182,11 @@ fn a_committer_outside_the_pair_is_refused() {
 // spec: wire-transport/protocol-version-negotiation
 #[test]
 fn version_2_with_a_new_server_and_1_with_an_old_one() {
-    assert_eq!(PROTOCOL_VERSION, 2);
-    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, [1, 2]);
+    assert_eq!(PROTOCOL_VERSION, 3);
+    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, [1, 2, 3]);
     assert_eq!(negotiate_protocol_version(&[1, 2]), Some(2));
     assert_eq!(negotiate_protocol_version(&[1]), Some(1));
-    assert_eq!(negotiate_protocol_version(&[3]), None);
+    assert_eq!(negotiate_protocol_version(&[4]), None);
     assert!(server_knows_dms(&[1, 2]));
     assert!(!server_knows_dms(&[1]));
 }
