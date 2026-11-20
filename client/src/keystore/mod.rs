@@ -50,15 +50,20 @@ pub enum KeyName {
     MlsSignatureKey,
     /// The key that seals OpenMLS group state in SQLite (design D3).
     StorageKey,
+    /// The latest session token with its expiry and renewal point, kept so a
+    /// restart resumes without the full handshake (client-runtime: Resume
+    /// across restart). A bearer secret, so it lives here and nowhere else.
+    SessionToken,
 }
 
 impl KeyName {
     /// Every key name.
-    pub const ALL: [KeyName; 4] = [
+    pub const ALL: [KeyName; 5] = [
         KeyName::IdentityKey,
         KeyName::DeviceAuthKey,
         KeyName::MlsSignatureKey,
         KeyName::StorageKey,
+        KeyName::SessionToken,
     ];
 
     /// The stable name used as the keychain account and in the key file.
@@ -68,6 +73,7 @@ impl KeyName {
             KeyName::DeviceAuthKey => "device-auth-key",
             KeyName::MlsSignatureKey => "mls-signature-key",
             KeyName::StorageKey => "storage-key",
+            KeyName::SessionToken => "session-token",
         }
     }
 

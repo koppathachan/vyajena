@@ -13,6 +13,11 @@ use support::Check;
 use support::device::{self, Device, member, user};
 use support::pi::TestPi;
 
+/// One minute past a session token's renewal point: the Pi's token lifetime
+/// less the core's 5 minute renewal margin.
+const PAST_RENEWAL: Duration =
+    Duration::from_secs(protocol::wire_transport::SESSION_TOKEN_MAX_LIFETIME.as_secs() - 4 * 60);
+
 // spec: client-runtime/connection-lifecycle
 // spec: wire-transport/grpc-over-http-2-and-pinned-tls-on-tcp-443
 #[tokio::test(flavor = "multi_thread")]
@@ -98,9 +103,10 @@ async fn the_session_token_is_renewed_before_it_expires() {
     };
     let before = sessions(&pi).await;
 
-    // 56 minutes later on the device's clock the hour-long token is close to
-    // expiry: the core authenticates again on the same connection.
-    admin.clock.advance(Duration::from_secs(56 * 60));
+    // Just past the renewal point on the device's clock (the token's lifetime
+    // less its 5 minute margin) the token is close to expiry: the core
+    // authenticates again on the same connection.
+    admin.clock.advance(PAST_RENEWAL);
     let deadline = tokio::time::Instant::now() + support::device::WAIT;
     while sessions(&pi).await <= before {
         assert!(tokio::time::Instant::now() < deadline, "no renewal");
@@ -373,15 +379,15 @@ async fn a_token_due_for_renewal_falls_back_to_the_full_handshake() {
     let id = alice.device_id();
     let before = session_count(&pi, id).await;
 
-    // The stream drops, and on the device's clock the hour-long token reaches
-    // its renewal point (55 min in) while it is away.
+    // The stream drops, and on the device's clock the token reaches its renewal
+    // point (its lifetime less 5 minutes) while it is away.
     pi.relay.cut();
     alice
         .wait_event("the drop", |e| {
             matches!(e, Event::Connection(ConnectionState::Connecting))
         })
         .await;
-    alice.clock.advance(Duration::from_secs(56 * 60));
+    alice.clock.advance(PAST_RENEWAL);
     pi.relay.restore();
     alice.wait_connected().await;
 

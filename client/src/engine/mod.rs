@@ -59,7 +59,7 @@ use crate::client::ClientError;
 use crate::clock::Clock;
 use crate::events::{ConnectionState, DeviceId, Event, EventSender, Member, MessageId, UserId};
 use crate::identity::DeviceKeys;
-use crate::keystore::KeyStore;
+use crate::keystore::{KeyName, KeyStore};
 use crate::mls::verify::{self, LeafProblem};
 use crate::mls::{MlsError, group as mls_group};
 use crate::net::{Backoff, Conn, NetError, Session};
@@ -193,6 +193,9 @@ pub(crate) struct Engine {
     /// Connection lifecycle). Set when a token is obtained or renewed, cleared
     /// only when the device is removed.
     resume: Option<crate::net::ResumeToken>,
+    /// The token last written to the key store, so an unchanged one is not
+    /// written again (client-runtime: Resume across restart).
+    saved_resume: Option<crate::net::ResumeToken>,
     backoff: Backoff,
     next_attempt: Instant,
     /// A pin mismatch or a revoked device stops connecting until the client
@@ -290,6 +293,7 @@ impl Engine {
         account: AccountRow,
         commands: mpsc::Receiver<Command>,
         command_tx: mpsc::Sender<Command>,
+        resume: Option<crate::net::ResumeToken>,
     ) -> Result<Self, EngineError> {
         let pi =
             mls_group::pi_external_sender(&account.pi_sender_key, &account.pi_sender_credential)?;
@@ -317,7 +321,8 @@ impl Engine {
             group,
             dms,
             link: None,
-            resume: None,
+            saved_resume: resume.clone(),
+            resume,
             backoff: Backoff::new(),
             next_attempt: Instant::now(),
             halted: false,
@@ -572,6 +577,7 @@ impl Engine {
                 self.last_rotation_check = None;
                 tracing::info!("connected");
                 self.emit(Event::Connection(ConnectionState::Connected));
+                self.save_resume().await;
                 self.retry_uploads_now();
                 if let Err(error) = self.resend_inflight().await {
                     self.on_error(error);
@@ -611,6 +617,7 @@ impl Engine {
         self.link = None;
         *self.shared.session.lock() = None;
         self.resume = None;
+        self.forget_saved_resume();
         self.deferred.clear();
         self.apps_in_flight.clear();
         if let Some(inflight) = self.inflight.as_mut() {
@@ -618,6 +625,44 @@ impl Engine {
         }
         self.emit(Event::Removed);
         self.emit(Event::Connection(ConnectionState::Disconnected));
+    }
+
+    /// Writes the current resume token to the key store unless it is already
+    /// there (client-runtime: Resume across restart). The key store can block,
+    /// so it runs off the engine task; a failure only costs the next start the
+    /// full handshake.
+    async fn save_resume(&mut self) {
+        let Some(resume) = self.resume.clone() else {
+            return;
+        };
+        if self
+            .saved_resume
+            .as_ref()
+            .is_some_and(|saved| saved.same_token(&resume))
+        {
+            return;
+        }
+        let store = Arc::clone(&self.shared.key_store);
+        let value = resume.encode();
+        let written =
+            tokio::task::spawn_blocking(move || store.set(KeyName::SessionToken, &value)).await;
+        match written {
+            Ok(Ok(())) => self.saved_resume = Some(resume),
+            Ok(Err(error)) => tracing::warn!(%error, "could not save the resume token"),
+            Err(error) => tracing::warn!(%error, "could not save the resume token"),
+        }
+    }
+
+    /// Deletes the saved resume token from the key store, in the background:
+    /// nothing connects after this.
+    fn forget_saved_resume(&mut self) {
+        self.saved_resume = None;
+        let store = Arc::clone(&self.shared.key_store);
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = store.delete(KeyName::SessionToken) {
+                tracing::warn!(%error, "could not delete the resume token");
+            }
+        });
     }
 
     /// Skips the current backoff wait if disconnected; nothing if connected,
@@ -767,6 +812,7 @@ impl Engine {
                     *self.shared.session.lock() = Some(session.clone());
                     // Resume the next reconnect with the renewed token.
                     self.resume = Some(session.to_resume());
+                    self.save_resume().await;
                     if let Some(link) = self.link.as_mut() {
                         link.session = session;
                     }

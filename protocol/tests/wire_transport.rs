@@ -2,7 +2,14 @@
 
 use protocol::wire_transport::{
     AUTH_TLS_EXPORTER_LABEL, MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES,
+    SESSION_TOKEN_MAX_LIFETIME,
 };
+
+// spec: wire-transport/session-authentication
+#[test]
+fn session_tokens_last_at_most_six_hours() {
+    assert_eq!(SESSION_TOKEN_MAX_LIFETIME.as_secs(), 6 * 60 * 60);
+}
 
 // spec: wire-transport/session-authentication
 #[test]

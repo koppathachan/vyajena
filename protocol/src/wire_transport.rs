@@ -49,8 +49,10 @@ pub const AUTHORIZATION_METADATA_KEY: &str = "authorization";
 /// Scheme prefix of the `authorization` value: `Bearer <session_token>`.
 pub const AUTHORIZATION_BEARER_PREFIX: &str = "Bearer ";
 
-/// Upper bound on a session token's lifetime (Session authentication).
-pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(60 * 60);
+/// Upper bound on a session token's lifetime (Session authentication): six
+/// hours, so a token saved in the key store survives an app being backgrounded
+/// and reopened through a working day (change `resume-across-restart`).
+pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Length of a challenge nonce from `Devices.GetChallenge`
 /// (Session authentication).

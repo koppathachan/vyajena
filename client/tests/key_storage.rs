@@ -70,13 +70,14 @@ fn key_names_are_stable() {
             "identity-key",
             "device-auth-key",
             "mls-signature-key",
-            "storage-key"
+            "storage-key",
+            "session-token"
         ]
     );
     for name in KeyName::ALL {
         assert_eq!(KeyName::parse(name.as_str()), Some(name));
     }
-    assert_eq!(KeyName::parse("session-token"), None);
+    assert_eq!(KeyName::parse("not-a-key"), None);
 }
 
 // spec: client-runtime/key-storage

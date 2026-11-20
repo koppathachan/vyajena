@@ -245,11 +245,56 @@ impl std::fmt::Debug for ResumeToken {
     }
 }
 
+/// First byte of a saved [`ResumeToken`]; a value with another first byte is
+/// not read (client-runtime: Resume across restart).
+const RESUME_VERSION: u8 = 1;
+
 impl ResumeToken {
+    /// The saved form, for the key store (client-runtime: Resume across
+    /// restart): the version byte, `expires_at` and `renew_at` as seconds
+    /// since the Unix epoch (big-endian `u64`), then the token's bytes.
+    pub fn encode(&self) -> zeroize::Zeroizing<Vec<u8>> {
+        let mut out = zeroize::Zeroizing::new(Vec::with_capacity(17 + self.token.len()));
+        out.push(RESUME_VERSION);
+        out.extend_from_slice(&unix_secs(self.expires_at).to_be_bytes());
+        out.extend_from_slice(&unix_secs(self.renew_at).to_be_bytes());
+        out.extend_from_slice(self.token.as_bytes());
+        out
+    }
+
+    /// A token from its saved form; `None` for anything this version did not
+    /// write (unknown version, too short, not UTF-8, empty token), which the
+    /// core treats as no token.
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        let (&version, rest) = bytes.split_first()?;
+        if version != RESUME_VERSION || rest.len() <= 16 {
+            return None;
+        }
+        let (expires, rest) = rest.split_at(8);
+        let (renew, token) = rest.split_at(8);
+        let expires = u64::from_be_bytes(expires.try_into().ok()?);
+        let renew = u64::from_be_bytes(renew.try_into().ok()?);
+        Some(Self {
+            token: std::str::from_utf8(token).ok()?.to_owned(),
+            expires_at: SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(expires))?,
+            renew_at: SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(renew))?,
+        })
+    }
+
+    /// Whether `other` is the same session token (not the same times).
+    pub fn same_token(&self, other: &Self) -> bool {
+        self.token == other.token
+    }
+
     /// Whether this token is worth resuming with at `now`: still before its
     /// renewal point, so a resumed session does not land already due for
     /// renewal (design D2).
     pub fn usable(&self, now: SystemTime) -> bool {
         now < self.renew_at
     }
+}
+
+fn unix_secs(time: SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }

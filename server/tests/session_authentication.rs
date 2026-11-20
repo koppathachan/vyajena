@@ -44,6 +44,8 @@ async fn successful_authentication_returns_a_token_and_expiry() {
     assert!(!response.session_token.is_empty());
     let expires = timestamp_secs(response.expires_at);
     assert!(expires > now && expires <= now + SESSION_TOKEN_MAX_LIFETIME.as_secs() as i64);
+    // Token lifetime: six hours after issue, never later.
+    assert_eq!(expires, now + 6 * 60 * 60);
 
     // The token works on an authenticated RPC.
     conn.devices()

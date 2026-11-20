@@ -253,6 +253,26 @@ async fn blocking<T: Send + 'static>(
         .map_err(|error| ClientError::Task(error.to_string()))?
 }
 
+/// The session token the last run saved, to resume with (client-runtime: Resume
+/// across restart). A key store error or a value this version cannot read is
+/// no token: the core then runs the full handshake.
+fn load_resume(store: &dyn KeyStore) -> Option<crate::net::ResumeToken> {
+    match store.get(KeyName::SessionToken) {
+        Ok(Some(saved)) => {
+            let token = crate::net::ResumeToken::decode(&saved);
+            if token.is_none() {
+                tracing::warn!("the saved resume token is not readable; ignoring it");
+            }
+            token
+        }
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(%error, "could not read the saved resume token");
+            None
+        }
+    }
+}
+
 /// `Devices.GetServerInfo`, checked against the invite's server id and this
 /// core's protocol version.
 async fn checked_server_info(conn: &Conn, server_id: &str) -> Result<pb::ServerInfo, ClientError> {
@@ -640,9 +660,11 @@ impl Client {
     pub async fn start(&self) -> Result<(), ClientError> {
         let account = self.account()?;
         let store = Arc::clone(&self.shared.key_store);
-        let keys =
-            blocking(move || DeviceKeys::load(store.as_ref())?.ok_or(ClientError::NotRegistered))
-                .await?;
+        let (keys, resume) = blocking(move || {
+            let keys = DeviceKeys::load(store.as_ref())?.ok_or(ClientError::NotRegistered)?;
+            Ok((keys, load_resume(store.as_ref())))
+        })
+        .await?;
         self.stop();
         let (commands, receiver) = mpsc::channel(64);
         let engine = Engine::new(
@@ -651,6 +673,7 @@ impl Client {
             account,
             receiver,
             commands.clone(),
+            resume,
         )
         .map_err(ClientError::from)?;
         let task = tokio::spawn(engine.run());
