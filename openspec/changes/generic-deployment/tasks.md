@@ -16,7 +16,7 @@
 - [x] 4.1 `deploy/network.conf.example`, `deploy/network.sh`; relay and server scripts source it
 - [x] 4.2 Templates use placeholders; `render.sh server-file` renders `harden.sh`, `nftables.conf`, `push.toml`, the egress unit; `deploy.sh` passes the ports to the host side
 - [x] 4.3 `check.sh` takes its addresses and ports from `network.conf`; check names carry no numbers
-- [x] 4.4 `create.sh` brings the tunnel and review firewall rules to the new ports
+- [x] 4.4 `create.sh --update-ports` brings the tunnel and review firewall rules to the new ports (not by default)
 - [x] 4.5 Docs, specs and archived changes: placeholders for addresses and ports
 - [x] 4.6 Tests: example settings in the sandbox; templates fill; no deployment value is committed
 

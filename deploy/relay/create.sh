@@ -5,6 +5,9 @@
 #
 #   deploy/relay/create.sh --dry-run    print every gcloud command, change nothing
 #   deploy/relay/create.sh              create what is missing
+#   deploy/relay/create.sh --update-ports   also bring the tunnel and review firewall
+#                                       rules to the ports of network.conf (the
+#                                       cut-over; they are VPC-wide)
 #
 # Writes ~/.vyajena-relay/relay.env (RELAY_IP=) and known_hosts (the VM's host
 # keys, read from guest attributes through the API). Names and sizes:
@@ -22,6 +25,7 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 DRY=no
+UPDATE_PORTS=no
 
 die() {
   echo "create.sh: $*" >&2
@@ -48,6 +52,23 @@ g() {
   gcloud "$@" --project="$PROJECT"
 }
 
+# port_rule <tunnel|review> <port>: the rule for a port from network.conf. A
+# rule that exists keeps its port, because rules are VPC-wide and the old
+# relay uses them too; --update-ports brings it to the new port, at the
+# cut-over (design D3 of change relay-mumbai). A missing rule is created.
+port_rule() {
+  local rule="$NAME-$1" port="$2"
+  if [ "$UPDATE_PORTS" = yes ] && { [ "$DRY" = yes ] || exists compute firewall-rules describe "$rule"; }; then
+    run gcloud compute firewall-rules update "$rule" --project="$PROJECT" --rules="tcp:$port"
+  elif [ "$DRY" = no ] && exists compute firewall-rules describe "$rule"; then
+    say "$rule exists; its port changes only with --update-ports"
+  else
+    run gcloud compute firewall-rules create "$rule" --project="$PROJECT" \
+      --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$port" \
+      --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
+  fi
+}
+
 preflight() {
   [ -s "$SECRETS/ssh_ed25519.pub" ] || die "no $SECRETS/ssh_ed25519.pub; run deploy/relay/secrets.sh"
   [ "$DRY" = yes ] && return 0
@@ -63,12 +84,15 @@ preflight() {
 }
 
 main() {
-  case "${1:-}" in
-    --dry-run) DRY=yes ;;
-    "") ;;
-    -h | --help) sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) die "unknown argument $1" ;;
-  esac
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dry-run) DRY=yes ;;
+      --update-ports) UPDATE_PORTS=yes ;;
+      -h | --help) sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+      *) die "unknown argument $arg" ;;
+    esac
+  done
   preflight
 
   local pubkey
@@ -89,28 +113,13 @@ main() {
     run gcloud compute firewall-rules create "$NAME-public" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$PUBLIC_PORT" \
       --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
-  # The tunnel and review rules take their ports from network.conf. A rule that
-  # exists is brought to those ports (rules are VPC-wide: this also changes what
-  # a relay in another region of the same VPC accepts, design D6).
-  if exists compute firewall-rules describe "$NAME-tunnel"; then
-    run gcloud compute firewall-rules update "$NAME-tunnel" --project="$PROJECT" --rules="tcp:$TUNNEL_PORT"
-  else
-    run gcloud compute firewall-rules create "$NAME-tunnel" --project="$PROJECT" \
-      --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$TUNNEL_PORT" \
-      --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
-  fi
+  port_rule tunnel "$TUNNEL_PORT"
   exists compute firewall-rules describe "$NAME-iap-ssh" ||
     run gcloud compute firewall-rules create "$NAME-iap-ssh" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules=tcp:22 \
       --source-ranges="$IAP_RANGE" --target-tags="$NAME" --no-enable-logging
 
-  if exists compute firewall-rules describe "$NAME-review"; then
-    run gcloud compute firewall-rules update "$NAME-review" --project="$PROJECT" --rules="tcp:$REVIEW_PORT"
-  else
-    run gcloud compute firewall-rules create "$NAME-review" --project="$PROJECT" \
-      --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$REVIEW_PORT" \
-      --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
-  fi
+  port_rule review "$REVIEW_PORT"
 
   say "static external IPv4 $NAME in $REGION (about \$3.65/month)"
   exists compute addresses describe "$NAME" --region="$REGION" ||
