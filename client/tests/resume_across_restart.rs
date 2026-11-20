@@ -48,6 +48,22 @@ fn saved(keys: &MemoryKeyStore) -> Option<Secret> {
     keys.get(KeyName::SessionToken).check("key store")
 }
 
+/// The token once the core has written it: it saves right after `Connected`,
+/// off the engine task, so a test waits for it.
+async fn wait_saved(keys: &MemoryKeyStore) -> Secret {
+    let deadline = tokio::time::Instant::now() + support::device::WAIT;
+    loop {
+        if let Some(value) = saved(keys) {
+            return value;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the token was not saved"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 // spec: client-runtime/resume-across-restart
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reopen_within_the_tokens_life_resumes_without_authenticate() {
@@ -55,10 +71,7 @@ async fn a_reopen_within_the_tokens_life_resumes_without_authenticate() {
     let mut alice = device::admin(&server).await;
     let id = alice.device_id();
     let before = session_count(&server, id).await;
-    assert!(
-        saved(&alice.keys).is_some(),
-        "the token is saved on connect"
-    );
+    wait_saved(&alice.keys).await;
 
     // Two hours in the background: stop(), then start() on reopen.
     alice.client.stop();
@@ -81,7 +94,7 @@ async fn a_reopen_after_the_renewal_point_runs_the_full_handshake() {
     let mut alice = device::admin(&server).await;
     let id = alice.device_id();
     let before = session_count(&server, id).await;
-    let first = saved(&alice.keys).check("saved");
+    let first = wait_saved(&alice.keys).await;
 
     alice.client.stop();
     alice.clock.advance(past_renewal());
@@ -94,8 +107,14 @@ async fn a_reopen_after_the_renewal_point_runs_the_full_handshake() {
         before + 1,
         "a fresh session"
     );
-    let second = saved(&alice.keys).check("saved again");
-    assert_ne!(*first, *second, "the fresh token replaces the old one");
+    let deadline = tokio::time::Instant::now() + support::device::WAIT;
+    while *wait_saved(&alice.keys).await == *first {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the fresh token was not saved"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }
 
 // spec: client-runtime/resume-across-restart
@@ -104,7 +123,7 @@ async fn the_renewed_token_is_the_one_saved() {
     let server = TestServer::start().await;
     let mut alice = device::admin(&server).await;
     let id = alice.device_id();
-    let first = saved(&alice.keys).check("saved");
+    let first = wait_saved(&alice.keys).await;
     let before = session_count(&server, id).await;
 
     // The token nears its end while connected: the core renews it. The server's
@@ -141,7 +160,7 @@ async fn the_renewed_token_is_the_one_saved() {
 async fn the_token_is_in_the_key_store_and_nowhere_else() {
     let server = TestServer::start().await;
     let alice = device::admin_with_group(&server).await;
-    let value = saved(&alice.keys).check("saved");
+    let value = wait_saved(&alice.keys).await;
     // version byte, two u64 times, then the token's text.
     let token = std::str::from_utf8(&value[17..])
         .check("token text")
@@ -199,7 +218,7 @@ async fn a_removed_device_deletes_its_saved_token() {
     let server = TestServer::start().await;
     let admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
-    assert!(saved(&bob.keys).is_some(), "Bob saved a token");
+    wait_saved(&bob.keys).await;
 
     admin
         .client
@@ -310,7 +329,7 @@ async fn a_saved_token_that_cannot_be_read_is_no_token() {
     let id = alice.device_id();
 
     // What the core saved reads back to the same bytes.
-    let value = saved(&alice.keys).check("saved");
+    let value = wait_saved(&alice.keys).await;
     let token = ResumeToken::decode(&value).check("decodes");
     assert_eq!(*token.encode(), *value);
     // Anything this version did not write is no token.
