@@ -11,7 +11,7 @@ This is a UI-only gap. The core state is already right: during backoff the
 engine stays in `Connecting` (it sets the next-attempt time and does not emit
 `Disconnected` while it waits), and `CoreService` already exposes
 `connection`, `removed` and `reconnectNow()` (which skips the backoff wait).
-Nothing in the protocol, the Pi, the bridge or the Rust core changes.
+Nothing in the protocol, the server, the bridge or the Rust core changes.
 
 ## What Changes
 
@@ -27,7 +27,7 @@ Nothing in the protocol, the Pi, the bridge or the Rust core changes.
   `reconnectNow()`, so the main screen has a familiar manual-refresh gesture.
 - **Removed stays as-is:** the "removed from the group" look, label and the
   fact that the core has stopped connecting are unchanged.
-- **Out of scope:** any core, bridge, Pi or protocol change; a separate
+- **Out of scope:** any core, bridge, server or protocol change; a separate
   "retrying in N s" countdown (the core does not expose the next-attempt
   time to Dart, and adding it is a later change if wanted).
 - Details and decisions: `design.md`.

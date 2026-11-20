@@ -15,20 +15,20 @@ import "vyajena/v1/common.proto";
 service Messaging {
   // wire-transport: Single persistent messaging stream. One bidirectional stream
   // per connection carries outgoing envelopes, incoming envelopes, send results,
-  // acks, catch-up replay and heartbeats. The Pi allows at most one open stream
+  // acks, catch-up replay and heartbeats. The server allows at most one open stream
   // per device. When a new stream opens it closes the older one with gRPC status
   // `ABORTED`.
   //
   // wire-transport: Protocol version negotiation. The first client frame is a
-  // `Hello`. If the Pi does not support its version it closes the stream with
+  // `Hello`. If the server does not support its version it closes the stream with
   // `FAILED_PRECONDITION` and lists the supported versions in the status.
   //
   // wire-transport: Heartbeats. While the stream is idle the client sends a
-  // `Heartbeat` at least every 25 seconds and the Pi replies to each. The Pi
+  // `Heartbeat` at least every 25 seconds and the server replies to each. The server
   // closes a stream that has received nothing for 90 seconds and treats the
   // device as offline.
   //
-  // message-delivery: Ordered delivery and catch-up. On connect the Pi sends
+  // message-delivery: Ordered delivery and catch-up. On connect the server sends
   // everything after the device's cursor (commit log entries, welcomes and
   // queued application entries, merged in `server_seq` order) before any live
   // traffic. A device added by a commit gets that commit's `WELCOME` instead of
@@ -40,7 +40,7 @@ service Messaging {
   rpc Connect(stream ClientFrame) returns (stream ServerFrame);
 }
 
-// A frame from the device to the Pi.
+// A frame from the device to the server.
 message ClientFrame {
   oneof frame {
     // Must be the first frame, and only the first.
@@ -51,17 +51,17 @@ message ClientFrame {
   }
 }
 
-// A frame from the Pi to the device.
+// A frame from the server to the device.
 message ServerFrame {
   oneof frame {
-    // An incoming envelope, with the Pi-set fields filled in.
+    // An incoming envelope, with the server-set fields filled in.
     Envelope envelope = 1;
     SendResult send_result = 2;
     GapNotice gap_notice = 3;
     LowKeyPackages low_key_packages = 4;
     RemovedNotice removed_notice = 5;
     RejoinNotice rejoin_notice = 6;
-    // The Pi's reply to a client `Heartbeat`.
+    // The server's reply to a client `Heartbeat`.
     Heartbeat heartbeat = 7;
     JoinNotice join_notice = 8;
     DmClosed dm_closed = 9;
@@ -80,27 +80,27 @@ message Hello {
 // Size (wire-transport: Size limits): an `APPLICATION` envelope's `ciphertext`
 // is at most 65,536 bytes; a `COMMIT` envelope, encoded with its `welcome`, and a
 // `PROPOSAL` envelope are at most 262,144 bytes. The client refuses to send one
-// over its limit; the Pi rejects it with `REJECTION_REASON_TOO_LARGE` and stores
+// over its limit; the server rejects it with `REJECTION_REASON_TOO_LARGE` and stores
 // nothing.
 //
-// Framing (message-delivery: Framing matches the envelope): the Pi parses the
+// Framing (message-delivery: Framing matches the envelope): the server parses the
 // MLS framing of every envelope and rejects it with `REJECTION_REASON_MALFORMED`
 // if its group id, epoch or content type do not match `group_id`, `epoch` and
 // `kind`. `APPLICATION` carries an MLS `PrivateMessage`; `COMMIT` and `PROPOSAL`
 // carry an MLS `PublicMessage` (design D5). A client never sends `WELCOME`: the
-// Pi rejects a client envelope of that kind with `REJECTION_REASON_MALFORMED`.
+// Server rejects a client envelope of that kind with `REJECTION_REASON_MALFORMED`.
 //
 // Welcomes (message-delivery: Welcome travels with its commit): a client sends
-// a Welcome only in `welcome` of the `COMMIT` envelope that creates it. The Pi
+// a Welcome only in `welcome` of the `COMMIT` envelope that creates it. The server
 // accepts or rejects the commit and its Welcome together, and only after
 // accepting the commit emits a `WELCOME` envelope to each recipient device
 // (design D7).
 //
-// Epoch (message-delivery: Strict epoch rule): the Pi rejects any envelope whose
+// Epoch (message-delivery: Strict epoch rule): the server rejects any envelope whose
 // `epoch` is not the group's current epoch with `REJECTION_REASON_STALE_EPOCH`.
 //
-// Commits (group-membership: Commit authority; group-membership: Pi validates
-// handshakes without group secrets): the Pi verifies a `COMMIT`'s signature
+// Commits (group-membership: Commit authority; group-membership: server validates
+// handshakes without group secrets): the server verifies a `COMMIT`'s signature
 // against the committing leaf, checks that the committing leaf is the
 // authenticated device's leaf, and applies the commit authority rule (design D6),
 // rejecting with `REJECTION_REASON_POLICY_VIOLATION`.
@@ -112,12 +112,12 @@ message Envelope {
     KIND_APPLICATION = 1;
     // A commit (MLS `PublicMessage`).
     KIND_COMMIT = 2;
-    // An MLS `Welcome`. Sent only by the Pi, to each recipient of an accepted
+    // An MLS `Welcome`. Sent only by the server, to each recipient of an accepted
     // commit's `welcome`; a client envelope of this kind is rejected with
     // `REJECTION_REASON_MALFORMED` (message-delivery: Welcome travels with its
     // commit).
     KIND_WELCOME = 3;
-    // A proposal (MLS `PublicMessage`), including the Pi's external Remove
+    // A proposal (MLS `PublicMessage`), including the server's external Remove
     // proposals (group-membership: Inactive devices are kept out).
     KIND_PROPOSAL = 4;
   }
@@ -128,7 +128,7 @@ message Envelope {
   // --- Set by the sending client. ---
 
   // Client-generated, 16 bytes, unique per sending device (vyajena_proto::
-  // MSG_ID_LEN). message-delivery: Idempotent sends. The Pi deduplicates
+  // MSG_ID_LEN). message-delivery: Idempotent sends. The server deduplicates
   // accepted envelopes on (sender device, `msg_id`) for at least 7 days; a
   // retry with identical ciphertext gets the original result and creates no new
   // entries, a retry with different ciphertext is rejected with
@@ -144,32 +144,32 @@ message Envelope {
   bytes ciphertext = 5;
   // `COMMIT` only, and required when the commit adds devices: the Welcome the
   // commit creates (message-delivery: Welcome travels with its commit). Unset
-  // on every other kind, and on every envelope the Pi sends.
+  // on every other kind, and on every envelope the server sends.
   WelcomeBundle welcome = 10;
 
-  // --- Set by the Pi when it accepts the envelope; ignored if a client sets
+  // --- Set by the server when it accepts the envelope; ignored if a client sets
   // them. ---
 
   // The device that authenticated the sending stream, regardless of anything
-  // the client put here (message-delivery: Envelope). Unset when the Pi itself
+  // the client put here (message-delivery: Envelope). Unset when the server itself
   // is the sender, as for its external Remove proposals.
   DeviceRef sender = 7;
   // The next number in the group's single sequence (message-delivery: Envelope;
   // design D8).
   uint64 server_seq = 8;
-  // When the Pi accepted the envelope.
+  // When the server accepted the envelope.
   google.protobuf.Timestamp accepted_at = 9;
 }
 
 // message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
 // creates, sent inside that `COMMIT` envelope.
 //
-// The Pi rejects the whole envelope with `REJECTION_REASON_MALFORMED` if
+// The server rejects the whole envelope with `REJECTION_REASON_MALFORMED` if
 // `welcome` is not an MLS `Welcome`, if `recipients` is not exactly the devices
 // the commit adds (read from the certificates in the Add proposals), or if a
 // commit that adds devices carries no `WelcomeBundle`.
 //
-// After accepting the commit, the Pi sends each recipient one `Envelope` of kind
+// After accepting the commit, the server sends each recipient one `Envelope` of kind
 // `KIND_WELCOME` with: `ciphertext` = `welcome`; `group_id`, `msg_id`, `sender`,
 // `server_seq` and `accepted_at` of the commit; `epoch` = the epoch the commit
 // creates (the commit's `epoch` + 1). If the commit is rejected, no recipient
@@ -181,9 +181,9 @@ message WelcomeBundle {
   repeated DeviceRef recipients = 2;
 }
 
-// The Pi's answer to one client `Envelope`, matched by `msg_id`.
+// The server's answer to one client `Envelope`, matched by `msg_id`.
 //
-// message-delivery: Accepted means durable. The Pi sends `accepted` only after
+// message-delivery: Accepted means durable. The server sends `accepted` only after
 // it has durably written the envelope and every queue or log entry it creates.
 // The client shows the message as sending until then, and as accepted after.
 message SendResult {
@@ -207,7 +207,7 @@ message SendResult {
 }
 
 // message-delivery: Acknowledgement. The highest `server_seq` the device has
-// durably processed in `group_id`; cumulative. The Pi then deletes that device's
+// durably processed in `group_id`; cumulative. The server then deletes that device's
 // queue entries up to it, advances its commit-log cursor and does not redeliver
 // them.
 // With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
@@ -217,7 +217,7 @@ message Ack {
   uint64 server_seq = 2;
 }
 
-// wire-transport: Heartbeats. Sent by the client while idle, and by the Pi in
+// wire-transport: Heartbeats. Sent by the client while idle, and by the server in
 // reply.
 message Heartbeat {}
 
@@ -234,7 +234,7 @@ message GapNotice {
 // KeyPackage count drops below 5; the device then uploads more with
 // `Keys.UploadKeyPackages`.
 message LowKeyPackages {
-  // One-time KeyPackages the Pi still holds for this device.
+  // One-time KeyPackages the server still holds for this device.
   uint32 remaining = 1;
 }
 

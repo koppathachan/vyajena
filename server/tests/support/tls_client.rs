@@ -1,4 +1,4 @@
-//! A TLS client that authenticates the Pi only by its SPKI pin, as real clients
+//! A TLS client that authenticates the server only by its SPKI pin, as real clients
 //! do (wire-transport: gRPC over HTTP/2 and pinned TLS on TCP 443).
 
 use std::net::SocketAddr;
@@ -93,7 +93,7 @@ pub async fn connect_pinned_with(
         .with_no_client_auth();
     config.alpn_protocols = vec![b"h2".to_vec()];
     let tcp = TcpStream::connect(addr).await?;
-    let name = ServerName::try_from("vyajena2-pi").map_err(std::io::Error::other)?;
+    let name = ServerName::try_from("vyajena2-server").map_err(std::io::Error::other)?;
     TlsConnector::from(Arc::new(config))
         .connect(name, tcp)
         .await

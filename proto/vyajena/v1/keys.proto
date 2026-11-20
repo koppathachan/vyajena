@@ -22,17 +22,17 @@ service Keys {
   rpc GetIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
 
   // group-membership: Re-add after an unusable Welcome. The calling device
-  // could not use the Welcome that added it (or has no group while the Pi
+  // could not use the Welcome that added it (or has no group while the server
   // counts it as a member) and asks to be added again, with fresh KeyPackages.
   rpc RequestReadd(RequestReaddRequest) returns (RequestReaddResponse);
 }
 
 // key-directory: KeyPackage upload. One-time KeyPackages plus exactly one
-// last-resort KeyPackage. A device keeps 20 one-time KeyPackages on the Pi and
+// last-resort KeyPackage. A device keeps 20 one-time KeyPackages on the server and
 // uploads more when told its count dropped below 5 (design D10;
 // key-directory: Replenishment signal).
 //
-// The Pi accepts a KeyPackage only if it parses, uses ciphersuite
+// The server accepts a KeyPackage only if it parses, uses ciphersuite
 // `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`, its credential carries the
 // uploading device's certificate, and its signature key equals that
 // certificate's MLS signature key. A KeyPackage whose credential names a
@@ -50,15 +50,15 @@ message UploadKeyPackagesResponse {}
 // `NOT_FOUND`.
 message FetchKeyPackagesRequest {
   UserId user_id = 1;
-  // Optional. When set, the Pi returns, and consumes, KeyPackages only for
+  // Optional. When set, the server returns, and consumes, KeyPackages only for
   // these devices of `user_id` (16-byte device ids). If any of them is not a
   // non-revoked device of that user, the call fails with `NOT_FOUND` and
   // consumes nothing. Used to re-add one inactive device (design D7) without
   // using up a one-time KeyPackage of each of the user's other devices. When
-  // empty, the Pi returns one for every non-revoked device of the user.
+  // empty, the server returns one for every non-revoked device of the user.
   repeated bytes device_ids = 2;
   // Optional (change `dms`, key-directory: KeyPackage fetch). When set to a
-  // DM's group id, the Pi returns only KeyPackages whose capabilities list
+  // DM's group id, the server returns only KeyPackages whose capabilities list
   // the DM extension `0xF0A2` (devices with none are left out), and rejects the call with `PERMISSION_DENIED` unless the
   // caller's device is a member of that DM and `user_id` is one of its two
   // users. An unknown group id is rejected with `NOT_FOUND`.
@@ -67,7 +67,7 @@ message FetchKeyPackagesRequest {
 
 // key-directory: KeyPackage fetch. One entry per requested device: every
 // non-revoked device of the user, or only those in
-// `FetchKeyPackagesRequest.device_ids`. The Pi hands out each one-time
+// `FetchKeyPackagesRequest.device_ids`. The server hands out each one-time
 // KeyPackage at most once and falls back to the device's last-resort KeyPackage
 // when none remain.
 //
@@ -112,7 +112,7 @@ message UserIdentityKey {
 // group-membership: Re-add after an unusable Welcome.
 //
 // Sent by a device that refused a Welcome, or that has no group when its core
-// starts. The Pi answers `READD_OUTCOME_ASKED` only if the calling device is a
+// starts. The server answers `READD_OUTCOME_ASKED` only if the calling device is a
 // non-revoked member in the tree, is not already waiting to be re-added, has
 // no Welcome queued after `refused_welcome_seq`, and has asked fewer than
 // `protocol::group_membership::MAX_READD_REQUESTS_PER_DAY` times in the last
@@ -123,7 +123,7 @@ message UserIdentityKey {
 // that may re-add it), and logs `reason`. Otherwise it changes nothing and
 // stores no KeyPackage.
 //
-// The Pi gains no power from this: it adds no one; a member device commits the
+// The server gains no power from this: it adds no one; a member device commits the
 // re-add after checking the KeyPackage's certificate against the user's pinned
 // identity key, as for every add.
 message RequestReaddRequest {
@@ -132,7 +132,7 @@ message RequestReaddRequest {
   // `server_seq` means it should process that one first.
   uint64 refused_welcome_seq = 1;
   // Why the device could not use the Welcome: the core's error text, for the
-  // Pi's log. At most `protocol::group_membership::MAX_READD_REASON_BYTES`
+  // server's log. At most `protocol::group_membership::MAX_READD_REASON_BYTES`
   // bytes; never message content.
   string reason = 2;
   // Fresh one-time KeyPackages; they replace all of the device's stored ones.
@@ -147,7 +147,7 @@ message RequestReaddResponse {
 
 enum ReaddOutcome {
   READD_OUTCOME_UNSPECIFIED = 0;
-  // The Pi marked the device for a re-add and stored its new KeyPackages.
+  // The server marked the device for a re-add and stored its new KeyPackages.
   READD_OUTCOME_ASKED = 1;
   // The device is not in the tree: it waits for its first add (`JoinNotice`)
   // as usual. Nothing changed.

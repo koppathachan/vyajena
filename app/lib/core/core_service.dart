@@ -198,12 +198,12 @@ abstract class CoreService {
   /// Revokes another device of this user (hex id).
   Future<void> revokeDevice(String device);
 
-  /// Registers or replaces this device's push token on the Pi (app-ui: Push
+  /// Registers or replaces this device's push token on the server (app-ui: Push
   /// notifications). Throws when offline; the app retries on the next
   /// connect.
   Future<void> setPushToken(PushPlatform platform, String token);
 
-  /// Clears this device's push token on the Pi.
+  /// Clears this device's push token on the server.
   Future<void> clearPushToken();
 
   /// The newest [limit] messages, oldest first.
@@ -249,7 +249,7 @@ abstract class CoreService {
 
   /// The picture of image message [id] as WebP bytes: from the core's cache
   /// on this device, else downloaded first. Throws [CoreError] with
-  /// [CoreErrorKind.mediaExpired] when the Pi no longer has it.
+  /// [CoreErrorKind.mediaExpired] when the server no longer has it.
   Future<Uint8List> downloadImage(int id);
 
   /// The picture of image message [id] if this device has it cached; never
@@ -266,7 +266,7 @@ abstract class CoreService {
 
   // --- Chats (direct-messages; app-ui: Chat list, change `dms`) ---
 
-  /// Whether the Pi knows DMs: "Message" is offered only then.
+  /// Whether the server knows DMs: "Message" is offered only then.
   Future<bool> dmsAvailable();
 
   /// The chats: the main group (chat 0) first, then DMs, newest first,
@@ -334,7 +334,7 @@ abstract class CoreService {
   /// Admin: adds all devices of [user] to the group.
   Future<void> addUser(UserRef user);
 
-  /// Admin: removes [user] from the group and the Pi.
+  /// Admin: removes [user] from the group and the server.
   Future<void> removeUser(UserRef user);
 
   /// Admin: sets the group's name.

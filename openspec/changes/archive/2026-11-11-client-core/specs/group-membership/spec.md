@@ -13,7 +13,7 @@ SHALL be retried after the device catches up.
 
 #### Scenario: Two devices rotate at once
 - **WHEN** Alice's and Bob's devices both commit a rotation for the same epoch
-- **THEN** the Pi accepts one, the other gets `STALE_EPOCH`, catches up and
+- **THEN** the server accepts one, the other gets `STALE_EPOCH`, catches up and
   retries its rotation in the new epoch
 
 ## MODIFIED Requirements

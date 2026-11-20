@@ -1,4 +1,4 @@
-// A CoreService for widget tests (flutter-app design D7): no Rust, no Pi.
+// A CoreService for widget tests (flutter-app design D7): no Rust, no server.
 // Tests set its state, push events with [emit] and read [calls].
 import 'dart:convert';
 import 'dart:typed_data';
@@ -16,7 +16,7 @@ class FakeCoreService extends CoreService {
   Object? openFails;
 
   /// The user [register] and [completeLink] return.
-  UserRef newUser = const UserRef(username: 'bob', serverId: 'pi');
+  UserRef newUser = const UserRef(username: 'bob', serverId: 'chat');
 
   /// Every core call that acts, by name, in order (reads such as history,
   /// members or names are not recorded).
@@ -68,7 +68,7 @@ class FakeCoreService extends CoreService {
   int _nextId = 1;
 
   /// A 1x1 PNG: what [thumbhashPreview] returns, so the blur is a real image,
-  /// and the picture the fake's Pi holds.
+  /// and the picture the fake's server holds.
   static final Uint8List blurPng = base64Decode(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   );
@@ -76,7 +76,7 @@ class FakeCoreService extends CoreService {
   /// The pictures this device has cached, by message id ([cachedImage]).
   final Map<int, Uint8List> cachedPictures = {};
 
-  /// The pictures the Pi still has, by message id: what [downloadImage]
+  /// The pictures the server still has, by message id: what [downloadImage]
   /// downloads. A message not here has expired.
   final Map<int, Uint8List> piPictures = {};
 
@@ -101,7 +101,7 @@ class FakeCoreService extends CoreService {
     if (error != null) throw error;
   }
 
-  /// A received picture from [sender], with an optional [caption]. The Pi
+  /// A received picture from [sender], with an optional [caption]. The server
   /// still has it ([piPictures]) unless [expired]; it is not cached yet.
   ChatMessage receiveImage(
     UserRef sender, {
@@ -599,7 +599,7 @@ class FakeCoreService extends CoreService {
     _call('createInvite', username);
     return InviteInfo(
       code: 'code-$username',
-      user: UserRef(username: username, serverId: 'pi'),
+      user: UserRef(username: username, serverId: 'chat'),
       expiresAtMs: 0,
       text: 'vyajena-invite:$username',
     );

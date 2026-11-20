@@ -10,7 +10,7 @@ import 'package:vyajena/core/core_service.dart';
 import '../support/app.dart';
 import '../support/fake_core_service.dart';
 
-const carol = UserRef(username: 'carol', serverId: 'pi');
+const carol = UserRef(username: 'carol', serverId: 'chat');
 
 /// [me]'s device in a group of akhil, alice, bob and carol, where bob is
 /// "Bobby" and alice "Ali".
@@ -22,14 +22,14 @@ FakeCoreService groupAs(UserRef me) => FakeCoreService(storedUser: me)
     MemberDevice(user: carol, device: '04'),
   ]
   ..displayNames = {
-    'alice@pi': 'Ali (alice)',
-    'bob@pi': 'Bobby (bob)',
-    'carol@pi': 'carol',
-    'akhil@pi': 'akhil',
+    'alice@chat': 'Ali (alice)',
+    'bob@chat': 'Bobby (bob)',
+    'carol@chat': 'carol',
+    'akhil@chat': 'akhil',
   }
   ..profiles = {
-    'alice@pi': const ProfileInfo(displayName: 'Ali'),
-    'bob@pi': const ProfileInfo(displayName: 'Bobby'),
+    'alice@chat': const ProfileInfo(displayName: 'Ali'),
+    'bob@chat': const ProfileInfo(displayName: 'Bobby'),
   };
 
 final composer = find.byKey(const Key('composer'));
@@ -76,7 +76,7 @@ const mentionOfBob = MentionSpan(
 void main() {
   // spec: app-ui/mention-picker
   testWidgets('Alice types "hi @bo" and picks "Bobby (bob)": the composer '
-      'shows "hi @Bobby " and the core gets a mention of bob@pi', (
+      'shows "hi @Bobby " and the core gets a mention of bob@chat', (
     tester,
   ) async {
     final core = groupAs(alice);

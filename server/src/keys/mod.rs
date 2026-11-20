@@ -1,5 +1,5 @@
 //! Keys service: the KeyPackage directory and identity keys (key-directory:
-//! KeyPackage upload; KeyPackage fetch; Identity key lookup; pi-server-core
+//! KeyPackage upload; KeyPackage fetch; Identity key lookup; server-core
 //! task 5.1, client-core task 5.5).
 
 use std::time::SystemTime;
@@ -57,7 +57,7 @@ fn check_key_package(
     }
     let leaf = key_package.leaf_node();
     // Without the admin group-context extension in its capabilities the
-    // device could never be added (pi-server-core design D10).
+    // device could never be added (server-core design D10).
     if !leaf
         .capabilities()
         .extensions()
@@ -333,7 +333,7 @@ impl Keys for KeysService {
             self.state.readd_asks.record(&device_id, now);
         }
         // The core's error text (never content), so the owner can read the
-        // cause in the Pi's journal.
+        // cause in the server's journal.
         tracing::info!(
             device = %device,
             refused_welcome_seq = refused_seq,

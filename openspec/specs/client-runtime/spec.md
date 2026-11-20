@@ -31,7 +31,7 @@ storage key that itself lives in the key store; messages stay unencrypted.
 The core SHALL store messages in a local SQLite database. It SHALL store the
 plaintext of a message the user sends before sending it, because the sender
 cannot decrypt its own ciphertext, and SHALL store each received message before
-acknowledging it to the Pi.
+acknowledging it to the server.
 
 #### Scenario: Own message survives a crash
 - **WHEN** Alice sends "hi" and her laptop crashes before `Accepted` arrives
@@ -40,19 +40,19 @@ acknowledging it to the Pi.
 
 #### Scenario: Crash before ack
 - **WHEN** Bob's core crashes after storing a received message but before acking
-- **THEN** the Pi redelivers it and Bob sees it once
+- **THEN** the server redelivers it and Bob sees it once
 
 ### Requirement: Connection lifecycle
-The core SHALL connect to the relay address from the invite, accept the Pi only
+The core SHALL connect to the relay address from the invite, accept the server only
 by its pinned TLS key, authenticate with its device auth key, renew its session
 token before it expires, keep one `Connect` stream open with heartbeats, and
 reconnect with backoff when the connection drops. When told the network is back
-(`reconnect_now`), the core SHALL skip its current backoff wait. When the Pi
+(`reconnect_now`), the core SHALL skip its current backoff wait. When the server
 answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL emit
 `Removed` once and stop connecting.
 
 #### Scenario: Wrong pin
-- **WHEN** the Pi presents a TLS key that does not match the invite's pin
+- **WHEN** the server presents a TLS key that does not match the invite's pin
 - **THEN** the core does not connect and reports a server identity error to the UI
 
 #### Scenario: Network drop
@@ -60,7 +60,7 @@ answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL em
 - **THEN** the core reconnects on its own and catches up in order
 
 #### Scenario: Relay without a tunnel
-- **WHEN** the Pi's tunnel is down, so the relay refuses Bob's TCP connection on
+- **WHEN** the server's tunnel is down, so the relay refuses Bob's TCP connection on
   443 or accepts it and closes it at once, and Alice sends a message meanwhile
 - **THEN** Bob's core treats it as a network drop, keeps retrying with backoff,
   and once the tunnel is back connects with the same pin and receives Alice's
@@ -78,7 +78,7 @@ answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL em
   readable
 
 ### Requirement: Send status
-The core SHALL report each sent message as sending until the Pi accepts it, then
+The core SHALL report each sent message as sending until the server accepts it, then
 as accepted. On `STALE_EPOCH` or a reconnect it SHALL process pending commits,
 re-encrypt and resend with the same `msg_id`; on any other rejection it SHALL
 report the message as failed with the reason.
@@ -109,7 +109,7 @@ and identity-key-changed warnings.
 #### Scenario: Tablet added
 - **WHEN** Bob's phone commits the Add of Bob's tablet
 - **THEN** every member's core emits `MembersChanged` with the tablet in `added`
-  and `bob@pi` as the committer's user
+  and `bob@chat` as the committer's user
 
 ### Requirement: Image encode pipeline
 The core SHALL own every image transform: given a picked image's raw bytes it
@@ -143,11 +143,11 @@ byte-identical. When the user sends an image the core SHALL keep its WebP in the
 device media cache and store the message, waiting for its blob, at once and
 whether or not it is connected, like a text message. When the outbox reaches the
 message with a connection the core SHALL upload the blob (idempotent on
-`blob_id`) first and send the `APPLICATION` envelope only after the Pi accepted
+`blob_id`) first and send the `APPLICATION` envelope only after the server accepted
 the blob, keeping the chat's later messages behind it until then. It SHALL try
-again an upload that failed in a way that can pass (the Pi's blob store
+again an upload that failed in a way that can pass (the server's blob store
 unavailable, an expired session, the network), SHALL fail the message with a
-reason when the Pi refuses the blob for good or the picture is no longer in the
+reason when the server refuses the blob for good or the picture is no longer in the
 cache, and SHALL fail a message still waiting `protocol::blob_store::BLOB_TTL`
 after it was written. A resend of the stored message SHALL reuse the same
 `msg_id`. The core enforces this.
@@ -172,8 +172,8 @@ after it was written. A resend of the stored message SHALL reuse the same
 - **THEN** after restart the envelope resends under the same `msg_id` and the
   blob is not uploaded again
 
-#### Scenario: The Pi's drive is away
-- **WHEN** Alice sends an image while the Pi's blob store answers `UNAVAILABLE`
+#### Scenario: The server's drive is away
+- **WHEN** Alice sends an image while the server's blob store answers `UNAVAILABLE`
 - **THEN** nothing is sent for it, it stays sending, and it goes out after the
   blob store is back
 
@@ -208,7 +208,7 @@ the message, never in the cache. The core enforces this.
 
 ### Requirement: Expired media
 When `Blobs.DownloadBlob` answers `NOT_FOUND`, the core SHALL mark that image
-message expired, report it as expired from then on without asking the Pi again,
+message expired, report it as expired from then on without asking the server again,
 and SHALL keep showing its ThumbHash placeholder, which lives in the message,
 not the blob. The core that sent an image, which keeps its plaintext in the media
 cache, SHALL resend it on request as a new message with a fresh `blob_id`, key and
@@ -216,9 +216,9 @@ cache, SHALL resend it on request as a new message with a fresh `blob_id`, key a
 picture is no longer in its cache. The core enforces this.
 
 #### Scenario: Receiver opens an expired image
-- **WHEN** Bob opens an image whose blob the Pi has deleted
+- **WHEN** Bob opens an image whose blob the server has deleted
 - **THEN** the core reports it expired and the blur stays visible
 
 #### Scenario: Sender can resend
-- **WHEN** Alice's image has expired on the Pi and she still has it cached
+- **WHEN** Alice's image has expired on the server and she still has it cached
 - **THEN** her core can resend it as a new image with a new blob

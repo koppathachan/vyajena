@@ -191,7 +191,7 @@ impl Core {
 
     // --- Push (app-ui: Push notifications) ---
 
-    /// Registers or replaces this device's push token on the Pi (needs a
+    /// Registers or replaces this device's push token on the server (needs a
     /// connection; fails `offline` otherwise, and the app retries on the next
     /// connect).
     pub async fn set_push_token(
@@ -210,7 +210,7 @@ impl Core {
         )
     }
 
-    /// Clears this device's push token on the Pi: no more wake pings
+    /// Clears this device's push token on the server: no more wake pings
     /// (notifications not allowed).
     pub async fn clear_push_token(&self) -> Result<(), CoreError> {
         forward(self.client.set_push_token(None).await)
@@ -228,7 +228,7 @@ impl Core {
         forward(self.client.add_user(&map::user_id(&user)).await)
     }
 
-    /// Admin: removes `user` from the group and the Pi.
+    /// Admin: removes `user` from the group and the server.
     pub async fn remove_user(&self, user: UserRef) -> Result<(), CoreError> {
         forward(self.client.remove_user(&map::user_id(&user)).await)
     }
@@ -332,7 +332,7 @@ impl Core {
     /// The picture of image message `id` as WebP bytes: from this device's
     /// cache, else downloaded, decrypted and cached (client-runtime: Image
     /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
-    /// the Pi no longer has it.
+    /// the server no longer has it.
     pub async fn download_image(&self, id: i64) -> Result<Vec<u8>, CoreError> {
         forward(self.client.download_image(MessageId(id)).await)
     }
@@ -424,7 +424,7 @@ impl Core {
 
     // --- Chats (direct-messages; app-ui: Chat list, change `dms`) ---
 
-    /// Whether the Pi knows DMs: the app offers "Message" only then.
+    /// Whether the server knows DMs: the app offers "Message" only then.
     pub fn dms_available(&self) -> bool {
         self.client.dms_available()
     }

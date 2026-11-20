@@ -1,16 +1,16 @@
 ## MODIFIED Requirements
 
 ### Requirement: Connection lifecycle
-The core SHALL connect to the relay address from the invite, accept the Pi only
+The core SHALL connect to the relay address from the invite, accept the server only
 by its pinned TLS key, authenticate with its device auth key, renew its session
 token before it expires, keep one `Connect` stream open with heartbeats, and
 reconnect with backoff when the connection drops. When told the network is back
-(`reconnect_now`), the core SHALL skip its current backoff wait. When the Pi
+(`reconnect_now`), the core SHALL skip its current backoff wait. When the server
 answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL emit
 `Removed` once and stop connecting.
 
 #### Scenario: Wrong pin
-- **WHEN** the Pi presents a TLS key that does not match the invite's pin
+- **WHEN** the server presents a TLS key that does not match the invite's pin
 - **THEN** the core does not connect and reports a server identity error to the UI
 
 #### Scenario: Network drop
@@ -43,4 +43,4 @@ and identity-key-changed warnings.
 #### Scenario: Tablet added
 - **WHEN** Bob's phone commits the Add of Bob's tablet
 - **THEN** every member's core emits `MembersChanged` with the tablet in `added`
-  and `bob@pi` as the committer's user
+  and `bob@chat` as the committer's user

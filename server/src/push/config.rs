@@ -1,4 +1,4 @@
-//! pi-runtime: Push configuration. `push.toml` (no secrets) names the
+//! server-runtime: Push configuration. `push.toml` (no secrets) names the
 //! credentials folder; the folder holds the FCM service account key and/or one
 //! APNs `.p8` key, owner-only (push design D6).
 //!
@@ -276,7 +276,7 @@ impl Credentials {
         };
         if !dir.exists() {
             // No credentials yet: every platform only logs (the start log
-            // and deploy/pi/check.sh say so).
+            // and deploy/server/check.sh say so).
             return Ok(Self::default());
         }
         owner_only(dir)?;

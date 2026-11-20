@@ -66,16 +66,16 @@ group.
 
 **Owner, 2026-11-16: reviewers never join the real group** ("we can't let
 reviewers access to internal chats"). They use a separate review server
-(change `review-server`): `vyajarelay.purplechaamba.com:8443`, its own data,
+(change `review-server`): `vyajarelay.purplechaamba.com:<review-port>`, its own data,
 keys and pin. No code change (owner; review mode PR koppathachan/vyajena#1
 closed unmerged): **the reviewer is the review server's admin**,
 `review@review.purplechaamba.com`, joining with its bootstrap invite. So the
 reviewer reaches every feature, admin screens included.
 
 The invite is single-use and lasts 7 days (180 characters). It sits in the
-owner-only `~/vyajena-pi-backups/review-bootstrap-invite-<UTC>.txt`; the owner
+owner-only `~/vyajena-server-backups/review-bootstrap-invite-<UTC>.txt`; the owner
 pastes it into the store form, never into the repo. Before each submission, or
-once it is used or expired: `deploy/pi/deploy.sh --no-build --reset-review`
+once it is used or expired: `deploy/server/deploy.sh --no-build --reset-review`
 (owner's yes first) gives a new invite and review pin; update the form.
 
 Play "Sign-in details" (Any other information, 500 max; 247 + the

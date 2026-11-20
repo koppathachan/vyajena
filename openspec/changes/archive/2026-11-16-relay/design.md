@@ -1,13 +1,13 @@
 ## Context
 
-- Today (home-LAN phase, `pi-deployment` D4): the Pi serves `0.0.0.0:8443`,
-  nftables lets the home subnet reach 8443, invites name `192.168.1.8:8443`.
+- Today (home-LAN phase, `server-deployment` D4): the server serves `0.0.0.0:<server-port>`,
+  nftables lets the home subnet reach <server-port>, invites name `<server-address>:<server-port>`.
 - The Airtel router drops inbound IPv6 and the home IPv4 is NATed and dynamic, so
-  the Pi must dial out. The architecture doc always planned a dumb rathole relay
+  the server must dial out. The architecture doc always planned a dumb rathole relay
   on a free GCP VM. Direct IPv6 is deferred to last.
 - Owner decisions (2026-11-15, final): relay only (push is the next change); its
   own new e2-micro in a free-tier US region of `purple-eccdf`; a raw static IPv4,
-  no DNS, invites use `<ip>:443`; no migration: wipe the Pi, everyone re-joins.
+  no DNS, invites use `<ip>:443`; no migration: wipe the server, everyone re-joins.
 - Owner's words (2026-11-15, relayed by the tracker): "I want to use only GCP
   services if possible"; "everyone re-joins as though its new… we treat it like
   non production"; "for now lets avoid the dns", then (2026-11-16) "lets do dns
@@ -21,9 +21,9 @@
 
 ## Goals / Non-Goals
 
-**Goals:** devices anywhere reach the Pi through `vyajarelay.purplechaamba.com:443`; nothing
+**Goals:** devices anywhere reach the server through `vyajarelay.purplechaamba.com:443`; nothing
 listens at home; the relay is stateless, rebuildable and checked by one command;
-the Pi starts fresh, backed up first.
+the server starts fresh, backed up first.
 
 **Non-Goals:** real push (next change); a CA certificate (the pin is enough); HTTP/3;
 direct IPv6; migrating devices that joined in the home-LAN phase.
@@ -39,27 +39,27 @@ flowchart LR
     relay["rathole server<br/>vyajena-relay.service"]
   end
   subgraph home["Home (no inbound port)"]
-    tunnel["rathole client<br/>vyajena-tunnel.service"] -->|"127.0.0.1:8443"| pi["vyajena.service"]
+    tunnel["rathole client<br/>vyajena-tunnel.service"] -->|"127.0.0.1:<server-port>"| server["vyajena.service"]
   end
-  tunnel -->|"dials out :2333<br/>Noise NK + token"| relay
+  tunnel -->|"dials out :<tunnel-port><br/>Noise NK + token"| relay
   relay ==>|"client bytes, through the tunnel"| tunnel
-  mac["Mac"] -->|"SSH :22 (LAN)"| pi
+  mac["Mac"] -->|"SSH :22 (LAN)"| server
   mac -->|"SSH over IAP"| relay
 ```
 
 ```mermaid
 sequenceDiagram
-  participant T as Pi: vyajena-tunnel
-  participant R as Relay: rathole :2333 / :443
+  participant T as server: vyajena-tunnel
+  participant R as Relay: rathole :<tunnel-port> / :443
   participant C as Phone (core)
-  participant P as Pi: server 127.0.0.1:8443
-  T->>R: TCP :2333, Noise NK (Pi pins relay key)
+  participant P as server: server 127.0.0.1:<server-port>
+  T->>R: TCP :<tunnel-port>, Noise NK (server pins relay key)
   T->>R: Hello(service digest), token digest over nonce
   R-->>T: OK, control channel up; R starts listening on :443
   C->>R: TCP :443
   R->>T: "create data channel"
   T->>R: new Noise data channel
-  T->>P: TCP 127.0.0.1:8443
+  T->>P: TCP 127.0.0.1:<server-port>
   C->>P: TLS 1.3 through R and T, byte for byte (pin checked)
 ```
 
@@ -70,8 +70,8 @@ sequenceDiagram
 | Project / zone | `vyajena` (owner, 2026-11-16; was `purple-eccdf`, D12) / `us-east1-b` (free tier; closest free US region to India over Google's backbone, via Europe) |
 | VM | `vyajena-relay`, e2-micro, Debian 13 (`debian-13`), 10 GB `pd-standard`, Shielded VM |
 | Address | static external IPv4 `vyajena-relay` (Premium tier), ~$3.65/month in use |
-| VPC | own custom-mode `vyajena-relay`, subnet `10.42.0.0/28`, flow logs off |
-| Firewall | `vyajena-relay-public` tcp:443 0.0.0.0/0 · `vyajena-relay-tunnel` tcp:2333 0.0.0.0/0 · `vyajena-relay-iap-ssh` tcp:22 35.235.240.0/20; logging off; implied deny for the rest |
+| VPC | own custom-mode `vyajena-relay`, subnet `<old-subnet>`, flow logs off |
+| Firewall | `vyajena-relay-public` tcp:443 0.0.0.0/0 · `vyajena-relay-tunnel` tcp:<tunnel-port> 0.0.0.0/0 · `vyajena-relay-iap-ssh` tcp:22 <iap-range>; logging off; implied deny for the rest |
 | Identity | `--no-service-account --no-scopes`: the VM can call no Google API |
 | Metadata | `enable-oslogin=FALSE`, `block-project-ssh-keys=TRUE`, `enable-guest-attributes=TRUE`, `serial-port-enable=FALSE`, `ssh-keys` = the relay key for user `vyajena` |
 
@@ -100,8 +100,8 @@ goes.
 
 - rathole 0.5.0 (latest on crates.io) is built from its crates.io source with
   its own `Cargo.lock` (`cargo install --locked`, crate checksums checked by
-  Cargo) in a `rust:1.79-bookworm` container: `linux/arm64` for the Pi (from
-  `deploy/pi/build.sh`) and `linux/amd64` for the relay (`deploy/relay/build.sh`).
+  Cargo) in a `rust:1.79-bookworm` container: `linux/arm64` for the server (from
+  `deploy/server/build.sh`) and `linux/amd64` for the relay (`deploy/relay/build.sh`).
   Features: `server,client,noise` only (no TLS, WebSocket or hot reload).
 - No release download: the GitHub release has no published checksums.
 - **Spike (2026-11-15):** with `rust:1.96-bookworm` the build fails (`time`
@@ -114,7 +114,7 @@ goes.
     SPKI hash equal to the server's logged pin;
   - wrong token: relay logs `failed the authentication`, client retries;
   - wrong relay key on the client: `Failed to do noise handshake`;
-  - rathole listens on 443 only once a control channel is up; with the Pi gone
+  - rathole listens on 443 only once a control channel is up; with the server gone
     it accepts and closes at once (EOF) until the heartbeat drops it;
   - at `info` the relay logs the tunnel client's address, never visitors'; at
     `error` it logs a failed client's address.
@@ -122,20 +122,20 @@ goes.
 ### D4. Tunnel security
 
 - **Noise NK** (`Noise_NK_25519_ChaChaPoly_BLAKE2s`): the relay holds the static
-  private key, the Pi pins its public key. A fake relay cannot attach the Pi.
+  private key, the server pins its public key. A fake relay cannot attach the server.
 - **Token:** 32 random bytes (hex). The relay exposes 443 only for a client that
   proves it (HMAC-style digest over a server nonce), so nobody else can hijack
   the service name. The token never travels in the clear (inside Noise).
-- **TLS ends on the Pi** (unchanged): the core pins the Pi's SPKI. A relay that
+- **TLS ends on the server** (unchanged): the core pins the server's SPKI. A relay that
   terminated TLS would fail the pin, so a compromised relay sees TLS bytes,
   client IPs and timing only (the architecture's threat table). Tested in
   `client/tests/relay.rs` with a recording relay and a relay to another server.
 
-### D5. Pi changes
+### D5. Server changes
 
-- `config.toml` (template): `listen_address = "127.0.0.1:8443"`,
+- `config.toml` (template): `listen_address = "127.0.0.1:<server-port>"`,
   `public_address = "@RELAY_IP@:443"`.
-- `nftables.conf`: the 8443 rule goes; inbound is replies, loopback, SSH and
+- `nftables.conf`: the <server-port> rule goes; inbound is replies, loopback, SSH and
   ping/DHCP from the home subnet, link-local IPv6 control. Outbound open (the
   tunnel, updates).
 - `vyajena.service`: `IPAddressAllow=localhost` (it only talks to the tunnel).
@@ -179,7 +179,7 @@ goes.
   (`hostkeys/`, over the API, not over SSH) into `~/.vyajena-relay/known_hosts`
   with `HostKeyAlias=vyajena-relay`. `deploy/relay/ssh.sh` opens a shell.
 - A lock-out (bad sshd change) is recovered by recreating the VM: it is
-  stateless (D8), so `deploy.sh` needs no staged undo like the Pi's.
+  stateless (D8), so `deploy.sh` needs no staged undo like the server's.
 
 ### D8. Relay hardening and "no state"
 
@@ -213,18 +213,18 @@ found on the way:
 not yet listening. `systemd-analyze security vyajena-relay.service`: **1.4**
 (threshold 2.0).
 
-### D9. Pi reset (no migration)
+### D9. Server reset (no migration)
 
 ```mermaid
 flowchart TB
-  start["deploy/pi/deploy.sh --reset"] --> confirm{"owner types 'pi'"}
+  start["deploy/server/deploy.sh --reset"] --> confirm{"owner types 'server'"}
   confirm -->|no| stop1["exit, nothing touched"]
-  confirm -->|yes| backup["deploy/pi/backup.sh"]
+  confirm -->|yes| backup["deploy/server/backup.sh"]
   backup -->|fails| stop2["exit, nothing deleted"]
   backup -->|ok| deploy["harden + install (new config, tunnel)"]
   deploy --> wipe["stop vyajena; delete /var/lib/vyajena/*"]
   wipe --> fresh["start: new keys, new DB"]
-  fresh --> out["print new pin; invite -> ~/vyajena-pi-backups/bootstrap-invite-UTC.txt (0600)"]
+  fresh --> out["print new pin; invite -> ~/vyajena-server-backups/bootstrap-invite-UTC.txt (0600)"]
 ```
 
 - The wipe runs only inside `deploy.sh`'s remote install, never by hand.
@@ -233,31 +233,31 @@ flowchart TB
 
 ### D10. Checks
 
-- `deploy/pi/check.sh` adds: tunnel service active/enabled and sandboxed
+- `deploy/server/check.sh` adds: tunnel service active/enabled and sandboxed
   (properties, exposure, no writes), `IPAddressAllow` of both services, file
-  modes of rathole/tunnel config/unit, the server on `127.0.0.1:8443` only, no
-  8443 nftables rule, a tunnel connection established to `<relay-ip>:2333`,
-  from the Mac `192.168.1.8:8443` closed, and the SPKI on `<relay-ip>:443`
-  equal to the SPKI on the Pi's `127.0.0.1:8443` (`openssl s_client` both ends).
+  modes of rathole/tunnel config/unit, the server on `127.0.0.1:<server-port>` only, no
+  <server-port> nftables rule, a tunnel connection established to `<relay-ip>:<tunnel-port>`,
+  from the Mac `<server-address>:<server-port>` closed, and the SPKI on `<relay-ip>:443`
+  equal to the SPKI on the server's `127.0.0.1:<server-port>` (`openssl s_client` both ends).
 - `deploy/relay/check.sh`: through `gcloud` (VM type, zone in the free-tier
   list, disk type/size, no service account, metadata, static address attached,
   exactly the three firewall rules with logging off, flow logs off, no other
   VPC rules) and over IAP SSH (rathole sandbox/version/hash, listeners, sshd,
   unattended upgrades, volatile journal, config mode); from the Mac: 443 and
-  the tunnel port open, 22/80/8443 closed. Warns when the tunnel is not
+  the tunnel port open, 22/80/<server-port> closed. Warns when the tunnel is not
   attached or a reboot is pending.
 
 ### D11. Tests
 
 - `server/tests/configuration.rs`: behind the relay (loopback listen, public
-  address in invites) — `pi-runtime/configuration`.
+  address in invites) — `server-runtime/configuration`.
 - `client/tests/relay.rs`: a recording relay sees no plaintext and the pin holds
-  (`relay/tls-ends-on-the-pi`); a relay to another server is refused; a relay
+  (`relay/tls-ends-on-the-server`); a relay to another server is refused; a relay
   that accepts and closes (tunnel down) then recovers
   (`client-runtime/connection-lifecycle`).
 - `server/tests/deploy_files.rs`: the committed deploy files and scripts —
   relay.conf in the free tier, firewall rules, templates fully rendered and
-  free of secrets, sandbox directives, nftables without 8443, `secrets.sh`
+  free of secrets, sandbox directives, nftables without <server-port>, `secrets.sh`
   modes and idempotence in a temp folder.
 - On the hosts: both checks 0 failed; TLS from the Mac to `<relay-ip>:443`
   matches the new pin.
@@ -288,47 +288,47 @@ The owner changed "for now lets avoid the dns" to "lets do dns now".
 - **Invites** name `vyajarelay.purplechaamba.com:443` (`public_address`, rendered
   from `RELAY_HOST`). The core already resolves names (`TcpStream::connect`
   with a `host:port` string) and uses a fixed TLS server name; the pin is still
-  the Pi's SPKI, so DNS adds no trust. Tested in `client/tests/relay.rs`
+  the server's SPKI, so DNS adds no trust. Tested in `client/tests/relay.rs`
   (an invite naming `localhost:<port>`).
-- **The IP stays** where no DNS should be needed: the Pi's `tunnel.toml`
+- **The IP stays** where no DNS should be needed: the server's `tunnel.toml`
   `remote_addr` and its `IPAddressAllow` (which also blocks DNS lookups for the
-  tunnel). The Pi never resolves the name.
+  tunnel). The server never resolves the name.
 - **Moving the relay** now means a new A record, not a re-join.
 - **Checks:** `deploy/relay/check.sh` fails unless the name's A record is the
-  static address and it has no AAAA; `deploy/pi/check.sh` compares the pin seen
-  through the name with the Pi's loopback pin (so a missing record fails it).
+  static address and it has no AAAA; `deploy/server/check.sh` compares the pin seen
+  through the name with the server's loopback pin (so a missing record fails it).
 
-### Results: the Pi on the relay (2026-11-16, tasks 5.1–5.3)
+### Results: the server on the relay (2026-11-16, tasks 5.1–5.3)
 
-- Owner's yes to the reset. `deploy/pi/deploy.sh --no-build --reset` (typed
-  `pi`): `backup.sh` first (3 users, database ok, keys) into
-  `~/vyajena-pi-backups/`; the firewall step applied the new `nftables.conf`
+- Owner's yes to the reset. `deploy/server/deploy.sh --no-build --reset` (typed
+  `server`): `backup.sh` first (3 users, database ok, keys) into
+  `~/vyajena-server-backups/`; the firewall step applied the new `nftables.conf`
   with its 2-minute undo and was committed; the remote install deleted
   `/var/lib/vyajena/*` and started fresh: **new TLS pin**, new bootstrap
   invite saved to an owner-only file (`bootstrap-invite-<UTC>.txt`, 0600) and
   not printed. The tunnel's control channel came up in about a second.
-- `deploy/pi/check.sh`: first run 3 failed, all the check's own fault:
+- `deploy/server/check.sh`: first run 3 failed, all the check's own fault:
   systemd prints `IPAddressAllow`/`IPAddressDeny` in its own order (IPv6
   first); the check now compares them as sets. Then **0 failed, 0 warnings**:
-  server exposure 0.9, tunnel exposure 1.0 (max 1.5), tunnel attached,
-  `192.168.1.8:8443` closed on the LAN, `vyajarelay.purplechaamba.com:443`
-  presents the Pi's loopback key. `deploy/relay/check.sh`: **0 failed, 0
+  Server exposure 0.9, tunnel exposure 1.0 (max 1.5), tunnel attached,
+  `<server-address>:<server-port>` closed on the LAN, `vyajarelay.purplechaamba.com:443`
+  presents the server's loopback key. `deploy/relay/check.sh`: **0 failed, 0
   warnings**.
 - From the Mac (a throwaway client, not the owner's devices): `openssl
   s_client` to `vyajarelay.purplechaamba.com:443` shows the new pin;
-  `grpcurl Devices/GetServerInfo` answers `serverId "pi"`, protocol 1.
-- **Latency** (home Wi-Fi in India → us-east1 → the Pi): TCP connect to the
-  relay ≈ 0.26 s, TLS handshake through to the Pi done at ≈ 0.8–1.3 s (once
+  `grpcurl Devices/GetServerInfo` answers `serverId "server"`, protocol 1.
+- **Latency** (home Wi-Fi in India → us-east1 → the server): TCP connect to the
+  relay ≈ 0.26 s, TLS handshake through to the server done at ≈ 0.8–1.3 s (once
   per connection). A send on the open stream costs one round trip over both
   legs, ≈ 0.5 s, as the architecture doc expected.
 - **The apps through the relay (2026-11-16, owner's request):** fresh
   installs of the current app (`eccbe4f`) on the iPhone 16 simulator (the
   admin's first device, owner's choice) and the Android emulator
   `vyajena_test2` (bob), no `adb reverse`, no LAN. The bootstrap invite
-  previewed as `akhil@pi on vyajarelay.purplechaamba.com:443`; join, create
-  group, invite `bob`; bob's preview `bob@pi on vyajarelay.purplechaamba.com:443`,
-  join, the Pi sent the `JoinNotice` and the simulator added bob by itself
-  ("bob joined"); messages both ways with ✓. The Pi's journal shows ids and
+  previewed as `akhil@chat on vyajarelay.purplechaamba.com:443`; join, create
+  group, invite `bob`; bob's preview `bob@chat on vyajarelay.purplechaamba.com:443`,
+  join, the server sent the `JoinNotice` and the simulator added bob by itself
+  ("bob joined"); messages both ways with ✓. The server's journal shows ids and
   events only. A stray `bo` invite (a typing race in the test driver, not the
   app) was revoked from the Invites screen. Both checks 0 failed after.
 - Final run (task 6.2): shellcheck, `buf lint`, fmt, clippy, `openspec
@@ -337,14 +337,14 @@ The owner changed "for now lets avoid the dns" to "lets do dns now".
   (`graceful_stop::sigterm_with_open_streams_exits_zero_and_keeps_the_pin` 3/3,
   `bridge text_forms::the_admin_links_a_tablet_by_text`); not touched here.
 
-### D14. The real Pi's ids: `vyajan@purplechaamba.com` (owner, 2026-11-16)
+### D14. The real server's ids: `<user>@purplechaamba.com` (owner, 2026-11-16)
 
 After the emulator test the owner reset again and renamed the ids:
 `server_id = "purplechaamba.com"` (a domain the owner holds, unique if servers
-ever federate) and `admin_username = "vyajan"`. `server_id` is more than a
-label: the Pi stores it at first start and refuses another, it is in every
+ever federate) and `admin_username = "<admin>"`. `server_id` is more than a
+label: the server stores it at first start and refuses another, it is in every
 device certificate's user id (clients reject a leaf naming another server), it
-is the Pi's MLS external-sender credential, and the admin's id is in the group
+is the server's MLS external-sender credential, and the admin's id is in the group
 context, so it changes only with `--reset`. Networking does not use it.
 
 ## Risks / Trade-offs
@@ -353,7 +353,7 @@ context, so it changes only with `--reset`. Networking does not use it.
   (DoS). Cannot read or forge: TLS pinned, MLS inside.
 - [Static IP lost, or the relay moved elsewhere] → devices store the name, so
   a new IP needs only a new A record (and `relay.env`); nobody re-joins. Keep
-  the address anyway: the A record and the Pi's tunnel name it.
+  the address anyway: the A record and the server's tunnel name it.
 - [DNS host compromised or the record wrong] → the name points elsewhere; the
   pin refuses any other TLS key, so the worst case is DoS. `check.sh` fails
   when the A record is not the static address.
@@ -363,7 +363,7 @@ context, so it changes only with `--reset`. Networking does not use it.
   source; rebuild when a new version ships.
 - [Free tier rules change] → `check.sh` verifies type, zone and disk; the bill
   is the real check (budget alert, owner).
-- [Home-LAN devices] → no migration: they keep `192.168.1.8:8443` and stop
+- [Home-LAN devices] → no migration: they keep `<server-address>:<server-port>` and stop
   working after the reset; the owner re-joins them.
 
 ## Migration Plan
@@ -371,13 +371,13 @@ context, so it changes only with `--reset`. Networking does not use it.
 1. Owner: reopen billing on `purple-eccdf` (budget alert), `gcloud auth login`,
    approve the `gcloud` commands and the cost.
 2. `deploy/relay/build.sh`, `secrets.sh`, `create.sh`, `deploy.sh`, `check.sh`.
-3. Owner: yes to the reset. `deploy/pi/build.sh`, then
-   `deploy/pi/deploy.sh --no-build --reset` (backup first), `check.sh`.
+3. Owner: yes to the reset. `deploy/server/build.sh`, then
+   `deploy/server/deploy.sh --no-build --reset` (backup first), `check.sh`.
 4. Owner re-joins devices with the new bootstrap invite.
 
-**Rollback:** restore the home-LAN files from git (`deploy/pi/` at the commit
-before this change), `deploy/pi/deploy.sh`, then restore the backup's
-`pi.sqlite` and `keys/` into `/var/lib/vyajena` (old pin and users come back;
+**Rollback:** restore the home-LAN files from git (`deploy/server/` at the commit
+before this change), `deploy/server/deploy.sh`, then restore the backup's
+`server.sqlite` and `keys/` into `/var/lib/vyajena` (old pin and users come back;
 devices that re-joined the new server re-join again). The relay can stay or be
 deleted (`gcloud compute instances delete`, `addresses delete`).
 
@@ -386,4 +386,4 @@ deleted (`gcloud compute instances delete`, `addresses delete`).
 None. Resolved by the owner (2026-11-15/16): own VM, US free tier, project
 `vyajena`, static IPv4 with the DNS name `vyajarelay.purplechaamba.com`, no
 migration. Picked here: IAP-only SSH (D7), `us-east1-b` (D2), tunnel
-port 2333 open to all (D2), build rathole from source (D3).
+port <tunnel-port> open to all (D2), build rathole from source (D3).

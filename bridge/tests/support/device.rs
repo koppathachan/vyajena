@@ -10,13 +10,13 @@ use client::{ClientConfig, ManualClock};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-use super::pi::{ADMIN, SERVER_ID, TestPi};
+use super::server::{ADMIN, SERVER_ID, TestServer};
 use super::{Check, start_time};
 
 /// How long a test waits for something it expects.
 pub const WAIT: Duration = Duration::from_secs(20);
 
-/// `<username>@pi`.
+/// `<username>@chat`.
 pub fn user(username: &str) -> UserRef {
     UserRef {
         username: username.to_owned(),
@@ -46,7 +46,7 @@ impl Device {
         Self::open(true).await
     }
 
-    /// A fresh device on the system clock, for a real Pi binary (the app's
+    /// A fresh device on the system clock, for a real server binary (the app's
     /// integration test peer, `tests/app_peer.rs`).
     pub async fn on_system_clock() -> Self {
         Self::open(false).await
@@ -140,18 +140,18 @@ impl Device {
     }
 }
 
-/// The Pi's bootstrap invite as the Pi prints it: bare base64url.
-pub fn bootstrap_text(pi: &TestPi) -> String {
-    client::identity::payload::to_text(&pi.bootstrap)
+/// The server's bootstrap invite as the server prints it: bare base64url.
+pub fn bootstrap_text(server: &TestServer) -> String {
+    client::identity::payload::to_text(&server.bootstrap)
 }
 
 /// The admin's first device, registered from the bootstrap invite text,
 /// started, with the group created.
-pub async fn admin_with_group(pi: &TestPi) -> Device {
+pub async fn admin_with_group(server: &TestServer) -> Device {
     let mut admin = Device::new().await;
     let id = admin
         .core
-        .register(bootstrap_text(pi))
+        .register(bootstrap_text(server))
         .await
         .check("register admin");
     assert_eq!(id, user(ADMIN));

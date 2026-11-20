@@ -1,5 +1,5 @@
-//! A dumb TCP relay in front of the test Pi, as the GCP relay is in front of
-//! the real one. Tests cut it to simulate a network drop (or the Pi's tunnel
+//! A dumb TCP relay in front of the test server, as the GCP relay is in front of
+//! the real one. Tests cut it to simulate a network drop (or the server's tunnel
 //! being down): it still accepts connections but closes them at once, and open
 //! ones break, until it is restored. It can record every byte it forwards
 //! (what the real relay sees) and be pointed at another server.
@@ -20,7 +20,7 @@ use super::Check;
 struct Shared {
     up: AtomicBool,
     accepted: AtomicUsize,
-    /// Bytes forwarded from devices to the Pi, and back.
+    /// Bytes forwarded from devices to the server, and back.
     bytes_up: AtomicU64,
     bytes_down: AtomicU64,
     recording: AtomicBool,
@@ -37,7 +37,7 @@ pub struct Relay {
     accept: AbortHandle,
 }
 
-/// Copies one direction (`upstream`: device to Pi), counting what passes and
+/// Copies one direction (`upstream`: device to server), counting what passes and
 /// recording it while recording is on.
 async fn pipe(
     mut from: OwnedReadHalf,
@@ -132,12 +132,12 @@ impl Relay {
         self.shared.accepted.load(Ordering::SeqCst)
     }
 
-    /// Bytes forwarded so far from devices to the Pi.
+    /// Bytes forwarded so far from devices to the server.
     pub fn bytes_up(&self) -> u64 {
         self.shared.bytes_up.load(Ordering::SeqCst)
     }
 
-    /// Bytes forwarded so far from the Pi to devices.
+    /// Bytes forwarded so far from the server to devices.
     pub fn bytes_down(&self) -> u64 {
         self.shared.bytes_down.load(Ordering::SeqCst)
     }

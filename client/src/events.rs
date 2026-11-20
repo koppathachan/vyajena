@@ -19,7 +19,7 @@ pub type DeviceId = [u8; protocol::device_identity::DEVICE_ID_LEN];
 pub struct UserId {
     /// The local part, chosen by the admin.
     pub username: String,
-    /// The Pi's server id.
+    /// The server's server id.
     pub server_id: String,
 }
 
@@ -58,11 +58,11 @@ pub struct MessageId(pub i64);
 /// Where an own message stands (client-runtime: Send status).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SendStatus {
-    /// Stored locally; the Pi has not accepted it yet.
+    /// Stored locally; the server has not accepted it yet.
     Sending,
-    /// The Pi accepted it, which means it is durable there.
+    /// The server accepted it, which means it is durable there.
     Accepted,
-    /// The Pi rejected it for a reason other than a stale epoch.
+    /// The server rejected it for a reason other than a stale epoch.
     Failed {
         /// Why, for display.
         reason: String,
@@ -77,7 +77,7 @@ pub enum MediaState {
     NotDownloaded,
     /// In this device's media cache: it opens at once.
     Available,
-    /// The Pi no longer has it ("media expired").
+    /// The server no longer has it ("media expired").
     Expired,
 }
 
@@ -94,7 +94,7 @@ pub struct ImageBody {
     pub height: u32,
     /// The ThumbHash blur shown until the picture is downloaded.
     pub thumbhash: Vec<u8>,
-    /// The blob's size on the Pi, in bytes.
+    /// The blob's size on the server, in bytes.
     pub size: u64,
     /// The caption, if there is one. Its mentions are the message's
     /// [`Message::mentions`].
@@ -188,7 +188,7 @@ pub enum ChatKind {
         /// None of the peer's devices is in it yet: messages wait to be sent
         /// ("Waiting for Bobby's devices").
         waiting: bool,
-        /// The Pi closed it: the peer was removed. History only.
+        /// The server closed it: the peer was removed. History only.
         closed: bool,
     },
 }
@@ -236,13 +236,13 @@ pub struct Message {
     pub reply: Option<Reply>,
     /// The sender's clock when it was sent.
     pub sent_at: Option<SystemTime>,
-    /// When the Pi accepted it; `None` while sending.
+    /// When the server accepted it; `None` while sending.
     pub accepted_at: Option<SystemTime>,
     /// For own messages, where it stands; `None` for received ones.
     pub status: Option<SendStatus>,
 }
 
-/// The connection to the Pi, as the UI shows it (client-runtime: Connection
+/// The connection to the server, as the UI shows it (client-runtime: Connection
 /// lifecycle).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -294,17 +294,17 @@ pub enum Event {
         by: UserId,
     },
     /// A message arrived that this device cannot read: it does not decrypt,
-    /// or its MLS sender is not the device the Pi says sent it. Shown as a
+    /// or its MLS sender is not the device the server says sent it. Shown as a
     /// placeholder; nothing is dropped silently.
     Unreadable {
-        /// Who the Pi says sent it.
+        /// Who the server says sent it.
         sender: Option<UserId>,
-        /// When the Pi accepted it.
+        /// When the server accepted it.
         accepted_at: Option<SystemTime>,
         /// The chat it was for.
         chat: ChatId,
     },
-    /// Messages up to this time expired on the Pi before this device fetched
+    /// Messages up to this time expired on the server before this device fetched
     /// them (message-delivery: Expiry and gap notice).
     Gap {
         /// `accepted_at` of the newest expired message.
@@ -313,7 +313,7 @@ pub enum Event {
         chat: ChatId,
     },
     /// The chat list changed (change `dms`): a DM was opened or joined, the
-    /// peer's first device was added, or the Pi closed one.
+    /// peer's first device was added, or the server closed one.
     ChatsChanged,
     /// This device was removed for inactivity; messages since `missed_since`
     /// were not kept for it (group-membership: Automatic re-add).
@@ -330,11 +330,11 @@ pub enum Event {
         /// The user.
         user: UserId,
     },
-    /// The Pi presented a TLS key that does not match the pin (client-runtime:
+    /// The server presented a TLS key that does not match the pin (client-runtime:
     /// Connection lifecycle). The core stops connecting until
     /// [`crate::Client::start`] is called again.
     ServerIdentityError,
-    /// The Pi answered `Authenticate` or the stream with `PERMISSION_DENIED`:
+    /// The server answered `Authenticate` or the stream with `PERMISSION_DENIED`:
     /// this device was revoked (removed from the group by the admin, or by
     /// another device of its user). Emitted once; the core stops connecting
     /// and local history stays readable (client-runtime: Connection
@@ -353,11 +353,11 @@ pub enum Event {
         /// Welcome.
         by: Option<UserId>,
         /// The devices in `added` or `removed` that changed automatically:
-        /// removed by the Pi's inactivity Remove, or re-added after one (the
+        /// removed by the server's inactivity Remove, or re-added after one (the
         /// same device id). The UI shows no notice for them (qa-fixes D5).
         automatic: Vec<Member>,
     },
-    /// This device refused a commit or Welcome the Pi delivered: a leaf's
+    /// This device refused a commit or Welcome the server delivered: a leaf's
     /// certificate, its key or the commit-authority rule did not check out
     /// (group-membership: Device-level membership; Commit authority). It
     /// cannot follow the group until it is re-added.
@@ -365,23 +365,23 @@ pub enum Event {
         /// Why, for display.
         reason: String,
     },
-    /// This device asked the Pi to be added again after it could not use a
+    /// This device asked the server to be added again after it could not use a
     /// Welcome, or because it had no group at start (group-membership:
     /// Re-add after an unusable Welcome). Only `Asked` and `LimitReached`
     /// change what the device waits for.
     ReaddRequested {
-        /// What the Pi answered.
+        /// What the server answered.
         outcome: ReaddOutcome,
     },
     /// The connection state changed.
     Connection(ConnectionState),
 }
 
-/// The Pi's answer to `Keys.RequestReadd` (group-membership: Re-add after an
+/// The server's answer to `Keys.RequestReadd` (group-membership: Re-add after an
 /// unusable Welcome).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReaddOutcome {
-    /// The Pi will have this device re-added; it waits for the new Welcome.
+    /// The server will have this device re-added; it waits for the new Welcome.
     Asked,
     /// It is not in the group yet: it waits for its first add as usual.
     NotAMember,

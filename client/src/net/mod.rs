@@ -1,7 +1,7 @@
-//! The connection to the Pi (client-runtime: Connection lifecycle; client-core
+//! The connection to the server (client-runtime: Connection lifecycle; client-core
 //! task 4.2).
 //!
-//! - [`tls`]: TLS 1.3 to the relay address, accepting the Pi only by the
+//! - [`tls`]: TLS 1.3 to the relay address, accepting the server only by the
 //!   SHA-256 pin of its SubjectPublicKeyInfo (wire-transport: gRPC over HTTP/2
 //!   and pinned TLS on TCP 443).
 //! - [`conn`]: one gRPC channel over one such connection, its TLS exporter
@@ -19,20 +19,20 @@ pub mod tls;
 pub use backoff::Backoff;
 pub use conn::{Conn, ResumeToken, Session};
 
-/// Why talking to the Pi failed.
+/// Why talking to the server failed.
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum NetError {
-    /// The Pi presented a TLS key that does not match the pin: not the Pi
+    /// The server presented a TLS key that does not match the pin: not the server
     /// from the invite (client-runtime: Connection lifecycle, "Wrong pin").
     #[error("the server's TLS key does not match the pinned key")]
     ServerIdentity,
     /// The TCP, TLS or HTTP/2 connection could not be made or broke.
     #[error("cannot reach the server: {0}")]
     Connect(String),
-    /// The Pi answered an RPC with an error.
+    /// The server answered an RPC with an error.
     #[error("the server refused: {0}")]
     Rpc(#[from] tonic::Status),
-    /// The Pi's answer was not what the contract says.
+    /// The server's answer was not what the contract says.
     #[error("unexpected answer from the server: {0}")]
     Protocol(String),
 }

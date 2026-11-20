@@ -12,8 +12,8 @@ use client::store::{
 use client::{MessageId, SendStatus};
 use support::Check;
 
-const ALICE: &str = "alice@pi";
-const BOB: &str = "bob@pi";
+const ALICE: &str = "alice@chat";
+const BOB: &str = "bob@chat";
 const ALICE_LAPTOP: [u8; 16] = [0xA1; 16];
 const BOB_PHONE: [u8; 16] = [0xB0; 16];
 
@@ -85,7 +85,7 @@ fn own_message_survives_a_crash() {
 // spec: client-runtime/local-message-store
 #[test]
 fn crash_before_ack_shows_the_message_once() {
-    // Bob's core stores a message, crashes before acking, and the Pi
+    // Bob's core stores a message, crashes before acking, and the server
     // redelivers it.
     let dir = support::temp_dir();
     let keys = MemoryKeyStore::new();

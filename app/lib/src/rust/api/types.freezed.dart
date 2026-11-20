@@ -1165,9 +1165,9 @@ class CoreEvent_Unreadable extends CoreEvent {
   const CoreEvent_Unreadable({this.sender, this.acceptedAtMs, required this.chatId}): super._();
   
 
-/// Who the Pi says sent it.
+/// Who the server says sent it.
  final  UserRef? sender;
-/// When the Pi accepted it.
+/// When the server accepted it.
  final  PlatformInt64? acceptedAtMs;
 /// The chat it was for.
  final  PlatformInt64 chatId;
@@ -1768,7 +1768,7 @@ class CoreEvent_ReaddRequested extends CoreEvent {
   const CoreEvent_ReaddRequested({required this.outcome}): super._();
   
 
-/// What the Pi answered.
+/// What the server answered.
  final  ReaddAnswer outcome;
 
 /// Create a copy of CoreEvent

@@ -26,7 +26,7 @@ sealed class Notice {
   const Notice();
 }
 
-/// Messages up to [newestExpiredAtMs] expired on the Pi before this device
+/// Messages up to [newestExpiredAtMs] expired on the server before this device
 /// fetched them.
 class GapNotice extends Notice {
   const GapNotice(this.newestExpiredAtMs);
@@ -76,7 +76,7 @@ class Refusal {
   final int atMs;
 }
 
-/// The Pi's TLS key does not match the pin; the core stopped connecting.
+/// The server's TLS key does not match the pin; the core stopped connecting.
 class ServerIdentityNotice extends Notice {
   const ServerIdentityNotice();
 }
@@ -174,7 +174,7 @@ class ChatModel extends ChangeNotifier {
   bool _closed = false;
   bool _waiting = false;
 
-  /// The Pi closed this DM: its peer was removed (app-ui: DM screen).
+  /// The server closed this DM: its peer was removed (app-ui: DM screen).
   bool get closed => _closed;
 
   /// None of the peer's devices is in this DM yet: own messages wait
@@ -234,7 +234,7 @@ class ChatModel extends ChangeNotifier {
   /// The newest refusal since the device last joined; null: none.
   Refusal? get refusal => _refusal;
 
-  /// The Pi's newest answer to this device asking to be added again, since
+  /// The server's newest answer to this device asking to be added again, since
   /// it last joined (group-membership: Re-add after an unusable Welcome);
   /// null: it did not ask, or the answer changes nothing it waits for.
   ReaddAnswer? get readd => _readd;
@@ -568,7 +568,7 @@ class ChatModel extends ChangeNotifier {
       a.username == b.username && a.serverId == b.serverId;
 
   /// Sends [text] with [mentions], answering message [replyTo] if set;
-  /// returns once the core stored it (it shows ⏳ until the Pi accepts it).
+  /// returns once the core stored it (it shows ⏳ until the server accepts it).
   Future<void> send(
     String text, {
     List<MentionSpan> mentions = const [],

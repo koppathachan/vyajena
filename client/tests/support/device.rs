@@ -10,7 +10,7 @@ use client::{Client, ClientConfig, ConnectionState, Event, ManualClock, Member, 
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-use super::pi::{ADMIN, SERVER_ID, TestPi};
+use super::server::{ADMIN, SERVER_ID, TestServer};
 use super::{Check, manual_clock};
 
 /// How long a test waits for something it expects.
@@ -19,7 +19,7 @@ pub const WAIT: Duration = Duration::from_secs(20);
 /// How long a test waits to be sure something does not happen.
 pub const QUIET: Duration = Duration::from_millis(800);
 
-/// `<username>@pi`.
+/// `<username>@chat`.
 pub fn user(username: &str) -> UserId {
     UserId::new(username, SERVER_ID)
 }
@@ -226,11 +226,11 @@ pub fn member(device: &Device) -> Member {
 
 /// The admin's first device, registered from the bootstrap invite and
 /// started.
-pub async fn admin(pi: &TestPi) -> Device {
+pub async fn admin(server: &TestServer) -> Device {
     let mut admin = Device::new().await;
     let id = admin
         .client
-        .register(&pi.bootstrap)
+        .register(&server.bootstrap)
         .await
         .check("register admin");
     assert_eq!(id, user(ADMIN));
@@ -240,8 +240,8 @@ pub async fn admin(pi: &TestPi) -> Device {
 }
 
 /// The admin with the group created.
-pub async fn admin_with_group(pi: &TestPi) -> Device {
-    let admin = admin(pi).await;
+pub async fn admin_with_group(server: &TestServer) -> Device {
+    let admin = admin(server).await;
     admin.client.create_group().await.check("create group");
     admin
 }

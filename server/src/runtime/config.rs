@@ -1,12 +1,12 @@
-//! pi-runtime: Configuration. One TOML file, read at start; a missing or invalid
+//! server-runtime: Configuration. One TOML file, read at start; a missing or invalid
 //! setting stops the server with an error naming the field.
 //!
 //! ```toml
-//! server_id = "pi"                       # the `<server_id>` in every user id
+//! server_id = "chat"                       # the `<server_id>` in every user id
 //! admin_username = "akhil"               # the admin is `<admin_username>@<server_id>`
-//! listen_address = "127.0.0.1:8443"      # where the Pi listens (TLS)
+//! listen_address = "127.0.0.1:8443"      # where the server listens (TLS)
 //! public_address = "relay.example:443"   # optional: put in invite payloads
-//! database_path = "data/pi.sqlite"       # relative paths: from the config file's folder
+//! database_path = "data/server.sqlite"       # relative paths: from the config file's folder
 //! key_dir = "data/keys"
 //!
 //! [blob_store]                           # optional: without it, images are off
@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 /// The server's settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
-    /// This Pi's server id: the part after `@` in every user id.
+    /// This server's server id: the part after `@` in every user id.
     pub server_id: String,
     /// The admin's username; the admin is `<admin_username>@<server_id>`.
     pub admin_username: String,

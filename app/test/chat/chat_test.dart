@@ -9,7 +9,7 @@ import '../support/fake_core_service.dart';
 
 Future<FakeCoreService> aliceInChat(WidgetTester tester) async {
   final core = FakeCoreService(storedUser: alice)
-    ..displayNames = {'alice@pi': 'Ali (alice)', 'bob@pi': 'Bob (bob)'};
+    ..displayNames = {'alice@chat': 'Ali (alice)', 'bob@chat': 'Bob (bob)'};
   return openApp(tester, core);
 }
 
@@ -76,7 +76,7 @@ void main() {
   testWidgets('Own messages look like own: right-aligned, no wider than '
       'the text, no label, ✓ at the end of the bubble', (tester) async {
     final core = FakeCoreService(storedUser: bob)
-      ..displayNames = {'bob@pi': 'Bob (bob)', 'alice@pi': 'Ali (alice)'};
+      ..displayNames = {'bob@chat': 'Bob (bob)', 'alice@chat': 'Ali (alice)'};
     await openApp(tester, core);
     final id = await send(tester, core, 'hi');
     core.setStatus(id, const SendState.accepted());
@@ -141,7 +141,7 @@ void main() {
   testWidgets('Message from the user\'s other device: right-aligned, no '
       'label and no send status', (tester) async {
     final core = FakeCoreService(storedUser: bob)
-      ..displayNames = {'bob@pi': 'Bobby (bob)'}
+      ..displayNames = {'bob@chat': 'Bobby (bob)'}
       ..messages = [
         const ChatMessage(
           id: 1,
@@ -178,7 +178,7 @@ void main() {
   testWidgets('Message from the user\'s other device, on another member\'s '
       'phone: on the left as "Bobby (bob)"', (tester) async {
     final core = FakeCoreService(storedUser: alice)
-      ..displayNames = {'bob@pi': 'Bobby (bob)'};
+      ..displayNames = {'bob@chat': 'Bobby (bob)'};
     await openApp(tester, core);
     core.receive(bob, 'from the tablet');
     await settle(tester);
@@ -217,9 +217,9 @@ void main() {
   ) async {
     final core = await aliceInChat(tester);
     final id = await send(tester, core, 'hi');
-    core.setStatus(id, const SendState.failed(reason: 'too large for the Pi'));
+    core.setStatus(id, const SendState.failed(reason: 'too large for the server'));
     await settle(tester);
-    expect(find.text('Failed: too large for the Pi'), findsOneWidget);
+    expect(find.text('Failed: too large for the server'), findsOneWidget);
   });
 
   // spec: app-ui/chat-screen
@@ -229,7 +229,7 @@ void main() {
     final id = await send(tester, core, 'mine');
     core.receive(bob, 'theirs');
     await settle(tester);
-    // The Pi sequenced "mine" first; the core's history says so once it is
+    // The server sequenced "mine" first; the core's history says so once it is
     // accepted.
     final mine = core.messages.firstWhere((m) => m.id == id);
     core.messages

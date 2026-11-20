@@ -14,7 +14,7 @@ use bridge::api::types::{
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 fn png(w: u32, h: u32) -> Vec<u8> {
     let image = RgbaImage::from_fn(w, h, |x, y| {
@@ -51,8 +51,8 @@ fn image_of(message: &ChatMessage) -> &ImageView {
 // spec: app-ui/image-bubble-and-viewer
 #[tokio::test(flavor = "multi_thread")]
 async fn a_caption_with_an_emoji_keeps_its_utf16_ranges_and_the_picture_opens() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     for device in [&alice, &bob] {
@@ -126,8 +126,8 @@ async fn a_caption_with_an_emoji_keeps_its_utf16_ranges_and_the_picture_opens() 
 // spec: app-ui/send-an-image
 #[tokio::test(flavor = "multi_thread")]
 async fn a_file_that_is_not_an_image_is_refused_with_its_own_error() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let refused = alice
         .core
@@ -142,8 +142,8 @@ async fn a_file_that_is_not_an_image_is_refused_with_its_own_error() {
 // spec: app-ui/image-bubble-and-viewer
 #[tokio::test(flavor = "multi_thread")]
 async fn an_expired_picture_is_its_own_error_and_state_and_the_sender_resends() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     for device in [&alice, &bob] {
@@ -163,9 +163,10 @@ async fn an_expired_picture_is_its_own_error_and_state_and_the_sender_resends() 
         .check("send_image");
     let received = wait_image(&mut bob).await;
 
-    pi.query(|db| db.execute("UPDATE blobs SET expires_at = 1", []))
+    server
+        .query(|db| db.execute("UPDATE blobs SET expires_at = 1", []))
         .await;
-    pi.sweep().await;
+    server.sweep().await;
 
     let gone = bob.core.download_image(received.id).await;
     assert_eq!(

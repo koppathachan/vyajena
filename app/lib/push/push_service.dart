@@ -4,7 +4,7 @@
 // connect after joining (never before: an unregistered device never
 // connects); clears the token when notifications are not allowed; forgets
 // it when the device is removed. Nothing here sees message text: the
-// notification is the Pi's fixed "New message".
+// notification is the server's fixed "New message".
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -12,17 +12,17 @@ import 'package:flutter/foundation.dart';
 import '../core/core_service.dart';
 import 'push_platform.dart';
 
-/// Keeps the Pi's copy of this device's push token right.
+/// Keeps the server's copy of this device's push token right.
 class PushService {
   PushService({required this.core, required this.api});
 
   final CoreService core;
   final PushPlatformApi api;
 
-  /// The token the Pi has from this process, if any (memory only).
+  /// The token the server has from this process, if any (memory only).
   String? _sent;
 
-  /// Whether this process already cleared the token on the Pi.
+  /// Whether this process already cleared the token on the server.
   bool _cleared = false;
   StreamSubscription<String>? _tokens;
   StreamSubscription<CoreEvent>? _events;

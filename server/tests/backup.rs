@@ -1,5 +1,5 @@
-//! pi-deployment: Backup to the Mac. The binary's `backup` subcommand, run
-//! while the server is serving (deploy/pi/backup.sh runs it on the Pi).
+//! server-deployment: Backup to the Mac. The binary's `backup` subcommand, run
+//! while the server is serving (deploy/server/backup.sh runs it on the server).
 
 mod support;
 
@@ -31,12 +31,12 @@ fn count(db: &Connection, table: &str) -> i64 {
     .check(table)
 }
 
-// spec: pi-deployment/backup-to-the-mac
+// spec: server-deployment/backup-to-the-mac
 #[tokio::test]
 async fn snapshot_while_alice_chats_is_a_valid_private_database() {
     let home = Home::new();
-    let pi = home.start();
-    let (_conn, _admin, mut device, mut stream) = admin_on(&pi).await;
+    let server = home.start();
+    let (_conn, _admin, mut device, mut stream) = admin_on(&server).await;
     let epoch = device.epoch();
     let first = stream
         .accepted(envelope(Kind::Application, epoch, device.message(b"hello")))
@@ -78,7 +78,7 @@ async fn snapshot_while_alice_chats_is_a_valid_private_database() {
     assert_eq!(next, first + 1);
 }
 
-// spec: pi-deployment/backup-to-the-mac
+// spec: server-deployment/backup-to-the-mac
 #[test]
 fn backup_never_overwrites_a_file() {
     let home = Home::new();
@@ -90,7 +90,7 @@ fn backup_never_overwrites_a_file() {
     assert_eq!(std::fs::read(&target).check("read"), b"keep me");
 }
 
-// spec: pi-deployment/backup-to-the-mac
+// spec: server-deployment/backup-to-the-mac
 #[test]
 fn backup_without_a_database_fails_and_creates_nothing() {
     let home = Home::new();
@@ -98,5 +98,5 @@ fn backup_without_a_database_fails_and_creates_nothing() {
     let out = backup(&home.config(), &target);
     assert!(!out.status.success());
     assert!(!target.exists());
-    assert!(!home.path().join("pi.sqlite").exists());
+    assert!(!home.path().join("server.sqlite").exists());
 }

@@ -9,7 +9,7 @@ user, and the local id of the original when it has the original stored.
 #### Scenario: Original on the device
 - **WHEN** Alice's phone has Bob's "dinner at 8?" and receives Carol's reply to
   it
-- **THEN** the core reports the reply with the quote, `bob@pi` as the
+- **THEN** the core reports the reply with the quote, `bob@chat` as the
   replied-to user and the local id of "dinner at 8?"
 
 #### Scenario: Original missing

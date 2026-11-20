@@ -3,9 +3,9 @@
 Images do not fit the text path. An application ciphertext is capped at 65,536
 bytes (wire-transport: Size limits); a 2 MB photo is far larger and cannot ride
 inside an MLS message. So an image is split in two: the bytes go to a store on
-the Pi as an encrypted blob, and the MLS message carries only a small reference
+the server as an encrypted blob, and the MLS message carries only a small reference
 (blob id, the blob's key, dimensions, a ThumbHash blur, an optional caption).
-The invariants still hold: keys never leave the core, and the Pi and the relay
+The invariants still hold: keys never leave the core, and the server and the relay
 see ciphertext only — the blob is encrypted on the device before upload, with a
 key that travels only inside the MLS ciphertext.
 
@@ -18,7 +18,7 @@ no stickers, cutout or transforms.
 
 **Goals:** send and receive one static image per message, end to end encrypted,
 with a blurred placeholder before download and the full image on tap; a blob
-store on the Pi that never sees plaintext and expires blobs; graceful behaviour
+store on the server that never sees plaintext and expires blobs; graceful behaviour
 for old clients, a missing mount and an expired blob.
 
 **Non-Goals:** stickers, cutout, transforms (later changes); albums or multiple
@@ -48,11 +48,11 @@ message Content {
 }
 
 // message-content: Image messages. One static image, sent as an encrypted blob
-// on the Pi. This body is what a receiver needs to show a blurred placeholder
+// on the server. This body is what a receiver needs to show a blurred placeholder
 // at once and to fetch and decrypt the full image on tap. Only the Rust core
-// reads it; the Pi never sees it.
+// reads it; the server never sees it.
 message Image {
-  // The 16-byte random id the ciphertext is stored under on the Pi
+  // The 16-byte random id the ciphertext is stored under on the server
   // (blob-store). Unique per upload; no dedup (protocol::blob_store::BLOB_ID_LEN).
   bytes blob_id = 1;
   // The 256-bit XChaCha20-Poly1305 key for this blob, fresh per blob. It
@@ -90,9 +90,9 @@ A blob is too large for the `Connect` stream (its envelopes cap at 64 KB /
 authorization are settled in D4 and the storage behind it in D8.
 
 ```proto
-// Blobs service: encrypted image blobs, stored on the Pi, never seen in the
+// Blobs service: encrypted image blobs, stored on the server, never seen in the
 // clear. All RPCs require a session token (wire-transport: Session
-// authentication). A blob is opaque ciphertext; the Pi learns its size, its
+// authentication). A blob is opaque ciphertext; the server learns its size, its
 // group and its timing, never its content or key.
 service Blobs {
   // blob-store: Upload. Idempotent on `blob_id`.
@@ -100,14 +100,14 @@ service Blobs {
   // blob-store: Download. NOT_FOUND once the blob has expired or been deleted.
   rpc DownloadBlob(DownloadBlobRequest) returns (DownloadBlobResponse);
   // blob-store: Ack and delete. A member device reports it no longer needs the
-  // blob; the Pi deletes it once every member device has acked (blob-store:
+  // blob; the server deletes it once every member device has acked (blob-store:
   // Expiry and ack-delete).
   rpc AckBlob(AckBlobRequest) returns (AckBlobResponse);
 }
 
 message UploadBlobRequest {
-  // The group the image is for; the Pi authorizes download against membership
-  // and scopes ack-delete to it (D4). The Pi already sees the matching
+  // The group the image is for; the server authorizes download against membership
+  // and scopes ack-delete to it (D4). The server already sees the matching
   // APPLICATION envelope's group, so this leaks nothing new.
   bytes group_id = 1;
   bytes blob_id = 2;         // 16 bytes, client-generated, unique
@@ -159,9 +159,9 @@ The owner chose the recommended shape, encoded above:
   transport tuning. Idempotent on `blob_id`: a re-upload with identical bytes
   returns the same `expires_at`; a re-upload of a different ciphertext under a
   live `blob_id` is rejected (`ALREADY_EXISTS`).
-- **Group-bound authorization.** Upload and download name the `group_id`; the Pi
+- **Group-bound authorization.** Upload and download name the `group_id`; the server
   allows them only from a current member device of that group (`PERMISSION_DENIED`
-  otherwise). This leaks nothing the Pi did not already see (it routes that
+  otherwise). This leaks nothing the server did not already see (it routes that
   group's envelopes) and it gives ack-delete a membership set to scope to.
 
 Alternatives for the owner:
@@ -277,7 +277,7 @@ So "the envelope implies the blob exists" holds per message at the moment it is
 really sent, however long it waited, and the blob's 7 days start at that upload,
 not when the user tapped Send. A crash anywhere resumes: the message is
 `sending` and `blob_pending`, so the upload is tried again (byte-identical, so
-the Pi answers with the original expiry), or it is `sending` without the mark,
+the server answers with the original expiry), or it is `sending` without the mark,
 so the envelope resends byte for byte under the same `msg_id` (message-delivery:
 Idempotent sends).
 
@@ -286,8 +286,8 @@ Upload failures (the sub-decisions below are the owner's):
 | The upload ends with | The core |
 |---|---|
 | accepted | clears the mark, sends the envelope |
-| `UNAVAILABLE` (the Pi's drive is away, or it stores no pictures), `UNAUTHENTICATED` (the session ran out), a timeout or a network error | keeps the message `sending`, holds the chat, tries again after 3 s and at once on every reconnect |
-| `PERMISSION_DENIED`, `INVALID_ARGUMENT`, `ALREADY_EXISTS`, `NOT_FOUND` | fails the message with the Pi's reason; later messages go on |
+| `UNAVAILABLE` (the server's drive is away, or it stores no pictures), `UNAUTHENTICATED` (the session ran out), a timeout or a network error | keeps the message `sending`, holds the chat, tries again after 3 s and at once on every reconnect |
+| `PERMISSION_DENIED`, `INVALID_ARGUMENT`, `ALREADY_EXISTS`, `NOT_FOUND` | fails the message with the server's reason; later messages go on |
 | the picture is no longer in the media cache | fails it: "the picture is no longer on this device" |
 | the message waited 7 days (`BLOB_TTL`) | fails it: "the picture could not be sent in time" |
 
@@ -305,7 +305,7 @@ the XChaCha20 nonce is derived from the key and the blob id rather than drawn at
 random: `nonce = HMAC-SHA256(blob_key, "vyajena2-blob-nonce-v1" || blob_id)[..24]`.
 That is safe because a key encrypts exactly one plaintext, ever (fresh key per
 blob, D6), so no (key, nonce) pair is reused for different data. A retried call
-inside the core therefore sends the same bytes and the Pi answers with the
+inside the core therefore sends the same bytes and the server answers with the
 original `expires_at` instead of `ALREADY_EXISTS`.
 
 Download (on tap): the core calls `DownloadBlob(group_id, blob_id)`, decrypts
@@ -319,7 +319,7 @@ downloads.
 sequenceDiagram
   participant UI as Flutter (Alice)
   participant C as Rust core (Alice)
-  participant P as Pi (Blobs + Messaging)
+  participant P as server (Blobs + Messaging)
   participant B as Rust core (Bob)
   UI->>C: send_image(bytes, caption)
   C->>C: decode, strip EXIF, scale ≤2048, WebP q80, ThumbHash
@@ -341,15 +341,15 @@ sequenceDiagram
 
 ### D8. Pluggable storage backend; the default is the local filesystem (decided, owner 2026-11-19)
 
-The blob store is not tied to the Pi (owner, 2026-11-19). The server writes blob
+The blob store is not tied to the server (owner, 2026-11-19). The server writes blob
 bytes through a `BlobStore` backend trait — `put`, `get`, `delete` and `exists`
 by `blob_id`, returning opaque ciphertext — so a future backend (an
 object-storage bucket, other cheap media) drops in without touching the wire
 protocol or the specs. The **MVP ships one backend, the local filesystem**; the
 trait is the seam for the rest.
 
-What stays in the Pi, independent of the backend: the blob *metadata* (id, group,
-size, `uploaded_at`, `expires_at`, ack set) lives in the Pi's SQLite, and so does
+What stays in the server, independent of the backend: the blob *metadata* (id, group,
+size, `uploaded_at`, `expires_at`, ack set) lives in the server's SQLite, and so does
 all authorization, expiry and ack-delete logic (D4, D9). The backend only stores
 and returns opaque bytes by key; it never decides who may read a blob or when it
 dies. So group-bound authorization and ack-delete work the same whether the bytes
@@ -359,13 +359,13 @@ The filesystem backend writes under one **stable, configured path**, the same on
 every start (owner: the drive is auto-mounted at a fixed path). Config is a
 `[blob_store]` table — `backend = "filesystem"` and, for it, `path = "…"`; when
 the table is absent the feature is off. The database and keys stay in
-`/var/lib/vyajena` on the Pi's main storage (invariant; pi-runtime: Durable
+`/var/lib/vyajena` on the server's main storage (invariant; server-runtime: Durable
 storage unchanged). Blobs are not backed up (`backup.sh` keeps covering DB + keys
 only); losing them loses at most 7 days of re-sendable images (owner).
 
 **No extra at-rest encryption layer (owner, 2026-11-19):** blobs are already
 client-side ciphertext and the decryption key never reaches the server, so a LUKS
-or encrypted-volume layer would cost real complexity (a headless Pi needing a
+or encrypted-volume layer would cost real complexity (a headless server needing a
 passphrase at boot) for almost no gain. Each backend relies on whatever at-rest
 protection it natively has — none extra for the filesystem; a bucket brings its
 own.
@@ -381,7 +381,7 @@ the SD card by mistake. This does not tell a drive from an ordinary directory
 the service user owns: that is the deploy script's job (task 7.1), and a
 test host may point it anywhere.
 
-Deployment of the default backend goes through `deploy/pi/` only (CLAUDE.md): the
+Deployment of the default backend goes through `deploy/server/` only (CLAUDE.md): the
 drive auto-mounts at the stable path (the owner's setup, not scripted by us);
 `deploy.sh` ensures the directory exists, owned by `vyajena` mode 0700; the
 service unit gets a writable path for it (today only `StateDirectory` is writable
@@ -390,7 +390,7 @@ and warns, without failing, when the store is absent.
 
 ### D9. Expiry, ack-delete and "media expired — resend"
 
-The Pi deletes a blob when either 7 days (`BLOB_TTL`) pass since upload, or every
+The server deletes a blob when either 7 days (`BLOB_TTL`) pass since upload, or every
 device that is a current member of the blob's group has `AckBlob`'d it (the
 sender's own device acks implicitly at upload, since it keeps the plaintext).
 Membership changes between upload and the last ack are covered by the 7-day
@@ -408,7 +408,7 @@ dedicated directory that is not the encrypted SQLite message store (images are
 too large to inline) and is excluded from OS backup (iCloud / Android
 auto-backup) and protected by OS file-based encryption (iOS Data Protection
 `NSFileProtectionComplete`; Android FBE). The cache is LRU-capped by total size.
-A received image is re-downloadable from the Pi within 7 days if evicted. The
+A received image is re-downloadable from the server within 7 days if evicted. The
 sender's own sent images are kept in the cache until `BLOB_TTL` so "resend"
 works, then are eligible for eviction like any entry. The cache stores plaintext
 WebP only; the per-blob key stays with the message in the store, so an evicted
@@ -420,7 +420,7 @@ files, mode 0600 in a 0700 folder, beside the database, with its index
 (migration 0007). The cap defaults to 256 MiB; eviction drops the least recently
 shown entry first, never the entry just cached, and skips an `own` entry until
 7 days after it was cached. A cached file that went missing is forgotten, not an
-error. A blob the Pi answered `NOT_FOUND` for is recorded (`media_expired`), so a
+error. A blob the server answered `NOT_FOUND` for is recorded (`media_expired`), so a
 later tap says "expired" without a network call.
 
 Where the folder is: `ClientConfig::media_dir`, which defaults to `media` inside
@@ -450,10 +450,10 @@ this change decodes it as an unset body and shows the existing "needs a newer
 app version" placeholder (message-content: Inner content format) — no crash, no
 wire-version bump. A sender does not suppress an image when some members are old;
 those members see the placeholder. The `Blobs` service is additive; a
-pre-media device never calls it. Nothing new leaves the device for the Pi, the
+pre-media device never calls it. Nothing new leaves the device for the server, the
 relay or push: the image rides as one `APPLICATION` envelope like any message,
 so its size class and the wake ping are unchanged — one fixed "New message"
-(push invariant). The blob upload is a separate authenticated RPC the Pi sees as
+(push invariant). The blob upload is a separate authenticated RPC the server sees as
 an opaque ciphertext of known size; it carries no content and no push.
 
 ## Risks / Trade-offs
@@ -462,7 +462,7 @@ an opaque ciphertext of known size; it carries no content and no push.
   uploads the blob and waits for its acceptance before sending the envelope
   (D7), so the envelope implies the blob exists; a transient `NOT_FOUND` within
   7 days is shown as "not downloaded, retry", distinct from "expired".
-- [The Pi learns which groups send images, how large and when] → accepted: it
+- [The server learns which groups send images, how large and when] → accepted: it
   already routes and sizes that group's envelopes; the blob content and key stay
   encrypted. The anonymous model (D4) would hide the group at the cost of
   ack-delete.
@@ -493,10 +493,10 @@ an opaque ciphertext of known size; it carries no content and no push.
   message store (local id → blob_id, key, dims, thumbhash, caption, state). New
   column defaults keep existing text messages valid. No change to how text is
   stored.
-- Pi: a schema migration adds blob metadata (blob_id, group_id, size,
+- server: a schema migration adds blob metadata (blob_id, group_id, size,
   `uploaded_at`, `expires_at`, ack set). The blob bytes live in the storage
   backend (files under the filesystem path), not in SQLite.
-- Deploy: `deploy/pi/` wires the filesystem backend at the stable path; the
+- Deploy: `deploy/server/` wires the filesystem backend at the stable path; the
   first deploy that turns the feature on needs the drive auto-mounted there.
   Until then the feature is off and text is unaffected (D8). No data migration;
   no re-join.
@@ -521,7 +521,7 @@ Sub-decisions that fell out of queuing images offline (D7). Each has a default
 in the code; the owner may change any of them.
 
 1. **Retry policy for a queued image that keeps failing to upload.** Now: a
-   failure that may pass (the Pi's drive away, a lost session, no network) is
+   failure that may pass (the server's drive away, a lost session, no network) is
    retried every 3 seconds and at once on each reconnect, forever, until the
    7-day limit below. Alternative: exponential backoff, or a visible "retry"
    button after some number of failures.
@@ -529,10 +529,10 @@ in the code; the owner may change any of them.
    (`BLOB_TTL`) fails with "could not be sent in time", since a picture that old
    is stale and a blob made for it would be near the end of its own life.
    Alternative: no limit, or a shorter one.
-3. **`UNAVAILABLE` from a Pi that stores no pictures at all** (no `[blob_store]`,
-   the default on the real Pi until the owner sets `BLOB_DIR`) is treated as a
+3. **`UNAVAILABLE` from a server that stores no pictures at all** (no `[blob_store]`,
+   the default on the real server until the owner sets `BLOB_DIR`) is treated as a
    failure that may pass, so such an image waits and retries for 7 days instead
-   of failing at once. The core cannot tell "the drive is away" from "this Pi has
+   of failing at once. The core cannot tell "the drive is away" from "this server has
    no picture store" by the status alone. Alternative: a distinct status or a
    `GetServerInfo` capability, so the core can fail at once and the app can say
    "this server does not take pictures".

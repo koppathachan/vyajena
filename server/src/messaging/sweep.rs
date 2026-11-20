@@ -38,7 +38,7 @@ fn sweep_in(
 ) -> Result<Swept, StoreError> {
     let now = ctx.now;
     // Connected devices are seen now, so a long-open stream never counts as
-    // absence (and survives a restart of the Pi).
+    // absence (and survives a restart of the server).
     for device_id in connected {
         inactivity::touch(conn, device_id, now)?;
     }
@@ -72,7 +72,7 @@ fn sweep_in(
 }
 
 /// Runs one sweep at the clock's current time: marks devices inactive that
-/// have not connected for 7 days, reissues the Pi's pending Removes, expires
+/// have not connected for 7 days, reissues the server's pending Removes, expires
 /// week-old application entries (sending connected devices their gap notice
 /// now; the others get it when they connect), and prunes dedup records.
 pub async fn sweep(state: &State) -> Result<(), StoreError> {

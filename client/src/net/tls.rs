@@ -1,7 +1,7 @@
 //! wire-transport: gRPC over HTTP/2 and pinned TLS on TCP 443. The client
-//! accepts the Pi only when the SHA-256 hash of its TLS SubjectPublicKeyInfo
+//! accepts the server only when the SHA-256 hash of its TLS SubjectPublicKeyInfo
 //! equals the pin from the invite. No certificate authority, name or validity
-//! date is checked: the Pi's certificate is self-signed and the relay address
+//! date is checked: the server's certificate is self-signed and the relay address
 //! may be any name or IP.
 
 use std::sync::Arc;
@@ -19,9 +19,9 @@ use tokio_rustls::client::TlsStream;
 
 use super::NetError;
 
-/// The TLS server name sent in SNI. The relay forwards raw TCP and the Pi
+/// The TLS server name sent in SNI. The relay forwards raw TCP and the server
 /// ignores it; it is fixed so the client never sends the relay's real name.
-pub const TLS_SERVER_NAME: &str = "vyajena2-pi";
+pub const TLS_SERVER_NAME: &str = "vyajena2-server";
 
 /// The HTTP/2 ALPN id.
 const ALPN_H2: &[u8] = b"h2";
@@ -89,7 +89,7 @@ impl ServerCertVerifier for PinVerifier {
     }
 }
 
-/// A TLS connection to the Pi and its TLS exporter value.
+/// A TLS connection to the server and its TLS exporter value.
 pub struct PinnedStream {
     /// The connection.
     pub stream: TlsStream<TcpStream>,

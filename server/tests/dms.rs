@@ -1,6 +1,6 @@
-//! direct-messages on the Pi (change `dms`): opening a DM, who may be in it,
+//! direct-messages on the server (change `dms`): opening a DM, who may be in it,
 //! old apps kept out, DM join notices, closing on user removal, and what the
-//! Pi stores.
+//! Server stores.
 //!
 //! Cast (support::messaging::World): the admin (`akhil`), Alice's laptop and
 //! Bob's phone, all in the main group. Alice and Bob run a version 2 core
@@ -20,21 +20,21 @@ use support::messaging::{
 use support::pb;
 use support::pb::envelope::Kind;
 use support::pb::server_frame::Frame as Out;
-use support::pi_external_sender;
+use support::server_external_sender;
 use tonic::Code;
 
 const DM_ID: &[u8] = b"alice-and-bob-dm";
 
 fn dm_users() -> (&'static str, &'static str) {
-    ("alice@pi", "bob@pi")
+    ("alice@chat", "bob@chat")
 }
 
 /// Alice's laptop opens the Alice–Bob DM (its main group moves to `other`).
 async fn open_dm(w: &mut World) -> pb::CreateDmResponse {
-    let pi = pi_external_sender(&w.conn).await;
+    let server = server_external_sender(&w.conn).await;
     let request = w
         .laptop
-        .create_dm(DM_ID, &pi, dm_users(), w.bob.pb_user_id());
+        .create_dm(DM_ID, &server, dm_users(), w.bob.pb_user_id());
     w.conn
         .dms()
         .create_dm(authed(w.laptop.token(), request))
@@ -107,8 +107,9 @@ async fn alice_opens_a_dm_with_bob() {
     let response = open_dm(&mut w).await;
     assert!(response.created);
     assert_eq!(response.group_id, DM_ID);
-    let row: (String, i64, String, String) =
-        w.pi.query(|db| {
+    let row: (String, i64, String, String) = w
+        .server
+        .query(|db| {
             db.query_row(
                 "SELECT kind, epoch, dm_user_a, dm_user_b FROM mls_groups WHERE group_id = ?1",
                 [DM_ID],
@@ -117,8 +118,9 @@ async fn alice_opens_a_dm_with_bob() {
         })
         .await;
     assert_eq!(row, ("dm".into(), 0, "alice".into(), "bob".into()));
-    let members: i64 =
-        w.pi.query(|db| {
+    let members: i64 = w
+        .server
+        .query(|db| {
             db.query_row(
                 "SELECT count(*) FROM mls_members WHERE group_id = ?1",
                 [DM_ID],
@@ -134,10 +136,13 @@ async fn alice_opens_a_dm_with_bob() {
 async fn both_open_at_once_and_the_second_gets_the_first() {
     let mut w = v2_world().await;
     open_dm(&mut w).await;
-    let pi = pi_external_sender(&w.conn).await;
-    let request = w
-        .phone
-        .create_dm(b"bobs-own-dm-try!", &pi, dm_users(), w.alice.pb_user_id());
+    let server = server_external_sender(&w.conn).await;
+    let request = w.phone.create_dm(
+        b"bobs-own-dm-try!",
+        &server,
+        dm_users(),
+        w.alice.pb_user_id(),
+    );
     let response = w
         .conn
         .dms()
@@ -147,9 +152,10 @@ async fn both_open_at_once_and_the_second_gets_the_first() {
         .into_inner();
     assert!(!response.created);
     assert_eq!(response.group_id, DM_ID);
-    let groups: i64 =
-        w.pi.query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
-            .await;
+    let groups: i64 = w
+        .server
+        .query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
+        .await;
     assert_eq!(groups, 2, "the main group and one DM");
 }
 
@@ -157,11 +163,11 @@ async fn both_open_at_once_and_the_second_gets_the_first() {
 #[tokio::test]
 async fn a_dm_needs_another_user_and_the_right_extension() {
     let mut w = v2_world().await;
-    let pi = pi_external_sender(&w.conn).await;
+    let server = server_external_sender(&w.conn).await;
 
     let to_self = w
         .laptop
-        .create_dm(DM_ID, &pi, dm_users(), w.alice.pb_user_id());
+        .create_dm(DM_ID, &server, dm_users(), w.alice.pb_user_id());
     let status = w
         .conn
         .dms()
@@ -173,8 +179,8 @@ async fn a_dm_needs_another_user_and_the_right_extension() {
 
     let carol = w.laptop.create_dm(
         b"dm-naming-carol!",
-        &pi,
-        ("alice@pi", "carol@pi"),
+        &server,
+        ("alice@chat", "carol@chat"),
         w.bob.pb_user_id(),
     );
     let status = w
@@ -188,11 +194,11 @@ async fn a_dm_needs_another_user_and_the_right_extension() {
 
     let unknown = w.laptop.create_dm(
         b"dm-with-nobody!!",
-        &pi,
-        ("alice@pi", "zed@pi"),
+        &server,
+        ("alice@chat", "zed@chat"),
         pb::UserId {
             username: "zed".into(),
-            server_id: "pi".into(),
+            server_id: "chat".into(),
         },
     );
     let status = w
@@ -204,9 +210,10 @@ async fn a_dm_needs_another_user_and_the_right_extension() {
         .check("an unknown peer");
     assert_eq!(status.code(), Code::NotFound);
 
-    let groups: i64 =
-        w.pi.query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
-            .await;
+    let groups: i64 = w
+        .server
+        .query(|db| db.query_row("SELECT count(*) FROM mls_groups", [], |r| r.get(0)))
+        .await;
     assert_eq!(groups, 1, "nothing recorded");
 }
 
@@ -214,10 +221,10 @@ async fn a_dm_needs_another_user_and_the_right_extension() {
 #[tokio::test]
 async fn a_device_with_only_old_key_packages_cannot_open_a_dm() {
     let mut w = world().await;
-    let pi = pi_external_sender(&w.conn).await;
+    let server = server_external_sender(&w.conn).await;
     let request = w
         .laptop
-        .create_dm(DM_ID, &pi, dm_users(), w.bob.pb_user_id());
+        .create_dm(DM_ID, &server, dm_users(), w.bob.pb_user_id());
     let status = w
         .conn
         .dms()
@@ -331,7 +338,7 @@ async fn the_dm_holds_only_its_two_users() {
 }
 
 // spec: direct-messages/dm-content-stays-encrypted
-// spec: group-membership/membership-state-on-the-pi
+// spec: group-membership/membership-state-on-the-server
 #[tokio::test]
 async fn dm_messages_reach_only_the_dm() {
     let mut w = v2_world().await;
@@ -350,9 +357,10 @@ async fn dm_messages_reach_only_the_dm() {
     assert_eq!(got.group_id, DM_ID);
     w.admin_stream.assert_quiet().await;
 
-    // What the Pi keeps for the DM: no text, no names.
-    let stored: Vec<Vec<u8>> =
-        w.pi.query(|db| {
+    // What the server keeps for the DM: no text, no names.
+    let stored: Vec<Vec<u8>> = w
+        .server
+        .query(|db| {
             let mut stmt = db.prepare("SELECT ciphertext FROM envelopes")?;
             let rows = stmt.query_map([], |r| r.get(0))?;
             rows.collect()
@@ -404,9 +412,10 @@ async fn removing_bob_closes_the_dm() {
         .await;
     assert_eq!(rejected.reason, pb::RejectionReason::GroupClosed as i32);
 
-    // The Pi kept only the row, closed.
-    let (closed_at, members, state): (Option<i64>, i64, i64) =
-        w.pi.query(|db| {
+    // The server kept only the row, closed.
+    let (closed_at, members, state): (Option<i64>, i64, i64) = w
+        .server
+        .query(|db| {
             db.query_row(
                 "SELECT closed_at,
                         (SELECT count(*) FROM mls_members WHERE group_id = ?1),
@@ -427,8 +436,9 @@ async fn the_admin_has_no_call_on_other_peoples_dms() {
     let mut w = v2_world().await;
     open_dm(&mut w).await;
     add_bob_to_dm(&mut w).await;
-    let admin_in_dm: i64 =
-        w.pi.query(move |db| {
+    let admin_in_dm: i64 = w
+        .server
+        .query(move |db| {
             db.query_row(
                 "SELECT count(*) FROM mls_members m JOIN devices d ON d.device_id = m.device_id
                  WHERE m.group_id = ?1 AND d.username = 'akhil'",
@@ -466,17 +476,18 @@ async fn an_inactive_phone_leaves_every_group_and_hears_of_each() {
 
     // Bob's phone lies in a drawer for a week; the others keep connecting.
     w.phone_stream = offline(&w.conn, &w.phone).await;
-    wait_offline(&w.pi, &w.phone).await;
-    w.pi.clock.advance(4 * DAY);
+    wait_offline(&w.server, &w.phone).await;
+    w.server.clock.advance(4 * DAY);
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
     w.laptop_stream = reconnect(&w.conn, &mut w.laptop).await;
-    w.pi.clock.advance(3 * DAY + Duration::from_secs(60));
-    w.pi.sweep().await;
+    w.server.clock.advance(3 * DAY + Duration::from_secs(60));
+    w.server.sweep().await;
 
-    // The Pi proposed removing it in both groups.
+    // The server proposed removing it in both groups.
     let phone = w.phone.device_id.to_vec();
-    let groups: Vec<Vec<u8>> =
-        w.pi.query(move |db| {
+    let groups: Vec<Vec<u8>> = w
+        .server
+        .query(move |db| {
             let mut stmt =
                 db.prepare("SELECT group_id FROM pi_removes WHERE device_id = ?1 ORDER BY 1")?;
             let rows = stmt.query_map([phone], |r| r.get(0))?;
@@ -515,9 +526,9 @@ async fn an_inactive_phone_leaves_every_group_and_hears_of_each() {
 async fn a_dm_is_not_a_second_main_group() {
     let mut w = v2_world().await;
     open_dm(&mut w).await;
-    let pi = pi_external_sender(&w.conn).await;
+    let server = server_external_sender(&w.conn).await;
     let mut again = TestDevice::new("akhil", &w.admin_user.identity);
-    let request = again.create_group(b"another-main-grp", &pi, "akhil@pi");
+    let request = again.create_group(b"another-main-grp", &server, "akhil@chat");
     let status = w
         .conn
         .admin()
@@ -526,8 +537,9 @@ async fn a_dm_is_not_a_second_main_group() {
         .err()
         .check("a second CreateGroup");
     assert_eq!(status.code(), Code::AlreadyExists);
-    let mains: i64 =
-        w.pi.query(|db| {
+    let mains: i64 = w
+        .server
+        .query(|db| {
             db.query_row(
                 "SELECT count(*) FROM mls_groups WHERE kind = 'main'",
                 [],

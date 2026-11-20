@@ -1,5 +1,5 @@
 //! Session tokens and the layer every authenticated RPC goes through
-//! (wire-transport: Session authentication; pi-server-core task 4.2).
+//! (wire-transport: Session authentication; server-core task 4.2).
 //!
 //! `Devices.Authenticate` issues a token with [`issue_session`]. Only its
 //! SHA-256 is stored. [`AuthLayer`] sits in front of every service: on every
@@ -42,7 +42,7 @@ pub const UNAUTHENTICATED_PATHS: &[&str] = &[
 /// Random bytes in a session token (256 bits).
 pub const SESSION_TOKEN_BYTES: usize = 32;
 
-/// Lifetime of the tokens this Pi issues: the maximum the spec allows.
+/// Lifetime of the tokens this server issues: the maximum the spec allows.
 pub const SESSION_TOKEN_LIFETIME: std::time::Duration = SESSION_TOKEN_MAX_LIFETIME;
 
 /// The authenticated device behind a request.

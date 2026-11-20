@@ -1,4 +1,4 @@
-//! The engine: one task that owns the connection to the Pi, the `Connect`
+//! The engine: one task that owns the connection to the server, the `Connect`
 //! stream and the MLS group, and does everything that touches them in order
 //! (client-core design D4, D5, D6).
 //!
@@ -20,12 +20,12 @@
 //! reconnect or crash (message-delivery: Idempotent sends). While it waits
 //! for its result, every incoming envelope waits too: a commit from someone
 //! else means ours will be `STALE_EPOCH`, and what comes after our commit is
-//! in the next epoch. The Pi delivers every entry below the commit's
+//! in the next epoch. The server delivers every entry below the commit's
 //! `server_seq` before `Accepted` (message-delivery: Ordered delivery and
 //! catch-up), so on `Accepted` the held envelopes below it are read in the
 //! old epoch, then the commit is merged, then the rest follow. On
 //! `STALE_EPOCH` the job goes back to the front of the queue and runs again
-//! once the device has caught up to the epoch the Pi named.
+//! once the device has caught up to the epoch the server named.
 //!
 //! **Incoming.** Strictly in `server_seq` order; each is processed and
 //! recorded (with `processed_seq`) in one store transaction and acked after
@@ -59,7 +59,7 @@ use crate::client::ClientError;
 use crate::clock::Clock;
 use crate::events::{ConnectionState, DeviceId, Event, EventSender, Member, MessageId, UserId};
 use crate::identity::DeviceKeys;
-use crate::keystore::KeyStore;
+use crate::keystore::{KeyName, KeyStore};
 use crate::mls::verify::{self, LeafProblem};
 use crate::mls::{MlsError, group as mls_group};
 use crate::net::{Backoff, Conn, NetError, Session};
@@ -115,9 +115,9 @@ pub(crate) struct Shared {
     pub(crate) events: EventSender,
     /// The engine's current session, for the client's unary calls.
     pub(crate) session: Mutex<Option<Session>>,
-    /// Whether the Pi last connected to lists protocol version 2, so knows
+    /// Whether the server last connected to lists protocol version 2, so knows
     /// DMs (wire-transport: Protocol version negotiation, change `dms`).
-    pub(crate) pi_knows_dms: std::sync::atomic::AtomicBool,
+    pub(crate) server_knows_dms: std::sync::atomic::AtomicBool,
     /// The decrypted images this device keeps (client-runtime: Image download
     /// and cache).
     pub(crate) media: crate::media::MediaCache,
@@ -177,7 +177,7 @@ pub(crate) struct Engine {
     shared: Arc<Shared>,
     keys: DeviceKeys,
     account: AccountRow,
-    pi: ExternalSender,
+    server: ExternalSender,
     commands: mpsc::Receiver<Command>,
     /// Lets a task the engine started (an image upload) report back.
     command_tx: mpsc::Sender<Command>,
@@ -193,6 +193,9 @@ pub(crate) struct Engine {
     /// Connection lifecycle). Set when a token is obtained or renewed, cleared
     /// only when the device is removed.
     resume: Option<crate::net::ResumeToken>,
+    /// The token last written to the key store, so an unchanged one is not
+    /// written again (client-runtime: Resume across restart).
+    saved_resume: Option<crate::net::ResumeToken>,
     backoff: Backoff,
     next_attempt: Instant,
     /// A pin mismatch or a revoked device stops connecting until the client
@@ -208,7 +211,7 @@ pub(crate) struct Engine {
     /// Own application messages sent on the current link and waiting for
     /// their result, by msg_id.
     apps_in_flight: BTreeMap<[u8; 16], MessageId>,
-    /// The epoch the Pi said each group is at (from `STALE_EPOCH`).
+    /// The epoch the server said each group is at (from `STALE_EPOCH`).
     server_epochs: BTreeMap<Vec<u8>, u64>,
     quiet_since: Instant,
     last_rotation_check: Option<SystemTime>,
@@ -228,7 +231,7 @@ fn parse_user_id(text: &str) -> Option<UserId> {
     Some(UserId::new(username, server_id))
 }
 
-/// qa-fixes D5, inside the merge's transaction: devices the Pi's inactivity
+/// qa-fixes D5, inside the merge's transaction: devices the server's inactivity
 /// Removes took out are recorded; an added device recorded so (or removed and
 /// added in the same commit) is a re-add. Returns both kinds, for the UI to
 /// stay quiet about.
@@ -239,7 +242,7 @@ fn automatic_changes(
 ) -> Result<Vec<Member>, StoreError> {
     let mut automatic = Vec::new();
     for (user, device) in &review.removed {
-        if review.pi_removed.contains(device) {
+        if review.server_removed.contains(device) {
             store.mark_inactive(device, now)?;
             automatic.push(Member {
                 user: user.clone(),
@@ -290,9 +293,12 @@ impl Engine {
         account: AccountRow,
         commands: mpsc::Receiver<Command>,
         command_tx: mpsc::Sender<Command>,
+        resume: Option<crate::net::ResumeToken>,
     ) -> Result<Self, EngineError> {
-        let pi =
-            mls_group::pi_external_sender(&account.pi_sender_key, &account.pi_sender_credential)?;
+        let server = mls_group::server_external_sender(
+            &account.pi_sender_key,
+            &account.pi_sender_credential,
+        )?;
         let group = match shared.store.group()? {
             Some(row) => mls_group::load(shared.store.mls(), &row.group_id)?,
             None => None,
@@ -310,14 +316,15 @@ impl Engine {
             shared,
             keys,
             account,
-            pi,
+            server,
             commands,
             command_tx,
             uploads: BTreeMap::new(),
             group,
             dms,
             link: None,
-            resume: None,
+            saved_resume: resume.clone(),
+            resume,
             backoff: Backoff::new(),
             next_attempt: Instant::now(),
             halted: false,
@@ -361,7 +368,7 @@ impl Engine {
             engine.push_job(Job::UploadKeyPackages { remaining: Some(0) });
         }
         // group-membership: Re-add after an unusable Welcome. A device with
-        // no group asks once per start; the Pi tells a stuck one from one
+        // no group asks once per start; the server tells a stuck one from one
         // still waiting for its first add. Not the admin's: before the group
         // exists the admin's first device creates it, and a linked admin
         // device asks when it refuses its Welcome.
@@ -572,6 +579,7 @@ impl Engine {
                 self.last_rotation_check = None;
                 tracing::info!("connected");
                 self.emit(Event::Connection(ConnectionState::Connected));
+                self.save_resume().await;
                 self.retry_uploads_now();
                 if let Err(error) = self.resend_inflight().await {
                     self.on_error(error);
@@ -599,7 +607,7 @@ impl Engine {
         }
     }
 
-    /// The Pi said this device is revoked (`PERMISSION_DENIED` from
+    /// The server said this device is revoked (`PERMISSION_DENIED` from
     /// `Authenticate` or the stream): emit [`Event::Removed`] once and stop
     /// connecting until the client starts again. Local history stays.
     fn removed(&mut self) {
@@ -611,6 +619,7 @@ impl Engine {
         self.link = None;
         *self.shared.session.lock() = None;
         self.resume = None;
+        self.forget_saved_resume();
         self.deferred.clear();
         self.apps_in_flight.clear();
         if let Some(inflight) = self.inflight.as_mut() {
@@ -618,6 +627,44 @@ impl Engine {
         }
         self.emit(Event::Removed);
         self.emit(Event::Connection(ConnectionState::Disconnected));
+    }
+
+    /// Writes the current resume token to the key store unless it is already
+    /// there (client-runtime: Resume across restart). The key store can block,
+    /// so it runs off the engine task; a failure only costs the next start the
+    /// full handshake.
+    async fn save_resume(&mut self) {
+        let Some(resume) = self.resume.clone() else {
+            return;
+        };
+        if self
+            .saved_resume
+            .as_ref()
+            .is_some_and(|saved| saved.same_token(&resume))
+        {
+            return;
+        }
+        let store = Arc::clone(&self.shared.key_store);
+        let value = resume.encode();
+        let written =
+            tokio::task::spawn_blocking(move || store.set(KeyName::SessionToken, &value)).await;
+        match written {
+            Ok(Ok(())) => self.saved_resume = Some(resume),
+            Ok(Err(error)) => tracing::warn!(%error, "could not save the resume token"),
+            Err(error) => tracing::warn!(%error, "could not save the resume token"),
+        }
+    }
+
+    /// Deletes the saved resume token from the key store, in the background:
+    /// nothing connects after this.
+    fn forget_saved_resume(&mut self) {
+        self.saved_resume = None;
+        let store = Arc::clone(&self.shared.key_store);
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = store.delete(KeyName::SessionToken) {
+                tracing::warn!(%error, "could not delete the resume token");
+            }
+        });
     }
 
     /// Skips the current backoff wait if disconnected; nothing if connected,
@@ -631,27 +678,27 @@ impl Engine {
 
     /// Pinned TLS, then the `Connect` stream. On reconnect this reuses a
     /// still-valid session token to open the stream directly, skipping
-    /// `GetChallenge`/`Authenticate`; otherwise, and when the Pi rejects the
+    /// `GetChallenge`/`Authenticate`; otherwise, and when the server rejects the
     /// token, it runs the full challenge/auth handshake (wire-transport:
     /// Session resume; client-runtime: Connection lifecycle).
     async fn open_link(&self) -> Result<Link, NetError> {
         let conn = Conn::open(&self.account.relay_address, self.account.tls_pin).await?;
-        // wire-transport: Protocol version negotiation. Version 2 with a Pi
+        // wire-transport: Protocol version negotiation. Version 2 with a server
         // that knows DMs, version 1 with an older one.
         let info = conn.server_info().await?;
         let protocol_version = negotiate_protocol_version(&info.supported_protocol_versions)
             .ok_or_else(|| {
                 NetError::Protocol(format!(
-                    "the Pi speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
+                    "the server speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
                 ))
             })?;
-        self.shared.pi_knows_dms.store(
-            protocol::wire_transport::pi_knows_dms(&info.supported_protocol_versions),
+        self.shared.server_knows_dms.store(
+            protocol::wire_transport::server_knows_dms(&info.supported_protocol_versions),
             std::sync::atomic::Ordering::Relaxed,
         );
         // wire-transport: Session resume. A token kept from the last connection
         // and not yet due for renewal opens the stream with no round trips for
-        // the challenge and `Authenticate`. The Pi rejecting it on the stream
+        // the challenge and `Authenticate`. The server rejecting it on the stream
         // (`UNAUTHENTICATED`: evicted, clock skew, or revoked) falls through to
         // the full handshake, which is also where a revoked device meets
         // `PERMISSION_DENIED` (design D2).
@@ -702,7 +749,7 @@ impl Engine {
         tracing::info!(why, "disconnected; reconnecting");
         *self.shared.session.lock() = None;
         // Held envelopes were not acked (acks are cumulative and stop before
-        // the first held one), so the Pi delivers them again; own messages
+        // the first held one), so the server delivers them again; own messages
         // in flight are sent again with the same bytes.
         self.deferred.clear();
         self.apps_in_flight.clear();
@@ -767,6 +814,7 @@ impl Engine {
                     *self.shared.session.lock() = Some(session.clone());
                     // Resume the next reconnect with the renewed token.
                     self.resume = Some(session.to_resume());
+                    self.save_resume().await;
                     if let Some(link) = self.link.as_mut() {
                         link.session = session;
                     }
@@ -811,16 +859,16 @@ impl Engine {
             }
             if self.account.is_admin
                 && self.group.as_ref().is_some_and(|g| {
-                    crate::membership::has_pending_pi_removes(
+                    crate::membership::has_pending_server_removes(
                         g,
-                        mls_group::pi_sender_index(g.extensions(), &self.pi),
+                        mls_group::pi_sender_index(g.extensions(), &self.server),
                     )
                 })
             {
-                self.push_job(Job::CommitPiRemoves);
+                self.push_job(Job::CommitServerRemoves);
             }
             // change `dms`: the same upkeep in each DM. Any member commits a
-            // DM's pending Pi Removes; no admin is in a DM.
+            // DM's pending server Removes; no admin is in a DM.
             for dm in self.store().dms()? {
                 if !dm.joined || dm.closed_at.is_some() || dm.state.stalled.is_some() {
                     continue;
@@ -831,12 +879,12 @@ impl Engine {
                     });
                 }
                 if self.dms.get(&dm.group_id).is_some_and(|g| {
-                    crate::membership::has_pending_pi_removes(
+                    crate::membership::has_pending_server_removes(
                         g,
-                        mls_group::pi_sender_index(g.extensions(), &self.pi),
+                        mls_group::pi_sender_index(g.extensions(), &self.server),
                     )
                 }) {
-                    self.push_job(Job::CommitPiRemovesIn {
+                    self.push_job(Job::CommitServerRemovesIn {
                         group_id: dm.group_id,
                     });
                 }
@@ -1031,7 +1079,7 @@ impl Engine {
 
     /// direct-messages: DM closed on user removal. The peer was removed: the
     /// chat keeps its history, read-only; own messages still sending there
-    /// fail. Acknowledged with `server_seq` 0 so the Pi stops telling.
+    /// fail. Acknowledged with `server_seq` 0 so the server stops telling.
     async fn on_dm_closed(&mut self, notice: pb::DmClosed) -> Result<(), EngineError> {
         if let Some(dm) = self.store().dm_by_group(&notice.group_id)?
             && dm.closed_at.is_none()
@@ -1157,7 +1205,7 @@ impl Engine {
             .ok()
     }
 
-    /// This device stops following the group: it refused something the Pi
+    /// This device stops following the group: it refused something the server
     /// sequenced.
     async fn stall(&mut self, envelope: &pb::Envelope, why: String) -> Result<(), EngineError> {
         tracing::warn!(server_seq = envelope.server_seq, why = %why, "refused a commit");
@@ -1220,10 +1268,10 @@ impl Engine {
         };
         let needed = verify::users_in_commit(&staged);
         let mut pinned = self.resolve_users(needed.into_keys()).await?;
-        let pi_index = mls_group::pi_sender_index(group.extensions(), &self.pi);
+        let server_index = mls_group::pi_sender_index(group.extensions(), &self.server);
         // key-directory: Clients verify the identity chain. An admin commit
         // that adds a device certified by a user's new identity key (a reset
-        // user) is accepted once the Pi confirms the new key; the key is
+        // user) is accepted once the server confirms the new key; the key is
         // re-pinned and the UI warned. From anyone else it is refused.
         let mut repinned: Vec<(UserId, Vec<u8>)> = Vec::new();
         let review = loop {
@@ -1232,7 +1280,7 @@ impl Engine {
                 &staged,
                 committer,
                 &self.account.server_id,
-                pi_index,
+                server_index,
                 &|user| pinned.get(user).cloned(),
             );
             let problem = match review {
@@ -1303,11 +1351,11 @@ impl Engine {
         self.ack(&envelope.group_id, seq).await
     }
 
-    /// A proposal (the Pi's inactivity Removes): store it so the next commit
+    /// A proposal (the server's inactivity Removes): store it so the next commit
     /// includes it.
     async fn on_proposal(&mut self, envelope: pb::Envelope) -> Result<(), EngineError> {
         let seq = envelope.server_seq;
-        let pi = self.pi.clone();
+        let server = self.server.clone();
         let is_admin = self.account.is_admin;
         let is_dm = self.dms.contains_key(&envelope.group_id);
         let Some(group) = group_in(&mut self.group, &mut self.dms, &envelope.group_id) else {
@@ -1315,13 +1363,13 @@ impl Engine {
         };
         let store = Arc::clone(&self.shared.store);
         let outcome = store.transaction(|| -> Result<bool, EngineError> {
-            let mut from_pi = false;
+            let mut from_server = false;
             if let Some(message) = Self::parse(&envelope.ciphertext) {
                 match group.process_message(store.mls(), message) {
                     Ok(processed) => {
-                        let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
-                        from_pi = matches!(processed.sender(), Sender::External(index)
-                            if pi_index.is_some_and(|p| *index == SenderExtensionIndex::new(p)));
+                        let server_index = mls_group::pi_sender_index(group.extensions(), &server);
+                        from_server = matches!(processed.sender(), Sender::External(index)
+                            if server_index.is_some_and(|p| *index == SenderExtensionIndex::new(p)));
                         if let ProcessedMessageContent::ProposalMessage(proposal) =
                             processed.into_content()
                         {
@@ -1336,25 +1384,25 @@ impl Engine {
                 }
             }
             store.set_processed_seq_in(&envelope.group_id, seq)?;
-            Ok(from_pi)
+            Ok(from_server)
         });
-        let from_pi = match outcome {
-            Ok(from_pi) => from_pi,
+        let from_server = match outcome {
+            Ok(from_server) => from_server,
             Err(error) => {
                 self.reload_group_in(&envelope.group_id)?;
                 return Err(error);
             }
         };
-        if from_pi && is_dm {
+        if from_server && is_dm {
             // direct-messages: Inactivity across groups. No admin is in a
-            // DM, so its members commit the Pi's Removes.
-            self.push_job(Job::CommitPiRemovesIn {
+            // DM, so its members commit the server's Removes.
+            self.push_job(Job::CommitServerRemovesIn {
                 group_id: envelope.group_id.clone(),
             });
-        } else if from_pi && is_admin {
+        } else if from_server && is_admin {
             // group-membership: Inactive devices are kept out. Admin devices
-            // commit the Pi's pending Removes.
-            self.push_job(Job::CommitPiRemoves);
+            // commit the server's pending Removes.
+            self.push_job(Job::CommitServerRemoves);
         }
         self.ack(&envelope.group_id, seq).await
     }
@@ -1431,8 +1479,8 @@ impl Engine {
         let mut pinned = self.resolve_users(needed.into_keys()).await?;
         // key-directory: Clients verify the identity chain. A leaf that does
         // not verify against its user's pinned key (a user reset while this
-        // device was away) is checked again with the key the Pi has now,
-        // whoever signed the Welcome; the Pi vouches for every key a device
+        // device was away) is checked again with the key the server has now,
+        // whoever signed the Welcome; the server vouches for every key a device
         // first sees in a Welcome anyway (owner 2026-11-11, task 6.4).
         let mut repinned: Vec<(UserId, Vec<u8>)> = Vec::new();
         loop {
@@ -1442,7 +1490,7 @@ impl Engine {
                     staged.group_context().extensions(),
                     &self.user(),
                     &self.account.server_id,
-                    &self.pi,
+                    &self.server,
                     &|user| pinned.get(user).cloned(),
                 )
                 .map(Some)
@@ -1451,7 +1499,7 @@ impl Engine {
                     staged.members(),
                     staged.group_context().extensions(),
                     &self.account.server_id,
-                    &self.pi,
+                    &self.server,
                     &|user| pinned.get(user).cloned(),
                 )
                 .map(|()| None)
@@ -1476,7 +1524,7 @@ impl Engine {
                 self.note_key_change(&problem).await;
                 tracing::warn!(server_seq = seq, %problem, "refused a Welcome");
                 if is_dm {
-                    // Nothing to ask the Pi for: the DM is not worth a
+                    // Nothing to ask the server for: the DM is not worth a
                     // re-add of this device to the main group.
                     return self.ack(&envelope.group_id, seq).await;
                 }
@@ -1580,7 +1628,7 @@ impl Engine {
         self.ack(&envelope.group_id, seq).await
     }
 
-    /// A Welcome this device cannot use: say why, ACK it, and ask the Pi to
+    /// A Welcome this device cannot use: say why, ACK it, and ask the server to
     /// be added again (group-membership: Re-add after an unusable Welcome).
     async fn refuse_welcome(
         &mut self,
@@ -1642,7 +1690,7 @@ impl Engine {
         Ok(keys)
     }
 
-    /// The identity key the Pi has now for `user`, if it differs from the
+    /// The identity key the server has now for `user`, if it differs from the
     /// pinned one.
     async fn changed_identity_key(&self, user: &UserId) -> Option<Vec<u8>> {
         let session = self.session().ok()?;
@@ -1839,22 +1887,22 @@ impl Engine {
         }
     }
 
-    /// The Pi accepted the own commit: merge it and finish its job.
+    /// The server accepted the own commit: merge it and finish its job.
     async fn merge_own(&mut self) -> Result<(), EngineError> {
         let Some(inflight) = self.inflight.take() else {
             return Ok(());
         };
         let now = self.now();
         let store = Arc::clone(&self.shared.store);
-        let pi = self.pi.clone();
+        let server = self.server.clone();
         let group_id = inflight.group_id.clone();
         let is_dm = self.dms.contains_key(&group_id);
         let merged = match self.group_mut(&group_id) {
             Some(group) => store.transaction(|| -> Result<_, EngineError> {
-                let pi_index = mls_group::pi_sender_index(group.extensions(), &pi);
+                let server_index = mls_group::pi_sender_index(group.extensions(), &server);
                 let review = group
                     .pending_commit()
-                    .map(|staged| verify::own_commit_changes(group, staged, pi_index))
+                    .map(|staged| verify::own_commit_changes(group, staged, server_index))
                     .unwrap_or_default();
                 let had_path = group
                     .pending_commit()

@@ -1,13 +1,13 @@
 ## Why
 
-The Pi server works, but nothing can talk to it: every message is MLS ciphertext,
+The server works, but nothing can talk to it: every message is MLS ciphertext,
 so chatting needs a device-side core. It is step 2 of the owner's build order and
 the base for the terminal client (step 3) and the Flutter app (step 5).
 
 ## What Changes
 
 - New `client/` crate: the device core as a Rust library. It runs OpenMLS, holds
-  keys, stores messages, talks to the Pi over pinned TLS, and exposes one async
+  keys, stores messages, talks to the server over pinned TLS, and exposes one async
   API plus an event stream that the terminal client and Flutter both use.
 - Client stubs are generated into a committed `client/src/pb.rs` by the existing
   `cargo run -p pbgen`, never in CI.
@@ -32,7 +32,7 @@ the base for the terminal client (step 3) and the Flutter app (step 5).
 ### New Capabilities
 
 - `client-runtime`: how the device core keeps keys and messages, connects to the
-  Pi, reports send status, and hands events to the UI in order.
+  Server, reports send status, and hands events to the UI in order.
 
 ### Modified Capabilities
 

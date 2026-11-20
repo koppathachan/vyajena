@@ -1,10 +1,10 @@
 //! group-membership: Inactive devices are kept out; Automatic re-add. The
-//! `presence` and `inactive_devices` tables (pi-server-core tasks 8.1, 8.2).
+//! `presence` and `inactive_devices` tables (server-core tasks 8.1, 8.2).
 //!
 //! The messaging service decides when to mark a device inactive (a full
 //! queue, or [`stale_members`] at a sweep) and does the queue side; this
 //! module keeps the records: when each device was last connected, which
-//! devices are inactive since when, the epoch of the Pi's latest external
+//! devices are inactive since when, the epoch of the server's latest external
 //! Remove for each, and which inactive devices have come back.
 
 use std::time::SystemTime;
@@ -21,7 +21,7 @@ use crate::store::records;
 pub struct Inactive {
     /// The device.
     pub device_id: DeviceId,
-    /// When the Pi marked it inactive.
+    /// When the server marked it inactive.
     pub since: SystemTime,
     /// `RemovedNotice.missed_since`: the start of the period whose messages it
     /// will not receive.
@@ -102,7 +102,7 @@ pub fn mark(
     Ok(())
 }
 
-/// Records that the Pi proposed removing `device_id`'s leaf in `group_id` in
+/// Records that the server proposed removing `device_id`'s leaf in `group_id` in
 /// `epoch`.
 pub fn set_proposed(
     conn: &Connection,
@@ -118,7 +118,7 @@ pub fn set_proposed(
     Ok(())
 }
 
-/// Whether the Pi has a Remove pending for `device_id`'s leaf in `group_id`:
+/// Whether the server has a Remove pending for `device_id`'s leaf in `group_id`:
 /// its leaf there is stale and a re-add must remove it.
 pub fn remove_pending(
     conn: &Connection,
@@ -183,8 +183,8 @@ pub fn stale_members(
     Ok(stale)
 }
 
-/// Inactive devices still in `group_id`'s tree whose latest Pi Remove there
-/// is not for `epoch` (or that have none): the Pi reissues for them in each
+/// Inactive devices still in `group_id`'s tree whose latest server Remove there
+/// is not for `epoch` (or that have none): the server reissues for them in each
 /// new epoch.
 pub fn needing_proposal(
     conn: &Connection,

@@ -1,5 +1,5 @@
 //! key-directory: Clients verify the identity chain; Identity key lookup, end
-//! to end against the real Pi: identity keys pinned on first sight (looked up
+//! to end against the real server: identity keys pinned on first sight (looked up
 //! with `Keys.GetIdentityKeys`, consuming no KeyPackages), a changed key
 //! blocks the admin adding that user's devices until the admin accepts it,
 //! and members follow the admin's re-add of a reset user (client-core tasks
@@ -10,18 +10,18 @@ mod support;
 use client::{ClientError, Event};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 // spec: key-directory/clients-verify-the-identity-chain
 // spec: group-membership/removing-a-user
 #[tokio::test(flavor = "multi_thread")]
 async fn a_changed_identity_key_blocks_the_add_until_accepted() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let bob = device::member_of_group(&admin, "bob").await;
     bob.wait_epoch(1).await;
 
-    // The admin resets Bob: removes him and invites bob@pi again. Bob's new
+    // The admin resets Bob: removes him and invites bob@chat again. Bob's new
     // phone signs up with a new identity key.
     admin
         .client
@@ -71,25 +71,26 @@ async fn a_changed_identity_key_blocks_the_add_until_accepted() {
     let _ = Device::new;
 }
 
-/// The one-time KeyPackages the Pi holds for `device`.
-async fn one_time(pi: &TestPi, device: &Device) -> i64 {
+/// The one-time KeyPackages the server holds for `device`.
+async fn one_time(server: &TestServer, device: &Device) -> i64 {
     let id = device.device_id();
-    pi.query(move |db| {
-        db.query_row(
-            "SELECT count(*) FROM key_packages WHERE device_id = ?1 AND last_resort = 0",
-            [id.as_slice()],
-            |row| row.get(0),
-        )
-    })
-    .await
+    server
+        .query(move |db| {
+            db.query_row(
+                "SELECT count(*) FROM key_packages WHERE device_id = ?1 AND last_resort = 0",
+                [id.as_slice()],
+                |row| row.get(0),
+            )
+        })
+        .await
 }
 
 // spec: key-directory/identity-key-lookup
 // spec: key-directory/clients-verify-the-identity-chain
 #[tokio::test(flavor = "multi_thread")]
 async fn members_learn_identity_keys_without_using_keypackages() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     let carol = device::member_of_group(&admin, "carol").await;
@@ -104,10 +105,10 @@ async fn members_learn_identity_keys_without_using_keypackages() {
     let target =
         i64::try_from(protocol::key_directory::ONE_TIME_KEY_PACKAGES_TARGET).check("target");
     for device in [&alice, &bob, &carol] {
-        assert_eq!(one_time(&pi, device).await, target - 1);
+        assert_eq!(one_time(&server, device).await, target - 1);
     }
     assert_eq!(
-        one_time(&pi, &admin).await,
+        one_time(&server, &admin).await,
         target,
         "nobody fetched the admin's"
     );
@@ -117,8 +118,8 @@ async fn members_learn_identity_keys_without_using_keypackages() {
 // spec: group-membership/device-level-membership
 #[tokio::test(flavor = "multi_thread")]
 async fn members_follow_the_admins_re_add_of_a_reset_user() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     alice

@@ -1,4 +1,4 @@
-//! Blob metadata in the Pi's SQLite: which group a blob belongs to, who
+//! Blob metadata in the server's SQLite: which group a blob belongs to, who
 //! uploaded it, when it dies and who acked it (blob-store: Pluggable storage
 //! backend). The ciphertext is not here; the backend holds it.
 

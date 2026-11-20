@@ -50,7 +50,7 @@ class FakePush implements PushPlatformApi {
   Future<void> clearNotifications() async => calls.add('clearNotifications');
 }
 
-const bob = UserRef(username: 'bob', serverId: 'pi');
+const bob = UserRef(username: 'bob', serverId: 'chat');
 
 Future<(FakeCoreService, FakePush, PushService)> started({
   bool allow = true,

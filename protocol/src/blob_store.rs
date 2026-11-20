@@ -1,4 +1,4 @@
-//! blob-store, message-content (image messages): what the Pi and the device
+//! blob-store, message-content (image messages): what the server and the device
 //! core agree on for encrypted image blobs (change `media-blobs`).
 
 use std::time::Duration;

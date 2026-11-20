@@ -1,10 +1,10 @@
 //! Blobs service: encrypted image blobs (blob-store; change `media-blobs`).
 //!
 //! A blob is opaque XChaCha20-Poly1305 ciphertext made on the sending device;
-//! its key travels only inside an MLS message, so the Pi never holds it
+//! its key travels only inside an MLS message, so the server never holds it
 //! (blob-store: Blobs are opaque ciphertext). The bytes live in the configured
 //! [`BlobStore`] backend; the metadata, who may read a blob and when it dies
-//! live in the Pi's SQLite ([`meta`]), so a backend can be swapped without
+//! live in the server's SQLite ([`meta`]), so a backend can be swapped without
 //! touching either (blob-store: Pluggable storage backend).
 //!
 //! Upload and download are checked against the caller's membership of the

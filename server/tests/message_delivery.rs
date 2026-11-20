@@ -1,5 +1,5 @@
 //! message-delivery: every server-enforced requirement, over
-//! `Messaging.Connect` with real OpenMLS members (pi-runtime: Durable storage
+//! `Messaging.Connect` with real OpenMLS members (server-runtime: Durable storage
 //! too, for the power cut).
 
 mod support;
@@ -9,7 +9,7 @@ use std::time::Duration;
 use protocol::device_identity::DeviceId;
 use rusqlite::params;
 use support::clients::{TestDevice, TestUser};
-use support::harness::TestPi;
+use support::harness::TestServer;
 use support::messaging::{
     GROUP_ID, Stream, World, add_over_stream, commit_envelope, envelope, fetch, receive, say, world,
 };
@@ -22,22 +22,24 @@ fn reason(rejected: &pb::send_result::Rejected) -> pb::RejectionReason {
 }
 
 /// The last `server_seq` handed out: unchanged means nothing was stored.
-async fn last_seq(pi: &TestPi) -> i64 {
-    pi.query(|db| db.query_row("SELECT last_server_seq FROM sequence", [], |r| r.get(0)))
+async fn last_seq(server: &TestServer) -> i64 {
+    server
+        .query(|db| db.query_row("SELECT last_server_seq FROM sequence", [], |r| r.get(0)))
         .await
 }
 
 /// Deliveries waiting for `device`.
-async fn queued(pi: &TestPi, device: &TestDevice) -> Vec<u64> {
+async fn queued(server: &TestServer, device: &TestDevice) -> Vec<u64> {
     let id = device.device_id.to_vec();
-    pi.query(move |db| {
-        let mut stmt = db.prepare(
-            "SELECT server_seq FROM deliveries WHERE device_id = ?1 ORDER BY server_seq",
-        )?;
-        let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
-        rows.map(|r| r.map(|n| n as u64)).collect()
-    })
-    .await
+    server
+        .query(move |db| {
+            let mut stmt = db.prepare(
+                "SELECT server_seq FROM deliveries WHERE device_id = ?1 ORDER BY server_seq",
+            )?;
+            let rows = stmt.query_map(params![id], |r| r.get::<_, i64>(0))?;
+            rows.map(|r| r.map(|n| n as u64)).collect()
+        })
+        .await
 }
 
 /// Carol, invited with one phone that has KeyPackages and an open stream.
@@ -50,7 +52,7 @@ async fn carol(w: &World) -> (TestUser, TestDevice, Stream) {
 
 // spec: message-delivery/envelope
 #[tokio::test]
-async fn sender_cannot_be_spoofed_and_the_pi_sets_seq_and_time() {
+async fn sender_cannot_be_spoofed_and_the_server_sets_seq_and_time() {
     let mut w = world().await;
     let epoch = w.admin.epoch();
     let mut forged = envelope(Kind::Application, epoch, w.admin.message(b"from akhil"));
@@ -73,7 +75,7 @@ async fn sender_cannot_be_spoofed_and_the_pi_sets_seq_and_time() {
     assert_eq!(got.kind, Kind::Application as i32);
     assert_eq!(
         got.accepted_at,
-        Some(prost_types::Timestamp::from(w.pi.clock_now()))
+        Some(prost_types::Timestamp::from(w.server.clock_now()))
     );
     assert_eq!(w.laptop.read_message(&got.ciphertext), b"from akhil");
 }
@@ -106,7 +108,7 @@ async fn mismatched_epoch_is_malformed() {
 #[tokio::test]
 async fn encrypted_commit_wrong_kind_and_wrong_group_are_malformed() {
     let mut w = world().await;
-    let before = last_seq(&w.pi).await;
+    let before = last_seq(&w.server).await;
     let epoch = w.admin.epoch();
     // A PrivateMessage in a COMMIT envelope.
     let private = w.admin.message(b"not a commit");
@@ -144,7 +146,7 @@ async fn encrypted_commit_wrong_kind_and_wrong_group_are_malformed() {
     short.msg_id = vec![1, 2, 3];
     let rejected = w.admin_stream.rejected(short).await;
     assert_eq!(reason(&rejected), pb::RejectionReason::Malformed);
-    assert_eq!(last_seq(&w.pi).await, before);
+    assert_eq!(last_seq(&w.server).await, before);
     w.laptop_stream.assert_quiet().await;
 }
 
@@ -162,7 +164,7 @@ async fn client_sent_welcome_is_malformed_and_delivers_nothing() {
     let rejected = w.admin_stream.rejected(sent).await;
     assert_eq!(reason(&rejected), pb::RejectionReason::Malformed);
     carol_stream.assert_quiet().await;
-    assert!(queued(&w.pi, &carol_phone).await.is_empty());
+    assert!(queued(&w.server, &carol_phone).await.is_empty());
 }
 
 // spec: message-delivery/welcome-travels-with-its-commit
@@ -220,7 +222,7 @@ async fn rejected_commit_drops_its_welcome_and_stores_nothing() {
         .accepted(commit_envelope(epoch, update, None))
         .await;
     w.laptop.confirm();
-    let before = last_seq(&w.pi).await;
+    let before = last_seq(&w.server).await;
 
     let (commit, welcome) = w.admin.add(&key_packages);
     let rejected = w
@@ -234,9 +236,9 @@ async fn rejected_commit_drops_its_welcome_and_stores_nothing() {
     assert_eq!(reason(&rejected), pb::RejectionReason::StaleEpoch);
     assert_eq!(rejected.current_epoch, epoch + 1);
     w.admin.abort();
-    assert_eq!(last_seq(&w.pi).await, before);
+    assert_eq!(last_seq(&w.server).await, before);
     carol_stream.assert_quiet().await;
-    assert!(queued(&w.pi, &carol_phone).await.is_empty());
+    assert!(queued(&w.server, &carol_phone).await.is_empty());
 }
 
 // spec: message-delivery/welcome-travels-with-its-commit
@@ -244,7 +246,7 @@ async fn rejected_commit_drops_its_welcome_and_stores_nothing() {
 async fn welcome_bundle_must_name_exactly_the_added_devices() {
     let mut w = world().await;
     let (carol, carol_phone, mut carol_stream) = carol(&w).await;
-    let before = last_seq(&w.pi).await;
+    let before = last_seq(&w.server).await;
     let epoch = w.admin.epoch();
 
     // Adds Carol's phone, but the bundle also lists Bob's phone.
@@ -297,12 +299,12 @@ async fn welcome_bundle_must_name_exactly_the_added_devices() {
     let rejected = w.admin_stream.rejected(app).await;
     assert_eq!(reason(&rejected), pb::RejectionReason::Malformed);
 
-    assert_eq!(last_seq(&w.pi).await, before);
+    assert_eq!(last_seq(&w.server).await, before);
     carol_stream.assert_quiet().await;
 }
 
 // spec: message-delivery/accepted-means-durable
-// spec: pi-runtime/durable-storage
+// spec: server-runtime/durable-storage
 #[tokio::test]
 async fn entries_are_on_disk_at_accepted_and_survive_a_restart() {
     let mut w = world().await;
@@ -310,11 +312,11 @@ async fn entries_are_on_disk_at_accepted_and_survive_a_restart() {
     drop(w.laptop_stream);
     let seq = say(&mut w.admin, &mut w.admin_stream, b"before the power cut").await;
     // At Accepted, the queue rows are committed.
-    assert_eq!(queued(&w.pi, &w.phone).await, vec![seq]);
-    assert_eq!(queued(&w.pi, &w.laptop).await, vec![seq]);
+    assert_eq!(queued(&w.server, &w.phone).await, vec![seq]);
+    assert_eq!(queued(&w.server, &w.laptop).await, vec![seq]);
 
-    w.pi.restart().await;
-    let conn = w.pi.connect().await;
+    w.server.restart().await;
+    let conn = w.server.connect().await;
     for device in [&mut w.phone, &mut w.laptop] {
         device.authenticate(&conn).await;
         let mut stream = Stream::open(&conn, device).await;
@@ -439,9 +441,10 @@ async fn racing_commits_first_wins_second_is_stale() {
     assert_eq!(reason(&rejected), pb::RejectionReason::StaleEpoch);
     assert_eq!(rejected.current_epoch, epoch + 1);
     w.phone.abort();
-    let group_epoch: i64 =
-        w.pi.query(|db| db.query_row("SELECT epoch FROM mls_groups", [], |r| r.get(0)))
-            .await;
+    let group_epoch: i64 = w
+        .server
+        .query(|db| db.query_row("SELECT epoch FROM mls_groups", [], |r| r.get(0)))
+        .await;
     assert_eq!(group_epoch as u64, epoch + 1);
 }
 
@@ -493,9 +496,9 @@ async fn conn_fetch_device(w: &World, device: &TestDevice) -> Vec<Vec<u8>> {
 }
 
 /// Puts `n` application entries into `device`'s queue directly.
-async fn fill_queue(pi: &TestPi, device: DeviceId, n: i64) {
-    let at = server::runtime::clock::unix_millis(pi.clock_now());
-    pi.state
+async fn fill_queue(server: &TestServer, device: DeviceId, n: i64) {
+    let at = server::runtime::clock::unix_millis(server.clock_now());
+    server.state
         .store
         .call(move |conn| {
             let tx = conn.transaction()?;
@@ -529,20 +532,21 @@ async fn fill_queue(pi: &TestPi, device: DeviceId, n: i64) {
 async fn full_queue_accepts_for_everyone_else_and_marks_the_device_inactive() {
     let mut w = world().await;
     drop(w.phone_stream);
-    fill_queue(&w.pi, w.phone.device_id, 1_000).await;
+    fill_queue(&w.server, w.phone.device_id, 1_000).await;
 
     let seq = say(&mut w.admin, &mut w.admin_stream, b"one too many").await;
     let got = w.laptop_stream.envelope().await;
     assert_eq!(got.server_seq, seq);
     assert_eq!(w.laptop.read_message(&got.ciphertext), b"one too many");
     // Not queued for the phone, whose queue is gone: it is inactive.
-    assert!(queued(&w.pi, &w.phone).await.is_empty());
-    let inactive: i64 =
-        w.pi.query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
-            .await;
+    assert!(queued(&w.server, &w.phone).await.is_empty());
+    let inactive: i64 = w
+        .server
+        .query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
+        .await;
     assert_eq!(inactive, 1);
 
-    // The Pi proposes removing the phone; any member may commit it.
+    // The server proposes removing the phone; any member may commit it.
     for (device, stream) in [
         (&mut w.laptop, &mut w.laptop_stream),
         (&mut w.admin, &mut w.admin_stream),
@@ -557,18 +561,19 @@ async fn full_queue_accepts_for_everyone_else_and_marks_the_device_inactive() {
         .accepted(commit_envelope(epoch, commit, None))
         .await;
     w.laptop.confirm();
-    let members =
-        w.pi.state
-            .store
-            .call(|db| server::membership::GroupState::main_members(db))
-            .await
-            .check("members");
+    let members = w
+        .server
+        .state
+        .store
+        .call(|db| server::membership::GroupState::main_members(db))
+        .await
+        .check("members");
     assert!(members.iter().all(|m| m.device_id != w.phone.device_id));
 
     // Later messages are not queued for it either.
     receive(&mut w.admin_stream, &mut w.admin).await;
     say(&mut w.admin, &mut w.admin_stream, b"after").await;
-    assert!(queued(&w.pi, &w.phone).await.is_empty());
+    assert!(queued(&w.server, &w.phone).await.is_empty());
 }
 
 // spec: message-delivery/commit-log
@@ -583,8 +588,8 @@ async fn commits_are_kept_for_a_member_offline_for_five_days() {
         .accepted(commit_envelope(epoch, update, None))
         .await;
     w.admin.confirm();
-    w.pi.clock.advance(Duration::from_secs(5 * 24 * 3600));
-    w.pi.sweep().await;
+    w.server.clock.advance(Duration::from_secs(5 * 24 * 3600));
+    w.server.sweep().await;
     w.phone.authenticate(&w.conn).await;
     let mut stream = Stream::open(&w.conn, &w.phone).await;
     let got = receive(&mut stream, &mut w.phone).await;
@@ -596,8 +601,9 @@ async fn commits_are_kept_for_a_member_offline_for_five_days() {
     receive(&mut w.laptop_stream, &mut w.laptop).await;
     w.laptop_stream.sync().await;
     stream.sync().await;
-    let kept: i64 =
-        w.pi.query(move |db| {
+    let kept: i64 = w
+        .server
+        .query(move |db| {
             db.query_row(
                 "SELECT count(*) FROM envelopes WHERE server_seq = ?1",
                 params![seq as i64],
@@ -614,7 +620,7 @@ async fn commits_are_kept_for_a_member_offline_for_five_days() {
 async fn connected_device_that_never_acks_loses_messages_but_not_commits() {
     let mut w = world().await;
     let m1 = say(&mut w.admin, &mut w.admin_stream, b"m1").await;
-    let m1_at = w.pi.clock_now();
+    let m1_at = w.server.clock_now();
     let epoch = w.admin.epoch();
     let update = w.admin.self_update();
     let commit = w
@@ -626,8 +632,10 @@ async fn connected_device_that_never_acks_loses_messages_but_not_commits() {
     assert_eq!(w.laptop_stream.envelope().await.server_seq, m1);
     assert_eq!(w.laptop_stream.envelope().await.server_seq, commit);
 
-    w.pi.clock.advance(Duration::from_secs(7 * 24 * 3600 + 1));
-    w.pi.sweep().await;
+    w.server
+        .clock
+        .advance(Duration::from_secs(7 * 24 * 3600 + 1));
+    w.server.sweep().await;
     match w.laptop_stream.next().await {
         Out::GapNotice(gap) => {
             assert_eq!(gap.group_id, GROUP_ID);
@@ -638,7 +646,7 @@ async fn connected_device_that_never_acks_loses_messages_but_not_commits() {
         }
         other => panic!("expected a gap notice, got {other:?}"),
     }
-    assert_eq!(queued(&w.pi, &w.laptop).await, vec![commit]);
+    assert_eq!(queued(&w.server, &w.laptop).await, vec![commit]);
 
     // On reconnect only the commit comes again.
     w.laptop.authenticate(&w.conn).await;
@@ -750,7 +758,7 @@ async fn ack_deletes_entries_up_to_it_and_reconnect_starts_after() {
     }
     w.phone_stream.ack(s2).await;
     w.phone_stream.sync().await;
-    assert_eq!(queued(&w.pi, &w.phone).await, vec![s3]);
+    assert_eq!(queued(&w.server, &w.phone).await, vec![s3]);
 
     let mut stream = Stream::open(&w.conn, &w.phone).await;
     assert_eq!(stream.envelope().await.server_seq, s3);
@@ -762,15 +770,15 @@ async fn ack_deletes_entries_up_to_it_and_reconnect_starts_after() {
 async fn device_connecting_after_its_entries_expired_gets_one_gap_notice() {
     let mut w = world().await;
     let m1 = say(&mut w.admin, &mut w.admin_stream, b"m1").await;
-    let m1_at = w.pi.clock_now();
+    let m1_at = w.server.clock_now();
     // The phone receives it but never acks, and leaves after six days.
     assert_eq!(w.phone_stream.envelope().await.server_seq, m1);
-    w.pi.clock.advance(Duration::from_secs(6 * 24 * 3600));
+    w.server.clock.advance(Duration::from_secs(6 * 24 * 3600));
     // Its stream idles out now; it was connected until then.
-    support::messaging::wait_offline(&w.pi, &w.phone).await;
-    w.pi.clock.advance(Duration::from_secs(24 * 3600 + 1));
-    w.pi.sweep().await;
-    assert!(queued(&w.pi, &w.phone).await.is_empty());
+    support::messaging::wait_offline(&w.server, &w.phone).await;
+    w.server.clock.advance(Duration::from_secs(24 * 3600 + 1));
+    w.server.sweep().await;
+    assert!(queued(&w.server, &w.phone).await.is_empty());
 
     // Back after a day: not inactive, but told what expired.
     let mut stream = support::messaging::reconnect(&w.conn, &mut w.phone).await;
@@ -806,5 +814,5 @@ async fn revoked_device_receives_no_further_envelopes() {
     // Even before the admin commits the Removes, nothing is queued for Bob.
     say(&mut w.admin, &mut w.admin_stream, b"after Bob left").await;
     w.laptop_stream.envelope().await;
-    assert!(queued(&w.pi, &w.phone).await.is_empty());
+    assert!(queued(&w.server, &w.phone).await.is_empty());
 }

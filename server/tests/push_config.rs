@@ -1,4 +1,4 @@
-//! pi-runtime: Push configuration. `push.toml` and the credentials folder:
+//! server-runtime: Push configuration. `push.toml` and the credentials folder:
 //! owner-only modes, at most one `.p8`, keys that parse; a missing key leaves
 //! its platform on the logging provider.
 
@@ -23,7 +23,7 @@ fn field_of(error: PushConfigError) -> String {
     }
 }
 
-// spec: pi-runtime/push-configuration
+// spec: server-runtime/push-configuration
 #[test]
 fn push_toml_is_checked_field_by_field() {
     let base = std::path::Path::new("/etc/vyajena");
@@ -58,7 +58,7 @@ fn push_toml_is_checked_field_by_field() {
     }
 }
 
-// spec: pi-runtime/push-configuration
+// spec: server-runtime/push-configuration
 #[tokio::test]
 async fn key_files_must_be_owner_only_parse_and_be_unique() {
     let oauth = FakeServer::start().await;
@@ -145,7 +145,7 @@ async fn key_files_must_be_owner_only_parse_and_be_unique() {
     );
 }
 
-// spec: pi-runtime/push-configuration
+// spec: server-runtime/push-configuration
 #[tokio::test]
 async fn providers_load_from_push_toml() {
     let oauth = FakeServer::start().await;

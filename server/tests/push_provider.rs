@@ -1,4 +1,4 @@
-//! pi-runtime: Push provider interface. Without a real provider the server
+//! server-runtime: Push provider interface. Without a real provider the server
 //! logs one content-free wake ping (a redacted device id and platform only)
 //! and sends nothing. This binary installs a global log capture, so it holds
 //! one test.
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use server::runtime::server_keys::hex;
-use support::harness::{TestPi, authed};
+use support::harness::{TestServer, authed};
 use support::messaging::{offline, say, wait_offline, world_on};
 use support::{Check, pb};
 
@@ -45,9 +45,9 @@ impl Captured {
     }
 }
 
-// spec: pi-runtime/push-provider-interface
+// spec: server-runtime/push-provider-interface
 #[tokio::test]
-async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
+async fn without_a_provider_the_server_logs_one_content_free_wake_ping() {
     let captured = Captured::default();
     let writer = captured.clone();
     let subscriber = tracing_subscriber::fmt()
@@ -57,7 +57,7 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
         .finish();
     tracing::subscriber::set_global_default(subscriber).check("log capture");
 
-    let mut w = world_on(TestPi::start_with_default_push().await).await;
+    let mut w = world_on(TestServer::start_with_default_push().await).await;
     w.conn
         .devices()
         .update_push_token(authed(
@@ -72,7 +72,7 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
         .await
         .check("UpdatePushToken");
     w.phone_stream = offline(&w.conn, &w.phone).await;
-    wait_offline(&w.pi, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
     say(&mut w.admin, &mut w.admin_stream, b"content").await;
 
     let phone_device = server::runtime::redact(&w.phone.device_id).to_string();
@@ -102,7 +102,7 @@ async fn without_a_provider_the_pi_logs_one_content_free_wake_ping() {
     assert!(!line.contains(&hex(support::messaging::GROUP_ID)), "{line}");
     assert!(!line.contains("the-one-group"), "{line}");
     assert!(
-        w.pi.pushes.sent().is_empty(),
+        w.server.pushes.sent().is_empty(),
         "the test recorder is not in use"
     );
 }

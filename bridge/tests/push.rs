@@ -1,5 +1,5 @@
 //! app-ui: Push notifications, the bridge's part: the app's token reaches the
-//! Pi through `Core::set_push_token`, a rotated one replaces it, and
+//! Server through `Core::set_push_token`, a rotated one replaces it, and
 //! `clear_push_token` clears it.
 
 mod support;
@@ -8,9 +8,9 @@ use bridge::api::error::CoreErrorKind;
 use bridge::api::types::PushPlatform;
 use support::Check;
 use support::device::{self, Device};
-use support::pi::TestPi;
+use support::server::TestServer;
 
-async fn stored(pi: &TestPi, device: &Device) -> Option<(i32, String)> {
+async fn stored(server: &TestServer, device: &Device) -> Option<(i32, String)> {
     let hex = device
         .core
         .device_id()
@@ -20,42 +20,43 @@ async fn stored(pi: &TestPi, device: &Device) -> Option<(i32, String)> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).check("hex"))
         .collect();
-    pi.query(move |db| {
-        db.query_row(
-            "SELECT push_platform, push_token FROM devices WHERE device_id = ?1",
-            [id],
-            |row| {
-                Ok(row
-                    .get::<_, Option<i32>>(0)?
-                    .zip(row.get::<_, Option<String>>(1)?))
-            },
-        )
-    })
-    .await
+    server
+        .query(move |db| {
+            db.query_row(
+                "SELECT push_platform, push_token FROM devices WHERE device_id = ?1",
+                [id],
+                |row| {
+                    Ok(row
+                        .get::<_, Option<i32>>(0)?
+                        .zip(row.get::<_, Option<String>>(1)?))
+                },
+            )
+        })
+        .await
 }
 
 // spec: app-ui/push-notifications
 #[tokio::test(flavor = "multi_thread")]
-async fn the_apps_token_reaches_the_pi_and_rotates_and_clears() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+async fn the_apps_token_reaches_the_server_and_rotates_and_clears() {
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let apns = "ab".repeat(32);
     admin
         .core
         .set_push_token(PushPlatform::Apns, apns.clone())
         .await
         .check("set");
-    assert_eq!(stored(&pi, &admin).await, Some((2, apns)));
+    assert_eq!(stored(&server, &admin).await, Some((2, apns)));
     admin
         .core
         .set_push_token(PushPlatform::Fcm, "rotated".into())
         .await
         .check("rotate");
-    assert_eq!(stored(&pi, &admin).await, Some((1, "rotated".into())));
+    assert_eq!(stored(&server, &admin).await, Some((1, "rotated".into())));
     admin.core.clear_push_token().await.check("clear");
-    assert_eq!(stored(&pi, &admin).await, None);
+    assert_eq!(stored(&server, &admin).await, None);
 
-    // A token the Pi refuses comes back as an error, not silently.
+    // A token the server refuses comes back as an error, not silently.
     let bad = admin
         .core
         .set_push_token(PushPlatform::Apns, "not hex".into())

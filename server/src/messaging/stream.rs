@@ -529,7 +529,7 @@ async fn serve(
             }
             () = session.out.closed() => return Ok(()),
             // Polled only between frames: a frame in progress (an envelope
-            // being accepted) finishes first (pi-runtime: Graceful stop).
+            // being accepted) finishes first (server-runtime: Graceful stop).
             () = stopped(stopping) => return Err(session.fail(stopping_status()).await),
         }
     }

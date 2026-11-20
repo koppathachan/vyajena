@@ -1,6 +1,6 @@
 ## Context
 
-The Pi server (`pi-server-core`, archived) implements every server-enforced
+The server (`server-core`, archived) implements every server-enforced
 requirement and is tested with OpenMLS test clients. Nothing on the device side
 exists. The owner's build order puts this core next, then a terminal client,
 deployment, and Flutter. Owner decisions feeding this change: crate name
@@ -41,7 +41,7 @@ client/
   src/identity/      identity key, device keys, certificates, signup, linking
   src/net/           pinned TLS, auth and token renewal, Connect, reconnect
   src/mls/           OpenMLS group: create, add, process, encrypt, rotate
-  src/membership/    admin actions, commit-authority check, re-add, Pi Removes
+  src/membership/    admin actions, commit-authority check, re-add, server Removes
   src/keys/          KeyPackage upload, replenish, last-resort refresh
   src/messaging/     content bodies, send and status, receive, ack, notices
   tests/             end-to-end tests against the real server
@@ -174,7 +174,7 @@ Clarifications from tasks 3.1 and 3.2:
 - `messages` keeps the whole encoded `Content` (plaintext), so a body this
   version does not know can still be shown by a later one. An own message in
   flight also keeps the epoch and the exact envelope ciphertext last sent: a
-  resend after a crash must repeat identical bytes, because the Pi answers a
+  resend after a crash must repeat identical bytes, because the server answers a
   retry with different ciphertext for an accepted `msg_id` with
   `REJECTION_REASON_DUPLICATE_MISMATCH`. Re-encryption (new bytes) happens only
   after `STALE_EPOCH`, which leaves no dedup record. The bytes are dropped once
@@ -190,7 +190,7 @@ sequenceDiagram
   participant UI
   participant C as client core
   participant S as SQLite
-  participant P as Pi
+  participant P as server
   UI->>C: send_text("hi")
   C->>S: store plaintext, status sending, new msg_id
   C->>P: Envelope (APPLICATION)
@@ -218,7 +218,7 @@ Clarifications from task groups 4 and 5 (the engine, `src/engine/`):
 sequenceDiagram
   participant E as engine
   participant S as SQLite
-  participant P as Pi
+  participant P as server
   E->>S: stage commit + store envelope (one transaction)
   E->>P: COMMIT (msg_id m)
   Note over E: every incoming envelope is held
@@ -236,35 +236,35 @@ sequenceDiagram
 ```
 
 - **Connection.** `Client::start` runs the engine: pinned TLS to the relay
-  address from the invite (TLS 1.3, ALPN `h2`, SNI fixed to `vyajena2-pi`; the
+  address from the invite (TLS 1.3, ALPN `h2`, SNI fixed to `vyajena2-server`; the
   verifier checks only the SPKI SHA-256 pin), `GetChallenge` and
   `Authenticate` over the TLS exporter, then `Connect` with `Hello`. Reconnect
   backoff starts at 250 ms and doubles to 30 s with up to 50% jitter, reset
   on success. A heartbeat goes out when nothing was sent for 25 s; a stream
   silent for 90 s is dropped. The token is renewed on the same connection
   five minutes before it expires, timed on the client's clock from when it
-  was issued (a device clock ahead of the Pi's would otherwise renew on every
+  was issued (a device clock ahead of the server's would otherwise renew on every
   tick). A pin mismatch emits `ServerIdentityError` and stops connecting
   until `start` is called again.
 - **Own commits, one at a time.** The envelope is stored (`outgoing_commit`)
   in the same transaction that stages the commit, and resent byte for byte
-  after a reconnect or a crash, so the Pi's dedup answers with the original
+  after a reconnect or a crash, so the server's dedup answers with the original
   result. While it waits, every incoming envelope is held: a commit from
   someone else means ours is stale, and anything after our commit is in the
   next epoch (after a reconnect the catch-up can bring those before the
   dedup `Accepted`). Held envelopes are dropped on a disconnect; they were
-  not acked, so the Pi delivers them again.
+  not acked, so the server delivers them again.
 - **Merging after `Accepted`** (task 5.7, owner 2026-11-11). On the
-  committer's own stream the Pi delivers every entry for that device below
+  committer's own stream the server delivers every entry for that device below
   the commit's `server_seq` before it sends `Accepted`, also for the dedup
   answer to a resent commit (message-delivery: Ordered delivery and
   catch-up). So on `Accepted` the engine reads the held envelopes below the
   commit in the old epoch, merges at once, and then reads the rest; with
   `max_past_epochs = 0` nothing sequenced before the commit is lost. The
-  former 200 ms settle wait is gone. The Pi orders only commits this way;
+  former 200 ms settle wait is gone. The server orders only commits this way;
   an application message's `Accepted` merges nothing.
 - **`STALE_EPOCH`** puts the job back at the front of the queue; it runs again
-  once the device reached the epoch the Pi named and re-checks whether it is
+  once the device reached the epoch the server named and re-checks whether it is
   still needed.
 - **Incoming** envelopes are processed in `server_seq` order, each in one
   store transaction that also records `processed_seq` (`group_state`), and
@@ -298,17 +298,17 @@ Clarifications from task group 6 (messaging):
   any other rejection marks it failed with the reason. In-flight results
   lost with a link are recovered by resending the same bytes. OpenMLS
   encrypts nothing while proposals are pending, so a device with a message
-  to send commits the Pi's pending inactivity Removes itself
-  (`CommitPiRemoves`), which commit authority allows any member; the admin's
+  to send commits the server's pending inactivity Removes itself
+  (`CommitServerRemoves`), which commit authority allows any member; the admin's
   devices still commit them as soon as they arrive.
-- **Own profile and settings** apply on the sending device when the Pi
+- **Own profile and settings** apply on the sending device when the server
   accepts them (with the same event the other devices emit on receipt).
 - **Receiving** decrypts, checks that the MLS sender leaf's certificate names
   the device in `envelope.sender`, stores, and applies a `Profile` to the
   sending user only and a `GroupSettings` only from the admin named in the
   `0xF0A1` extension, in one transaction with `processed_seq`; the event is
   emitted after it commits and before the ack. A message that does not
-  decrypt or whose MLS sender differs from the Pi's is acked and reported as
+  decrypt or whose MLS sender differs from the server's is acked and reported as
   `Event::Unreadable { sender, accepted_at }` (nothing dropped silently). A
   redelivery (at or below `processed_seq`, or a duplicate row) emits nothing.
 
@@ -323,10 +323,10 @@ Clarifications from task group 6 (messaging):
   until the user accepts the new key in the UI (Q&A verification later builds on
   this).
 - On a `RejoinNotice` for its own user's device or, on admin devices, for anyone:
-  fetch that device's KeyPackage and commit the re-add (pending Pi Remove plus
+  fetch that device's KeyPackage and commit the re-add (pending server Remove plus
   Add), with no user action.
-- Admin devices commit pending Pi inactivity Removes when they connect.
-- Group creation sets the `0xF0A1` admin extension and lists the Pi as external
+- Admin devices commit pending server inactivity Removes when they connect.
+- Group creation sets the `0xF0A1` admin extension and lists the server as external
   sender; every KeyPackage declares `0xF0A1` in its capabilities.
 
 Clarifications from task groups 4 and 5:
@@ -335,19 +335,19 @@ Clarifications from task groups 4 and 5:
   meets a user for the first time in a Welcome or in someone else's commit,
   and a newly linked device learning its own user's key, call
   `Keys.GetIdentityKeys` with every such user in one request; it consumes no
-  KeyPackages (key-directory: Identity key lookup). The Pi answers all or
+  KeyPackages (key-directory: Identity key lookup). The server answers all or
   nothing, so on `NOT_FOUND` the core asks for each user alone and leaves out
-  the ones the Pi does not know (their leaves then fail as `NotPinned`). The
+  the ones the server does not know (their leaves then fail as `NotPinned`). The
   key is pinned on first sight, as for the admin's own fetch. Only adding a
   user's devices still reads the key from `Keys.FetchKeyPackages`, which
   returns it with the KeyPackages it hands out.
 - **Leaf checks** (`client::mls::verify`): every added leaf's certificate
-  verifies against the pinned key, names a user of this Pi and certifies the
+  verifies against the pinned key, names a user of this server and certifies the
   leaf's signature key; a member's path leaf or Update keeps exactly its
   certificate and key; then `protocol::group_membership::check_commit_authority`,
-  with the admin read from the `0xF0A1` extension and the Pi's position in the
+  with the admin read from the `0xF0A1` extension and the server's position in the
   external senders. A Welcome is joined only if every member's leaf passes
-  and the group context names the admin and lists the Pi.
+  and the group context names the admin and lists the server.
 - **A refused commit** cannot be skipped (later traffic is in the new epoch),
   so the device records it as stalled (`group_state.stalled`), acks it, emits
   `CommitRefused` and ignores the group until a Welcome re-adds it. If the
@@ -357,7 +357,7 @@ Clarifications from task groups 4 and 5:
 - **A reset user re-added by the admin** (task 5.6, owner 2026-11-11). When
   the review fails with `Unverified(user)` and the committer's leaf is the
   admin's (`verify::key_lookup_allowed`), the device looks the user's key up
-  with `Keys.GetIdentityKeys`. If the Pi returns a key different from the
+  with `Keys.GetIdentityKeys`. If the server returns a key different from the
   pinned one, the review runs again with it (once per user, so a commit that
   re-adds several reset users works); if it passes, the new key is re-pinned
   (`Store::repin_identity_key`, which also clears a pending key) in the same
@@ -371,7 +371,7 @@ Clarifications from task groups 4 and 5:
   `verify::check_welcome` fails with `Unverified(user)`
   (`verify::welcome_key_lookup`), the device looks the user's key up with
   `Keys.GetIdentityKeys` **whoever signed the Welcome** (the committer of a
-  re-add may be the user's own device, not the admin): the Pi already vouches
+  re-add may be the user's own device, not the admin): the server already vouches
   for every key a device first sees in a Welcome. A different key runs the
   check again (once per user); if it passes, the device re-pins the key in
   the transaction that joins, then emits `Rejoined` (or `JoinedGroup`),
@@ -382,10 +382,10 @@ Clarifications from task groups 4 and 5:
 ```mermaid
 sequenceDiagram
   participant A as Alice's laptop
-  participant P as Pi
+  participant P as server
   P->>A: WELCOME (tree: admin, Alice, Bob's new phone)
   A->>A: check_welcome: Bob's leaf Unverified (old key pinned)
-  A->>P: Keys.GetIdentityKeys([bob@pi])
+  A->>P: Keys.GetIdentityKeys([bob@chat])
   P-->>A: Bob's new key
   A->>A: check_welcome again with it: passes
   A->>A: one transaction: re-pin Bob, join, processed_seq
@@ -393,7 +393,7 @@ sequenceDiagram
   A->>P: Ack
 ```
 - **A message typed while removed** (task 6.4, owner 2026-11-11). It is
-  stored as sending like any other. The Pi answers `STALE_EPOCH` while the
+  stored as sending like any other. The server answers `STALE_EPOCH` while the
   device is out of the group, so the outbox waits; after the Welcome it is
   encrypted in the new epoch and sent with the same `msg_id`, and goes to
   accepted (client-runtime: Send status). Nothing fails it.
@@ -412,8 +412,8 @@ sequenceDiagram
   current leaf (its encryption key, or none). When the job runs, a different
   leaf means someone else re-added it, and the job does nothing. Otherwise it
   commits the Add of a KeyPackage fetched for that device only, plus a Remove
-  of the old leaf by value unless a pending Pi Remove already covers it.
-- **Pi Removes.** Admin devices commit pending Pi Removes as soon as one
+  of the old leaf by value unless a pending server Remove already covers it.
+- **Server Removes.** Admin devices commit pending server Removes as soon as one
   arrives and on the first quiet moment after connecting; every other commit
   includes them by reference anyway.
 - **KeyPackages** list `0xF0A1` and `LastResort` in their leaf capabilities
@@ -433,7 +433,7 @@ is a `protocol` constant.
 Clarification from task 5.4: the check runs on the first quiet moment after
 each connect and then whenever a day has passed on the client's clock. A due
 leaf is rotated (an own commit with a forced update path, which also commits
-pending Pi Removes) at a random moment within the next hour; the leaf's age
+pending server Removes) at a random moment within the next hour; the leaf's age
 counts from group creation, joining, or the last own commit with an update
 path (`group_state.own_leaf_updated_at`).
 
@@ -452,14 +452,14 @@ and automatic re-add, rotation, key-changed warnings. The dropped
 "unknown content body decodes as unset" test lands here.
 
 Clarification from task 7.1: the harness grew with the tests of task groups
-3 to 6 and needed nothing more. `client/tests/support/` holds `pi.rs` (the
+3 to 6 and needed nothing more. `client/tests/support/` holds `server.rs` (the
 real server in-process on a temp database and keys, its own `ManualClock`,
 restart on the same port, `sweep`, raw queries), `relay.rs` (a TCP relay in
 front of it that tests cut to drop the network), `device.rs` (a `Client`
 with a `MemoryKeyStore`, a temp data directory, its own `ManualClock`, an
 event log to wait on, crash-and-restart, and helpers for the admin, invited
 users and group members) and `mls.rs` (bare OpenMLS members for the pure
-commit checks). The Pi's and each device's clocks move independently, so
+commit checks). The server's and each device's clocks move independently, so
 token renewal, rotation, inactivity and expiry run without waiting; only
 the heartbeat test waits its 25 s in real time (the core times heartbeats
 on the monotonic clock).
@@ -472,7 +472,7 @@ on the monotonic clock).
   1.2 spikes it on macOS; the file fallback covers headless machines.
 - [The server as a test dependency couples the crates] → test-only; the core's
   own code never imports the server.
-- [The same membership logic runs on device and Pi] → shared rules stay in
+- [The same membership logic runs on device and server] → shared rules stay in
   `protocol/`, so they cannot drift.
 
 ## Migration Plan
@@ -487,14 +487,14 @@ building task groups 4 and 5 (tasks 5.5–5.7):
 1. **Members refusing a reset user.** After the admin resets Bob, other members
    still had his old key pinned and refused the admin's re-add, stalling. Now a
    member that sees an admin commit add a device with a changed key looks the
-   key up on the Pi, accepts the commit, re-pins and warns (key-directory:
+   key up on the server, accepts the commit, re-pins and warns (key-directory:
    Clients verify the identity chain). The admin already decides who joins, so
    this adds no new trust; members do nothing. A non-admin commit with a changed
    key is still rejected.
 2. **Identity keys cost a KeyPackage.** New RPC `Keys.GetIdentityKeys` returns
    identity keys only, consuming nothing (key-directory: Identity key lookup).
-   The Pi still vouches for each key, as with `FetchKeyPackages`.
-3. **The committer's merge race.** The Pi now delivers, on the committer's own
+   The server still vouches for each key, as with `FetchKeyPackages`.
+3. **The committer's merge race.** The server now delivers, on the committer's own
    stream, every entry below the commit's `server_seq` before its `Accepted`
    (message-delivery: Ordered delivery and catch-up). The core's 200 ms settle
    wait goes away.
@@ -513,9 +513,9 @@ new; own-leaf rotation, last-resort refresh and identity key lookup added;
 device-level membership, clients verify the identity chain and ordered
 delivery modified). Tests are tagged `// spec: <capability>/<slug>` in the
 files named (`c/` = `client/tests/`, `s/` = `server/tests/`, `p/` =
-`protocol/tests/`). **Client** = only the device enforces it; **Pi** = only
-the Pi does (no client side to test); **Both** = each has a part, and each
-part has a test. Count: 58 requirements; 12 client, 10 Pi, 35 both, 1 CI.
+`protocol/tests/`). **Client** = only the device enforces it; **server** = only
+the server does (no client side to test); **Both** = each has a part, and each
+part has a test. Count: 58 requirements; 12 client, 10 server, 35 both, 1 CI.
 
 | Requirement | Who | Tests |
 |---|---|---|
@@ -566,16 +566,16 @@ part has a test. Count: 58 requirements; 12 client, 10 Pi, 35 both, 1 CI.
 | wire-transport/heartbeats | Both (25 s sending is the core's) | c/connection.rs, s/messaging_stream.rs |
 | wire-transport/size-limits | Both | c/messaging.rs (application), c/size_limits.rs (commit), s/messaging_stream.rs, s/server_info.rs, p/wire_transport.rs |
 | wire-transport/protocol-version-negotiation | Both (`Hello` states the version) | c/connection.rs, s/messaging_stream.rs, s/server_info.rs |
-| group-membership/pi-validates-handshakes-without-group-secrets | Pi | s/group_membership.rs |
-| group-membership/membership-state-on-the-pi | Pi | s/group_membership.rs |
-| message-delivery/framing-matches-the-envelope | Pi | s/message_delivery.rs |
-| message-delivery/commit-log | Pi | s/message_delivery.rs |
-| message-delivery/content-free-wake-pings | Pi | s/wake_pings.rs |
-| pi-runtime/configuration | Pi | s/configuration.rs |
-| pi-runtime/first-start | Pi | s/first_start.rs, s/running_locally.rs |
-| pi-runtime/durable-storage | Pi | s/durable_storage.rs, s/message_delivery.rs |
-| pi-runtime/push-provider-interface | Pi | s/push_provider.rs |
-| pi-runtime/running-locally | Pi | s/running_locally.rs, s/clock.rs |
+| group-membership/server-validates-handshakes-without-group-secrets | server | s/group_membership.rs |
+| group-membership/membership-state-on-the-server | server | s/group_membership.rs |
+| message-delivery/framing-matches-the-envelope | server | s/message_delivery.rs |
+| message-delivery/commit-log | server | s/message_delivery.rs |
+| message-delivery/content-free-wake-pings | server | s/wake_pings.rs |
+| server-runtime/configuration | server | s/configuration.rs |
+| server-runtime/first-start | server | s/first_start.rs, s/running_locally.rs |
+| server-runtime/durable-storage | server | s/durable_storage.rs, s/message_delivery.rs |
+| server-runtime/push-provider-interface | server | s/push_provider.rs |
+| server-runtime/running-locally | server | s/running_locally.rs, s/clock.rs |
 | wire-transport/protobuf-contract-is-the-source-of-truth | CI | `buf lint` + `buf breaking` in CI; committed `pb.rs` from `cargo run -p pbgen` |
 
 Not exercised end to end, and why:
@@ -584,12 +584,12 @@ Not exercised end to end, and why:
   of devices, so `c/size_limits.rs` checks `membership::commit_envelope`,
   the step every own commit goes through (task 7.2 moved the check there
   from the engine).
-- **A Pi without protocol version 1.** The test Pi always speaks it, so the
+- **A server without protocol version 1.** The test server always speaks it, so the
   core's refusal at signup and linking (`checked_server_info`) is not run;
-  every connection test shows the `Hello` names a version the Pi accepts.
+  every connection test shows the `Hello` names a version the server accepts.
 - **The real OS keychain.** `c/key_storage.rs` `os_keychain_keeps_named_secrets`
   is `#[ignore]` (a rebuilt binary prompts on macOS; D3); the rest use the
   memory store.
-- **"Pi crashes before writing"** (accepted-means-durable) is the Pi's;
+- **"server crashes before writing"** (accepted-means-durable) is the server's;
   `s/message_delivery.rs` covers it, the core's half is "sending until
   `Accepted`, resent on reconnect".

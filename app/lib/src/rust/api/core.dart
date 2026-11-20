@@ -48,7 +48,7 @@ abstract class Core implements RustOpaqueInterface {
   /// The chats: the main group first, then DMs, newest first, closed last.
   Future<List<ChatSummary>> chats();
 
-  /// Clears this device's push token on the Pi: no more wake pings
+  /// Clears this device's push token on the server: no more wake pings
   /// (notifications not allowed).
   Future<void> clearPushToken();
 
@@ -68,13 +68,13 @@ abstract class Core implements RustOpaqueInterface {
   /// How to show `user`: "Ali (alice)", or the username alone.
   Future<String> displayName({required UserRef user});
 
-  /// Whether the Pi knows DMs: the app offers "Message" only then.
+  /// Whether the server knows DMs: the app offers "Message" only then.
   Future<bool> dmsAvailable();
 
   /// The picture of image message `id` as WebP bytes: from this device's
   /// cache, else downloaded, decrypted and cached (client-runtime: Image
   /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
-  /// the Pi no longer has it.
+  /// the server no longer has it.
   Future<Uint8List> downloadImage({required PlatformInt64 id});
 
   /// The group's epoch on this device, once in the group.
@@ -145,7 +145,7 @@ abstract class Core implements RustOpaqueInterface {
   /// invite). Call [`Core::start`] next.
   Future<UserRef> register({required String inviteText});
 
-  /// Admin: removes `user` from the group and the Pi.
+  /// Admin: removes `user` from the group and the server.
   Future<void> removeUser({required UserRef user});
 
   /// Resends the picture of the own image message `id` as a new message
@@ -206,7 +206,7 @@ abstract class Core implements RustOpaqueInterface {
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});
 
-  /// Registers or replaces this device's push token on the Pi (needs a
+  /// Registers or replaces this device's push token on the server (needs a
   /// connection; fails `offline` otherwise, and the app retries on the next
   /// connect).
   Future<void> setPushToken({

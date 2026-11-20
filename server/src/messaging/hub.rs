@@ -1,6 +1,6 @@
 //! The registry of open `Connect` streams: at most one per device
 //! (wire-transport: Single persistent messaging stream). Other parts of the
-//! Pi reach a connected device only through it: to wake its stream when new
+//! Server reach a connected device only through it: to wake its stream when new
 //! entries are stored, to hand it a notice, or to close it (an older stream
 //! of the same device, a revoked device).
 
@@ -42,7 +42,7 @@ pub struct Hub {
     /// reconnect loop is visible.
     reopens: Mutex<HashMap<DeviceId, u64>>,
     pings: PingLimiter,
-    /// Set once when the server stops (pi-runtime: Graceful stop).
+    /// Set once when the server stops (server-runtime: Graceful stop).
     stopping: watch::Sender<bool>,
 }
 
@@ -151,7 +151,7 @@ impl Hub {
 
     /// Ends every open stream, and every stream that opens from now on, with
     /// `UNAVAILABLE` once its current frame is handled, so a stop never waits
-    /// on a device's open stream (pi-runtime: Graceful stop).
+    /// on a device's open stream (server-runtime: Graceful stop).
     pub fn stop(&self) {
         self.stopping.send_replace(true);
     }

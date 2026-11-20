@@ -7,21 +7,23 @@ use openmls::prelude::{Ciphersuite, CredentialWithKey};
 use openmls_basic_credential::SignatureKeyPair;
 use protocol::device_identity::DeviceId;
 use support::clients::{CIPHERSUITE, TestDevice};
-use support::harness::{Conn, TestPi, authed};
+use support::harness::{Conn, TestServer, authed};
 use support::{Check, bootstrap_admin, invite_user, link_device, pb};
 use tonic::Code;
 
-async fn one_time_count(pi: &TestPi, device: &TestDevice) -> u32 {
+async fn one_time_count(server: &TestServer, device: &TestDevice) -> u32 {
     let id = device.device_id;
-    pi.state
+    server
+        .state
         .store
         .call(move |db| server::store::records::one_time_key_packages(db, &id))
         .await
         .check("count")
 }
 
-async fn stored_count(pi: &TestPi) -> i64 {
-    pi.query(|db| db.query_row("SELECT count(*) FROM key_packages", [], |r| r.get(0)))
+async fn stored_count(server: &TestServer) -> i64 {
+    server
+        .query(|db| db.query_row("SELECT count(*) FROM key_packages", [], |r| r.get(0)))
         .await
 }
 
@@ -66,25 +68,25 @@ async fn fetch(
 // spec: key-directory/keypackage-upload
 #[tokio::test]
 async fn twenty_one_time_and_one_last_resort_are_stored() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     admin.upload_key_packages(&conn, 20).await;
-    assert_eq!(one_time_count(&pi, &admin).await, 20);
-    assert_eq!(stored_count(&pi).await, 21);
+    assert_eq!(one_time_count(&server, &admin).await, 20);
+    assert_eq!(stored_count(&server).await, 21);
 
     // A second upload adds one-time KeyPackages and replaces the last resort.
     admin.upload_key_packages(&conn, 2).await;
-    assert_eq!(one_time_count(&pi, &admin).await, 22);
-    assert_eq!(stored_count(&pi).await, 23);
+    assert_eq!(one_time_count(&server, &admin).await, 22);
+    assert_eq!(stored_count(&server).await, 23);
 }
 
 // spec: key-directory/keypackage-upload
 #[tokio::test]
 async fn keypackage_for_another_device_fails_the_whole_upload() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, laptop) = invite_user(&conn, &admin, "alice").await;
     let phone = link_device(&conn, &alice, &laptop).await;
 
@@ -111,7 +113,7 @@ async fn keypackage_for_another_device_fails_the_whole_upload() {
     let result = upload(&conn, &phone, vec![], bobs).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::PermissionDenied));
     assert_eq!(
-        stored_count(&pi).await,
+        stored_count(&server).await,
         0,
         "nothing of a failed upload is kept"
     );
@@ -120,9 +122,9 @@ async fn keypackage_for_another_device_fails_the_whole_upload() {
 // spec: key-directory/keypackage-upload
 #[tokio::test]
 async fn signature_key_must_be_the_certificates_mls_key() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let other = SignatureKeyPair::new(CIPHERSUITE.signature_algorithm()).check("key");
     // The device's genuine certificate, paired with another signature key.
     let swapped = admin.key_package_signed_by(
@@ -135,15 +137,15 @@ async fn signature_key_must_be_the_certificates_mls_key() {
     );
     let result = upload(&conn, &admin, vec![swapped], admin.key_package()).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::PermissionDenied));
-    assert_eq!(stored_count(&pi).await, 0);
+    assert_eq!(stored_count(&server).await, 0);
 }
 
 // spec: key-directory/keypackage-upload
 #[tokio::test]
 async fn unparsable_wrong_suite_or_missing_last_resort_is_invalid() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
 
     let garbage = upload(
         &conn,
@@ -183,15 +185,15 @@ async fn unparsable_wrong_suite_or_missing_last_resort_is_invalid() {
         no_last_resort.err().map(|s| s.code()),
         Some(Code::InvalidArgument)
     );
-    assert_eq!(stored_count(&pi).await, 0);
+    assert_eq!(stored_count(&server).await, 0);
 }
 
 // spec: key-directory/keypackage-upload
 #[tokio::test]
 async fn keypackage_without_the_admin_extension_capability_fails_the_whole_upload() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (_, phone) = invite_user(&conn, &admin, "bob").await;
 
     let lacking = phone.key_package_without_admin_capability();
@@ -211,15 +213,15 @@ async fn keypackage_without_the_admin_extension_capability_fails_the_whole_uploa
         last_resort.err().map(|s| s.code()),
         Some(Code::InvalidArgument)
     );
-    assert_eq!(stored_count(&pi).await, 0, "the Pi stores nothing");
+    assert_eq!(stored_count(&server).await, 0, "the server stores nothing");
 }
 
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn two_callers_get_different_one_time_keypackages() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (bob_user, bob) = invite_user(&conn, &admin, "bob").await;
     let (_, carol) = invite_user(&conn, &admin, "carol").await;
     bob.upload_key_packages(&conn, 2).await;
@@ -235,15 +237,15 @@ async fn two_callers_get_different_one_time_keypackages() {
     assert_eq!(second.devices.len(), 1);
     assert_eq!(first.devices[0].certificate, Some(bob.certificate.clone()));
     assert_ne!(first.devices[0].key_package, second.devices[0].key_package);
-    assert_eq!(one_time_count(&pi, &bob).await, 0);
+    assert_eq!(one_time_count(&server, &bob).await, 0);
 }
 
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn exhausted_device_falls_back_to_its_last_resort_keypackage() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (bob_user, bob) = invite_user(&conn, &admin, "bob").await;
     let one_time = bob.key_package();
     let last_resort = bob.key_package();
@@ -287,9 +289,9 @@ async fn exhausted_device_falls_back_to_its_last_resort_keypackage() {
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn fetch_for_one_device_consumes_only_that_device() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (bob_user, tablet) = invite_user(&conn, &admin, "bob").await;
     let phone = link_device(&conn, &bob_user, &tablet).await;
     tablet.upload_key_packages(&conn, 3).await;
@@ -303,9 +305,9 @@ async fn fetch_for_one_device_consumes_only_that_device() {
         response.devices[0].certificate,
         Some(phone.certificate.clone())
     );
-    assert_eq!(one_time_count(&pi, &phone).await, 2);
+    assert_eq!(one_time_count(&server, &phone).await, 2);
     assert_eq!(
-        one_time_count(&pi, &tablet).await,
+        one_time_count(&server, &tablet).await,
         3,
         "the tablet keeps all of them"
     );
@@ -315,24 +317,24 @@ async fn fetch_for_one_device_consumes_only_that_device() {
         .await
         .check("fetch all");
     assert_eq!(all.devices.len(), 2);
-    assert_eq!(one_time_count(&pi, &tablet).await, 2);
+    assert_eq!(one_time_count(&server, &tablet).await, 2);
 }
 
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn unknown_user_is_not_found() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let nobody = pb::UserId {
         username: "nobody".to_owned(),
-        server_id: "pi".to_owned(),
+        server_id: "chat".to_owned(),
     };
     let result = fetch(&conn, &admin, nobody, &[]).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::NotFound));
     let elsewhere = pb::UserId {
         username: "akhil".to_owned(),
-        server_id: "other-pi".to_owned(),
+        server_id: "other-server".to_owned(),
     };
     let result = fetch(&conn, &admin, elsewhere, &[]).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::NotFound));
@@ -341,9 +343,9 @@ async fn unknown_user_is_not_found() {
 // spec: key-directory/keypackage-fetch
 #[tokio::test]
 async fn listing_a_foreign_or_revoked_device_is_not_found_and_consumes_nothing() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (bob_user, tablet) = invite_user(&conn, &admin, "bob").await;
     let phone = link_device(&conn, &bob_user, &tablet).await;
     let (_, carol) = invite_user(&conn, &admin, "carol").await;
@@ -359,7 +361,11 @@ async fn listing_a_foreign_or_revoked_device_is_not_found_and_consumes_nothing()
     )
     .await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::NotFound));
-    assert_eq!(one_time_count(&pi, &tablet).await, 2, "nothing consumed");
+    assert_eq!(
+        one_time_count(&server, &tablet).await,
+        2,
+        "nothing consumed"
+    );
 
     // A revoked device is not listed either, with or without a list.
     conn.devices()

@@ -1,7 +1,7 @@
 ## Context
 
 `Text` today is one string. Mentions and replies must stay inside the MLS
-ciphertext (the Pi is never the authority for content), must not change the
+ciphertext (the server is never the authority for content), must not change the
 push text, and must degrade to plain text on the 1.0.0 builds testers have.
 The core stores each message's encoded `Content` as it came, so new fields
 are kept with the message without a schema change; only "which mentions are
@@ -32,7 +32,7 @@ The sending core refuses invalid spans (`InvalidMention`); a receiving core
 drops invalid ones and keeps the text (enforced by the client). Duplicates of
 the same target are allowed (two "@bob" in one message).
 
-Alternative: a markup in the text ("<@alice@pi>"). Rejected: old clients
+Alternative: a markup in the text ("<@alice@chat>"). Rejected: old clients
 would show the markup.
 
 ### D2. A mention is shown with the reader's name for the target
@@ -49,17 +49,17 @@ mentions *me* is decided from the user ids, never from the text.
 
 | | (sender device, `msg_id`) | `server_seq` |
 |---|---|---|
-| Known when | the message is created | only once the Pi accepts it |
+| Known when | the message is created | only once the server accepts it |
 | Reply to an own message still sending | works | impossible |
-| Unique | yes (16 random bytes per device; the Pi dedups on it) | yes |
+| Unique | yes (16 random bytes per device; the server dedups on it) | yes |
 | Lookup on a device | `(sender_device, msg_id)`, the dedup lookup that exists | `server_seq` |
-| Who sets it | the sender's core | the Pi |
+| Who sets it | the sender's core | the server |
 
 The device also names who was replied to (`sender.user_id`), so a device
 without the original can still say "replying to Ali". Neither field is
-authenticated end to end on the original (the Pi sets `sender`, the core
+authenticated end to end on the original (the server sets `sender`, the core
 checks it against the MLS leaf; `msg_id` is envelope metadata), so a
-dishonest Pi could at worst make "jump to the original" land on the wrong
+dishonest server could at worst make "jump to the original" land on the wrong
 message. The quote itself is inside the reply's own ciphertext and always
 shows what the replier saw.
 
@@ -99,10 +99,10 @@ says the original is not on this device.
 
 ### D7. Nothing new leaves the device
 
-No Pi, relay or push code changes. Mentions and replies are fields of the
+No server, relay or push code changes. Mentions and replies are fields of the
 encrypted `Text`, so the envelope, its size class and the wake ping are the
 same as for any message: one fixed "New message" (push invariant, change
-`push`). Tests show the Pi's push sink records the same text for a
+`push`). Tests show the server's push sink records the same text for a
 mentioning message.
 
 ### D8. Old clients
@@ -120,7 +120,7 @@ Send a reply with a mention:
 sequenceDiagram
   participant UI as Flutter (Alice)
   participant C as Rust core (Alice)
-  participant P as Pi
+  participant P as server
   participant B as Rust core (Bob)
   UI->>C: send_message("@Bob yes", [mention bob 0..4], reply_to = local id 42)
   C->>C: load msg 42: sender device + msg_id, quote = first 100 chars
@@ -145,7 +145,7 @@ sequenceDiagram
 ## Migration Plan
 
 Migration `0005_mentions.sql` adds one column with default 0; existing
-messages count as seen. No Pi migration, no Pi deploy needed.
+messages count as seen. No server migration, no server deploy needed.
 
 ## Open Questions
 

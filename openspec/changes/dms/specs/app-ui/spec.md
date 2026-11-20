@@ -22,7 +22,7 @@ number of unread DM messages.
   button with an unread count
 
 ### Requirement: Open a DM
-The members list SHALL offer "Message" on every other member when the Pi lists
+The members list SHALL offer "Message" on every other member when the server lists
 protocol version 2. It SHALL open the existing open DM with that member, or ask
 the core to open one (direct-messages: Opening a DM) and show it at once with
 "Waiting for Bobby's devices" until the peer's first device is added.
@@ -32,8 +32,8 @@ the core to open one (direct-messages: Opening a DM) and show it at once with
 - **THEN** the app asks the core to open the DM and shows the empty DM, where
   Alice can type at once; her message is sent once Bob's phone is added
 
-#### Scenario: Old Pi
-- **WHEN** the Pi lists only protocol version 1
+#### Scenario: Old server
+- **WHEN** the server lists only protocol version 1
 - **THEN** the members list shows no "Message" action
 
 ### Requirement: DM screen

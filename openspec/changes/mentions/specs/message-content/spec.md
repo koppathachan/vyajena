@@ -28,7 +28,7 @@ a message as mentioning a user when a `Mention` names that user or
 mentioning them. The client enforces this.
 
 #### Scenario: Alice mentions Bob
-- **WHEN** Alice sends "hi @Bob" with a `Mention` of `bob@pi` over bytes 3..7
+- **WHEN** Alice sends "hi @Bob" with a `Mention` of `bob@chat` over bytes 3..7
 - **THEN** Bob's core reports the message as mentioning him, and Carol's core
   does not
 
@@ -43,7 +43,7 @@ mentioning them. The client enforces this.
 
 #### Scenario: Old client
 - **WHEN** a client that predates `Text.mentions` receives "hi @Bob" with a
-  mention of `bob@pi`
+  mention of `bob@chat`
 - **THEN** it ignores the unknown field and shows "hi @Bob" as plain text
 
 ### Requirement: Replies
@@ -77,11 +77,11 @@ this.
 ### Requirement: Mentions and replies stay encrypted
 Mentions, `everyone` and reply references SHALL travel only inside the
 encrypted `Content`; the client SHALL put none of them in the `Envelope` or
-any RPC, so the Pi learns nothing new. The Pi SHALL send the same wake ping
+any RPC, so the server learns nothing new. The server SHALL send the same wake ping
 for a mentioning message as for any other, with the one fixed text "New
-message". The client and the Pi enforce this.
+message". The client and the server enforce this.
 
 #### Scenario: Mention while Bob is offline
 - **WHEN** Alice mentions Bob while Bob's phone has no open stream
-- **THEN** the Pi queues one `APPLICATION` envelope and sends Bob's phone one
+- **THEN** the server queues one `APPLICATION` envelope and sends Bob's phone one
   wake ping with the text "New message", the same as for a plain message

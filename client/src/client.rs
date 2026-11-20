@@ -115,7 +115,7 @@ pub enum ClientError {
     /// A blocking task could not run.
     #[error("internal task failed: {0}")]
     Task(String),
-    /// Talking to the Pi failed; [`NetError::ServerIdentity`] means the pin
+    /// Talking to the server failed; [`NetError::ServerIdentity`] means the pin
     /// did not match.
     #[error(transparent)]
     Net(#[from] NetError),
@@ -144,7 +144,7 @@ pub enum ClientError {
     /// `complete_link` without a `link_request` first.
     #[error("no link request was made on this device")]
     NoLinkRequest,
-    /// The Pi behind the invite is not the one it names.
+    /// The server behind the invite is not the one it names.
     #[error("the server does not match the invite: {0}")]
     ServerMismatch(String),
     /// This device is not in the group.
@@ -165,10 +165,10 @@ pub enum ClientError {
     /// A fetched certificate or KeyPackage did not check out.
     #[error("a certificate does not check out: {0}")]
     Certificate(String),
-    /// The Pi knows no such user.
+    /// The server knows no such user.
     #[error("unknown user {0}")]
     UnknownUser(UserId),
-    /// The user has no KeyPackages on the Pi yet, so they cannot be added.
+    /// The user has no KeyPackages on the server yet, so they cannot be added.
     #[error("{0} has no KeyPackages yet")]
     NoKeyPackages(UserId),
     /// The commit would be larger than the handshake limit.
@@ -185,7 +185,7 @@ pub enum ClientError {
     /// messages).
     #[error(transparent)]
     Media(#[from] MediaError),
-    /// The Pi no longer has the picture: its blob expired or was deleted
+    /// The server no longer has the picture: its blob expired or was deleted
     /// (client-runtime: Expired media).
     #[error("the picture has expired")]
     MediaExpired,
@@ -195,7 +195,7 @@ pub enum ClientError {
     /// No stored chat message has that id (client-runtime: Reply lookup).
     #[error("no such message")]
     NoSuchMessage,
-    /// The Pi rejected the commit.
+    /// The server rejected the commit.
     #[error("the server rejected the commit: {0}")]
     Rejected(String),
     /// Not possible yet; retried later.
@@ -206,12 +206,12 @@ pub enum ClientError {
     #[error("no such chat")]
     NoSuchChat,
 
-    /// The Pi closed this DM: its peer was removed (direct-messages: DM
+    /// The server closed this DM: its peer was removed (direct-messages: DM
     /// closed on user removal).
     #[error("this DM is closed")]
     ChatClosed,
 
-    /// The Pi does not know DMs yet (it lists no protocol version 2).
+    /// The server does not know DMs yet (it lists no protocol version 2).
     #[error("the server does not support DMs yet")]
     DmsUnavailable,
 }
@@ -251,6 +251,26 @@ async fn blocking<T: Send + 'static>(
     tokio::task::spawn_blocking(f)
         .await
         .map_err(|error| ClientError::Task(error.to_string()))?
+}
+
+/// The session token the last run saved, to resume with (client-runtime: Resume
+/// across restart). A key store error or a value this version cannot read is
+/// no token: the core then runs the full handshake.
+fn load_resume(store: &dyn KeyStore) -> Option<crate::net::ResumeToken> {
+    match store.get(KeyName::SessionToken) {
+        Ok(Some(saved)) => {
+            let token = crate::net::ResumeToken::decode(&saved);
+            if token.is_none() {
+                tracing::warn!("the saved resume token is not readable; ignoring it");
+            }
+            token
+        }
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(%error, "could not read the saved resume token");
+            None
+        }
+    }
 }
 
 /// `Devices.GetServerInfo`, checked against the invite's server id and this
@@ -301,7 +321,7 @@ impl Client {
                 clock,
                 events,
                 session: Mutex::new(None),
-                pi_knows_dms: std::sync::atomic::AtomicBool::new(false),
+                server_knows_dms: std::sync::atomic::AtomicBool::new(false),
                 media,
             }),
             stream: Some(stream),
@@ -510,7 +530,7 @@ impl Client {
                 self.now(),
             )
             .await?;
-        // The user's identity key, from the Pi (pinned on first sight), with
+        // The user's identity key, from the server (pinned on first sight), with
         // `Keys.GetIdentityKeys` (key-directory: Identity key lookup).
         let identity = crate::keys::identity_keys(&session, std::slice::from_ref(&approval.user))
             .await?
@@ -640,9 +660,11 @@ impl Client {
     pub async fn start(&self) -> Result<(), ClientError> {
         let account = self.account()?;
         let store = Arc::clone(&self.shared.key_store);
-        let keys =
-            blocking(move || DeviceKeys::load(store.as_ref())?.ok_or(ClientError::NotRegistered))
-                .await?;
+        let (keys, resume) = blocking(move || {
+            let keys = DeviceKeys::load(store.as_ref())?.ok_or(ClientError::NotRegistered)?;
+            Ok((keys, load_resume(store.as_ref())))
+        })
+        .await?;
         self.stop();
         let (commands, receiver) = mpsc::channel(64);
         let engine = Engine::new(
@@ -651,6 +673,7 @@ impl Client {
             account,
             receiver,
             commands.clone(),
+            resume,
         )
         .map_err(ClientError::from)?;
         let task = tokio::spawn(engine.run());
@@ -937,11 +960,11 @@ impl Client {
 
     // --- Chats (direct-messages; app-ui: Chat list) ---
 
-    /// Whether the Pi this device last connected to knows DMs (it lists
+    /// Whether the server this device last connected to knows DMs (it lists
     /// protocol version 2); the app offers "Message" only then.
     pub fn dms_available(&self) -> bool {
         self.shared
-            .pi_knows_dms
+            .server_knows_dms
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
@@ -1126,7 +1149,7 @@ impl Client {
 
     /// Resends the image of the own message `id` as a new message with a fresh
     /// blob, key and `msg_id`, from the picture this device kept: for when the
-    /// first blob expired on the Pi (client-runtime: Expired media). Fails with
+    /// first blob expired on the server (client-runtime: Expired media). Fails with
     /// [`ClientError::MediaNotOnDevice`] when the picture is no longer cached.
     pub async fn resend_image(&self, id: MessageId) -> Result<MessageId, ClientError> {
         use crate::messaging::Decoded;
@@ -1219,8 +1242,8 @@ impl Client {
 
     /// The picture of image message `id`, opened: from this device's media
     /// cache if it is there, else downloaded, decrypted and cached, and the
-    /// blob acked so the Pi can delete it once everyone has it. Returns the
-    /// WebP bytes. Fails with [`ClientError::MediaExpired`] when the Pi no
+    /// blob acked so the server can delete it once everyone has it. Returns the
+    /// WebP bytes. Fails with [`ClientError::MediaExpired`] when the server no
     /// longer has it, and with [`ClientError::Offline`] when it must download
     /// and is not connected.
     pub async fn download_image(&self, id: MessageId) -> Result<Vec<u8>, ClientError> {

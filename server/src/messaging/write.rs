@@ -1,4 +1,4 @@
-//! The one write path per accepted envelope (pi-server-core design D4):
+//! The one write path per accepted envelope (server-core design D4):
 //! checks, then in one transaction on the store's single writer the next
 //! `server_seq`, the envelope, its deliveries (queue entries, commit-log
 //! entries, Welcomes), the dedup record and the new group state. `Accepted`
@@ -89,7 +89,7 @@ pub(crate) fn precheck(envelope: &pb::Envelope) -> Result<Kind, RejectionReason>
                 return Err(RejectionReason::TooLarge);
             }
         }
-        // Only the Pi sends Welcomes (message-delivery: Framing matches the
+        // Only the server sends Welcomes (message-delivery: Framing matches the
         // envelope).
         Kind::Welcome | Kind::Unspecified => return Err(RejectionReason::Malformed),
     }
@@ -344,7 +344,7 @@ pub(crate) fn submit(
                     notify.push(added.device_id);
                 }
                 state.save(conn)?;
-                // The new epoch needs the Pi's pending inactivity Removes
+                // The new epoch needs the server's pending inactivity Removes
                 // again (group-membership: Inactive devices are kept out).
                 notify.extend(reissue_removes(conn, ctx, &mut state)?);
                 state.save(conn)?;
@@ -373,7 +373,7 @@ pub(crate) fn submit(
 
 /// group-membership: Inactive devices are kept out. Marks `device_id`
 /// inactive: deletes everything queued for it, in every group, and issues
-/// the Pi's external Remove proposal for its leaf in every group it is in
+/// the server's external Remove proposal for its leaf in every group it is in
 /// (direct-messages: Inactivity across groups). Saves each group. Returns
 /// the devices that got a proposal.
 pub(crate) fn mark_inactive(
@@ -400,7 +400,7 @@ pub(crate) fn mark_inactive(
     Ok(notify)
 }
 
-/// Issues (or reissues) the Pi's external Remove of `device_id`'s leaf in the
+/// Issues (or reissues) the server's external Remove of `device_id`'s leaf in the
 /// current epoch of `state`'s group as a `PROPOSAL` envelope to every active
 /// member of that group.
 fn propose_remove(
@@ -446,7 +446,7 @@ fn propose_remove(
     Ok(notify)
 }
 
-/// Reissues the Pi's Remove for every inactive device still in the tree that
+/// Reissues the server's Remove for every inactive device still in the tree that
 /// has none for the current epoch. Persist `state` afterwards.
 pub(crate) fn reissue_removes(
     conn: &Transaction<'_>,

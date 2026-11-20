@@ -42,7 +42,7 @@ user tap to try again. The app enforces this.
   that opens the viewer
 
 #### Scenario: Expired image
-- **WHEN** Bob opens an image the Pi has deleted
+- **WHEN** Bob opens an image the server has deleted
 - **THEN** the bubble shows the blur with "Media expired — resend"
 
 #### Scenario: Alice resends

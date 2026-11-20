@@ -1,4 +1,4 @@
-//! pi-runtime: Push provider interface, Push errors; message-delivery:
+//! server-runtime: Push provider interface, Push errors; message-delivery:
 //! Content-free wake pings. The APNs provider against fake production and
 //! sandbox APNs servers (push design D3, D4).
 
@@ -63,7 +63,7 @@ fn reason(status: u16, reason: &str) -> Reply {
     Reply::new(status, &format!(r#"{{"reason":"{reason}"}}"#))
 }
 
-// spec: pi-runtime/push-provider-interface
+// spec: server-runtime/push-provider-interface
 // spec: message-delivery/content-free-wake-pings
 #[tokio::test]
 async fn real_apns_ping_is_an_http2_alert_with_only_the_fixed_text() {
@@ -111,7 +111,7 @@ async fn real_apns_ping_is_an_http2_alert_with_only_the_fixed_text() {
     assert_eq!(sent[1].header("authorization"), req.header("authorization"));
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn a_sandbox_token_is_found_and_tried_there_first() {
     let a = apns().await;
@@ -125,7 +125,7 @@ async fn a_sandbox_token_is_found_and_tried_there_first() {
     assert_eq!(a.sandbox.requests().len(), 2);
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn apns_answers_that_clear_the_token_and_ones_that_do_not() {
     // BadDeviceToken on both hosts.
@@ -171,7 +171,7 @@ async fn apns_answers_that_clear_the_token_and_ones_that_do_not() {
     assert!(a.production.requests().is_empty());
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn an_expired_provider_token_is_re_signed_once_and_5xx_retries() {
     let a = apns().await;
@@ -205,7 +205,7 @@ async fn an_expired_provider_token_is_re_signed_once_and_5xx_retries() {
     assert_eq!(a.production.requests().len(), 2);
 }
 
-// spec: pi-runtime/push-provider-interface
+// spec: server-runtime/push-provider-interface
 #[tokio::test]
 async fn only_apns_configured_an_fcm_token_is_only_logged() {
     let a = apns().await;

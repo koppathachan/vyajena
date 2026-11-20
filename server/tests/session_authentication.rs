@@ -6,7 +6,7 @@ mod support;
 use std::time::Duration;
 
 use protocol::wire_transport::{CHALLENGE_NONCE_LEN, CHALLENGE_TTL, SESSION_TOKEN_MAX_LIFETIME};
-use support::harness::{TestPi, authed};
+use support::harness::{TestServer, authed};
 use support::{Check, bootstrap_admin, pb};
 use tonic::Code;
 
@@ -17,9 +17,9 @@ fn timestamp_secs(ts: Option<prost_types::Timestamp>) -> i64 {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn successful_authentication_returns_a_token_and_expiry() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
 
     let challenge = conn
         .devices()
@@ -44,6 +44,8 @@ async fn successful_authentication_returns_a_token_and_expiry() {
     assert!(!response.session_token.is_empty());
     let expires = timestamp_secs(response.expires_at);
     assert!(expires > now && expires <= now + SESSION_TOKEN_MAX_LIFETIME.as_secs() as i64);
+    // Token lifetime: six hours after issue, never later.
+    assert_eq!(expires, now + 6 * 60 * 60);
 
     // The token works on an authenticated RPC.
     conn.devices()
@@ -55,11 +57,11 @@ async fn successful_authentication_returns_a_token_and_expiry() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn tokens_are_stored_hashed() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let token = admin.token().to_owned();
-    let stored: Vec<Vec<u8>> = pi
+    let stored: Vec<Vec<u8>> = server
         .query(|db| {
             let mut stmt = db.prepare("SELECT token_sha256 FROM sessions")?;
             let rows = stmt.query_map([], |row| row.get(0))?;
@@ -71,16 +73,16 @@ async fn tokens_are_stored_hashed() {
     assert_eq!(
         stored[0],
         server::auth::token_hash(&token).to_vec(),
-        "the Pi keeps only SHA-256 of the token"
+        "the server keeps only SHA-256 of the token"
     );
 }
 
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn replayed_challenge_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let nonce = conn
         .devices()
         .get_challenge(pb::GetChallengeRequest {})
@@ -99,9 +101,9 @@ async fn replayed_challenge_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn nonce_is_spent_by_a_failed_answer_too() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let nonce = conn
         .devices()
         .get_challenge(pb::GetChallengeRequest {})
@@ -118,9 +120,9 @@ async fn nonce_is_spent_by_a_failed_answer_too() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn unknown_nonce_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let made_up = admin.answer(&conn, &[5u8; 32], &conn.exporter).await;
     assert_eq!(made_up.err().map(|s| s.code()), Some(Code::Unauthenticated));
 }
@@ -128,9 +130,9 @@ async fn unknown_nonce_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn slow_answer_after_61_seconds_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let nonce = conn
         .devices()
         .get_challenge(pb::GetChallengeRequest {})
@@ -138,7 +140,7 @@ async fn slow_answer_after_61_seconds_is_unauthenticated() {
         .check("GetChallenge")
         .into_inner()
         .nonce;
-    pi.clock.advance(Duration::from_secs(61));
+    server.clock.advance(Duration::from_secs(61));
     let late = admin.answer(&conn, &nonce, &conn.exporter).await;
     assert_eq!(late.err().map(|s| s.code()), Some(Code::Unauthenticated));
 }
@@ -146,9 +148,9 @@ async fn slow_answer_after_61_seconds_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn answer_within_60_seconds_is_accepted() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let nonce = conn
         .devices()
         .get_challenge(pb::GetChallengeRequest {})
@@ -156,7 +158,7 @@ async fn answer_within_60_seconds_is_accepted() {
         .check("GetChallenge")
         .into_inner()
         .nonce;
-    pi.clock.advance(Duration::from_secs(60));
+    server.clock.advance(Duration::from_secs(60));
     admin
         .answer(&conn, &nonce, &conn.exporter)
         .await
@@ -166,11 +168,11 @@ async fn answer_within_60_seconds_is_accepted() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn signature_from_another_connection_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let first = pi.connect().await;
-    let second = pi.connect().await;
+    let server = TestServer::start().await;
+    let first = server.connect().await;
+    let second = server.connect().await;
     assert_ne!(first.exporter, second.exporter);
-    let (_, admin) = bootstrap_admin(&pi, &first).await;
+    let (_, admin) = bootstrap_admin(&server, &first).await;
 
     // The challenge is issued and answered on `first`, but signed over the
     // exporter value of `second`.
@@ -184,8 +186,8 @@ async fn signature_from_another_connection_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn unregistered_device_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
     let stranger = support::clients::TestUser::new("mallory").new_device();
     let result = stranger.try_authenticate_with(&conn, &conn.exporter).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::Unauthenticated));
@@ -194,9 +196,9 @@ async fn unregistered_device_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn revoked_device_with_a_valid_signature_is_permission_denied() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, tablet) = support::invite_user(&conn, &admin, "alice").await;
     let phone = support::link_device(&conn, &alice, &tablet).await;
     revoke(&conn, &tablet, &phone).await;
@@ -208,9 +210,9 @@ async fn revoked_device_with_a_valid_signature_is_permission_denied() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn bad_signature_for_a_revoked_device_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice, tablet) = support::invite_user(&conn, &admin, "alice").await;
     let phone = support::link_device(&conn, &alice, &tablet).await;
     revoke(&conn, &tablet, &phone).await;
@@ -245,9 +247,9 @@ async fn revoke(
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn missing_or_malformed_token_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, _admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, _admin) = bootstrap_admin(&server, &conn).await;
 
     let missing = conn.devices().get_self(pb::GetSelfRequest {}).await;
     assert_eq!(missing.err().map(|s| s.code()), Some(Code::Unauthenticated));
@@ -272,16 +274,17 @@ async fn missing_or_malformed_token_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn expired_token_is_unauthenticated() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
-    pi.clock
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
+    server
+        .clock
         .advance(SESSION_TOKEN_MAX_LIFETIME - Duration::from_secs(1));
     conn.devices()
         .get_self(authed(admin.token(), pb::GetSelfRequest {}))
         .await
         .check("GetSelf just before expiry");
-    pi.clock.advance(Duration::from_secs(1));
+    server.clock.advance(Duration::from_secs(1));
     let expired = conn
         .devices()
         .get_self(authed(admin.token(), pb::GetSelfRequest {}))
@@ -292,9 +295,9 @@ async fn expired_token_is_unauthenticated() {
 // spec: wire-transport/session-authentication
 #[tokio::test]
 async fn every_other_rpc_needs_a_token() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, _admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, _admin) = bootstrap_admin(&server, &conn).await;
     let unauthenticated = |result: Result<(), tonic::Status>| {
         assert_eq!(result.err().map(|s| s.code()), Some(Code::Unauthenticated));
     };

@@ -1,6 +1,6 @@
 ## Why
 
-Every vyajena2 component (Rust core, Pi server, relay config) depends on the wire
+Every vyajena2 component (Rust core, server, relay config) depends on the wire
 contract, and the project is proto-first: nothing that talks over the network can
 be written until the `.proto` files exist. Two open decisions shape that contract
 directly and are resolved here: **multi-device is in the MVP**, and the **max
@@ -18,7 +18,7 @@ message size is 64 KB of ciphertext**.
   certificate** for each of their devices. The first device holds the identity
   key and links further devices.
 - **Resolve open decision #5 (max size, 64 KB):** application ciphertext is
-  capped at 65,536 bytes, enforced by the client before sending and by the Pi
+  capped at 65,536 bytes, enforced by the client before sending and by the server
   on receipt.
 - **Relax an invariant (approved by the owner):** "admin-only membership Commits"
   becomes "admin devices may commit any change; any other device may commit
@@ -26,11 +26,11 @@ message size is 64 KB of ciphertext**.
 - **Replace two architecture rules with one:** "queue full rejects the send" and
   "removed after 30 days offline" become "a device offline for 7 days or with a
   full queue is removed, and is re-added automatically when it returns".
-- Handshake messages (Commits, Proposals) travel as MLS `PublicMessage` so the Pi
+- Handshake messages (Commits, Proposals) travel as MLS `PublicMessage` so the server
   can enforce membership policy; application messages stay `PrivateMessage`.
 - Amend the architecture doc where this design deviates from or clarifies it:
   catch-up delivers commits and messages merged in group order (not "commits
-  first"), the admin's user id is visible to the Pi in the group context, and
+  first"), the admin's user id is visible to the server in the group context, and
   group name/settings travel as encrypted application messages.
 
 ## Capabilities
@@ -44,7 +44,7 @@ message size is 64 KB of ciphertext**.
 - `key-directory`: per-device MLS KeyPackage upload, fetch and replenishment.
 - `message-delivery`: envelopes, acceptance, idempotency, the strict epoch rule,
   per-device queues, the commit log, catch-up, expiry, acks and wake pings.
-- `group-membership`: group creation, who may commit what, the Pi's enforcement
+- `group-membership`: group creation, who may commit what, the server's enforcement
   of it, user removal, and keeping inactive devices out with automatic re-add.
 - `message-content`: the encrypted inner payload format (text, group settings,
   user profiles) that only clients read.
@@ -59,9 +59,9 @@ None. `openspec/specs/` is empty; this is the first change.
   `crates/vyajena-proto`, a CI workflow.
 - **Docs:** `docs/architecture-decisions.md` (decisions #1 and #5 checked off,
   amendments above), `openspec/project.md` (invariants, open decisions).
-- **Downstream:** the Pi server and the Rust core build against this contract in
+- **Downstream:** the server and the Rust core build against this contract in
   follow-up changes. Those changes implement the behavior these specs require;
   this change delivers the contract and validates the two riskiest assumptions
-  (OpenMLS `PublicGroup` on the Pi, device certificates in MLS credentials).
+  (OpenMLS `PublicGroup` on the server, device certificates in MLS credentials).
 - **Flutter:** none. Dart never sees protobuf; its interface to the Rust core is
   the `flutter_rust_bridge` API, which is a separate contract.

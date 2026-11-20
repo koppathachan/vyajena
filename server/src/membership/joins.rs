@@ -4,7 +4,7 @@
 //! Which devices wait for their first add, and which admin devices hear
 //! about them. A device waits when it is not revoked, has never been a group
 //! member, its user is not removed and has no (non-revoked) member device,
-//! and it has uploaded KeyPackages (so an admin device can fetch one). The Pi
+//! and it has uploaded KeyPackages (so an admin device can fetch one). The server
 //! tells the
 //! admin's connected member devices with a `JoinNotice` when such a device
 //! uploads its KeyPackages (right after `Devices.Register` in the signup) and
@@ -136,7 +136,7 @@ fn group_id(conn: &Connection) -> Result<Option<Vec<u8>>, StoreError> {
 /// open DM between `users`) still needs: non-revoked, active, DM-capable
 /// devices of either user (their last-resort KeyPackage lists `0xF0A2`),
 /// already in the main group (so a core always has the main group before a
-/// DM), that have no leaf in it, or whose leaf there waits for the Pi's
+/// DM), that have no leaf in it, or whose leaf there waits for the server's
 /// Remove.
 pub fn dm_needing(
     conn: &Connection,

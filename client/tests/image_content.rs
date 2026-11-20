@@ -16,7 +16,7 @@ fn now() -> SystemTime {
 }
 
 fn bob() -> UserId {
-    UserId::new("bob", "pi")
+    UserId::new("bob", "chat")
 }
 
 fn image() -> ImageContent {

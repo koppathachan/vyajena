@@ -21,20 +21,20 @@
 
 ## 5. MLS and membership
 
-- [x] 5.1 Admin: create the group (0xF0A1, Pi as external sender), add a user (fetch KeyPackages, commit with Welcome), remove a user, invites
+- [x] 5.1 Admin: create the group (0xF0A1, server as external sender), add a user (fetch KeyPackages, commit with Welcome), remove a user, invites
 - [x] 5.2 Process commits and Welcomes: certificate and leaf-key checks, client-side commit authority, identity pinning with key-changed events (key-directory: Clients verify the identity chain)
-- [x] 5.3 Automatic re-add on `RejoinNotice`; admin commits pending Pi Removes
+- [x] 5.3 Automatic re-add on `RejoinNotice`; admin commits pending server Removes
 - [x] 5.4 KeyPackages: initial upload with 0xF0A1, replenish on low notice, last-resort refresh; own-leaf rotation with jitter (decision #4)
-- [x] 5.5 Proto `Keys.GetIdentityKeys` (proto first, then `cargo run -p pbgen`), the Pi handler, and the core learning identity keys through it instead of `FetchKeyPackages` (key-directory: Identity key lookup; owner 2026-11-11)
+- [x] 5.5 Proto `Keys.GetIdentityKeys` (proto first, then `cargo run -p pbgen`), the server handler, and the core learning identity keys through it instead of `FetchKeyPackages` (key-directory: Identity key lookup; owner 2026-11-11)
 - [x] 5.6 Members accept an admin-committed Add whose device needs a new identity key after looking it up: re-pin and emit `IdentityKeyChanged`; reject the same from a non-admin (key-directory: Clients verify the identity chain; group-membership: Device-level membership)
-- [x] 5.7 Pi delivers every entry below an accepted commit's `server_seq` on the committer's stream before its `Accepted`; remove the core's 200 ms settle wait and update D4 (message-delivery: Ordered delivery and catch-up)
+- [x] 5.7 server delivers every entry below an accepted commit's `server_seq` on the committer's stream before its `Accepted`; remove the core's 200 ms settle wait and update D4 (message-delivery: Ordered delivery and catch-up)
 
 ## 6. Messaging
 
 - [x] 6.1 Content bodies: Text with the size check, GroupSettings (admin only), Profile (own user only), unknown bodies as a placeholder (message-content)
 - [x] 6.2 Send with status, `STALE_EPOCH` re-encrypt and resend with the same `msg_id` (client-runtime: Send status)
 - [x] 6.3 Receive in `server_seq` order, store before ack, gap / removed / rejoin notices, one ordered event stream (client-runtime: Events in order)
-- [x] 6.4 A device joining from a Welcome looks up any user whose leaf fails against the pinned key and, if the Pi's key verifies it, joins, re-pins and emits `IdentityKeyChanged` (key-directory: Clients verify the identity chain); a test for a message typed while removed going out after the re-add (client-runtime: Send status); update D5 and remove both from the open questions (owner 2026-11-11)
+- [x] 6.4 A device joining from a Welcome looks up any user whose leaf fails against the pinned key and, if the server's key verifies it, joins, re-pins and emits `IdentityKeyChanged` (key-directory: Clients verify the identity chain); a test for a message typed while removed going out after the re-add (client-runtime: Send status); update D5 and remove both from the open questions (owner 2026-11-11)
 
 ## 7. End-to-end tests
 

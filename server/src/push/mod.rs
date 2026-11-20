@@ -1,4 +1,4 @@
-//! Wake pings (pi-runtime: Push provider interface, Push configuration, Push
+//! Wake pings (server-runtime: Push provider interface, Push configuration, Push
 //! errors, Egress proxy; message-delivery: Content-free wake pings).
 //!
 //! The messaging service asks for a ping when it adds an entry for a device
@@ -10,7 +10,7 @@
 //! - [`ApnsProvider`]: APNs over HTTP/2 with a `.p8` key (design D3).
 //! - [`LoggingProvider`]: logs the device id and platform, sends nothing.
 //! - [`Providers`]: picks one of those by the token's platform.
-//! - [`proxy`]: the CONNECT proxy the Pi's providers dial out through (D5).
+//! - [`proxy`]: the CONNECT proxy the server's providers dial out through (D5).
 
 mod apns;
 mod config;
@@ -48,8 +48,8 @@ pub const COLLAPSE_KEY: &str = "wake";
 pub enum WakeOutcome {
     /// The platform accepted it (or the logging provider logged it).
     Sent,
-    /// The platform says the token is no longer valid: the Pi clears it
-    /// (pi-runtime: Push errors).
+    /// The platform says the token is no longer valid: the server clears it
+    /// (server-runtime: Push errors).
     TokenInvalid,
     /// Not sent (overload after the retries, an error, no credentials); the
     /// device catches up when the app next connects.
@@ -140,7 +140,7 @@ impl Default for Options {
 }
 
 /// The real providers, one per platform that has credentials; tokens of a
-/// platform without one go to [`LoggingProvider`] (pi-runtime: Push provider
+/// platform without one go to [`LoggingProvider`] (server-runtime: Push provider
 /// interface, "Only APNs configured").
 pub struct Providers {
     fcm: Option<FcmProvider>,

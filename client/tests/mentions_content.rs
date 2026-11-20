@@ -15,7 +15,7 @@ fn now() -> SystemTime {
 }
 
 fn bob() -> UserId {
-    UserId::new("bob", "pi")
+    UserId::new("bob", "chat")
 }
 
 fn mention(target: MentionTarget, start: usize, len: usize) -> Mention {
@@ -44,7 +44,7 @@ struct OldText {
 
 fn reply_to_alice(quote: &str) -> ReplyTo {
     ReplyTo {
-        user: UserId::new("alice", "pi"),
+        user: UserId::new("alice", "chat"),
         device: [7; 16],
         msg_id: [9; 16],
         quote: quote.to_owned(),
@@ -60,7 +60,7 @@ fn a_mention_of_bob_round_trips() {
     assert_eq!(text.text, "hi @Bob");
     assert_eq!(text.mentions, mentions);
     assert!(text.mentions[0].names(&bob()));
-    assert!(!text.mentions[0].names(&UserId::new("carol", "pi")));
+    assert!(!text.mentions[0].names(&UserId::new("carol", "chat")));
 }
 
 // spec: message-content/mentions
@@ -71,7 +71,7 @@ fn everyone_names_every_user() {
     let text = text_of(&content);
     assert_eq!(text.mentions, mentions);
     assert!(text.mentions[0].names(&bob()));
-    assert!(text.mentions[0].names(&UserId::new("carol", "pi")));
+    assert!(text.mentions[0].names(&UserId::new("carol", "chat")));
 }
 
 // spec: message-content/mentions
@@ -146,7 +146,7 @@ fn client_pb_text(text: &str, ranges: &[(u32, u32)]) -> Vec<u8> {
                 .map(|&(start, length)| PbMention {
                     user: Some(PbUser {
                         username: "bob".into(),
-                        server_id: "pi".into(),
+                        server_id: "chat".into(),
                     }),
                     start,
                     length,
@@ -243,7 +243,7 @@ fn raw_reply(quote: &str) -> Vec<u8> {
                 sender: Some(Device {
                     user_id: Some(User {
                         username: "alice".into(),
-                        server_id: "pi".into(),
+                        server_id: "chat".into(),
                     }),
                     device_id: vec![7; 16],
                 }),

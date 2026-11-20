@@ -4,7 +4,7 @@
 mod support;
 
 use support::clients::TestDevice;
-use support::harness::{Conn, TestPi, authed};
+use support::harness::{Conn, TestServer, authed};
 use support::{Check, bootstrap_admin, invite_user, link_device, pb};
 use tonic::Code;
 
@@ -23,9 +23,10 @@ async fn lookup(
         .into_inner())
 }
 
-async fn one_time_count(pi: &TestPi, device: &TestDevice) -> u32 {
+async fn one_time_count(server: &TestServer, device: &TestDevice) -> u32 {
     let id = device.device_id;
-    pi.state
+    server
+        .state
         .store
         .call(move |db| server::store::records::one_time_key_packages(db, &id))
         .await
@@ -42,9 +43,9 @@ fn user_id(username: &str, server_id: &str) -> pb::UserId {
 // spec: key-directory/identity-key-lookup
 #[tokio::test]
 async fn learning_keys_without_a_keypackage() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice_user, alice) = invite_user(&conn, &admin, "alice").await;
     let (bob_user, bob) = invite_user(&conn, &admin, "bob").await;
     let (_, carol) = invite_user(&conn, &admin, "carol").await;
@@ -76,8 +77,8 @@ async fn learning_keys_without_a_keypackage() {
             (bob_user.pb_user_id(), bob_user.identity_public_key()),
         ]
     );
-    assert_eq!(one_time_count(&pi, &alice).await, 3, "nothing consumed");
-    assert_eq!(one_time_count(&pi, &bob).await, 3, "nothing consumed");
+    assert_eq!(one_time_count(&server, &alice).await, 3, "nothing consumed");
+    assert_eq!(one_time_count(&server, &bob).await, 3, "nothing consumed");
 
     // An empty list asks for nothing.
     let empty = lookup(&conn, &carol, vec![]).await.check("empty list");
@@ -87,30 +88,30 @@ async fn learning_keys_without_a_keypackage() {
 // spec: key-directory/identity-key-lookup
 #[tokio::test]
 async fn unknown_user_in_the_list_is_not_found() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (alice_user, _alice) = invite_user(&conn, &admin, "alice").await;
 
     let result = lookup(
         &conn,
         &admin,
-        vec![alice_user.pb_user_id(), user_id("zed", "pi")],
+        vec![alice_user.pb_user_id(), user_id("zed", "chat")],
     )
     .await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::NotFound));
 
     // A user of another server is just as unknown.
-    let result = lookup(&conn, &admin, vec![user_id("alice", "other-pi")]).await;
+    let result = lookup(&conn, &admin, vec![user_id("alice", "other-server")]).await;
     assert_eq!(result.err().map(|s| s.code()), Some(Code::NotFound));
 }
 
 // spec: key-directory/identity-key-lookup
 #[tokio::test]
 async fn user_without_a_non_revoked_device_is_not_found() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (_, admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_, admin) = bootstrap_admin(&server, &conn).await;
     let (bob_user, tablet) = invite_user(&conn, &admin, "bob").await;
     let phone = link_device(&conn, &bob_user, &tablet).await;
 
@@ -146,9 +147,9 @@ async fn user_without_a_non_revoked_device_is_not_found() {
 // spec: key-directory/identity-key-lookup
 #[tokio::test]
 async fn lookup_needs_a_session() {
-    let pi = TestPi::start().await;
-    let conn = pi.connect().await;
-    let (admin_user, _admin) = bootstrap_admin(&pi, &conn).await;
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (admin_user, _admin) = bootstrap_admin(&server, &conn).await;
     let result = conn
         .keys()
         .get_identity_keys(pb::GetIdentityKeysRequest {

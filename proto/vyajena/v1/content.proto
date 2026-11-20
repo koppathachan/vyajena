@@ -2,7 +2,7 @@
 //
 // message-content: Inner content format. The plaintext of every MLS application
 // message is an encoded `Content`. Only the Rust core encodes or decodes it; the
-// Pi never sees it and Flutter never sees protobuf.
+// Server never sees it and Flutter never sees protobuf.
 syntax = "proto3";
 
 package vyajena.v1;
@@ -27,13 +27,13 @@ message Content {
 }
 
 // message-content: Image messages. One static image, stored as an encrypted blob
-// on the Pi (blob-store). This body is what a receiver needs to show a blurred
+// on the server (blob-store). This body is what a receiver needs to show a blurred
 // placeholder at once and to fetch and decrypt the full image on tap. A client
 // that predates it decodes the body as unset and shows the "needs a newer app
-// version" placeholder. Only the Rust core reads it; the Pi never sees it, and
+// version" placeholder. Only the Rust core reads it; the server never sees it, and
 // `blob_key` never leaves the encrypted `Content`.
 message Image {
-  // The random id the ciphertext is stored under on the Pi, 16 bytes
+  // The random id the ciphertext is stored under on the server, 16 bytes
   // (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
   bytes blob_id = 1;
   // The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
@@ -110,7 +110,7 @@ message ReplyTo {
 }
 
 // message-content: Group settings travel encrypted. The group name and settings,
-// which the Pi never sees (group-membership: Membership state on the Pi).
+// which the server never sees (group-membership: Membership state on the server).
 // Only messages from admin devices change them; clients ignore `GroupSettings`
 // from non-admin devices.
 message GroupSettings {

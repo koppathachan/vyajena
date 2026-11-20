@@ -14,10 +14,10 @@ pub const QUEUE_CAP: usize = 1_000;
 /// (Expiry and gap notice).
 pub const QUEUE_ENTRY_TTL: Duration = Duration::from_secs(7 * DAY);
 
-/// The Pi deduplicates accepted envelopes on (sender device, `msg_id`) for at
+/// The server deduplicates accepted envelopes on (sender device, `msg_id`) for at
 /// least this long (Idempotent sends).
 pub const DEDUP_MIN_RETENTION: Duration = Duration::from_secs(7 * DAY);
 
-/// The Pi sends at most one wake ping per device per this interval
+/// The server sends at most one wake ping per device per this interval
 /// (Content-free wake pings).
 pub const WAKE_PING_MIN_INTERVAL: Duration = Duration::from_secs(60);

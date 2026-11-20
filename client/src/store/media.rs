@@ -105,7 +105,7 @@ impl Store {
         })?)
     }
 
-    /// The Pi no longer has `blob_id`: its image message shows "media expired".
+    /// The server no longer has `blob_id`: its image message shows "media expired".
     pub fn mark_media_expired(&self, blob_id: &[u8], now: SystemTime) -> Result<(), StoreError> {
         self.db.with(|conn| {
             conn.execute(
@@ -116,7 +116,7 @@ impl Store {
         Ok(())
     }
 
-    /// Whether `blob_id` is known to have expired on the Pi.
+    /// Whether `blob_id` is known to have expired on the server.
     pub fn is_media_expired(&self, blob_id: &[u8]) -> Result<bool, StoreError> {
         Ok(self
             .db

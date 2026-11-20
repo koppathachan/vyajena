@@ -3,8 +3,8 @@
 
 pub mod device;
 pub mod mls;
-pub mod pi;
 pub mod relay;
+pub mod server;
 
 use std::path::Path;
 use std::sync::Arc;

@@ -6,7 +6,7 @@ Store / TestFlight). Today a release build would be signed with the debug key,
 carry Flutter's default icon and the name "vyajena", has no store declarations
 (export compliance, privacy manifest, Data safety, privacy labels), and has never
 been archived for a real device. On a real iPhone it would also hit the Local
-Network prompt with no usage text, because the Pi is reached at `192.168.1.8`.
+Network prompt with no usage text, because the server is reached at `<server-address>`.
 
 ## What Changes
 
@@ -39,7 +39,7 @@ Network prompt with no usage text, because the Pi is reached at `192.168.1.8`.
   required-reason APIs the Rust core uses; Play Data safety and App Store privacy
   label answers written down once, from what actually leaves the phone (ciphertext,
   usernames, public keys and device certificates, IP address, all only to the
-  owner's Pi).
+  owner's server).
 - **Privacy policy and listing text:** a privacy policy page, store listing text
   and screenshots (from the fake core, never real messages), committed under
   `app/store/`.
@@ -52,8 +52,8 @@ doc's numbered decisions; records the owner's release decisions below.
 
 ### What blocks a real public release today
 
-- **No relay yet:** invites name `192.168.1.8:8443`, so the app works only on the
-  owner's home Wi-Fi. App Review and Play review cannot reach the Pi, so they
+- **No relay yet:** invites name `<server-address>:<server-port>`, so the app works only on the
+  owner's home Wi-Fi. App Review and Play review cannot reach the server, so they
   cannot sign in, and both require reviewer access for login-gated apps.
   Next planned changes: `qa-verification`, then relay + real push.
 - **No account deletion in the app:** both stores require apps that create

@@ -1,8 +1,8 @@
-## 1. Pi server
+## 1. Server
 
 - [x] 1.1 `Devices.Authenticate`: after a valid signature, a revoked device gets `PERMISSION_DENIED`; a bad signature stays `UNAUTHENTICATED`; `server/tests/` (wire-transport: Session authentication)
 - [x] 1.2 Revoking a device closes its open `Connect` stream with `PERMISSION_DENIED`; `server/tests/` (device-identity: Device revocation)
-- [x] 1.3 The Pi logs `revoked an invite` (kind and ids only) (D8)
+- [x] 1.3 The server logs `revoked an invite` (kind and ids only) (D8)
 
 ## 2. Core
 
@@ -22,13 +22,13 @@
 - [x] 4.2 Notices: removed (indicator removed, composer disabled), rename, joined / added a device / removed a device / removed a user, quiet for inactivity re-adds and own join (D5); widget tests (app-ui: Notices in the chat)
 - [x] 4.3 `connectivity_plus` listener calls `reconnect_now` on a network change (D6); widget test on the fake core (app-ui: Foreground and background)
 
-## 5. Pi
+## 5. Server
 
-- [x] 5.1 `check.sh`: `kernel-reboot` warning (D7); `shellcheck` clean (pi-deployment: Hardening check)
+- [x] 5.1 `check.sh`: `kernel-reboot` warning (D7); `shellcheck` clean (server-deployment: Hardening check)
 - [x] 5.2 `backup.sh`, then `deploy.sh`; `check.sh` 0 failed; same pin
 
 ## 6. Verify and docs
 
 - [x] 6.1 Integration test (`app/integration_test/run.sh`) passes on the iOS Simulator and the Android emulator
-- [x] 6.2 QA rerun through the real Pi of F1–F6 and own messages (iOS Simulator admin, two Android emulators for Bob), recorded in `docs/qa/` with screenshots; no unused invite captured
+- [x] 6.2 QA rerun through the real server of F1–F6 and own messages (iOS Simulator admin, two Android emulators for Bob), recorded in `docs/qa/` with screenshots; no unused invite captured
 - [x] 6.3 README / architecture doc where behaviour changed; `cargo test --workspace`, clippy, fmt, `buf lint`, `flutter analyze`, `flutter test`, pbgen + frb no diff; `openspec validate qa-fixes --strict`

@@ -1,10 +1,10 @@
-//! pi-runtime: First start. The Pi's two private keys, created on first start
-//! and reused afterwards (pi-server-core design D6):
+//! server-runtime: First start. The server's two private keys, created on first start
+//! and reused afterwards (server-core design D6):
 //!
 //! - `tls_key.pem`: the TLS key (ECDSA P-256, PKCS#8 PEM). The certificate is
 //!   self-signed and rebuilt from it on every start; clients pin only the
 //!   SHA-256 of its SubjectPublicKeyInfo, so the pin never changes.
-//! - `mls_external_sender_key.pem`: the Ed25519 key (PKCS#8 PEM) the Pi signs
+//! - `mls_external_sender_key.pem`: the Ed25519 key (PKCS#8 PEM) the server signs
 //!   its MLS external Remove proposals with.
 //!
 //! Both are written with mode 0600 into a key folder created with mode 0700.
@@ -46,7 +46,7 @@ pub enum KeyError {
     },
     /// Only one of the two key files exists. Generating the missing one could
     /// silently replace a key clients or the group already trust, so the
-    /// server stops instead.
+    /// Server stops instead.
     #[error("{missing} is missing but {present} exists; restore it or empty the key folder")]
     Incomplete {
         /// The file that exists.
@@ -82,7 +82,7 @@ pub enum KeyError {
     },
 }
 
-/// The Pi's private keys, loaded into memory.
+/// The server's private keys, loaded into memory.
 pub struct ServerKeys {
     tls_key: KeyPair,
     tls_spki_sha256: SpkiPin,

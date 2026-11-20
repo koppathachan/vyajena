@@ -8,8 +8,14 @@
 #
 # Writes ~/.vyajena-relay/relay.env (RELAY_IP=) and known_hosts (the VM's host
 # keys, read from guest attributes through the API). Names and sizes:
-# deploy/relay/relay.conf. Cost: the static IPv4, about $3.65/month; the rest
-# is in the free tier.
+# deploy/relay/relay.conf. Cost in asia-south1 (Mumbai, not in the free tier),
+# on-demand list prices: e2-micro about $7.3/month, static IPv4 about
+# $3.65/month, 10 GB standard disk about $0.4/month; egress is small (chat
+# ciphertext). About $11/month, roughly Rs 1,120 with 18% GST.
+#
+# It overwrites relay.env and known_hosts with the new VM's. Moving regions:
+# copy both to relay.env.old / known_hosts.old first (design D3, change
+# relay-mumbai), so the old relay can be put back.
 set -euo pipefail
 
 # shellcheck source=lib.sh
@@ -78,26 +84,35 @@ main() {
     run gcloud compute networks subnets create "$NAME" --project="$PROJECT" \
       --network="$NAME" --region="$REGION" --range="$SUBNET_RANGE" --no-enable-flow-logs
 
-  say "firewall: $PUBLIC_PORT, $REVIEW_PORT (review) and $TUNNEL_PORT from anywhere, 22 from IAP only, logging off"
+  say "firewall: the public, review and tunnel ports from anywhere, 22 from IAP only, logging off"
   exists compute firewall-rules describe "$NAME-public" ||
     run gcloud compute firewall-rules create "$NAME-public" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$PUBLIC_PORT" \
       --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
-  exists compute firewall-rules describe "$NAME-tunnel" ||
+  # The tunnel and review rules take their ports from network.conf. A rule that
+  # exists is brought to those ports (rules are VPC-wide: this also changes what
+  # a relay in another region of the same VPC accepts, design D6).
+  if exists compute firewall-rules describe "$NAME-tunnel"; then
+    run gcloud compute firewall-rules update "$NAME-tunnel" --project="$PROJECT" --rules="tcp:$TUNNEL_PORT"
+  else
     run gcloud compute firewall-rules create "$NAME-tunnel" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$TUNNEL_PORT" \
       --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
+  fi
   exists compute firewall-rules describe "$NAME-iap-ssh" ||
     run gcloud compute firewall-rules create "$NAME-iap-ssh" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules=tcp:22 \
       --source-ranges="$IAP_RANGE" --target-tags="$NAME" --no-enable-logging
 
-  exists compute firewall-rules describe "$NAME-review" ||
+  if exists compute firewall-rules describe "$NAME-review"; then
+    run gcloud compute firewall-rules update "$NAME-review" --project="$PROJECT" --rules="tcp:$REVIEW_PORT"
+  else
     run gcloud compute firewall-rules create "$NAME-review" --project="$PROJECT" \
       --network="$NAME" --direction=INGRESS --action=ALLOW --rules="tcp:$REVIEW_PORT" \
       --source-ranges=0.0.0.0/0 --target-tags="$NAME" --no-enable-logging
+  fi
 
-  say "static external IPv4 $NAME (about \$3.65/month)"
+  say "static external IPv4 $NAME in $REGION (about \$3.65/month)"
   exists compute addresses describe "$NAME" --region="$REGION" ||
     run gcloud compute addresses create "$NAME" --project="$PROJECT" \
       --region="$REGION" --network-tier=PREMIUM

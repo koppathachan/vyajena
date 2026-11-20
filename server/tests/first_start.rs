@@ -1,4 +1,4 @@
-//! pi-runtime: First start.
+//! server-runtime: First start.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -27,9 +27,9 @@ fn load(dir: &Path) -> ServerKeys {
     }
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
-fn fresh_pi_creates_both_key_files_with_mode_0600() {
+fn fresh_server_creates_both_key_files_with_mode_0600() {
     let tmp = temp();
     let dir = tmp.path().join("keys");
     let keys = load(&dir);
@@ -41,7 +41,7 @@ fn fresh_pi_creates_both_key_files_with_mode_0600() {
     assert_eq!(keys.tls_spki_sha256_hex().len(), 64);
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
 fn restart_keeps_the_pin_and_the_external_sender_key() {
     let tmp = temp();
@@ -56,7 +56,7 @@ fn restart_keeps_the_pin_and_the_external_sender_key() {
     );
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
 fn two_fresh_pis_get_different_keys() {
     let (a, b) = (temp(), temp());
@@ -68,7 +68,7 @@ fn two_fresh_pis_get_different_keys() {
     );
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
 fn half_a_key_folder_is_refused_not_regenerated() {
     for lost in [TLS_KEY_FILE, EXTERNAL_SENDER_KEY_FILE] {
@@ -86,7 +86,7 @@ fn half_a_key_folder_is_refused_not_regenerated() {
     }
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
 fn key_readable_by_others_is_refused() {
     let tmp = temp();
@@ -101,7 +101,7 @@ fn key_readable_by_others_is_refused() {
     );
 }
 
-// spec: pi-runtime/first-start
+// spec: server-runtime/first-start
 #[test]
 fn corrupt_key_file_is_refused() {
     let tmp = temp();

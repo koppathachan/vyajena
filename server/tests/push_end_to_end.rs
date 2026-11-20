@@ -1,5 +1,5 @@
-//! message-delivery: Content-free wake pings and pi-runtime: Push errors, end
-//! to end: a test Pi's pings go to the real providers pointed at fake APNs and
+//! message-delivery: Content-free wake pings and server-runtime: Push errors, end
+//! to end: a test server's pings go to the real providers pointed at fake APNs and
 //! FCM servers. This binary installs a global log capture, so it holds one
 //! test: push logs name only a redacted device id, platform and outcome.
 
@@ -52,7 +52,7 @@ async fn until(what: &str, mut done: impl FnMut() -> bool) {
 }
 
 // spec: message-delivery/content-free-wake-pings
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
     let captured = Captured::default();
@@ -99,7 +99,7 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
     .check("providers");
 
     let mut w = world().await;
-    w.pi.pushes.forward_to(Arc::new(providers));
+    w.server.pushes.forward_to(Arc::new(providers));
     // Bob's iPhone (APNs) and Alice's Android laptop stand-in (FCM).
     let iphone_token = apns_token(0x5e);
     for (device, platform, token) in [
@@ -126,8 +126,8 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
     }
     w.phone_stream = offline(&w.conn, &w.phone).await;
     w.laptop_stream = offline(&w.conn, &w.laptop).await;
-    wait_offline(&w.pi, &w.phone).await;
-    wait_offline(&w.pi, &w.laptop).await;
+    wait_offline(&w.server, &w.phone).await;
+    wait_offline(&w.server, &w.laptop).await;
 
     say(&mut w.admin, &mut w.admin_stream, b"dinner at 8?").await;
     until("an APNs ping", || !apns.requests().is_empty()).await;
@@ -161,7 +161,7 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
         }
     }
 
-    // FCM forgets Alice's token: the Pi clears it.
+    // FCM forgets Alice's token: the server clears it.
     fcm.respond(|req| {
         if req.path == "/token" {
             push_support::default_reply(req)
@@ -172,13 +172,14 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
             )
         }
     });
-    w.pi.clock.advance(Duration::from_secs(61));
+    w.server.clock.advance(Duration::from_secs(61));
     say(&mut w.admin, &mut w.admin_stream, b"second").await;
     let laptop = w.laptop.device_id;
     let deadline = tokio::time::Instant::now() + WAIT;
     loop {
-        let token: Option<String> =
-            w.pi.query(move |conn| {
+        let token: Option<String> = w
+            .server
+            .query(move |conn| {
                 conn.query_row(
                     "SELECT push_token FROM devices WHERE device_id = ?1",
                     [laptop.as_slice()],

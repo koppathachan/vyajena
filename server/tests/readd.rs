@@ -1,6 +1,6 @@
-//! group-membership: Re-add after an unusable Welcome, the Pi's side
+//! group-membership: Re-add after an unusable Welcome, the server's side
 //! (welcome-recovery design D2-D4): who may ask with `Keys.RequestReadd`,
-//! what the Pi changes on `READD_OUTCOME_ASKED`, and the daily limit. The
+//! what the server changes on `READD_OUTCOME_ASKED`, and the daily limit. The
 //! core asking and re-adding end to end is tested in client/tests.
 
 mod support;
@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use protocol::group_membership::MAX_READD_REQUESTS_PER_DAY;
 use support::clients::{TestDevice, TestUser};
-use support::harness::{Conn, TestPi, authed};
+use support::harness::{Conn, TestServer, authed};
 use support::messaging::{Stream, World, commit_envelope, receive, say, world};
 use support::pb::envelope::Kind;
 use support::pb::server_frame::Frame as Out;
@@ -65,19 +65,21 @@ async fn raw_ask(
         .await
 }
 
-async fn stored_key_packages(pi: &TestPi, device: &TestDevice) -> Vec<Vec<u8>> {
+async fn stored_key_packages(server: &TestServer, device: &TestDevice) -> Vec<Vec<u8>> {
     let id = device.device_id.to_vec();
-    pi.query(move |db| {
-        let mut stmt =
-            db.prepare("SELECT key_package FROM key_packages WHERE device_id = ?1 ORDER BY id")?;
-        let rows = stmt.query_map([id], |r| r.get(0))?;
-        rows.collect()
-    })
-    .await
+    server
+        .query(move |db| {
+            let mut stmt = db
+                .prepare("SELECT key_package FROM key_packages WHERE device_id = ?1 ORDER BY id")?;
+            let rows = stmt.query_map([id], |r| r.get(0))?;
+            rows.collect()
+        })
+        .await
 }
 
-async fn inactive_count(pi: &TestPi) -> i64 {
-    pi.query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
+async fn inactive_count(server: &TestServer) -> i64 {
+    server
+        .query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
         .await
 }
 
@@ -105,7 +107,7 @@ async fn fetch_one(
     devices.remove(0).key_package
 }
 
-/// The next two frames on the admin's stream after an ask: the Pi's external
+/// The next two frames on the admin's stream after an ask: the server's external
 /// Remove of the phone's leaf (applied to the admin's group) and the
 /// `RejoinNotice` for the phone, in either order.
 async fn admin_hears(w: &mut World) -> pb::DeviceRef {
@@ -130,7 +132,7 @@ async fn admin_hears(w: &mut World) -> pb::DeviceRef {
     rejoin.check("rejoin device")
 }
 
-/// The admin's device re-adds Bob's phone after an ask: Remove (the Pi's
+/// The admin's device re-adds Bob's phone after an ask: Remove (the server's
 /// pending proposal) + Add from one of `asked`, the Welcome in the same
 /// COMMIT; the phone joins from it. Returns the commit's `server_seq`.
 async fn admin_readds_phone(w: &mut World, asked: &[Vec<u8>]) -> u64 {
@@ -157,7 +159,7 @@ async fn admin_readds_phone(w: &mut World, asked: &[Vec<u8>]) -> u64 {
             break;
         }
     }
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(inactive_count(&w.server).await, 0);
     seq
 }
 
@@ -172,15 +174,15 @@ async fn phone_catches_up(w: &mut World) {
 async fn bobs_phone_refuses_its_welcome_and_is_re_added() {
     let mut w = world().await;
     phone_catches_up(&mut w).await;
-    let before = stored_key_packages(&w.pi, &w.phone).await;
+    let before = stored_key_packages(&w.server, &w.phone).await;
     let (asked, outcome) = ask(&w.conn, &w.phone, 1).await;
     assert_eq!(outcome, pb::ReaddOutcome::Asked);
 
     // All of the phone's KeyPackages were replaced by the new ones.
-    let stored = stored_key_packages(&w.pi, &w.phone).await;
+    let stored = stored_key_packages(&w.server, &w.phone).await;
     assert_eq!(stored, asked);
     assert!(before.iter().all(|kp| !stored.contains(kp)));
-    assert_eq!(inactive_count(&w.pi).await, 1);
+    assert_eq!(inactive_count(&w.server).await, 1);
 
     admin_readds_phone(&mut w, &asked).await;
     // The phone follows the group again.
@@ -211,12 +213,12 @@ async fn still_waiting_for_the_first_add_changes_nothing() {
         .check("Register");
     phone.authenticate(&w.conn).await;
     phone.upload_key_packages(&w.conn, 5).await;
-    let before = stored_key_packages(&w.pi, &phone).await;
+    let before = stored_key_packages(&w.server, &phone).await;
 
     let (_, outcome) = ask(&w.conn, &phone, 0).await;
     assert_eq!(outcome, pb::ReaddOutcome::NotAMember);
-    assert_eq!(stored_key_packages(&w.pi, &phone).await, before);
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(stored_key_packages(&w.server, &phone).await, before);
+    assert_eq!(inactive_count(&w.server).await, 0);
 }
 
 // spec: group-membership/re-add-after-an-unusable-welcome
@@ -240,22 +242,22 @@ async fn welcome_on_its_way_changes_nothing_but_the_refused_one_does_not_count()
         .accepted(commit_envelope(epoch, commit, Some((welcome, &[&phone]))))
         .await;
     w.admin.confirm();
-    let before = stored_key_packages(&w.pi, &phone).await;
+    let before = stored_key_packages(&w.server, &phone).await;
 
     // At start (seq 0) the queued Welcome comes first.
     let (_, outcome) = ask(&w.conn, &phone, 0).await;
     assert_eq!(outcome, pb::ReaddOutcome::WelcomeQueued);
-    assert_eq!(stored_key_packages(&w.pi, &phone).await, before);
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(stored_key_packages(&w.server, &phone).await, before);
+    assert_eq!(inactive_count(&w.server).await, 0);
 
     // The core refused that Welcome; its ACK may still be on the way.
     let (asked, outcome) = ask(&w.conn, &phone, seq).await;
     assert_eq!(outcome, pb::ReaddOutcome::Asked);
-    assert_eq!(stored_key_packages(&w.pi, &phone).await, asked);
+    assert_eq!(stored_key_packages(&w.server, &phone).await, asked);
     // And asking again while waiting changes nothing.
     let (_, outcome) = ask(&w.conn, &phone, seq).await;
     assert_eq!(outcome, pb::ReaddOutcome::AlreadyWaiting);
-    assert_eq!(stored_key_packages(&w.pi, &phone).await, asked);
+    assert_eq!(stored_key_packages(&w.server, &phone).await, asked);
     // The admin's device hears about Carol's phone (it may re-add it).
     let mut stream = Stream::open(&w.conn, &w.admin).await;
     loop {
@@ -275,17 +277,17 @@ async fn welcome_refused_again_and_again_hits_the_daily_limit() {
         let (asked, outcome) = ask(&w.conn, &w.phone, 0).await;
         assert_eq!(outcome, pb::ReaddOutcome::Asked);
         admin_readds_phone(&mut w, &asked).await;
-        w.pi.clock.advance(Duration::from_secs(60));
+        w.server.clock.advance(Duration::from_secs(60));
     }
     phone_catches_up(&mut w).await;
-    let before = stored_key_packages(&w.pi, &w.phone).await;
+    let before = stored_key_packages(&w.server, &w.phone).await;
     let (_, outcome) = ask(&w.conn, &w.phone, 0).await;
     assert_eq!(outcome, pb::ReaddOutcome::LimitReached);
-    assert_eq!(stored_key_packages(&w.pi, &w.phone).await, before);
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(stored_key_packages(&w.server, &w.phone).await, before);
+    assert_eq!(inactive_count(&w.server).await, 0);
 
     // A day after the first ask, it may ask again.
-    w.pi.clock.advance(DAY);
+    w.server.clock.advance(DAY);
     w.phone.authenticate(&w.conn).await;
     let (_, outcome) = ask(&w.conn, &w.phone, 0).await;
     assert_eq!(outcome, pb::ReaddOutcome::Asked);
@@ -295,7 +297,7 @@ async fn welcome_refused_again_and_again_hits_the_daily_limit() {
 #[tokio::test]
 async fn bad_key_packages_or_reason_fail_the_ask_and_change_nothing() {
     let w = world().await;
-    let before = stored_key_packages(&w.pi, &w.phone).await;
+    let before = stored_key_packages(&w.server, &w.phone).await;
     let alice_kp = w.laptop.key_package();
     let status = raw_ask(&w.conn, &w.phone, vec![alice_kp], REASON.into())
         .await
@@ -305,6 +307,6 @@ async fn bad_key_packages_or_reason_fail_the_ask_and_change_nothing() {
         .await
         .expect_err("a long reason");
     assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    assert_eq!(stored_key_packages(&w.pi, &w.phone).await, before);
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(stored_key_packages(&w.server, &w.phone).await, before);
+    assert_eq!(inactive_count(&w.server).await, 0);
 }

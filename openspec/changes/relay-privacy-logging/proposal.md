@@ -1,11 +1,11 @@
 ## Why
 
-The Pi logs raw `device_id`s in full hex (stream open/close, device link/revoke,
+The server logs raw `device_id`s in full hex (stream open/close, device link/revoke,
 wake pings). A `device_id` is a stable per-device identifier; printing it in the
 clear lets anyone with the journal correlate a device across every log line and
-over time, which undercuts the project's privacy stance (the Pi is meant to see
+over time, which undercuts the project's privacy stance (the server is meant to see
 as little as possible). Separately, there is no way to diagnose the "slow to
-connect over the relay" problem from the Pi: no timings for the connect / auth /
+connect over the relay" problem from the server: no timings for the connect / auth /
 stream-open steps, no reconnect counts, no view of how many streams are live.
 
 ## What Changes
@@ -15,13 +15,13 @@ stream-open steps, no reconnect counts, no view of how many streams are live.
   (correlatable across lines, not the raw id). Sites today:
   `messaging/stream.rs` (open/close), `devices/mod.rs` (link/revoke),
   `push/mod.rs` (wake ping).
-- **Never log secrets or content.** Make it a rule (and a test) that the Pi
+- **Never log secrets or content.** Make it a rule (and a test) that the server
   logs and metrics never contain a message body/ciphertext, a session token, or
   an invite code. (An audit found none today; this keeps it that way.)
 - **Add privacy-preserving connection metrics.** Emit structured
   connection-lifecycle events so slow-connect issues are diagnosable from the
   journal: per-connection **connect / auth / stream-open timings**, a
-  **reconnect count**, and an **active-stream gauge** (the Pi-side view of
+  **reconnect count**, and an **active-stream gauge** (the server-side view of
   "pool" health). All ids in them are redacted; no new network endpoint.
 - Logging/metrics only — **no `.proto` or wire change** (`buf breaking` clean).
 
@@ -31,7 +31,7 @@ stream-open steps, no reconnect counts, no view of how many streams are live.
 <!-- none -->
 
 ### Modified Capabilities
-- `pi-runtime`: the Pi gains two requirements — private logs (ids redacted,
+- `server-runtime`: the server gains two requirements — private logs (ids redacted,
   never bodies/tokens/invites) and connection metrics (redacted lifecycle
   timings and counts emitted as structured events).
 
@@ -46,6 +46,6 @@ stream-open steps, no reconnect counts, no view of how many streams are live.
   captured logs/metrics contain no raw `device_id`, body, token or invite, and
   do carry the redacted id and the timing fields.
 - `client/`, `deploy/` — a quick audit; redact any id a log there prints.
-- **Scope boundary** (design D3): the relay↔Pi backhaul is rathole (a separate
-  binary), so "backhaul pool" metrics on the Pi are the active-stream count, not
+- **Scope boundary** (design D3): the relay↔server backhaul is rathole (a separate
+  binary), so "backhaul pool" metrics on the server are the active-stream count, not
   rathole's internal pool.

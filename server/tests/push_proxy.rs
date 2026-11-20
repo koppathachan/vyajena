@@ -1,4 +1,4 @@
-//! pi-runtime: Egress proxy. Only CONNECT, only the listed host and port,
+//! server-runtime: Egress proxy. Only CONNECT, only the listed host and port,
 //! never to a private address; the providers reach FCM through it.
 
 mod push_support;
@@ -32,7 +32,7 @@ async fn ask(proxy: std::net::SocketAddr, request: &str) -> String {
         .to_owned()
 }
 
-// spec: pi-runtime/egress-proxy
+// spec: server-runtime/egress-proxy
 #[tokio::test]
 async fn compromised_server_dials_out_and_is_refused() {
     let fake = FakeServer::start().await;
@@ -74,12 +74,12 @@ async fn compromised_server_dials_out_and_is_refused() {
     assert!(fake.requests().is_empty());
 }
 
-// spec: pi-runtime/egress-proxy
+// spec: server-runtime/egress-proxy
 #[tokio::test]
 async fn a_listed_name_that_resolves_to_the_lan_is_refused() {
     let fake = FakeServer::start().await;
     let port = fake.addr.port();
-    // Listed, but "localhost" is loopback: refused like a rebinding to 192.168.1.1.
+    // Listed, but "localhost" is loopback: refused like a rebinding to 192.168.7.1.
     let addr = start(Rules {
         allowed: vec![("localhost".into(), port)],
         refuse_private: true,
@@ -90,7 +90,7 @@ async fn a_listed_name_that_resolves_to_the_lan_is_refused() {
         "HTTP/1.1 403 Forbidden"
     );
     for ip in [
-        "192.168.1.1",
+        "192.168.7.1",
         "10.0.0.1",
         "172.16.5.5",
         "127.0.0.1",
@@ -100,7 +100,7 @@ async fn a_listed_name_that_resolves_to_the_lan_is_refused() {
         "::1",
         "fe80::1",
         "fd00::1",
-        "::ffff:192.168.1.1",
+        "::ffff:192.168.7.1",
     ] {
         assert!(proxy::forbidden(ip.parse::<IpAddr>().expect("ip")), "{ip}");
     }
@@ -120,7 +120,7 @@ async fn a_listed_name_that_resolves_to_the_lan_is_refused() {
     );
 }
 
-// spec: pi-runtime/egress-proxy
+// spec: server-runtime/egress-proxy
 #[tokio::test]
 async fn fcm_pings_go_through_the_proxy() {
     let fake = FakeServer::start().await;

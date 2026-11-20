@@ -1,11 +1,11 @@
 //! group-membership on the device: building the commits this device sends
 //! (admin adds and removes, own-device adds and removes, automatic re-add,
-//! the Pi's inactivity Removes, own-leaf rotation) and checking fetched
+//! the server's inactivity Removes, own-leaf rotation) and checking fetched
 //! KeyPackages before adding them (client-core tasks 5.1 to 5.4, design D5).
 //!
 //! These are synchronous steps on an `MlsGroup`; the engine fetches what they
 //! need, runs them inside a store transaction, sends the result and merges or
-//! clears it when the Pi answers.
+//! clears it when the server answers.
 
 use openmls::prelude::tls_codec::Deserialize as _;
 use openmls::prelude::{
@@ -22,7 +22,7 @@ use crate::mls::verify::{LeafClaim, LeafProblem, members};
 use crate::mls::{MlsError, MlsProvider, group::wire};
 use crate::pb;
 
-/// A commit this device staged (pending in OpenMLS until the Pi answers).
+/// A commit this device staged (pending in OpenMLS until the server answers).
 #[derive(Debug, Clone)]
 pub struct StagedOwnCommit {
     /// The epoch it was created in.
@@ -45,7 +45,7 @@ pub struct CommitPlan {
     pub force_path: bool,
 }
 
-/// Stages a commit with `plan` plus every pending proposal (the Pi's
+/// Stages a commit with `plan` plus every pending proposal (the server's
 /// inactivity Removes; OpenMLS commits the proposal store by reference).
 pub fn stage(
     group: &mut MlsGroup,
@@ -74,7 +74,7 @@ pub fn stage(
     })
 }
 
-/// A KeyPackage the Pi handed out, checked before it is added
+/// A KeyPackage the server handed out, checked before it is added
 /// (key-directory: Clients verify the identity chain; group-membership:
 /// Device-level membership): its certificate verifies against the user's
 /// identity key and names `user`, the KeyPackage parses and validates, and
@@ -142,12 +142,12 @@ pub fn pending_removals(group: &MlsGroup) -> Vec<LeafNodeIndex> {
         .collect()
 }
 
-/// Whether the Pi (external sender `pi`) has pending Remove proposals.
-pub fn has_pending_pi_removes(group: &MlsGroup, pi: Option<u32>) -> bool {
+/// Whether the server (external sender `server`) has pending Remove proposals.
+pub fn has_pending_server_removes(group: &MlsGroup, server: Option<u32>) -> bool {
     group.pending_proposals().any(|queued| {
         matches!(queued.proposal(), Proposal::Remove(_))
             && matches!(queued.sender(), Sender::External(index)
-                if pi.is_some_and(|pi| *index == SenderExtensionIndex::new(pi)))
+                if server.is_some_and(|server| *index == SenderExtensionIndex::new(server)))
     })
 }
 

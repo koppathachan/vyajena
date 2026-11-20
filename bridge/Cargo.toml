@@ -20,7 +20,7 @@ tokio = { version = "1", features = ["sync"] }
 thiserror = "2"
 
 [dev-dependencies]
-# End-to-end tests run the real Pi in-process, with the client tests' helpers
+# End-to-end tests run the real server in-process, with the client tests' helpers
 # (bridge/tests/support).
 server = { path = "../server" }
 tempfile = "3"

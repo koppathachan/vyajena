@@ -84,8 +84,8 @@ offset 0 on tap. It reuses the screen's existing `ScrollController`.
 
 ### D5 — Test home: `app-ui`, not `message-delivery`
 
-The read mark is a local, client-side position with no wire or Pi behaviour;
-`message-delivery` is about envelopes, ordering and the Pi. Every existing
+The read mark is a local, client-side position with no wire or server behaviour;
+`message-delivery` is about envelopes, ordering and the server. Every existing
 read/unread/chat test is tagged under `app-ui` (`app-ui/chat-list`,
 `app-ui/chat-screen`), and the divider, the open behaviour and the button are
 all chat-screen UI. So all three new requirements live in `app-ui`, and the

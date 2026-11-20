@@ -41,14 +41,14 @@ enum CoreErrorKind {
   /// The local database failed.
   storage,
 
-  /// The Pi presented a TLS key that does not match the invite's pin
+  /// The server presented a TLS key that does not match the invite's pin
   /// (app-ui: Join from an invite, "server identity error").
   serverIdentity,
 
-  /// The Pi could not be reached, or answered something unexpected.
+  /// The server could not be reached, or answered something unexpected.
   network,
 
-  /// The Pi refused the call (for example a used or expired invite, or an
+  /// The server refused the call (for example a used or expired invite, or an
   /// admin call from a non-admin device).
   refused,
 
@@ -74,7 +74,7 @@ enum CoreErrorKind {
   /// `complete_link` without `link_request` first.
   noLinkRequest,
 
-  /// The Pi is not the one the invite or approval names.
+  /// The server is not the one the invite or approval names.
   serverMismatch,
 
   /// This device is not in the group.
@@ -92,13 +92,13 @@ enum CoreErrorKind {
   /// A certificate or KeyPackage did not check out.
   certificate,
 
-  /// The Pi knows no such user.
+  /// The server knows no such user.
   unknownUser,
 
   /// The user has no KeyPackages yet.
   noKeyPackages,
 
-  /// The commit would be larger than the Pi accepts.
+  /// The commit would be larger than the server accepts.
   tooLarge,
 
   /// The text is longer than a message may be (app-ui: Composer limit).
@@ -110,7 +110,7 @@ enum CoreErrorKind {
   /// No stored chat message has that id (client-runtime: Reply lookup).
   noSuchMessage,
 
-  /// The Pi rejected the commit.
+  /// The server rejected the commit.
   rejected,
 
   /// Not possible yet; the core retries.
@@ -122,7 +122,7 @@ enum CoreErrorKind {
   /// The DM is closed: its peer was removed.
   chatClosed,
 
-  /// The Pi does not support DMs yet.
+  /// The server does not support DMs yet.
   dmsUnavailable,
 
   /// The picked file is not an image the app can send (JPEG, PNG, GIF or
@@ -132,7 +132,7 @@ enum CoreErrorKind {
   /// The image cannot be made small enough to send.
   imageTooLarge,
 
-  /// The Pi no longer has the picture (client-runtime: Expired media).
+  /// The server no longer has the picture (client-runtime: Expired media).
   mediaExpired,
 
   /// This device no longer has the picture to resend.

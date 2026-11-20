@@ -1,5 +1,5 @@
 //! device-identity: Bootstrap admin. On a start with no users and no usable
-//! bootstrap invite, the Pi creates one invite for the configured admin user id
+//! bootstrap invite, the server creates one invite for the configured admin user id
 //! and prints its payload to the log once. The user created from it is the
 //! admin (the admin is whoever `admin_username` names).
 

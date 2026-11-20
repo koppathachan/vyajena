@@ -14,9 +14,9 @@ FakeCoreService aliceInGroup() => FakeCoreService(storedUser: alice)
     MemberDevice(user: bob, device: '03'),
   ]
   ..displayNames = {
-    'alice@pi': 'Ali (alice)',
-    'bob@pi': 'Bobby (bob)',
-    'akhil@pi': 'akhil',
+    'alice@chat': 'Ali (alice)',
+    'bob@chat': 'Bobby (bob)',
+    'akhil@chat': 'akhil',
   };
 
 final composer = find.byKey(const Key('composer'));
@@ -98,7 +98,7 @@ void main() {
   });
 
   // spec: app-ui/create-affordance
-  testWidgets('No + button for a non-admin whose Pi does not offer DMs', (
+  testWidgets('No + button for a non-admin whose server does not offer DMs', (
     tester,
   ) async {
     final core = aliceInGroup()

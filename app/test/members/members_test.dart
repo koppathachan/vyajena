@@ -12,7 +12,7 @@ void main() {
     tester,
   ) async {
     final core = FakeCoreService(storedUser: alice)
-      ..displayNames = {'alice@pi': 'Ali (alice)', 'akhil@pi': 'Akhil (akhil)'}
+      ..displayNames = {'alice@chat': 'Ali (alice)', 'akhil@chat': 'Akhil (akhil)'}
       ..memberDevices = const [
         MemberDevice(user: akhil, device: '01'),
         MemberDevice(user: alice, device: '02'),
@@ -44,7 +44,7 @@ void main() {
     );
 
     // A member renames: the list follows.
-    core.displayNames['bob@pi'] = 'Bobby (bob)';
+    core.displayNames['bob@chat'] = 'Bobby (bob)';
     core.emit(const CoreEvent.profileChanged(user: bob, displayName: 'Bobby'));
     await settle(tester);
     expect(find.text('Bobby (bob)'), findsOneWidget);

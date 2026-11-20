@@ -1,0 +1,19 @@
+# The server's server config (server-deployment design D4, relay design D5), rendered by
+# deploy/relay/render.sh and installed by deploy/server/deploy.sh as
+# /etc/vyajena/config.toml. No secrets: the keys and the database live in
+# /var/lib/vyajena (the service's StateDirectory, mode 0700).
+
+# The part after "@" in every user id, fixed at the first start (in the
+# database, device certificates and the server's MLS credential): a domain the
+# owner holds, so it stays unique if servers ever federate (owner, 2026-11-16).
+server_id = "purplechaamba.com"
+# The admin is admin_username@server_id; the bootstrap invite creates that user.
+admin_username = "@ADMIN_USERNAME@"
+# Loopback only: devices reach it through the relay and vyajena-tunnel.service.
+listen_address = "127.0.0.1:@SERVER_PORT@"
+# What invites tell devices to dial: the relay's DNS name and port
+# (relay.conf's RELAY_HOST and PUBLIC_PORT; the name's A record is the relay's
+# static IPv4).
+public_address = "@RELAY_HOST@:@PUBLIC_PORT@"
+database_path = "/var/lib/vyajena/server.sqlite"
+key_dir = "/var/lib/vyajena/keys"

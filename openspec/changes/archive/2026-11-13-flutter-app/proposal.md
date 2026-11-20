@@ -1,9 +1,9 @@
 ## Why
 
-The Pi server and the Rust core work and are tested, but nobody can chat yet. The
+The server and the Rust core work and are tested, but nobody can chat yet. The
 owner skipped the terminal client (2026-11-11) and wants the Flutter app next, so
 the first hand-run chat happens on phones: two simulators on the owner's Mac
-against a local Pi.
+against a local server.
 
 ## What Changes
 
@@ -25,14 +25,14 @@ against a local Pi.
 - Push stays the core's placeholder token; no FCM or APNs.
 - CI also runs `flutter analyze` and `flutter test` (no codegen in CI).
 - **Proto:** `proto/vyajena/v1/messaging.proto` gains a `JoinNotice` server frame
-  (non-breaking): the Pi tells the admin's devices a new user's device needs
+  (non-breaking): the server tells the admin's devices a new user's device needs
   adding, and the admin's device adds it automatically (owner, 2026-11-12).
 
 **Open decisions:**
 
 - **#7 build order (owner, 2026-11-11):** the terminal client moves to later.
-  New order: Pi server ✅, Rust core ✅, Flutter app (this change),
-  `qa-verification`, relay + Pi deployment with real push, then the terminal
+  New order: server ✅, Rust core ✅, Flutter app (this change),
+  `qa-verification`, relay + server deployment with real push, then the terminal
   client.
 - **#3 desktop vs mobile:** iOS and Android only for now; desktop later (owner,
   2026-11-11).

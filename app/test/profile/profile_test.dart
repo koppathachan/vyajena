@@ -31,7 +31,7 @@ void main() {
     expect(find.text('alice'), findsOneWidget);
 
     // Alice's Profile reaches Bob's core, which emits ProfileChanged.
-    core.displayNames['alice@pi'] = 'Ali (alice)';
+    core.displayNames['alice@chat'] = 'Ali (alice)';
     core.emit(const CoreEvent.profileChanged(user: alice, displayName: 'Ali'));
     await settle(tester);
     expect(find.text('Ali (alice)'), findsOneWidget);
@@ -43,7 +43,7 @@ void main() {
   ) async {
     final core = FakeCoreService(storedUser: alice)
       ..profiles = {
-        'alice@pi': const ProfileInfo(displayName: 'Ali', about: 'tea'),
+        'alice@chat': const ProfileInfo(displayName: 'Ali', about: 'tea'),
       };
     await openApp(tester, core);
     await menu(tester, 'Profile');
@@ -53,7 +53,7 @@ void main() {
         matching: find.byType(TextField),
       ),
     );
-    expect(username.controller?.text, 'alice@pi');
+    expect(username.controller?.text, 'alice@chat');
     expect(username.readOnly, isTrue);
     expect(username.enabled, isFalse);
     expect(

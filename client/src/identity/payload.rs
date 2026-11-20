@@ -1,6 +1,6 @@
 //! The payloads a UI shows as a QR code or text and the other side scans or
 //! pastes (device-identity: Invites; Device linking). The core only produces
-//! and consumes bytes; [`to_text`] and [`from_text`] give the text form the Pi
+//! and consumes bytes; [`to_text`] and [`from_text`] give the text form the server
 //! prints (base64url without padding).
 //!
 //! All three are encodings of `vyajena.v1` messages, so no message exists that
@@ -8,7 +8,7 @@
 //! source of truth):
 //!
 //! - invite: `InvitePayload` with the relay address, the TLS pin, the invite
-//!   code and the user id (`Admin.CreateInvite`, or the Pi's bootstrap log);
+//!   code and the user id (`Admin.CreateInvite`, or the server's bootstrap log);
 //! - link request (shown by the new device): `DeviceCertificate` holding only
 //!   the device id, the auth public key and the MLS signature public key;
 //! - link approval (shown by the identity device after `Devices.LinkDevice`):
@@ -37,7 +37,7 @@ pub enum PayloadError {
     Invalid(&'static str),
 }
 
-/// A payload in text form: base64url without padding, as the Pi prints its
+/// A payload in text form: base64url without padding, as the server prints its
 /// bootstrap invite.
 pub fn to_text(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
@@ -64,13 +64,13 @@ fn user(user: Option<&pb::UserId>) -> Result<UserId, PayloadError> {
     Ok(UserId::from_pb(user))
 }
 
-/// An invite: where the Pi is, how to recognise it, the code and the user it
+/// An invite: where the server is, how to recognise it, the code and the user it
 /// creates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Invite {
     /// `host:port` of the relay.
     pub relay_address: String,
-    /// SHA-256 of the Pi's TLS SubjectPublicKeyInfo.
+    /// SHA-256 of the server's TLS SubjectPublicKeyInfo.
     pub tls_pin: [u8; 32],
     /// The single-use invite code.
     pub code: String,
@@ -172,7 +172,7 @@ impl LinkRequest {
 pub struct LinkApproval {
     /// `host:port` of the relay.
     pub relay_address: String,
-    /// SHA-256 of the Pi's TLS SubjectPublicKeyInfo.
+    /// SHA-256 of the server's TLS SubjectPublicKeyInfo.
     pub tls_pin: [u8; 32],
     /// The user the new device now belongs to.
     pub user: UserId,

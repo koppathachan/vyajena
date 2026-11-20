@@ -3,7 +3,7 @@
 ### Requirement: Inner content format
 The plaintext of every MLS application message SHALL be a serialized
 `vyajena.v1.Content` message: a client send time and exactly one of `Text`,
-`GroupSettings` or `Profile`. Only the Rust core SHALL serialize or parse it; the Pi SHALL
+`GroupSettings` or `Profile`. Only the Rust core SHALL serialize or parse it; the server SHALL
 never see it.
 
 #### Scenario: Text message

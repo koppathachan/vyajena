@@ -6,6 +6,9 @@
 LIB_HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=relay.conf
 . "$LIB_HERE/relay.conf"
+# The real ports and ranges (change generic-deployment).
+# shellcheck source=../network.sh
+. "$LIB_HERE/../network.sh"
 SECRETS="${RELAY_SECRETS:-$HOME/.vyajena-relay}"
 # gcloud never waits on a prompt (an "enable this API?" question hung
 # create.sh once); a missing answer fails the command instead.

@@ -10,7 +10,7 @@
 
 - [x] 2.1 `server/tests/`: assert `runtime::logging::filter()` carries the
       `rustls::server::hs=error` directive and still enables a normal `info`
-      target (spec: pi-runtime/quiet-external-tls-handshake-noise).
+      target (spec: server-runtime/quiet-external-tls-handshake-noise).
 
 ## 3. Verify
 

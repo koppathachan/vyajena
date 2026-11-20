@@ -1,4 +1,4 @@
-//! pi-runtime (relay-privacy-logging): a short stable hash of an id for logs.
+//! server-runtime (relay-privacy-logging): a short stable hash of an id for logs.
 //!
 //! A `device_id` is a stable identifier. Logs show this hash instead of the raw
 //! id, so lines for one device can still be correlated while a leaked journal

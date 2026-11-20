@@ -18,13 +18,13 @@ service Dms {
 }
 
 // direct-messages: Opening a DM. The calling device has created an MLS group
-// whose only member is itself, whose group context lists the Pi as external
+// whose only member is itself, whose group context lists the server as external
 // sender and carries the DM extension (`0xF0A2`, protocol::group_membership)
 // naming its own user and `peer`, and sends its epoch-0 public state.
 //
-// The Pi rejects the call with `INVALID_ARGUMENT` if `peer` is the caller's own
+// The server rejects the call with `INVALID_ARGUMENT` if `peer` is the caller's own
 // user, the state does not parse, its group id is not `group_id`, it is not at
-// epoch 0 with the caller's device as the only member, the Pi is not an
+// epoch 0 with the caller's device as the only member, the server is not an
 // external sender, or the extension does not name exactly the caller's user and
 // `peer`; with `NOT_FOUND` if `peer` is not a non-revoked user; with
 // `FAILED_PRECONDITION` if the caller's device is not a member of the main

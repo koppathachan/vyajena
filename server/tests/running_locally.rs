@@ -1,4 +1,4 @@
-//! pi-runtime: Running locally; pi-runtime: First start (the logged pin).
+//! server-runtime: Running locally; server-runtime: First start (the logged pin).
 
 mod support;
 
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use server::runtime::{Bootstrap, Config, Pi};
+use server::runtime::{Bootstrap, Config, Server};
 use tokio::sync::oneshot;
 
 fn temp() -> tempfile::TempDir {
@@ -19,7 +19,7 @@ fn temp() -> tempfile::TempDir {
     }
 }
 
-// spec: pi-runtime/running-locally
+// spec: server-runtime/running-locally
 #[test]
 fn example_config_listens_on_127_0_0_1_8443() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("local.toml");
@@ -30,28 +30,28 @@ fn example_config_listens_on_127_0_0_1_8443() {
     assert_eq!(config.listen_address.to_string(), "127.0.0.1:8443");
     // Unprivileged port, data next to the example, inside the git-ignored folder.
     assert!(config.listen_address.port() >= 1024);
-    let local = Path::new(env!("CARGO_MANIFEST_DIR")).join(".pi-local");
+    let local = Path::new(env!("CARGO_MANIFEST_DIR")).join(".server-local");
     assert!(config.database_path.starts_with(&local));
     assert!(config.key_dir.starts_with(&local));
 }
 
-// spec: pi-runtime/running-locally
+// spec: server-runtime/running-locally
 #[tokio::test]
 async fn accepts_a_pinned_tls_connection() {
     let tmp = temp();
-    let pi = match Pi::start(
+    let server = match Server::start(
         support::config_in(tmp.path()),
         Arc::new(support::manual_clock()),
     )
     .await
     {
-        Ok(pi) => pi,
+        Ok(server) => server,
         Err(error) => panic!("server did not start: {error}"),
     };
-    let addr = pi.local_addr();
-    let pin = pi.state().keys.tls_spki_sha256();
+    let addr = server.local_addr();
+    let pin = server.state().keys.tls_spki_sha256();
     let (stop, stopped) = oneshot::channel::<()>();
-    let server = tokio::spawn(pi.serve(async {
+    let server = tokio::spawn(server.serve(async {
         let _ = stopped.await;
     }));
 
@@ -129,12 +129,12 @@ fn logged(lines: &[String], key: &str) -> Option<String> {
     })
 }
 
-// spec: pi-runtime/running-locally
-// spec: pi-runtime/first-start
+// spec: server-runtime/running-locally
+// spec: server-runtime/first-start
 #[test]
 fn binary_prints_the_pin_and_bootstrap_invite_then_listens() {
     let tmp = temp();
-    let config_path = tmp.path().join("pi.toml");
+    let config_path = tmp.path().join("server.toml");
     std::fs::write(&config_path, support::config_text()).ok();
 
     let first = run_until_listening(&config_path);
@@ -143,7 +143,7 @@ fn binary_prints_the_pin_and_bootstrap_invite_then_listens() {
     assert_eq!(pin.as_ref().map(String::len), Some(64), "{first:#?}");
     assert!(logged(&first, "payload").is_some(), "{first:#?}");
     assert!(logged(&first, "invite_code").is_some(), "{first:#?}");
-    assert_eq!(logged(&first, "user_id").as_deref(), Some("akhil@pi"));
+    assert_eq!(logged(&first, "user_id").as_deref(), Some("akhil@chat"));
 
     // Restart keeps the pin, and the invite is printed only once.
     let second = run_until_listening(&config_path);
@@ -155,13 +155,13 @@ fn binary_prints_the_pin_and_bootstrap_invite_then_listens() {
 #[tokio::test]
 async fn in_process_start_reports_the_invite() {
     let tmp = temp();
-    let pi = Pi::start(
+    let server = Server::start(
         support::config_in(tmp.path()),
         Arc::new(support::manual_clock()),
     )
     .await;
     assert!(matches!(
-        pi.map(|p| p.bootstrap().clone()),
+        server.map(|p| p.bootstrap().clone()),
         Ok(Bootstrap::Created(_))
     ));
 }

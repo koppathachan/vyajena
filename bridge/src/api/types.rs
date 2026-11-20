@@ -7,7 +7,7 @@
 pub struct UserRef {
     /// The local part, chosen by the admin.
     pub username: String,
-    /// The Pi's server id.
+    /// The server's server id.
     pub server_id: String,
 }
 
@@ -19,7 +19,7 @@ pub enum MediaStatus {
     NotDownloaded,
     /// Cached on this device: it opens at once.
     Available,
-    /// The Pi no longer has it: "media expired".
+    /// The server no longer has it: "media expired".
     Expired,
 }
 
@@ -33,7 +33,7 @@ pub struct ImageView {
     pub height: u32,
     /// The ThumbHash blur to draw until the picture is downloaded.
     pub thumbhash: Vec<u8>,
-    /// The picture's size on the Pi in bytes, to show before downloading.
+    /// The picture's size on the server in bytes, to show before downloading.
     pub size: u64,
     /// The caption, only to be shown; its mentions are the message's
     /// `mentions`, as UTF-16 ranges of this text.
@@ -99,11 +99,11 @@ pub struct ReplyQuote {
 /// Where an own message stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SendState {
-    /// Stored; the Pi has not accepted it yet (⏳).
+    /// Stored; the server has not accepted it yet (⏳).
     Sending,
-    /// The Pi accepted it (✓).
+    /// The server accepted it (✓).
     Accepted,
-    /// The Pi rejected it.
+    /// The server rejected it.
     Failed {
         /// Why, for display.
         reason: String,
@@ -138,7 +138,7 @@ pub struct ChatMessage {
     pub reply: Option<ReplyQuote>,
     /// The sender's clock when sent.
     pub sent_at_ms: Option<i64>,
-    /// When the Pi accepted it; unset while sending.
+    /// When the server accepted it; unset while sending.
     pub accepted_at_ms: Option<i64>,
     /// For own messages, where it stands; unset for received ones.
     pub status: Option<SendState>,
@@ -175,7 +175,7 @@ pub struct ChatSummary {
     pub last_message_at_ms: Option<i64>,
 }
 
-/// The connection to the Pi.
+/// The connection to the server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionStatus {
     /// Connecting or reconnecting with backoff.
@@ -186,7 +186,7 @@ pub enum ConnectionStatus {
     Disconnected,
 }
 
-/// The Pi's answer when this device asked to be added again
+/// The server's answer when this device asked to be added again
 /// (group-membership: Re-add after an unusable Welcome).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReaddAnswer {
@@ -251,9 +251,9 @@ pub enum CoreEvent {
     },
     /// A message arrived that this device cannot read.
     Unreadable {
-        /// Who the Pi says sent it.
+        /// Who the server says sent it.
         sender: Option<UserRef>,
-        /// When the Pi accepted it.
+        /// When the server accepted it.
         accepted_at_ms: Option<i64>,
         /// The chat it was for.
         chat_id: i64,
@@ -281,7 +281,7 @@ pub enum CoreEvent {
         /// The user.
         user: UserRef,
     },
-    /// The Pi's TLS key does not match the pin; the core stopped connecting.
+    /// The server's TLS key does not match the pin; the core stopped connecting.
     ServerIdentityError,
     /// This device was removed from the group (revoked); the core stopped
     /// connecting and history stays readable.
@@ -307,10 +307,10 @@ pub enum CoreEvent {
         /// Why, for display.
         reason: String,
     },
-    /// This device asked the Pi to be added again (group-membership: Re-add
+    /// This device asked the server to be added again (group-membership: Re-add
     /// after an unusable Welcome).
     ReaddRequested {
-        /// What the Pi answered.
+        /// What the server answered.
         outcome: ReaddAnswer,
     },
     /// The connection state changed.

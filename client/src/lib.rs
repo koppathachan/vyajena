@@ -1,5 +1,5 @@
 //! The vyajena2 device core: OpenMLS, keys, the local store and the connection
-//! to the Pi, behind one async API and one ordered event stream.
+//! to the server, behind one async API and one ordered event stream.
 //!
 //! **The API for UIs** (the terminal client now, Flutter through
 //! `flutter_rust_bridge` later) is [`Client`] and the [`Event`]s it emits. Its
@@ -18,7 +18,7 @@
 //! - [`identity`]: identity, device auth and MLS keys, certificates, invite
 //!   and link payloads.
 //! - [`net`]: pinned TLS, the gRPC channel, challenge authentication.
-//! - [`membership`]: building commits (admin actions, re-add, Pi Removes,
+//! - [`membership`]: building commits (admin actions, re-add, server Removes,
 //!   rotation) and checking fetched KeyPackages.
 //! - [`keys`]: KeyPackages, the last-resort refresh, rotation timing.
 //! - `engine` (private): the one task that owns the connection, the

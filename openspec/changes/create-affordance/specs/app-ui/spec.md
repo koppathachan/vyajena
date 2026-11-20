@@ -36,9 +36,9 @@ member and opens the DM through the core's `openDm`, showing it at once (the sam
 path as the members list's "Message"). The button SHALL offer **New group** only
 on the admin's devices, where the core's `isAdmin` is true: choosing it creates
 the group through the core's `createGroup`. A non-admin device SHALL NOT offer New
-group, and a device whose Pi does not offer DMs SHALL NOT offer New DM; when
+group, and a device whose server does not offer DMs SHALL NOT offer New DM; when
 neither action is available the button SHALL NOT be shown. The client enforces
-this; the Pi rejects a non-admin's group RPCs anyway.
+this; the server rejects a non-admin's group RPCs anyway.
 
 #### Scenario: Alice starts a DM with Bob
 - **WHEN** Alice taps `+`, chooses New DM and picks Bob, with whom she has no DM
@@ -53,7 +53,7 @@ this; the Pi rejects a non-admin's group RPCs anyway.
 - **WHEN** the admin taps `+` and chooses New group
 - **THEN** the app calls the core's `createGroup`
 
-#### Scenario: No DM on an old Pi
-- **WHEN** a non-admin's Pi lists only protocol version 1, so `dmsAvailable` is
+#### Scenario: No DM on an old server
+- **WHEN** a non-admin's server lists only protocol version 1, so `dmsAvailable` is
   false
 - **THEN** the chat list shows no `+` button

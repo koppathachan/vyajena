@@ -1,9 +1,9 @@
-// Blobs service: encrypted image blobs, stored on the Pi and never seen in the
+// Blobs service: encrypted image blobs, stored on the server and never seen in the
 // clear (change `media-blobs`).
 //
 // Every RPC requires a session token (wire-transport: Session authentication).
 // A blob is opaque XChaCha20-Poly1305 ciphertext the sending device made; its
-// key travels only inside an MLS message. The Pi learns a blob's size, group and
+// key travels only inside an MLS message. The server learns a blob's size, group and
 // timing, never its content or key (blob-store: Blobs are opaque ciphertext).
 //
 // Errors use standard gRPC status codes. Every RPC answers `UNAVAILABLE` while
@@ -29,7 +29,7 @@ service Blobs {
   rpc AckBlob(AckBlobRequest) returns (AckBlobResponse);
 }
 
-// blob-store: Upload. The Pi accepts it only from a current member device of
+// blob-store: Upload. The server accepts it only from a current member device of
 // `group_id` (`PERMISSION_DENIED` otherwise), rejects `ciphertext` over
 // `protocol::blob_store::MAX_BLOB_BYTES` or a `blob_id` that is not 16 bytes with
 // `INVALID_ARGUMENT`, and rejects different bytes under a live `blob_id` with

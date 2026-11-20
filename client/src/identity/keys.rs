@@ -56,6 +56,9 @@ impl DeviceKeys {
     /// New device keys in `store`, replacing any left by an earlier install
     /// (device-identity: Fresh keys for a new signup).
     pub fn create_fresh(store: &dyn KeyStore) -> Result<Self, KeyStoreError> {
+        // A session token saved for the keys being replaced is no use to the
+        // new ones (client-runtime: Resume across restart).
+        store.delete(KeyName::SessionToken)?;
         let auth = create_fresh(store, KeyName::DeviceAuthKey, SEED_LEN)?;
         let mls = create_fresh(store, KeyName::MlsSignatureKey, SEED_LEN)?;
         Ok(Self {

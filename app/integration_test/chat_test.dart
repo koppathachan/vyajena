@@ -1,6 +1,6 @@
-// The app on a simulator or emulator against a real temp Pi (flutter-app
+// The app on a simulator or emulator against a real temp server (flutter-app
 // task 6.2, design D6/D7). Run it with `integration_test/run.sh <device>`:
-// the script starts the Pi in a temp folder and the admin's device on the
+// the script starts the server in a temp folder and the admin's device on the
 // host (`bridge/tests/app_peer.rs`, driven through the core), and passes the
 // invite for `bob` in as VYAJENA_INVITE. This app is Bob's phone.
 //
@@ -59,7 +59,7 @@ void main() {
     expect(invite, isNotEmpty, reason: 'run integration_test/run.sh');
 
     // A fresh phone: no data from an earlier run (keys in the key store are
-    // reused by the core's get-or-create, which is fine for a new Pi).
+    // reused by the core's get-or-create, which is fine for a new server).
     final dataDir = await platformChannel.invokeMethod<String>('dataDir');
     for (final entry in Directory(dataDir!).listSync()) {
       entry.deleteSync(recursive: true);
@@ -70,11 +70,11 @@ void main() {
     await tester.pumpWidget(VyajenaApp(core: core));
     await core.open();
 
-    // Join: the invite names bob@pi on the temp Pi before anything is sent.
+    // Join: the invite names bob@chat on the temp server before anything is sent.
     await waitFor(tester, find.text('Join the group'));
     await tester.enterText(find.byKey(const Key('invite')), invite);
     await tap(tester, find.text('Check invite'));
-    await waitFor(tester, find.text('bob@pi'));
+    await waitFor(tester, find.text('bob@chat'));
     expect(find.textContaining('on 127.0.0.1:'), findsOneWidget);
     await tap(tester, find.text('Join'));
 
@@ -82,7 +82,7 @@ void main() {
     await waitFor(tester, find.byKey(const Key('composer')));
     expect(find.text('No messages yet'), findsOneWidget);
 
-    // Offline, "hi" stays ⏳; once the core runs again the Pi accepts it.
+    // Offline, "hi" stays ⏳; once the core runs again the server accepts it.
     await core.stop();
     await tester.enterText(find.byKey(const Key('composer')), 'hi');
     await tap(tester, find.byTooltip('Send'));

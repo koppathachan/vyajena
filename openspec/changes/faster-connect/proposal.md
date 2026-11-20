@@ -3,7 +3,7 @@
 A reconnect is slow. From India to the US relay and back each round trip is
 about half a second, and a cold connect spends three of them before any message
 flows: `GetChallenge`, `Authenticate`, then opening the `Connect` stream. The
-device already holds a renewing session token that the Pi accepts on any
+device already holds a renewing session token that the server accepts on any
 connection, so two of those three round trips can be skipped on reconnect.
 
 ## What Changes
@@ -14,11 +14,11 @@ connection, so two of those three round trips can be skipped on reconnect.
   every reconnect within the token's lifetime.
 - **Fallback to the full handshake.** The core runs the full challenge/auth
   handshake when it has no usable token (first connect, or the token is at or
-  past its renewal point) or when the Pi rejects the token on the stream
+  past its renewal point) or when the server rejects the token on the stream
   (`UNAUTHENTICATED`). Rejection then falling back to the full handshake is also
   how a revoked device still reaches `PERMISSION_DENIED` and stops.
 - **No proto change, no new server behavior.** The session token is already a
-  connection-independent bearer token: the Pi's auth layer authenticates every
+  connection-independent bearer token: the server's auth layer authenticates every
   RPC, `Messaging.Connect` included, from the `authorization` token alone,
   with no per-connection challenge state. Resume reuses that. The change is the
   core's connect path plus tests that pin the behavior on both sides. See
@@ -34,14 +34,14 @@ connection, so two of those three round trips can be skipped on reconnect.
 
 ### Modified Capabilities
 
-- `wire-transport`: a new requirement, "Session resume", states that the Pi
+- `wire-transport`: a new requirement, "Session resume", states that the server
   SHALL accept a valid session token to open `Messaging.Connect` whatever
   connection obtained it, and rejects an expired or unknown one with
   `UNAUTHENTICATED`.
 - `client-runtime`: "Connection lifecycle" gains that the core SHALL reuse a
   still-valid session token on reconnect to skip `GetChallenge`/`Authenticate`,
   and SHALL fall back to the full handshake when it has no usable token or the
-  Pi rejects it.
+  Server rejects it.
 
 ## Impact
 

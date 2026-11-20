@@ -2,7 +2,7 @@
 //
 // Every RPC requires a session token (wire-transport: Session authentication)
 // and may be called only by a device of the admin user, whose id is set in the
-// Pi's config (design D13). Any other device is rejected with
+// server's config (design D13). Any other device is rejected with
 // `PERMISSION_DENIED` (device-identity: Invites).
 syntax = "proto3";
 
@@ -31,7 +31,7 @@ service Admin {
 }
 
 // device-identity: Admin-owned usernames. The admin chooses the username; the
-// new user's id is `<username>@<server_id>` of this Pi.
+// new user's id is `<username>@<server_id>` of this server.
 message CreateInviteRequest {
   string username = 1;
 }
@@ -53,21 +53,21 @@ message Invite {
 }
 
 // device-identity: Invites. What an invited person's app needs to sign up: the
-// relay address, the Pi's TLS key pin and the invite code.
+// relay address, the server's TLS key pin and the invite code.
 //
-// device-identity: Bootstrap admin. On first start with an empty database the Pi
+// device-identity: Bootstrap admin. On first start with an empty database the server
 // creates one bootstrap invite for the configured admin user id and prints this
 // payload to its log once; the user created from it is the admin.
 message InvitePayload {
-  // Where to reach the Pi through the relay, as `host:port`.
+  // Where to reach the server through the relay, as `host:port`.
   string relay_address = 1;
-  // SHA-256 of the Pi's TLS SubjectPublicKeyInfo (32 bytes) (wire-transport:
+  // SHA-256 of the server's TLS SubjectPublicKeyInfo (32 bytes) (wire-transport:
   // gRPC over HTTP/2 and pinned TLS on TCP 443).
   bytes tls_spki_sha256 = 2;
   // The single-use invite code for `RegisterRequest.invite_code`.
   string invite_code = 3;
   // The user id the invite creates, so the first device can put it in the
-  // device certificate it signs before calling `Devices.Register`. The Pi
+  // device certificate it signs before calling `Devices.Register`. The server
   // still uses the id it stored for the invite (device-identity: Admin-owned
   // usernames).
   UserId user_id = 4;
@@ -86,9 +86,9 @@ message RevokeInviteRequest {
 message RevokeInviteResponse {}
 
 // group-membership: Group creation. The admin's device sends the group's public
-// state at epoch 0. The group context lists the Pi as an MLS external sender
-// (`ServerInfo.external_sender`) and names the admin's user id. The Pi records
-// the group at epoch 0 with that device as its only member. The MVP Pi holds at
+// state at epoch 0. The group context lists the server as an MLS external sender
+// (`ServerInfo.external_sender`) and names the admin's user id. The server records
+// the group at epoch 0 with that device as its only member. The MVP server holds at
 // most one group: a second `CreateGroup` is rejected with `ALREADY_EXISTS`.
 message CreateGroupRequest {
   // The MLS group id.

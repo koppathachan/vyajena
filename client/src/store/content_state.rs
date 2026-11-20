@@ -54,7 +54,7 @@ impl Store {
         Ok(deleted > 0)
     }
 
-    /// Records that the Pi's inactivity Remove took `device_id` out of the
+    /// Records that the server's inactivity Remove took `device_id` out of the
     /// group (qa-fixes D5).
     pub fn mark_inactive(&self, device_id: &[u8], now: SystemTime) -> Result<(), StoreError> {
         self.db.with(|conn| {

@@ -1,4 +1,4 @@
-//! group-membership on the device, end to end against the real Pi
+//! group-membership on the device, end to end against the real server
 //! (client-core tasks 5.1, 5.2; design D5, D8).
 
 mod support;
@@ -6,23 +6,23 @@ mod support;
 use client::Event;
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 // spec: group-membership/group-creation
 // spec: device-identity/admin-awareness
 // spec: device-identity/bootstrap-admin
 #[tokio::test(flavor = "multi_thread")]
-async fn the_admin_creates_the_group_with_the_pi_as_external_sender() {
-    let pi = TestPi::start().await;
-    let admin = device::admin(&pi).await;
+async fn the_admin_creates_the_group_with_the_server_as_external_sender() {
+    let server = TestServer::start().await;
+    let admin = device::admin(&server).await;
     assert!(admin.client.is_admin().check("is admin"));
     admin.client.create_group().await.check("create group");
 
     assert_eq!(admin.epoch(), Some(0));
     assert_eq!(admin.members(), vec![member(&admin)]);
-    // The Pi accepted the public state: it checks the Pi external sender and
+    // The server accepted the public state: it checks the server external sender and
     // the 0xF0A1 extension naming the admin.
-    let (epoch, members): (i64, i64) = pi
+    let (epoch, members): (i64, i64) = server
         .query(|conn| {
             conn.query_row(
                 "SELECT (SELECT epoch FROM mls_groups), (SELECT count(*) FROM mls_members)",
@@ -44,8 +44,8 @@ async fn the_admin_creates_the_group_with_the_pi_as_external_sender() {
 // spec: message-delivery/welcome-travels-with-its-commit
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_adds_a_user_and_every_member_follows() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     assert!(!alice.client.is_admin().check("is admin"));
     alice.wait_epoch(1).await;
@@ -67,10 +67,10 @@ async fn the_admin_adds_a_user_and_every_member_follows() {
             .await
     );
     // The admin's core sent each Welcome inside the COMMIT that made it:
-    // the Pi recorded every add commit with its Welcome bundle, and only
+    // the server recorded every add commit with its Welcome bundle, and only
     // commits (no client envelope of another kind) carry one.
     let admin_id = admin.device_id();
-    let (commits, with_welcome): (i64, i64) = pi
+    let (commits, with_welcome): (i64, i64) = server
         .query(move |db| {
             db.query_row(
                 "SELECT count(*), count(welcome_sha256) FROM dedup WHERE sender_device_id = ?1",
@@ -85,8 +85,8 @@ async fn the_admin_adds_a_user_and_every_member_follows() {
 // spec: group-membership/removing-a-user
 #[tokio::test(flavor = "multi_thread")]
 async fn the_admin_removes_a_user() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     alice.wait_epoch(2).await;
@@ -102,7 +102,7 @@ async fn the_admin_removes_a_user() {
     alice.wait_members(&rest).await;
 
     // Admin.RemoveUser revoked Bob's device.
-    let revoked: bool = pi
+    let revoked: bool = server
         .query(move |conn| {
             conn.query_row(
                 "SELECT revoked_at IS NOT NULL FROM devices WHERE device_id = ?1",
@@ -131,8 +131,8 @@ fn commit_in_flight(device: &Device) -> bool {
 // spec: client-runtime/local-message-store
 #[tokio::test(flavor = "multi_thread")]
 async fn a_commit_in_flight_survives_a_crash_and_is_resent_identically() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::invited(&admin, "bob").await;
 
     // The admin's device crashes while its commit adding Bob is in flight,
@@ -151,7 +151,7 @@ async fn a_commit_in_flight_survives_a_crash_and_is_resent_identically() {
             );
             tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
-        pi.relay.cut();
+        server.relay.cut();
     };
     let (result, ()) = tokio::join!(
         tokio::time::timeout(std::time::Duration::from_secs(2), adding),
@@ -159,10 +159,10 @@ async fn a_commit_in_flight_survives_a_crash_and_is_resent_identically() {
     );
     drop(result);
     admin.restart().await;
-    pi.relay.restore();
+    server.relay.restore();
 
     // After the restart the stored commit is sent again with the same bytes:
-    // the Pi applies it once, and Bob joins once.
+    // the server applies it once, and Bob joins once.
     bob.wait_event("joined", |e| matches!(e, Event::JoinedGroup))
         .await;
     let both = [member(&admin), member(&bob)];
@@ -174,7 +174,7 @@ async fn a_commit_in_flight_survives_a_crash_and_is_resent_identically() {
         !bob.sees_within_quiet(|e| matches!(e, Event::JoinedGroup))
             .await
     );
-    let commits: i64 = pi
+    let commits: i64 = server
         .query(|conn| conn.query_row("SELECT count(*) FROM dedup", [], |row| row.get(0)))
         .await;
     // One accepted envelope from the admin's device: the commit, once.

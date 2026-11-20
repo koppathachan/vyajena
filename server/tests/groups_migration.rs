@@ -1,6 +1,6 @@
-//! The Pi's store migration for DMs (change `dms`, design D8): a database
+//! The server's store migration for DMs (change `dms`, design D8): a database
 //! from before it keeps its one group, members, public state, envelopes,
-//! gaps and pending Pi Removes, now as the main group.
+//! gaps and pending server Removes, now as the main group.
 
 use rusqlite::{Connection, params};
 
@@ -62,7 +62,7 @@ fn version_4_database() -> Connection {
     conn
 }
 
-// spec: group-membership/membership-state-on-the-pi
+// spec: group-membership/membership-state-on-the-server
 #[test]
 fn a_pre_dm_database_keeps_everything_as_the_main_group() {
     let conn = version_4_database();
@@ -98,7 +98,7 @@ fn a_pre_dm_database_keeps_everything_as_the_main_group() {
         .query_row("SELECT group_id, proposed_epoch FROM pi_removes", [], |r| {
             Ok((r.get(0)?, r.get(1)?))
         })
-        .expect("the pending Pi Remove");
+        .expect("the pending server Remove");
     assert_eq!(removal, (GROUP.to_vec(), 7));
     let cursor: i64 = conn
         .query_row("SELECT acked_seq FROM cursors", [], |r| r.get(0))
@@ -108,7 +108,7 @@ fn a_pre_dm_database_keeps_everything_as_the_main_group() {
 
 // spec: group-membership/group-creation
 #[test]
-fn the_pi_holds_at_most_one_main_group_and_one_open_dm_per_pair() {
+fn the_server_holds_at_most_one_main_group_and_one_open_dm_per_pair() {
     let conn = version_4_database();
     conn.execute_batch(GROUPS).expect("the DM migration");
     let second_main = conn.execute(

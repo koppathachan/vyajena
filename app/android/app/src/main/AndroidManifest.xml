@@ -1,8 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- The app's own permissions (app-release: Declared permissions). The Rust
-         core connects to the Pi (the UI itself opens nothing); connectivity_plus
+         core connects to the server (the UI itself opens nothing); connectivity_plus
          reads whether a network is up, to tell the core to reconnect;
-         POST_NOTIFICATIONS shows the Pi's "New message" (push design D8, asked
+         POST_NOTIFICATIONS shows the server's "New message" (push design D8, asked
          once after joining). Firebase Messaging adds WAKE_LOCK and
          c2dm RECEIVE itself. -->
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -39,7 +39,7 @@
         </activity>
         <!-- Push (app-ui: Push notifications): FCM token rotation, and the
              channel and icon of the "New message" notification Play
-             services shows from the Pi's ping. -->
+             services shows from the server's ping. -->
         <service
             android:name=".VyajenaMessagingService"
             android:exported="false">

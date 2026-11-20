@@ -14,19 +14,19 @@ Nothing else SHALL run on that VM or in that VPC. The relay check enforces this.
 #### Scenario: Invites name the relay
 - **WHEN** the admin creates an invite for Bob with `Admin.CreateInvite`
 - **THEN** the invite payload names `vyajarelay.purplechaamba.com:443`, never an IP
-  or a home address, and Bob's core resolves the name and checks only the Pi's
+  or a home address, and Bob's core resolves the name and checks only the server's
   pin
 
-### Requirement: TLS ends on the Pi
+### Requirement: TLS ends on the server
 The relay SHALL forward every TCP connection on port 443 byte for byte through
-the tunnel to the Pi's loopback port, and SHALL NOT terminate TLS or hold any TLS
-key. The client enforces this: it accepts only the Pi's pinned TLS key, so a
+the tunnel to the server's loopback port, and SHALL NOT terminate TLS or hold any TLS
+key. The client enforces this: it accepts only the server's pinned TLS key, so a
 relay that answers TLS itself is refused.
 
 #### Scenario: Alice sends through the relay
 - **WHEN** Alice's core connects to the relay address from her invite and sends
   "hi Bob" with `Messaging.Connect`
-- **THEN** the TLS handshake completes with the Pi's pinned key, and no byte the
+- **THEN** the TLS handshake completes with the server's pinned key, and no byte the
   relay forwards contains "hi Bob"
 
 #### Scenario: Relay answers with another key
@@ -36,29 +36,29 @@ relay that answers TLS itself is refused.
   error
 
 ### Requirement: Tunnel authentication
-The Pi SHALL dial out to the relay's tunnel port; nothing SHALL listen at home.
+The server SHALL dial out to the relay's tunnel port; nothing SHALL listen at home.
 The tunnel SHALL use rathole's Noise transport with the relay's static key pinned
-on the Pi, and a service token. The relay enforces the token: it SHALL expose
-port 443 only through a tunnel whose client proved the token. The Pi enforces the
+on the server, and a service token. The relay enforces the token: it SHALL expose
+port 443 only through a tunnel whose client proved the token. The server enforces the
 pin: it SHALL attach only to a relay that proves the pinned Noise key.
 
 #### Scenario: Someone else attaches
-- **WHEN** a host that is not the Pi connects to the tunnel port with a wrong
+- **WHEN** a host that is not the server connects to the tunnel port with a wrong
   token
-- **THEN** the relay closes the connection and keeps forwarding 443 to the Pi only
+- **THEN** the relay closes the connection and keeps forwarding 443 to the server only
 
 #### Scenario: Tunnel restarts
 - **WHEN** the relay VM reboots
-- **THEN** the Pi's tunnel service reattaches by itself within a minute
+- **THEN** the server's tunnel service reattaches by itself within a minute
 
 ### Requirement: Relay firewall
 The relay's VPC firewall SHALL allow inbound TCP 443 and the tunnel port from
-anywhere, TCP 22 only from Google IAP's range `35.235.240.0/20`, and nothing else.
+anywhere, TCP 22 only from Google IAP's range `<iap-range>`, and nothing else.
 VPC flow logs and firewall-rule logging SHALL be off, so client addresses are not
 kept. GCP enforces the firewall; the relay check verifies it.
 
 #### Scenario: Port scan
-- **WHEN** someone probes the relay's address on TCP 22, 80 and 8443
+- **WHEN** someone probes the relay's address on TCP 22, 80 and <review-port>
 - **THEN** no connection opens, while 443 and the tunnel port accept
 
 ### Requirement: Relay host hardening
@@ -83,7 +83,7 @@ level. The relay can be rebuilt from the repo and `~/.vyajena-relay/` alone.
 #### Scenario: Relay rebuilt
 - **WHEN** the owner deletes the relay VM and runs the create and deploy commands
   again with the same static address and secrets
-- **THEN** devices reconnect with no change on the Pi or the devices
+- **THEN** devices reconnect with no change on the server or the devices
 
 ### Requirement: Relay secrets
 The rathole token, the relay's Noise key pair and the relay's SSH key SHALL be
@@ -114,7 +114,7 @@ SSH and reports each failure by name: VM size, region and disk, service account,
 static address, the DNS name's records, firewall rules, flow logs, SSH settings,
 rathole's sandbox and
 version, listeners, unattended upgrades and the volatile journal. It SHALL warn,
-without failing, when a reboot is pending or the Pi's tunnel is not attached.
+without failing, when a reboot is pending or the server's tunnel is not attached.
 
 #### Scenario: Extra firewall rule
 - **WHEN** someone adds a rule to the relay's VPC that opens TCP 80

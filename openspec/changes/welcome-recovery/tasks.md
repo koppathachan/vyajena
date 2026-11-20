@@ -7,10 +7,10 @@
 - [x] 2.1 `keys.proto`: `Keys.RequestReadd`, `RequestReaddRequest`, `RequestReaddResponse`, `ReaddOutcome`; `buf lint`, `buf breaking`; `cargo run -p pbgen`
 - [x] 2.2 `protocol::group_membership`: `MAX_READD_REQUESTS_PER_DAY`, `READD_REQUEST_WINDOW`, `MAX_READD_REASON_BYTES`, `readd_reason`; test `group-membership/re-add-after-an-unusable-welcome`
 
-## 3. Pi
+## 3. Server
 
 - [x] 3.1 In-memory ask limit (`membership::readd::ReaddAsks`, no schema change); `Keys.RequestReadd` checks (member, Welcome queued after the seq, already inactive, limit) and, on ASKED, one transaction: replace KeyPackages, mark inactive + returned, record the ask, log the reason; `RejoinNotice` to connected helpers
-- [x] 3.2 Pi tests `group-membership/re-add-after-an-unusable-welcome`: each outcome, nothing stored on a refusal, KeyPackages replaced, helper gets `RejoinNotice`
+- [x] 3.2 server tests `group-membership/re-add-after-an-unusable-welcome`: each outcome, nothing stored on a refusal, KeyPackages replaced, helper gets `RejoinNotice`
 
 ## 4. Core
 
@@ -30,4 +30,4 @@
 
 - [x] 6.1 `cargo test --workspace`, clippy, fmt, `flutter analyze`, `flutter test`, `openspec validate welcome-recovery --strict`
 - [ ] 6.2 Build 1.0.0 (4): `build-ipa.sh`, `build-aab.sh`, `release-check.sh` all PASS (2026-11-16, d59b499); owner uploads
-- [ ] 6.3 Pi deploy (owner yes; `backup.sh` first), before build 4 reaches testers
+- [ ] 6.3 server deploy (owner yes; `backup.sh` first), before build 4 reaches testers

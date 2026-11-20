@@ -4085,7 +4085,7 @@ class CoreImpl extends RustOpaque implements Core {
   Future<List<ChatSummary>> chats() =>
       RustLib.instance.api.crateApiCoreCoreChats(that: this);
 
-  /// Clears this device's push token on the Pi: no more wake pings
+  /// Clears this device's push token on the server: no more wake pings
   /// (notifications not allowed).
   Future<void> clearPushToken() =>
       RustLib.instance.api.crateApiCoreCoreClearPushToken(that: this);
@@ -4115,14 +4115,14 @@ class CoreImpl extends RustOpaque implements Core {
   Future<String> displayName({required UserRef user}) =>
       RustLib.instance.api.crateApiCoreCoreDisplayName(that: this, user: user);
 
-  /// Whether the Pi knows DMs: the app offers "Message" only then.
+  /// Whether the server knows DMs: the app offers "Message" only then.
   Future<bool> dmsAvailable() =>
       RustLib.instance.api.crateApiCoreCoreDmsAvailable(that: this);
 
   /// The picture of image message `id` as WebP bytes: from this device's
   /// cache, else downloaded, decrypted and cached (client-runtime: Image
   /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
-  /// the Pi no longer has it.
+  /// the server no longer has it.
   Future<Uint8List> downloadImage({required PlatformInt64 id}) =>
       RustLib.instance.api.crateApiCoreCoreDownloadImage(that: this, id: id);
 
@@ -4208,7 +4208,7 @@ class CoreImpl extends RustOpaque implements Core {
   Future<UserRef> register({required String inviteText}) => RustLib.instance.api
       .crateApiCoreCoreRegister(that: this, inviteText: inviteText);
 
-  /// Admin: removes `user` from the group and the Pi.
+  /// Admin: removes `user` from the group and the server.
   Future<void> removeUser({required UserRef user}) =>
       RustLib.instance.api.crateApiCoreCoreRemoveUser(that: this, user: user);
 
@@ -4302,7 +4302,7 @@ class CoreImpl extends RustOpaque implements Core {
         about: about,
       );
 
-  /// Registers or replaces this device's push token on the Pi (needs a
+  /// Registers or replaces this device's push token on the server (needs a
   /// connection; fails `offline` otherwise, and the app retries on the next
   /// connect).
   Future<void> setPushToken({

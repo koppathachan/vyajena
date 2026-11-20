@@ -2,7 +2,7 @@
 //! and wherever the ciphertext bytes live.
 //!
 //! A backend stores and returns opaque bytes by blob id and nothing else. The
-//! metadata, who may read a blob and when it dies all stay in the Pi's SQLite
+//! metadata, who may read a blob and when it dies all stay in the server's SQLite
 //! (see [`super::meta`]), so a new backend (an object-storage bucket, other cheap
 //! media) changes neither the wire protocol nor those rules. The MVP ships one,
 //! [`FilesystemStore`].

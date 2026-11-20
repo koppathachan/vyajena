@@ -1,16 +1,16 @@
 ## Context
 
-- Today (change `app-release`, `push`, `pi-deployment`): the owner builds on the
+- Today (change `app-release`, `push`, `server-deployment`): the owner builds on the
   Mac. `app/store/build-aab.sh` signs with the upload key in
   `~/.vyajena-release/` (passwords in the macOS Keychain);
   `app/store/build-ipa.sh` signs with Xcode's cloud-managed Apple
-  Distribution certificate; uploads are by hand; `deploy/pi/build.sh` builds
-  the Pi server and rathole in arm64 containers.
+  Distribution certificate; uploads are by hand; `deploy/server/build.sh` builds
+  the server and rathole in arm64 containers.
 - The repo is public (koppathachan/vyajena). `main` is protected: PR, green
   CI, signed commits, squash merge, admins included.
 - The owner asked for this change (default design from the tracker): tags
   start releases, the owner approves each one, secrets live only in a GitHub
-  Environment, Pi deploys stay manual.
+  Environment, server deploys stay manual.
 - Nothing here touches `ci.yml`, `app/`, `deploy/` or the active changes'
   files. No `.proto` change, no invariant change.
 
@@ -19,7 +19,7 @@ flowchart LR
   owner["owner: git tag + push"] -->|server-v0.2.0| rs["release-server"]
   owner -->|app-v1.0.0+5| ra["release-app"]
   subgraph rs_jobs["release-server"]
-    b["build (no secrets)\nubuntu-24.04-arm\ndeploy/pi/build.sh"] --> p["publish\nenv: release ✋"]
+    b["build (no secrets)\nubuntu-24.04-arm\ndeploy/server/build.sh"] --> p["publish\nenv: release ✋"]
   end
   subgraph ra_jobs["release-app"]
     g["guard (no secrets)"] --> a["android\nenv: release ✋"]
@@ -30,7 +30,7 @@ flowchart LR
   p --> gh["GitHub Release\nvyajena-server, rathole,\nSHA256SUMS + provenance"]
   a --> play["Play internal track"]
   i --> tf["TestFlight"]
-  gh -. "owner, by hand:\ndeploy/pi/deploy.sh" .-> pi["Pi"]
+  gh -. "owner, by hand:\ndeploy/server/deploy.sh" .-> server["server"]
 ```
 
 ✋ = waits for the owner's approval; the environment holds the secrets.
@@ -40,7 +40,7 @@ flowchart LR
 Goals: tag → reviewed build → owner approves → store/Release; a dry run that
 needs no secret; a written threat model with an undo for each case.
 
-Non-goals: deploying the Pi or relay from CI; production or closed tracks;
+Non-goals: deploying the server or relay from CI; production or closed tracks;
 public App Store release; changing the manual path (it stays as the fallback).
 
 ## Decisions
@@ -102,9 +102,9 @@ owner's rights (D12, T1).
 
 - Runner `ubuntu-24.04-arm` (free for public repos): the same
   `rust:1.96-bookworm` container as on the Mac, run natively, no QEMU.
-- The job runs `deploy/pi/build.sh` unchanged (it calls
+- The job runs `deploy/server/build.sh` unchanged (it calls
   `deploy/relay/build.sh arm64` for rathole 0.5.0 from `relay.conf`). The
-  container writes as root, so the job makes `target/pi` first.
+  container writes as root, so the job makes `target/server` first.
 - Files: `vyajena-server`, `rathole`, `SHA256SUMS`, checked as exactly these
   three both after the build and before publishing, both binaries `ARM
   aarch64`.
@@ -113,7 +113,7 @@ owner's rights (D12, T1).
   attestation for both binaries (`actions/attest-build-provenance`, Sigstore),
   and creates the GitHub Release with `gh release create --verify-tag`.
 - Nothing config-like goes out: `config.toml`, `tunnel.toml`, the pin, the
-  invite and keys are written on the Pi by `deploy/pi/deploy.sh` and the
+  invite and keys are written on the server by `deploy/server/deploy.sh` and the
   relay's `render.sh` from `~/.vyajena-relay/`, which CI never has.
 
 ### D5. Version and build-number scheme
@@ -283,7 +283,7 @@ Flutter is pinned to `3.44.4` (the owner's Mac), Java to Temurin 21.
 | T7 | **Compromised third-party action** | Runs inside a job, sees that job's secrets. | SHA pins (no tag moves), few actions, secret jobs use only checkout, setup-java, flutter-action, google auth; secrets only in the step that needs them. | Revert the pin; rotate the secrets of every job that ran it. |
 | T7b | **Malicious build dependency** (crate, pod, Gradle plugin, Dart package) | Runs in the build step: sees the upload keystore or distribution certificate (as on the Mac today). | No OIDC token and no App Store Connect key in build steps (D15); signing keys alone cannot ship. | Remove the dependency; T3 / T5 undo. |
 | T9 | **`release` environment missing or loosened** (never created, a rule removed) | Jobs would run without approval. | First step of every release job checks the environment (D15). | Recreate the rules (docs step 1); rerun. |
-| T8 | **Tampered server release file** | The owner deploys a bad binary. | `SHA256SUMS` + Sigstore provenance tied to `release-server.yml` and the commit; owner verifies before deploy; deploy stays manual. | Delete the release; `deploy/pi/deploy.sh --rollback`. |
+| T8 | **Tampered server release file** | The owner deploys a bad binary. | `SHA256SUMS` + Sigstore provenance tied to `release-server.yml` and the commit; owner verifies before deploy; deploy stays manual. | Delete the release; `deploy/server/deploy.sh --rollback`. |
 
 `google-services.json` is not secret (it ships inside every APK); it is an
 environment secret only to keep it out of the public repo (push D8).
@@ -347,7 +347,7 @@ another job would need a second approval per release. Upload key and
 certificate leaks are recoverable (D12 T3, T5), and neither can ship a build
 alone.
 
-Not changed here (owner rule: `deploy/` untouched): `deploy/pi/build.sh` and
+Not changed here (owner rule: `deploy/` untouched): `deploy/server/build.sh` and
 `relay.conf` name Docker images by tag (`rust:1.96-bookworm`,
 `rust:1.79-bookworm`), not by digest. Same as the local build; see O5.
 
@@ -361,7 +361,7 @@ existing jobs run only when needed:
 | Job (required check, name unchanged) | Runs when these change |
 |---|---|
 | buf lint and breaking | `proto/`, `buf.yaml`, `buf.lock` |
-| cargo build (build + `cargo test`) | `Cargo.toml`, `Cargo.lock`, `protocol/`, `server/`, `client/`, `bridge/`, `pbgen/`, `proto/`, `deploy/` (server tests read `deploy/pi`, `deploy/relay`) |
+| cargo build (build + `cargo test`) | `Cargo.toml`, `Cargo.lock`, `protocol/`, `server/`, `client/`, `bridge/`, `pbgen/`, `proto/`, `deploy/` (server tests read `deploy/server`, `deploy/relay`) |
 | flutter analyze and test | `app/` |
 | all three | `ci.yml` or `ci-changes.sh` itself; no base commit |
 
@@ -373,9 +373,9 @@ existing jobs run only when needed:
 - Tests: 10 detector cases in `release-scripts-test.sh` (58 total).
 
 Known flaky tests (not fixed here; Rust test code is outside this change):
-`client/tests/support/pi.rs` `free_port()` binds port 0, drops the listener,
-then the test Pi binds that address later; a parallel test can take it first
-(`AddrInUse`, seen in `a_device_clock_ahead_of_the_pi_does_not_renew_on_every_tick`).
+`client/tests/support/server.rs` `free_port()` binds port 0, drops the listener,
+then the test server binds that address later; a parallel test can take it first
+(`AddrInUse`, seen in `a_device_clock_ahead_of_the_server_does_not_renew_on_every_tick`).
 And `client/tests/welcome_recovery.rs::a_member_asks_nothing_at_start` saw a
 re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
 
@@ -404,8 +404,8 @@ re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
 
 ## Open items (not built)
 
-- **O1. `deploy.sh` from a release file.** `deploy/pi/deploy.sh --release
-  server-v0.2.0`: `gh release download` into `target/pi/`, `sha256sum -c
+- **O1. `deploy.sh` from a release file.** `deploy/server/deploy.sh --release
+  server-v0.2.0`: `gh release download` into `target/server/`, `sha256sum -c
   SHA256SUMS`, `gh attestation verify <file> --repo koppathachan/vyajena
   --signer-workflow koppathachan/vyajena/.github/workflows/release-server.yml`
   for both binaries, then the existing `--no-build` path. Deploys stay
@@ -416,9 +416,9 @@ re-add request at start on a slow runner. Both passed on `main` at bf24f7c.
   internal testing.
 - **O4. Required check:** the owner may add `release-lint` to `main`'s
   required checks.
-- **O5. Pin Docker images by digest** in `deploy/pi/build.sh` and
+- **O5. Pin Docker images by digest** in `deploy/server/build.sh` and
   `deploy/relay/relay.conf` (`rust:…@sha256:…`), for the local and the CI
-  server build alike.
+  Server build alike.
 
 ## Questions for the owner
 

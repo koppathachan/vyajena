@@ -1,10 +1,10 @@
 ## MODIFIED Requirements
 
 ### Requirement: Ordered delivery and catch-up
-The Pi SHALL deliver to each device its commit log entries, welcomes and queued
+The server SHALL deliver to each device its commit log entries, welcomes and queued
 application entries merged in `server_seq` order. A reconnecting device SHALL
 receive everything after its cursor in that order before any live traffic. On the
-committing device's own stream, the Pi SHALL deliver every entry for that device
+committing device's own stream, the server SHALL deliver every entry for that device
 with a `server_seq` below an accepted commit's `server_seq` before it sends the
 `Accepted` result for that commit.
 

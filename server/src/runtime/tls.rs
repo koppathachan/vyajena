@@ -1,5 +1,5 @@
 //! The TLS listener: TLS 1.3 only, HTTP/2 only, a self-signed certificate around
-//! the Pi's TLS key (pi-server-core design D6; wire-transport: gRPC over HTTP/2
+//! the server's TLS key (server-core design D6; wire-transport: gRPC over HTTP/2
 //! and pinned TLS on TCP 443).
 //!
 //! Each accepted connection carries a [`TlsConnectInfo`] that tonic puts into
@@ -30,7 +30,7 @@ use super::server_keys::ServerKeys;
 
 /// Subject name in the self-signed certificate. Clients ignore it: they check
 /// only the SPKI pin.
-const CERT_SUBJECT: &str = "vyajena2-pi";
+const CERT_SUBJECT: &str = "vyajena2-server";
 
 /// A TLS handshake that takes longer than this is dropped.
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -64,7 +64,7 @@ pub fn server_config(keys: &ServerKeys) -> Result<ServerConfig, TlsError> {
 /// Per-connection facts tonic attaches to every request on it.
 #[derive(Clone)]
 pub struct TlsConnectInfo {
-    /// The peer address as seen by the Pi (the relay, in production).
+    /// The peer address as seen by the server (the relay, in production).
     pub remote_addr: SocketAddr,
     /// The TLS 1.3 exporter value the auth signature covers.
     pub tls_exporter: [u8; AUTH_TLS_EXPORTER_LEN],

@@ -27,7 +27,7 @@ use crate::pb::messaging_client::MessagingClient;
 /// Connection lifecycle: renew the session token before it expires).
 pub const TOKEN_RENEW_BEFORE: Duration = Duration::from_secs(5 * 60);
 
-/// One HTTP/2 connection to the Pi over pinned TLS. It does not reconnect:
+/// One HTTP/2 connection to the server over pinned TLS. It does not reconnect:
 /// when it breaks, the engine opens a new one.
 #[derive(Clone)]
 pub struct Conn {
@@ -46,7 +46,7 @@ impl Conn {
     pub async fn open(address: &str, pin: [u8; 32]) -> Result<Self, NetError> {
         let tls::PinnedStream { stream, exporter } = tls::connect(address, pin).await?;
         let slot = Arc::new(Mutex::new(Some(stream)));
-        let channel = Endpoint::from_static("http://vyajena2-pi")
+        let channel = Endpoint::from_static("http://vyajena2-server")
             .connect_with_connector(tower::service_fn(move |_| {
                 let stream = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
                 async move {
@@ -109,7 +109,7 @@ impl Conn {
     /// the nonce and this connection's TLS exporter value (wire-transport:
     /// Session authentication). Returns a session.
     /// `now` is the client's clock when the call starts; renewal is timed
-    /// from it, so a device clock that differs from the Pi's does not make
+    /// from it, so a device clock that differs from the server's does not make
     /// the core renew on every tick.
     pub async fn authenticate(
         &self,
@@ -139,8 +139,8 @@ impl Conn {
             .map(from_timestamp)
             .ok_or_else(|| NetError::Protocol("Authenticate without expires_at".into()))?;
         tracing::debug!("authenticated");
-        // The lifetime as the Pi states it, at most the protocol maximum; a
-        // device clock ahead of the Pi's falls back to the maximum.
+        // The lifetime as the server states it, at most the protocol maximum; a
+        // device clock ahead of the server's falls back to the maximum.
         let lifetime = expires_at
             .duration_since(now)
             .unwrap_or(SESSION_TOKEN_MAX_LIFETIME)
@@ -156,7 +156,7 @@ impl Conn {
     /// Binds a token kept from an earlier connection to this one, so the stream
     /// can open with it and no `GetChallenge`/`Authenticate` is sent
     /// (wire-transport: Session resume). The token's expiry and renewal point
-    /// are carried over unchanged; the Pi accepts it on this connection because
+    /// are carried over unchanged; the server accepts it on this connection because
     /// a token is not tied to the connection that minted it (design D1).
     pub fn resume(&self, resume: &ResumeToken) -> Session {
         Session {
@@ -191,7 +191,7 @@ impl Session {
         &self.conn
     }
 
-    /// When the token expires (the Pi's time, compared with the client's
+    /// When the token expires (the server's time, compared with the client's
     /// clock).
     pub fn expires_at(&self) -> SystemTime {
         self.expires_at
@@ -228,7 +228,7 @@ impl Session {
 
 /// A session token kept across a reconnect so the core can open the next
 /// `Connect` stream without `GetChallenge`/`Authenticate` (wire-transport:
-/// Session resume). It is independent of the connection that minted it: the Pi
+/// Session resume). It is independent of the connection that minted it: the server
 /// authenticates `Connect` from the token alone (design D1).
 #[derive(Clone)]
 pub struct ResumeToken {
@@ -245,11 +245,56 @@ impl std::fmt::Debug for ResumeToken {
     }
 }
 
+/// First byte of a saved [`ResumeToken`]; a value with another first byte is
+/// not read (client-runtime: Resume across restart).
+const RESUME_VERSION: u8 = 1;
+
 impl ResumeToken {
+    /// The saved form, for the key store (client-runtime: Resume across
+    /// restart): the version byte, `expires_at` and `renew_at` as seconds
+    /// since the Unix epoch (big-endian `u64`), then the token's bytes.
+    pub fn encode(&self) -> zeroize::Zeroizing<Vec<u8>> {
+        let mut out = zeroize::Zeroizing::new(Vec::with_capacity(17 + self.token.len()));
+        out.push(RESUME_VERSION);
+        out.extend_from_slice(&unix_secs(self.expires_at).to_be_bytes());
+        out.extend_from_slice(&unix_secs(self.renew_at).to_be_bytes());
+        out.extend_from_slice(self.token.as_bytes());
+        out
+    }
+
+    /// A token from its saved form; `None` for anything this version did not
+    /// write (unknown version, too short, not UTF-8, empty token), which the
+    /// core treats as no token.
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        let (&version, rest) = bytes.split_first()?;
+        if version != RESUME_VERSION || rest.len() <= 16 {
+            return None;
+        }
+        let (expires, rest) = rest.split_at(8);
+        let (renew, token) = rest.split_at(8);
+        let expires = u64::from_be_bytes(expires.try_into().ok()?);
+        let renew = u64::from_be_bytes(renew.try_into().ok()?);
+        Some(Self {
+            token: std::str::from_utf8(token).ok()?.to_owned(),
+            expires_at: SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(expires))?,
+            renew_at: SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(renew))?,
+        })
+    }
+
+    /// Whether `other` is the same session token (not the same times).
+    pub fn same_token(&self, other: &Self) -> bool {
+        self.token == other.token
+    }
+
     /// Whether this token is worth resuming with at `now`: still before its
     /// renewal point, so a resumed session does not land already due for
     /// renewal (design D2).
     pub fn usable(&self, now: SystemTime) -> bool {
         now < self.renew_at
     }
+}
+
+fn unix_secs(time: SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }

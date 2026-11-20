@@ -7,7 +7,7 @@ iOS signing waits for the Apple account (R2).
 ## 1. Spikes (throwaway, in `spikes/`, results into design.md)
 
 - [x] 1.1 S1: on Xcode 27.2, `flutter build ipa --release --no-codesign` (no Apple account needed); if it fails, `flutter build ios --release --no-codesign` + `xcodebuild archive`; record which works. The signed export is re-checked in 7.4 once the account exists (D4)
-- [x] 1.2 S2: release APK with R8 on and a throwaway keystore made in `spikes/`, on a throwaway emulator (never `vyajena_test`): join a temp Pi, send, kill + relaunch, keys still there; with and without the keep rules (D6)
+- [x] 1.2 S2: release APK with R8 on and a throwaway keystore made in `spikes/`, on a throwaway emulator (never `vyajena_test`): join a temp server, send, kill + relaunch, keys still there; with and without the keep rules (D6)
 - [x] 1.3 S3: `llvm-readelf -lW` on the release `libbridge.so` for `arm64-v8a` and `x86_64`: `LOAD` alignment ≥ 16 KB; record sizes of all three; add the linker flag only if needed (D2)
 - [x] 1.4 S4: `nm -u` on the release `libbridge.a` against Apple's required-reason API list; record every category found (D9)
 - [x] 1.5 Delete the spikes and the throwaway keys; record results under D2, D4, D6, D9

@@ -1,5 +1,5 @@
 //! Images in the core (change `media-blobs`): the encode pipeline, blob
-//! crypto and the device media cache. The transfer to and from the Pi lives in
+//! crypto and the device media cache. The transfer to and from the server lives in
 //! [`crate::Client`], which holds the session.
 //!
 //! Only the core touches image bytes: Dart passes the picked file in and gets

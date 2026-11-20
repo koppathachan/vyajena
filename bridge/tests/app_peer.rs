@@ -1,18 +1,18 @@
 //! The host side of the app's integration test (flutter-app task 6.2,
 //! design D6/D7): the admin's device, driven through the bridge's `Core`
-//! against the temp Pi that `app/integration_test/run.sh` starts. It is
+//! against the temp server that `app/integration_test/run.sh` starts. It is
 //! ignored by `cargo test`; the script runs it with `--ignored` while the
 //! app runs on a simulator or emulator.
 //!
 //! What it does, with the app (Bob) on the other side:
 //!
-//! 1. registers the admin from the Pi's bootstrap invite
+//! 1. registers the admin from the server's bootstrap invite
 //!    (`VYAJENA_PEER_BOOTSTRAP`), creates the group and an invite for
 //!    `bob`, and writes its text to `$VYAJENA_PEER_DIR/invite.txt`;
-//! 2. stays connected and does nothing: the Pi's `JoinNotice` makes this
+//! 2. stays connected and does nothing: the server's `JoinNotice` makes this
 //!    device add Bob's phone on its own (group-membership: Automatic add of
 //!    new users);
-//! 3. waits for Bob's "hi", replies "hey" and waits until the Pi accepted
+//! 3. waits for Bob's "hi", replies "hey" and waits until the server accepted
 //!    it, then writes `done`.
 
 mod support;
@@ -22,7 +22,7 @@ use std::time::Duration;
 use bridge::api::types::{ChatBody, CoreEvent, SendState};
 use support::Check;
 use support::device::{Device, user};
-use support::pi::ADMIN;
+use support::server::ADMIN;
 
 /// How long the peer waits for the app: building and installing the app
 /// on a simulator takes minutes.

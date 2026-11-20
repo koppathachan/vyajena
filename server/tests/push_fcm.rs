@@ -1,4 +1,4 @@
-//! pi-runtime: Push provider interface, Push errors; message-delivery:
+//! server-runtime: Push provider interface, Push errors; message-delivery:
 //! Content-free wake pings. The FCM provider against fake Google OAuth and
 //! FCM servers (push design D2, D4).
 
@@ -74,7 +74,7 @@ fn fcm_error(status: u16, code: &str, field: Option<&str>) -> Reply {
     )
 }
 
-// spec: pi-runtime/push-provider-interface
+// spec: server-runtime/push-provider-interface
 // spec: message-delivery/content-free-wake-pings
 #[tokio::test]
 async fn real_fcm_ping_signs_in_and_sends_only_the_fixed_text() {
@@ -137,7 +137,7 @@ async fn real_fcm_ping_signs_in_and_sends_only_the_fixed_text() {
     }
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn fcm_answers_that_clear_the_token_and_ones_that_do_not() {
     let cases = [
@@ -183,7 +183,7 @@ async fn fcm_answers_that_clear_the_token_and_ones_that_do_not() {
     }
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn fcm_overloaded_backs_off_doubling_and_retries() {
     let (fake, push) = fcm().await;
@@ -200,7 +200,7 @@ async fn fcm_overloaded_backs_off_doubling_and_retries() {
     });
     let started = Instant::now();
     assert_eq!(push.wake(DEVICE, token("t")).await, WakeOutcome::Sent);
-    // 50 ms, then 100 ms (the test's base; 1 s, 2 s on the Pi).
+    // 50 ms, then 100 ms (the test's base; 1 s, 2 s on the server).
     assert!(
         started.elapsed() >= Duration::from_millis(150),
         "{:?}",
@@ -209,7 +209,7 @@ async fn fcm_overloaded_backs_off_doubling_and_retries() {
     assert_eq!(fake.requests_to(SEND).len(), 3);
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn fcm_gives_up_after_three_retries_and_honours_retry_after() {
     let (fake, push) = fcm().await;
@@ -259,7 +259,7 @@ async fn fcm_gives_up_after_three_retries_and_honours_retry_after() {
     assert_eq!(fake.requests_to(SEND).len(), 3);
 }
 
-// spec: pi-runtime/push-errors
+// spec: server-runtime/push-errors
 #[tokio::test]
 async fn a_refused_access_token_is_replaced_once() {
     let (fake, push) = fcm().await;
@@ -291,7 +291,7 @@ async fn a_refused_access_token_is_replaced_once() {
     assert_eq!(fake.requests_to(SEND).len(), 4);
 }
 
-// spec: pi-runtime/push-provider-interface
+// spec: server-runtime/push-provider-interface
 #[tokio::test]
 async fn an_apns_token_without_apns_credentials_is_only_logged() {
     let (fake, push) = fcm().await;

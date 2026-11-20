@@ -1,6 +1,6 @@
-//! pi-runtime: how the Pi starts and runs. [`Pi::start`] loads or creates the
+//! server-runtime: how the server starts and runs. [`Server::start`] loads or creates the
 //! keys, opens the database, creates the bootstrap invite and binds the port;
-//! [`Pi::serve`] runs the gRPC services over TLS until shutdown.
+//! [`server::serve`] runs the gRPC services over TLS until shutdown.
 
 pub mod bootstrap;
 pub mod clock;
@@ -44,7 +44,7 @@ pub enum StartError {
     /// Opening or using the database failed.
     #[error("database: {0}")]
     Store(#[from] StoreError),
-    /// The database belongs to a Pi with another server id; every stored user
+    /// The database belongs to a server with another server id; every stored user
     /// id would change meaning.
     #[error(
         "config field `server_id` is {configured:?} but the database was created for {stored:?}"
@@ -93,7 +93,7 @@ pub struct KeyPackagesLow {
 pub struct State {
     /// The server's settings.
     pub config: Arc<Config>,
-    /// The Pi's private keys.
+    /// The server's private keys.
     pub keys: Arc<ServerKeys>,
     /// The database.
     pub store: Store,
@@ -109,7 +109,7 @@ pub struct State {
     /// The open `Connect` streams (wire-transport: Single persistent
     /// messaging stream).
     pub hub: Arc<Hub>,
-    /// Where wake pings go (pi-runtime: Push provider interface).
+    /// Where wake pings go (server-runtime: Push provider interface).
     pub push: Arc<dyn PushProvider>,
     /// Recent `Keys.RequestReadd` asks per device (group-membership: Re-add
     /// after an unusable Welcome).
@@ -120,22 +120,22 @@ pub struct State {
 }
 
 /// A started server: keys loaded, database open, port bound.
-pub struct Pi {
+pub struct Server {
     state: State,
     listener: TcpListener,
     local_addr: SocketAddr,
     bootstrap: Bootstrap,
 }
 
-impl Pi {
+impl Server {
     /// Starts the server: keys, database, bootstrap invite, then the port. Logs
     /// the TLS pin and, when one is created, the bootstrap invite payload.
     pub async fn start(config: Config, clock: Arc<dyn Clock>) -> Result<Self, StartError> {
         Self::start_with_push(config, clock, Arc::new(LoggingProvider)).await
     }
 
-    /// [`Pi::start`] with a given push provider. Without one the server uses
-    /// [`LoggingProvider`] (pi-runtime: Push provider interface).
+    /// [`Server::start`] with a given push provider. Without one the server uses
+    /// [`LoggingProvider`] (server-runtime: Push provider interface).
     pub async fn start_with_push(
         config: Config,
         clock: Arc<dyn Clock>,
@@ -145,7 +145,7 @@ impl Pi {
         Self::start_with_blobs(config, clock, push, blobs).await
     }
 
-    /// [`Pi::start_with_push`] with a given blob-store backend instead of the
+    /// [`Server::start_with_push`] with a given blob-store backend instead of the
     /// one the config names (blob-store: Pluggable storage backend).
     pub async fn start_with_blobs(
         config: Config,
@@ -221,7 +221,7 @@ impl Pi {
     }
 
     /// Serves gRPC over TLS until `shutdown` completes, then stops cleanly
-    /// (pi-runtime: Graceful stop): no new connections, open `Connect`
+    /// (server-runtime: Graceful stop): no new connections, open `Connect`
     /// streams end with `UNAVAILABLE` once the frame in progress is handled,
     /// requests in progress finish, and the database is closed.
     pub async fn serve(self, shutdown: impl Future<Output = ()>) -> Result<(), StartError> {
@@ -257,7 +257,7 @@ impl Pi {
     }
 }
 
-/// The gRPC services, one `add_service` per feature folder. [`Pi::serve`] puts
+/// The gRPC services, one `add_service` per feature folder. [`server::serve`] puts
 /// the [`AuthLayer`] in front of all of them (wire-transport: Session
 /// authentication).
 pub fn routes(state: &State) -> Routes {

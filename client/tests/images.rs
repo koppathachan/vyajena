@@ -1,5 +1,5 @@
-//! Image messages end to end against the real Pi (change `media-blobs`):
-//! sending, receiving, opening, caching, expiry and resend, and that the Pi
+//! Image messages end to end against the real server (change `media-blobs`):
+//! sending, receiving, opening, caching, expiry and resend, and that the server
 //! learns nothing it should not (message-content: Image messages; client-runtime:
 //! Image encode pipeline, Blob crypto and send order, Image download and
 //! cache, Expired media).
@@ -16,11 +16,11 @@ use client::{
 use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 use support::Check;
 use support::device::{self, Device, member, user};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 /// The admin, Alice and Bob, all in the group and seeing each other.
-async fn chat(pi: &TestPi) -> (Device, Device, Device) {
-    let admin = device::admin_with_group(pi).await;
+async fn chat(server: &TestServer) -> (Device, Device, Device) {
+    let admin = device::admin_with_group(server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let bob = device::member_of_group(&admin, "bob").await;
     let everyone = [member(&admin), member(&alice), member(&bob)];
@@ -85,8 +85,8 @@ fn at_bob() -> Mention {
 // spec: client-runtime/image-download-and-cache
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_sends_a_captioned_picture_and_bob_and_the_admin_open_it() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
 
     let id = alice
         .client
@@ -95,7 +95,7 @@ async fn alice_sends_a_captioned_picture_and_bob_and_the_admin_open_it() {
         .check("send_image");
     wait_accepted(&mut alice, id).await;
     // Uploaded before the message went out, and stored whole.
-    assert_eq!(pi.blobs().len(), 1);
+    assert_eq!(server.blobs().len(), 1);
 
     // Bob sees the blur's data and the caption, and is mentioned by it.
     let received = wait_image(&mut bob).await;
@@ -137,7 +137,7 @@ async fn alice_sends_a_captioned_picture_and_bob_and_the_admin_open_it() {
         .check("message")
         .check("some");
     assert_eq!(image_of(&now).state, MediaState::Available);
-    assert_eq!(pi.blobs().len(), 1, "the admin still needs it");
+    assert_eq!(server.blobs().len(), 1, "the admin still needs it");
 
     // Opened again with no connection: from the device's cache.
     bob.client.stop();
@@ -149,7 +149,7 @@ async fn alice_sends_a_captioned_picture_and_bob_and_the_admin_open_it() {
         webp
     );
 
-    // The admin was the last to need it: the Pi deletes the blob.
+    // The admin was the last to need it: the server deletes the blob.
     let at_admin = wait_image(&mut admin).await;
     let admin_webp = admin
         .client
@@ -157,14 +157,14 @@ async fn alice_sends_a_captioned_picture_and_bob_and_the_admin_open_it() {
         .await
         .check("download");
     assert_eq!(admin_webp, webp, "the same picture for everyone");
-    assert!(pi.blobs().is_empty(), "every member device has acked");
+    assert!(server.blobs().is_empty(), "every member device has acked");
 }
 
 // spec: message-content/image-messages
 #[tokio::test(flavor = "multi_thread")]
 async fn a_picture_without_a_caption_is_just_a_picture() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     let id = alice
         .client
         .send_image(&picture(100, 100), None, &[])
@@ -208,13 +208,13 @@ fn texts_and_images(device: &Device) -> Vec<&'static str> {
 // spec: client-runtime/blob-crypto-and-send-order
 #[tokio::test(flavor = "multi_thread")]
 async fn an_image_sent_offline_waits_in_the_outbox_and_its_blob_goes_up_first() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     alice.client.stop();
-    pi.wait_offline_recorded(&alice.device_id()).await;
+    server.wait_offline_recorded(&alice.device_id()).await;
 
     // Offline, an image is stored and queued like text: no error, shown as
-    // sending, its picture already hers, nothing on the Pi.
+    // sending, its picture already hers, nothing on the server.
     let id = alice
         .client
         .send_image(&picture(300, 200), Some("from the train"), &[])
@@ -224,13 +224,16 @@ async fn an_image_sent_offline_waits_in_the_outbox_and_its_blob_goes_up_first() 
     let own = alice.client.message(id).check("message").check("some");
     assert_eq!(own.status, Some(SendStatus::Sending));
     assert_eq!(image_of(&own).state, MediaState::Available);
-    assert!(pi.blobs().is_empty(), "nothing is uploaded while offline");
+    assert!(
+        server.blobs().is_empty(),
+        "nothing is uploaded while offline"
+    );
 
     // Back online: the blob goes up, then the message, then the text behind it.
     alice.client.start().await.check("start");
     wait_accepted(&mut alice, id).await;
     wait_accepted(&mut alice, after).await;
-    assert_eq!(pi.blobs().len(), 1);
+    assert_eq!(server.blobs().len(), 1);
     let received = wait_image(&mut bob).await;
     let webp = bob
         .client
@@ -248,10 +251,10 @@ async fn an_image_sent_offline_waits_in_the_outbox_and_its_blob_goes_up_first() 
 // spec: client-runtime/blob-crypto-and-send-order
 #[tokio::test(flavor = "multi_thread")]
 async fn a_queued_image_survives_a_crash_and_still_goes_out_whole() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     alice.client.stop();
-    pi.wait_offline_recorded(&alice.device_id()).await;
+    server.wait_offline_recorded(&alice.device_id()).await;
     let id = alice
         .client
         .send_image(&picture(200, 200), None, &[])
@@ -263,17 +266,17 @@ async fn a_queued_image_survives_a_crash_and_still_goes_out_whole() {
     wait_accepted(&mut alice, id).await;
     let received = wait_image(&mut bob).await;
     assert!(bob.client.download_image(received.id).await.is_ok());
-    assert_eq!(pi.blobs().len(), 1, "one blob, however it was queued");
+    assert_eq!(server.blobs().len(), 1, "one blob, however it was queued");
 }
 
 // spec: client-runtime/blob-crypto-and-send-order
 #[tokio::test(flavor = "multi_thread")]
 async fn while_the_pis_drive_is_away_the_image_waits_and_nothing_is_sent() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
-    // The Pi's drive is pulled: its blob store answers UNAVAILABLE.
-    let away = pi.blob_dir().with_extension("away");
-    std::fs::rename(pi.blob_dir(), &away).check("pull the drive");
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
+    // The server's drive is pulled: its blob store answers UNAVAILABLE.
+    let away = server.blob_dir().with_extension("away");
+    std::fs::rename(server.blob_dir(), &away).check("pull the drive");
 
     let id = alice
         .client
@@ -295,7 +298,7 @@ async fn while_the_pis_drive_is_away_the_image_waits_and_nothing_is_sent() {
     );
 
     // The drive is back: the next try uploads it and the message goes out.
-    std::fs::rename(&away, pi.blob_dir()).check("mount the drive");
+    std::fs::rename(&away, server.blob_dir()).check("mount the drive");
     wait_accepted(&mut alice, id).await;
     let received = wait_image(&mut bob).await;
     assert!(bob.client.download_image(received.id).await.is_ok());
@@ -304,10 +307,10 @@ async fn while_the_pis_drive_is_away_the_image_waits_and_nothing_is_sent() {
 // spec: client-runtime/blob-crypto-and-send-order
 #[tokio::test(flavor = "multi_thread")]
 async fn a_queued_image_whose_picture_is_gone_fails_and_the_chat_goes_on() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     alice.client.stop();
-    pi.wait_offline_recorded(&alice.device_id()).await;
+    server.wait_offline_recorded(&alice.device_id()).await;
     let id = alice
         .client
         .send_image(&picture(100, 100), None, &[])
@@ -321,7 +324,7 @@ async fn a_queued_image_whose_picture_is_gone_fails_and_the_chat_goes_on() {
     let reason = wait_failed(&mut alice, id).await;
     assert!(reason.contains("no longer on this device"), "{reason}");
     // Nothing was sent for it, and the text behind it was not lost.
-    assert!(pi.blobs().is_empty());
+    assert!(server.blobs().is_empty());
     wait_accepted(&mut alice, text).await;
     let received = wait_text_in(&mut bob, "still here").await;
     assert_eq!(received.body, MessageBody::Text("still here".to_owned()));
@@ -331,10 +334,10 @@ async fn a_queued_image_whose_picture_is_gone_fails_and_the_chat_goes_on() {
 // spec: client-runtime/blob-crypto-and-send-order
 #[tokio::test(flavor = "multi_thread")]
 async fn an_image_that_waited_longer_than_a_blob_lives_is_not_sent() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, _bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, _bob) = chat(&server).await;
     alice.client.stop();
-    pi.wait_offline_recorded(&alice.device_id()).await;
+    server.wait_offline_recorded(&alice.device_id()).await;
     let id = alice
         .client
         .send_image(&picture(100, 100), None, &[])
@@ -348,7 +351,7 @@ async fn an_image_that_waited_longer_than_a_blob_lives_is_not_sent() {
     alice.client.start().await.check("start");
     let reason = wait_failed(&mut alice, id).await;
     assert!(reason.contains("in time"), "{reason}");
-    assert!(pi.blobs().is_empty());
+    assert!(server.blobs().is_empty());
 }
 
 async fn wait_text_in(device: &mut Device, text: &str) -> Message {
@@ -369,8 +372,8 @@ async fn wait_text_in(device: &mut Device, text: &str) -> Message {
 // spec: message-content/image-caption-and-mentions
 #[tokio::test(flavor = "multi_thread")]
 async fn a_bad_picture_or_caption_is_refused_before_anything_is_uploaded() {
-    let pi = TestPi::start().await;
-    let (_admin, alice, _bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, alice, _bob) = chat(&server).await;
 
     let not_an_image = alice.client.send_image(b"hello", None, &[]).await;
     assert!(
@@ -399,15 +402,15 @@ async fn a_bad_picture_or_caption_is_refused_before_anything_is_uploaded() {
         .await;
     assert!(matches!(refused, Err(ClientError::TooLong)), "{refused:?}");
 
-    assert!(pi.blobs().is_empty(), "nothing was uploaded");
+    assert!(server.blobs().is_empty(), "nothing was uploaded");
     assert!(alice.client.history(100).check("history").is_empty());
 }
 
 // spec: client-runtime/expired-media
 #[tokio::test(flavor = "multi_thread")]
 async fn an_expired_picture_shows_as_expired_and_the_sender_can_resend_it() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     let id = alice
         .client
         .send_image(&picture(320, 240), Some("old news"), &[])
@@ -417,12 +420,13 @@ async fn an_expired_picture_shows_as_expired_and_the_sender_can_resend_it() {
     let received = wait_image(&mut bob).await;
     let first_blob = image_of(&received).blob_id;
 
-    // The Pi's 7 days are up. (The Pi's own tests move its clock; here the
+    // The server's 7 days are up. (The server's own tests move its clock; here the
     // blob's expiry is brought forward, so no session token runs out too.)
-    pi.query(|db| db.execute("UPDATE blobs SET expires_at = 1", []))
+    server
+        .query(|db| db.execute("UPDATE blobs SET expires_at = 1", []))
         .await;
-    pi.sweep().await;
-    assert!(pi.blobs().is_empty(), "the Pi deleted it");
+    server.sweep().await;
+    assert!(server.blobs().is_empty(), "the server deleted it");
 
     // Bob finds out when he opens it, and is told so from then on.
     let opened = bob.client.download_image(received.id).await;
@@ -463,8 +467,8 @@ async fn an_expired_picture_shows_as_expired_and_the_sender_can_resend_it() {
 // spec: client-runtime/expired-media
 #[tokio::test(flavor = "multi_thread")]
 async fn only_a_picture_this_device_has_can_be_resent() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (_admin, mut alice, mut bob) = chat(&server).await;
     let id = alice
         .client
         .send_image(&picture(64, 64), None, &[])
@@ -489,9 +493,9 @@ async fn only_a_picture_this_device_has_can_be_resent() {
 
 // spec: message-content/image-messages-stay-encrypted
 #[tokio::test(flavor = "multi_thread")]
-async fn the_pi_sees_ciphertext_and_wakes_bob_like_for_any_message() {
-    let pi = TestPi::start().await;
-    let (_admin, mut alice, bob) = chat(&pi).await;
+async fn the_server_sees_ciphertext_and_wakes_bob_like_for_any_message() {
+    let server = TestServer::start().await;
+    let (_admin, mut alice, bob) = chat(&server).await;
     bob.client
         .set_push_token(Some(PushToken {
             platform: PushPlatform::Fcm,
@@ -500,7 +504,7 @@ async fn the_pi_sees_ciphertext_and_wakes_bob_like_for_any_message() {
         .await
         .check("token");
     bob.client.stop();
-    pi.wait_offline_recorded(&bob.device_id()).await;
+    server.wait_offline_recorded(&bob.device_id()).await;
 
     let id = alice
         .client
@@ -511,18 +515,18 @@ async fn the_pi_sees_ciphertext_and_wakes_bob_like_for_any_message() {
 
     // One ping: Bob's id and token, and the providers' fixed "New message".
     let bob_id = bob.device_id();
-    let deadline = tokio::time::Instant::now() + support::pi::WAIT;
-    while pi.pushes.count(&bob_id) == 0 {
+    let deadline = tokio::time::Instant::now() + support::server::WAIT;
+    while server.pushes.count(&bob_id) == 0 {
         assert!(
             tokio::time::Instant::now() < deadline,
             "no wake ping for Bob"
         );
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
-    assert_eq!(pi.pushes.sent(), [(bob_id, "bob-token".to_owned())]);
+    assert_eq!(server.pushes.sent(), [(bob_id, "bob-token".to_owned())]);
 
     // The envelope holds neither the caption nor any picture bytes.
-    let rows: Vec<Vec<u8>> = pi
+    let rows: Vec<Vec<u8>> = server
         .query(|db| {
             let mut statement = db.prepare("SELECT ciphertext FROM envelopes WHERE kind = 1")?;
             statement.query_map([], |row| row.get(0))?.collect()
@@ -535,9 +539,9 @@ async fn the_pi_sees_ciphertext_and_wakes_bob_like_for_any_message() {
     }
 
     // The blob is ciphertext: no WebP header, nothing readable.
-    let blobs = pi.blobs();
+    let blobs = server.blobs();
     assert_eq!(blobs.len(), 1);
-    let bytes = std::fs::read(pi.blob_dir().join(&blobs[0])).check("blob file");
+    let bytes = std::fs::read(server.blob_dir().join(&blobs[0])).check("blob file");
     assert!(!support::contains(&bytes, b"RIFF"));
     assert!(!support::contains(&bytes, b"WEBP"));
     assert!(!support::contains(&bytes, b"a secret caption"));
@@ -546,8 +550,8 @@ async fn the_pi_sees_ciphertext_and_wakes_bob_like_for_any_message() {
 // spec: message-content/image-messages
 #[tokio::test(flavor = "multi_thread")]
 async fn a_picture_in_a_dm_reaches_only_the_peer() {
-    let pi = TestPi::start().await;
-    let (mut admin, mut alice, mut bob) = chat(&pi).await;
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
     let dm: ChatId = alice.client.open_dm(&user("bob")).await.check("open DM");
     alice
         .wait_until("Bob's devices in the DM", |c| {

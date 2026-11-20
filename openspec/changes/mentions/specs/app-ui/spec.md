@@ -11,7 +11,7 @@ The client enforces this.
 #### Scenario: Alice mentions Bob
 - **WHEN** Alice types "hi @bo" and picks "Bobby (bob)"
 - **THEN** the composer shows "hi @Bobby " and sending calls the core with a
-  mention of `bob@pi` over "@Bobby"
+  mention of `bob@chat` over "@Bobby"
 
 #### Scenario: Everyone
 - **WHEN** Carol types "@" and picks "everyone"

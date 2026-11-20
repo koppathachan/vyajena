@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use server::membership::GroupState;
 use support::clients::TestDevice;
-use support::harness::{Conn, TestPi, authed};
+use support::harness::{Conn, TestServer, authed};
 use support::messaging::{
     Stream, World, add_over_stream, commit_envelope, offline, receive, reconnect, say,
     wait_offline, world,
@@ -19,21 +19,23 @@ use support::{Check, invite_user, link_device, pb};
 
 const DAY: Duration = Duration::from_secs(24 * 3600);
 
-async fn queued(pi: &TestPi, device: &TestDevice) -> i64 {
+async fn queued(server: &TestServer, device: &TestDevice) -> i64 {
     let id = device.device_id.to_vec();
-    pi.query(move |db| {
-        db.query_row(
-            "SELECT count(*) FROM deliveries WHERE device_id = ?1",
-            [id],
-            |r| r.get(0),
-        )
-    })
-    .await
+    server
+        .query(move |db| {
+            db.query_row(
+                "SELECT count(*) FROM deliveries WHERE device_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+        })
+        .await
 }
 
-async fn is_member(pi: &TestPi, device: &TestDevice) -> bool {
+async fn is_member(server: &TestServer, device: &TestDevice) -> bool {
     let id = device.device_id;
-    pi.state
+    server
+        .state
         .store
         .call(|db| GroupState::main_members(db))
         .await
@@ -42,8 +44,9 @@ async fn is_member(pi: &TestPi, device: &TestDevice) -> bool {
         .any(|m| m.device_id == id)
 }
 
-async fn inactive_count(pi: &TestPi) -> i64 {
-    pi.query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
+async fn inactive_count(server: &TestServer) -> i64 {
+    server
+        .query(|db| db.query_row("SELECT count(*) FROM inactive_devices", [], |r| r.get(0)))
         .await
 }
 
@@ -55,27 +58,27 @@ async fn phone_in_drawer(
     others: &mut [(&mut TestDevice, &mut Stream)],
 ) -> SystemTime {
     w.phone_stream = offline(&w.conn, &w.phone).await;
-    wait_offline(&w.pi, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
     say(
         &mut w.admin,
         &mut w.admin_stream,
         b"M, which the phone misses",
     )
     .await;
-    let m_at = w.pi.clock_now();
+    let m_at = w.server.clock_now();
     receive(&mut w.laptop_stream, &mut w.laptop).await;
     for (device, stream) in others.iter_mut() {
         receive(stream, device).await;
     }
 
-    w.pi.clock.advance(4 * DAY);
+    w.server.clock.advance(4 * DAY);
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
     w.laptop_stream = reconnect(&w.conn, &mut w.laptop).await;
     for (device, stream) in others.iter_mut() {
         **stream = reconnect(&w.conn, device).await;
     }
-    w.pi.clock.advance(3 * DAY + Duration::from_secs(60));
-    w.pi.sweep().await;
+    w.server.clock.advance(3 * DAY + Duration::from_secs(60));
+    w.server.sweep().await;
     m_at
 }
 
@@ -86,10 +89,11 @@ async fn phone_left_in_a_drawer_is_proposed_for_removal() {
     let m_at = phone_in_drawer(&mut w, &mut []).await;
 
     // Inactive, its queue deleted, nothing more queued for it.
-    assert_eq!(inactive_count(&w.pi).await, 1);
-    assert_eq!(queued(&w.pi, &w.phone).await, 0);
-    let missed: i64 =
-        w.pi.query(|db| {
+    assert_eq!(inactive_count(&w.server).await, 1);
+    assert_eq!(queued(&w.server, &w.phone).await, 0);
+    let missed: i64 = w
+        .server
+        .query(|db| {
             db.query_row("SELECT missed_since FROM inactive_devices", [], |r| {
                 r.get(0)
             })
@@ -97,7 +101,7 @@ async fn phone_left_in_a_drawer_is_proposed_for_removal() {
         .await;
     assert_eq!(missed, server::runtime::clock::unix_millis(m_at));
 
-    // The Pi's external Remove reaches the members, signed by no member.
+    // The server's external Remove reaches the members, signed by no member.
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
     let proposal = receive(&mut w.admin_stream, &mut w.admin).await;
     assert_eq!(proposal.kind, Kind::Proposal as i32);
@@ -109,7 +113,7 @@ async fn phone_left_in_a_drawer_is_proposed_for_removal() {
 
     // Until the Remove is committed, nothing is queued for the phone.
     say(&mut w.laptop, &mut w.laptop_stream, b"M2").await;
-    assert_eq!(queued(&w.pi, &w.phone).await, 0);
+    assert_eq!(queued(&w.server, &w.phone).await, 0);
     receive(&mut w.admin_stream, &mut w.admin).await;
 
     // Any member device may commit it: here Alice's laptop.
@@ -120,14 +124,14 @@ async fn phone_left_in_a_drawer_is_proposed_for_removal() {
         .accepted(commit_envelope(epoch, commit, None))
         .await;
     w.laptop.confirm();
-    assert!(!is_member(&w.pi, &w.phone).await);
+    assert!(!is_member(&w.server, &w.phone).await);
     receive(&mut w.admin_stream, &mut w.admin).await;
     assert_eq!(w.admin.epoch(), w.laptop.epoch());
 }
 
 // spec: group-membership/inactive-devices-are-kept-out
 #[tokio::test]
-async fn pi_reissues_its_remove_in_each_new_epoch() {
+async fn server_reissues_its_remove_in_each_new_epoch() {
     let mut w = world().await;
     phone_in_drawer(&mut w, &mut []).await;
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
@@ -146,9 +150,9 @@ async fn pi_reissues_its_remove_in_each_new_epoch() {
         .accepted(commit_envelope(epoch, update, None))
         .await;
     w.laptop.confirm();
-    assert!(is_member(&w.pi, &w.phone).await);
+    assert!(is_member(&w.server, &w.phone).await);
 
-    // The Pi proposes again in the new epoch.
+    // The server proposes again in the new epoch.
     let commit = receive(&mut w.admin_stream, &mut w.admin).await;
     assert_eq!(commit.server_seq, commit_seq);
     let again = receive(&mut w.admin_stream, &mut w.admin).await;
@@ -161,7 +165,7 @@ async fn pi_reissues_its_remove_in_each_new_epoch() {
         .accepted(commit_envelope(epoch + 1, commit, None))
         .await;
     w.admin.confirm();
-    assert!(!is_member(&w.pi, &w.phone).await);
+    assert!(!is_member(&w.server, &w.phone).await);
 }
 
 async fn fetch_phone(
@@ -213,9 +217,9 @@ fn rejoin_for(frame: Out) -> pb::DeviceRef {
 async fn back_from_holiday_the_admin_re_adds_the_phone() {
     let mut w = world().await;
     let m_at = phone_in_drawer(&mut w, &mut []).await;
-    w.pi.clock.advance(3 * DAY);
+    w.server.clock.advance(3 * DAY);
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
-    receive(&mut w.admin_stream, &mut w.admin).await; // the Pi's Remove
+    receive(&mut w.admin_stream, &mut w.admin).await; // the server's Remove
 
     // Bob's phone comes back after 10 days.
     w.phone.authenticate(&w.conn).await;
@@ -242,11 +246,11 @@ async fn back_from_holiday_the_admin_re_adds_the_phone() {
     let got = receive(&mut w.phone_stream, &mut w.phone).await;
     assert_eq!(got.kind, Kind::Welcome as i32);
     assert_eq!(got.server_seq, seq);
-    assert_eq!(inactive_count(&w.pi).await, 0);
+    assert_eq!(inactive_count(&w.server).await, 0);
     say(&mut w.admin, &mut w.admin_stream, b"welcome back").await;
     let got = w.phone_stream.envelope().await;
     assert_eq!(w.phone.read_message(&got.ciphertext), b"welcome back");
-    assert!(is_member(&w.pi, &w.phone).await);
+    assert!(is_member(&w.server, &w.phone).await);
 }
 
 // spec: group-membership/automatic-re-add
@@ -272,11 +276,11 @@ async fn two_devices_race_to_re_add_and_the_loser_is_stale() {
     tablet_stream.sync().await;
 
     phone_in_drawer(&mut w, &mut [(&mut tablet, &mut tablet_stream)]).await;
-    w.pi.clock.advance(DAY);
+    w.server.clock.advance(DAY);
     w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
     tablet_stream = reconnect(&w.conn, &mut tablet).await;
-    receive(&mut w.admin_stream, &mut w.admin).await; // the Pi's Remove
-    receive(&mut tablet_stream, &mut tablet).await; // the Pi's Remove
+    receive(&mut w.admin_stream, &mut w.admin).await; // the server's Remove
+    receive(&mut tablet_stream, &mut tablet).await; // the server's Remove
 
     w.phone.authenticate(&w.conn).await;
     w.phone_stream = Stream::open(&w.conn, &w.phone).await;
@@ -322,7 +326,7 @@ async fn two_devices_race_to_re_add_and_the_loser_is_stale() {
     // The admin processes the winning commit and sees the phone is back.
     receive(&mut w.admin_stream, &mut w.admin).await;
     assert_eq!(w.admin.epoch(), epoch + 1);
-    assert!(is_member(&w.pi, &w.phone).await);
+    assert!(is_member(&w.server, &w.phone).await);
 }
 
 // spec: group-membership/automatic-re-add
@@ -330,12 +334,12 @@ async fn two_devices_race_to_re_add_and_the_loser_is_stale() {
 async fn nobody_able_to_re_add_is_online_so_it_waits() {
     let mut w = world().await;
     phone_in_drawer(&mut w, &mut []).await;
-    w.pi.clock.advance(DAY);
+    w.server.clock.advance(DAY);
     // The admin's and laptop's streams idle out; nobody who can re-add is on.
-    wait_offline(&w.pi, &w.admin).await;
-    wait_offline(&w.pi, &w.laptop).await;
+    wait_offline(&w.server, &w.admin).await;
+    wait_offline(&w.server, &w.laptop).await;
     w.laptop_stream = reconnect(&w.conn, &mut w.laptop).await;
-    receive(&mut w.laptop_stream, &mut w.laptop).await; // the Pi's Remove
+    receive(&mut w.laptop_stream, &mut w.laptop).await; // the server's Remove
 
     w.phone.authenticate(&w.conn).await;
     w.phone_stream = Stream::open(&w.conn, &w.phone).await;
@@ -352,7 +356,7 @@ async fn nobody_able_to_re_add_is_online_so_it_waits() {
         rejoin_for(w.admin_stream.next().await),
         w.phone.device_ref()
     );
-    receive(&mut w.admin_stream, &mut w.admin).await; // the Pi's Remove
+    receive(&mut w.admin_stream, &mut w.admin).await; // the server's Remove
     let key_packages = fetch_phone(&w.conn, &w.admin, &w.bob, &w.phone).await;
     let epoch = w.admin.epoch();
     let (commit, welcome) = w.admin.add(&key_packages);

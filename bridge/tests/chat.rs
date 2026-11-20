@@ -10,7 +10,7 @@ use bridge::api::types::{ChatBody, ChatMessage, CoreEvent, SendState};
 use client::messaging::MAX_CONTENT_BYTES;
 use support::Check;
 use support::device::{self, Device, user};
-use support::pi::{ADMIN, TestPi};
+use support::server::{ADMIN, TestServer};
 
 fn text_of(message: &ChatMessage) -> &str {
     match &message.body {
@@ -54,8 +54,8 @@ fn history(device: &Device) -> Vec<String> {
 // spec: app-ui/chat-screen
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_and_bob_chat_and_alice_sees_hi_go_from_sending_to_accepted() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice
@@ -97,8 +97,8 @@ async fn alice_and_bob_chat_and_alice_sees_hi_go_from_sending_to_accepted() {
 // spec: client-runtime/events-in-order
 #[tokio::test(flavor = "multi_thread")]
 async fn messages_reach_the_bridge_in_the_core_order() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     let words = ["one", "two", "three", "four", "five"];
     let sent: Vec<i64> = words
@@ -108,7 +108,7 @@ async fn messages_reach_the_bridge_in_the_core_order() {
     for word in words {
         wait_text(&mut bob, word).await;
     }
-    // Bob can see a message before its sender hears the Pi accepted it.
+    // Bob can see a message before its sender hears the server accepted it.
     for id in &sent {
         wait_accepted(&mut admin, *id).await;
     }
@@ -147,8 +147,8 @@ async fn text_over_the_limit_is_refused_before_sending() {
     let long = "x".repeat(MAX_CONTENT_BYTES + 1);
     assert!(!text_fits(long.clone()));
 
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let error = admin.core.send_text(long).expect_err("too long");
     assert_eq!(error.kind, CoreErrorKind::TooLong);
     assert!(history(&admin).is_empty());
@@ -157,8 +157,8 @@ async fn text_over_the_limit_is_refused_before_sending() {
 // spec: app-ui/profile-and-members
 #[tokio::test(flavor = "multi_thread")]
 async fn alice_renames_herself_and_bob_sees_ali_alice() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let alice = device::member_of_group(&admin, "alice").await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     alice
@@ -199,8 +199,8 @@ async fn alice_renames_herself_and_bob_sees_ali_alice() {
 // spec: app-ui/admin-screens
 #[tokio::test(flavor = "multi_thread")]
 async fn admin_calls_work_for_the_admin_and_not_for_bob() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let bob = device::member_of_group(&admin, "bob").await;
 
     let invite = admin

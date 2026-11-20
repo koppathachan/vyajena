@@ -24,12 +24,12 @@ const waitingText =
 const refusedText =
     "Your phone couldn't open the admin's invitation to the group.";
 
-/// ... once the core asked the Pi to be added again (group-membership:
+/// ... once the core asked the server to be added again (group-membership:
 /// Re-add after an unusable Welcome).
 const readdAskedText =
     'It has asked to be added again; this happens on its own.';
 
-/// ... once it asked too often today (the Pi's daily limit).
+/// ... once it asked too often today (the server's daily limit).
 const readdLimitText =
     'It has asked to be added again too often today and now waits for the '
     'admin.';

@@ -8,15 +8,15 @@ use crate::device_identity::{ED25519_PUBLIC_KEY_LEN, ED25519_SIGNATURE_LEN};
 
 /// The protocol version this contract defines, sent in `Hello.protocol_version`
 /// and listed in `ServerInfo.supported_protocol_versions`
-/// (Protocol version negotiation). Version 2 adds DMs (change `dms`): a Pi that
+/// (Protocol version negotiation). Version 2 adds DMs (change `dms`): a server that
 /// lists it knows the `Dms` service. On the stream both versions behave the
 /// same.
 pub const PROTOCOL_VERSION: u32 = 2;
 
-/// Every version the Pi accepts in `Hello`: version 1 is what 1.0.0 apps speak.
+/// Every version the server accepts in `Hello`: version 1 is what 1.0.0 apps speak.
 pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 2] = [1, 2];
 
-/// The version a client speaks to a Pi that lists `supported`: the highest
+/// The version a client speaks to a server that lists `supported`: the highest
 /// one this contract knows, or `None` if they share none.
 pub fn negotiate_protocol_version(supported: &[u32]) -> Option<u32> {
     SUPPORTED_PROTOCOL_VERSIONS
@@ -26,8 +26,8 @@ pub fn negotiate_protocol_version(supported: &[u32]) -> Option<u32> {
         .copied()
 }
 
-/// Whether a Pi that lists `supported` knows DMs (direct-messages).
-pub fn pi_knows_dms(supported: &[u32]) -> bool {
+/// Whether a server that lists `supported` knows DMs (direct-messages).
+pub fn server_knows_dms(supported: &[u32]) -> bool {
     supported.contains(&2)
 }
 
@@ -49,8 +49,10 @@ pub const AUTHORIZATION_METADATA_KEY: &str = "authorization";
 /// Scheme prefix of the `authorization` value: `Bearer <session_token>`.
 pub const AUTHORIZATION_BEARER_PREFIX: &str = "Bearer ";
 
-/// Upper bound on a session token's lifetime (Session authentication).
-pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(60 * 60);
+/// Upper bound on a session token's lifetime (Session authentication): six
+/// hours, so a token saved in the key store survives an app being backgrounded
+/// and reopened through a working day (change `resume-across-restart`).
+pub const SESSION_TOKEN_MAX_LIFETIME: Duration = Duration::from_secs(6 * 60 * 60);
 
 /// Length of a challenge nonce from `Devices.GetChallenge`
 /// (Session authentication).
@@ -72,7 +74,7 @@ pub const MAX_HANDSHAKE_ENVELOPE_BYTES: usize = 262_144;
 /// (Heartbeats).
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(25);
 
-/// The Pi closes a stream that has received nothing for this long (Heartbeats).
+/// The server closes a stream that has received nothing for this long (Heartbeats).
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// The exact bytes a device auth key signs to answer a challenge:

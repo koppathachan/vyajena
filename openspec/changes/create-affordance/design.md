@@ -9,7 +9,7 @@ admin can only create the group on first start (`GroupGate` → `CreateGroupScre
 The core already exposes everything this needs over `flutter_rust_bridge`:
 `CoreService.chats()`, `openDm(user)`, `createGroup()`, `isAdmin()`,
 `dmsAvailable()`, `members()`. This change is UI only (`app/lib/`); no proto,
-core, Pi, or relay change, and no invariant touched.
+core, server, or relay change, and no invariant touched.
 
 Relevant current code:
 - `app/lib/chat/group_gate.dart` picks the home: `ChatListScreen` when `_hasDms`,
@@ -29,7 +29,7 @@ Relevant current code:
 - The members-list / profile "Message" path keeps working unchanged.
 
 **Non-Goals:**
-- No change to how DMs or groups work in the core, Pi, or wire protocol.
+- No change to how DMs or groups work in the core, server, or wire protocol.
 - No multi-group model: the MVP is one admin-run group (see D4).
 - No change to the chat-list row contents (unread marks, mentions, closed DMs)
   beyond what the `dms` change already ships.
@@ -60,7 +60,7 @@ from two booleans it already has or loads: `dmsAvailable()` (loaded beside
   available actions: New DM when `dmsAvailable`, New group when `admin`. A single
   available action still appears as a one-item menu, so the affordance is
   consistent and the "opens the + menu" scenario holds.
-- Neither available → no FAB (a non-admin on a protocol-v1 Pi).
+- Neither available → no FAB (a non-admin on a protocol-v1 server).
 
 New DM opens a member picker (`showModalBottomSheet` listing the other members
 from `members()`, deduped by user, excluding this device's own user), then calls
@@ -78,7 +78,7 @@ current one-group MVP the admin's group already exists by the time the chat list
 is the home (the gate shows `CreateGroupScreen` first otherwise), so New group is
 primarily future-facing and simply calls `createGroup()`. It is gated by
 `isAdmin()` so only the admin ever sees it; non-admin group RPCs are rejected by
-the Pi regardless (app-ui: Admin screens). See Open Questions.
+the server regardless (app-ui: Admin screens). See Open Questions.
 
 ## Risks / Trade-offs
 

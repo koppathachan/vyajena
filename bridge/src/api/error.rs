@@ -8,12 +8,12 @@ pub enum CoreErrorKind {
     KeyStore,
     /// The local database failed.
     Storage,
-    /// The Pi presented a TLS key that does not match the invite's pin
+    /// The server presented a TLS key that does not match the invite's pin
     /// (app-ui: Join from an invite, "server identity error").
     ServerIdentity,
-    /// The Pi could not be reached, or answered something unexpected.
+    /// The server could not be reached, or answered something unexpected.
     Network,
-    /// The Pi refused the call (for example a used or expired invite, or an
+    /// The server refused the call (for example a used or expired invite, or an
     /// admin call from a non-admin device).
     Refused,
     /// Text that is not an invite, link request or link approval, or one of
@@ -31,7 +31,7 @@ pub enum CoreErrorKind {
     NotIdentityDevice,
     /// `complete_link` without `link_request` first.
     NoLinkRequest,
-    /// The Pi is not the one the invite or approval names.
+    /// The server is not the one the invite or approval names.
     ServerMismatch,
     /// This device is not in the group.
     NoGroup,
@@ -43,11 +43,11 @@ pub enum CoreErrorKind {
     IdentityKeyChanged,
     /// A certificate or KeyPackage did not check out.
     Certificate,
-    /// The Pi knows no such user.
+    /// The server knows no such user.
     UnknownUser,
     /// The user has no KeyPackages yet.
     NoKeyPackages,
-    /// The commit would be larger than the Pi accepts.
+    /// The commit would be larger than the server accepts.
     TooLarge,
     /// The text is longer than a message may be (app-ui: Composer limit).
     TooLong,
@@ -55,7 +55,7 @@ pub enum CoreErrorKind {
     InvalidMention,
     /// No stored chat message has that id (client-runtime: Reply lookup).
     NoSuchMessage,
-    /// The Pi rejected the commit.
+    /// The server rejected the commit.
     Rejected,
     /// Not possible yet; the core retries.
     NotYet,
@@ -63,14 +63,14 @@ pub enum CoreErrorKind {
     NoSuchChat,
     /// The DM is closed: its peer was removed.
     ChatClosed,
-    /// The Pi does not support DMs yet.
+    /// The server does not support DMs yet.
     DmsUnavailable,
     /// The picked file is not an image the app can send (JPEG, PNG, GIF or
     /// WebP).
     ImageUnsupported,
     /// The image cannot be made small enough to send.
     ImageTooLarge,
-    /// The Pi no longer has the picture (client-runtime: Expired media).
+    /// The server no longer has the picture (client-runtime: Expired media).
     MediaExpired,
     /// This device no longer has the picture to resend.
     MediaNotOnDevice,

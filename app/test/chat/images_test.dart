@@ -18,13 +18,13 @@ FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
     MemberDevice(user: bob, device: '03'),
   ]
   ..displayNames = {
-    'alice@pi': 'Ali (alice)',
-    'bob@pi': 'Bobby (bob)',
-    'akhil@pi': 'akhil',
+    'alice@chat': 'Ali (alice)',
+    'bob@chat': 'Bobby (bob)',
+    'akhil@chat': 'akhil',
   }
   ..profiles = {
-    'alice@pi': const ProfileInfo(displayName: 'Ali'),
-    'bob@pi': const ProfileInfo(displayName: 'Bobby'),
+    'alice@chat': const ProfileInfo(displayName: 'Ali'),
+    'bob@chat': const ProfileInfo(displayName: 'Bobby'),
   };
 
 final composer = find.byKey(const Key('composer'));

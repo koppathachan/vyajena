@@ -1,7 +1,7 @@
 //! group-membership: Re-add after an unusable Welcome, the core's side, end
-//! to end against the real Pi (welcome-recovery task 4.2). Bob's phone loses
+//! to end against the real server (welcome-recovery task 4.2). Bob's phone loses
 //! the private keys of the KeyPackages it uploaded (what the iPhone in
-//! design D1 may have hit), refuses the Welcome that adds it, asks the Pi to
+//! design D1 may have hit), refuses the Welcome that adds it, asks the server to
 //! be added again, and the admin's device re-adds it with no one tapping
 //! anything.
 
@@ -10,7 +10,7 @@ mod support;
 use client::{Event, ReaddOutcome, SendStatus};
 use support::Check;
 use support::device::{self, member};
-use support::pi::TestPi;
+use support::server::TestServer;
 
 fn joined(e: &Event) -> bool {
     matches!(e, Event::JoinedGroup)
@@ -36,11 +36,11 @@ fn lose_key_package_keys(dir: &std::path::Path) {
 // spec: group-membership/re-add-after-an-unusable-welcome
 #[tokio::test(flavor = "multi_thread")]
 async fn bobs_phone_refuses_its_welcome_and_is_re_added() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::invited_while_admin_away(&admin, "bob").await;
 
-    // At start, with no group, Bob's core asks; the Pi has not added him
+    // At start, with no group, Bob's core asks; the server has not added him
     // yet, so nothing changes and he waits for his first add.
     bob.wait_event(
         "the start ask: not a member yet",
@@ -95,8 +95,8 @@ async fn bobs_phone_refuses_its_welcome_and_is_re_added() {
 // spec: group-membership/re-add-after-an-unusable-welcome
 #[tokio::test(flavor = "multi_thread")]
 async fn a_member_asks_nothing_at_start() {
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     bob.restart().await;
     bob.wait_connected().await;
@@ -109,8 +109,8 @@ async fn a_member_asks_nothing_at_start() {
 // spec: device-identity/fresh-keys-for-a-new-signup
 #[tokio::test(flavor = "multi_thread")]
 async fn bob_reinstalls_after_the_admin_removed_him_and_joins_again() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let bob = device::member_of_group(&admin, "bob").await;
     let old_id = bob.device_id();
     admin
@@ -158,8 +158,8 @@ async fn bob_reinstalls_after_the_admin_removed_him_and_joins_again() {
 #[tokio::test(flavor = "multi_thread")]
 async fn linking_after_a_reinstall_starts_with_new_keys_and_no_identity_key() {
     use client::keystore::{KeyName, KeyStore as _};
-    let pi = TestPi::start().await;
-    let admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
     let bob = device::member_of_group(&admin, "bob").await;
     let old_auth = bob
         .keys
@@ -183,16 +183,16 @@ async fn linking_after_a_reinstall_starts_with_new_keys_and_no_identity_key() {
 // spec: client-runtime/local-message-store
 #[tokio::test(flavor = "multi_thread")]
 async fn a_welcome_delivered_again_after_a_crash_is_not_refused() {
-    let pi = TestPi::start().await;
-    let mut admin = device::admin_with_group(&pi).await;
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
     let mut bob = device::member_of_group(&admin, "bob").await;
     // Bob's phone joined from its Welcome; the network drops and the phone
-    // restarts before its ACK reaches the Pi, which delivers the Welcome
+    // restarts before its ACK reaches the server, which delivers the Welcome
     // again. Bob is already in: no refusal, no re-add.
-    pi.relay.cut();
+    server.relay.cut();
     bob.restart().await;
     let id = admin.client.send_text("still there?").check("send");
-    pi.relay.restore();
+    server.relay.restore();
     admin
         .wait_event(
             "accepted",

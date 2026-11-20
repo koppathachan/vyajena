@@ -51,7 +51,7 @@ this device. The admin's device SHALL offer to accept a changed key, which calls
   and then the new messages
 
 #### Scenario: Key changed
-- **WHEN** the core emits `IdentityKeyChanged` for `bob@pi`
+- **WHEN** the core emits `IdentityKeyChanged` for `bob@chat`
 - **THEN** every member sees a warning in the chat that Bob's key changed
 
 #### Scenario: Bob is removed

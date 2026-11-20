@@ -1,0 +1,31 @@
+# The deployment's real network settings. COPY this file to
+# ~/.vyajena-relay/network.conf (outside the repository, mode 0600) and put your
+# own values there; the repository never holds the real ones (change
+# generic-deployment). Read by deploy/network.sh, which every script in
+# deploy/relay/ and deploy/server/ sources. Plain KEY=value lines only.
+#
+# The values below are examples (reserved documentation addresses and
+# arbitrary ports). Pick your own ports; leave the default 443 and 22 alone.
+
+# --- the host that runs the server -------------------------------------------
+# SSH target, user@address. The address is the host's static LAN address.
+SERVER=admin@192.0.2.10
+# The home network the host sits on: SSH is allowed only from here.
+HOME_LAN=192.0.2.0/24
+# The network's router, which the egress proxy may ask for DNS.
+ROUTER=192.0.2.1
+# The chat admin's username, fixed in the server config at its first start.
+ADMIN_USERNAME=admin
+# Loopback ports on the host (never reachable from outside).
+SERVER_PORT=40101
+REVIEW_SERVER_PORT=40102
+EGRESS_PORT=40103
+
+# --- the relay ------------------------------------------------------------------
+# Public ports on the relay VM besides 443: the host's tunnel and the review server.
+TUNNEL_PORT=40201
+REVIEW_PORT=40202
+# The relay's subnet (it must not overlap another subnet of the same VPC) and
+# Google's IAP range, the only source allowed to SSH.
+SUBNET_RANGE=192.0.2.0/28
+IAP_RANGE=198.51.100.0/24

@@ -1,5 +1,5 @@
 //! wire-transport: Single persistent messaging stream; Heartbeats; Protocol
-//! version negotiation; Size limits (the Pi's side); device-identity: Device
+//! version negotiation; Size limits (the server's side); device-identity: Device
 //! revocation (its open stream closes). All over `Messaging.Connect`.
 
 mod support;
@@ -17,8 +17,9 @@ use support::pb::server_frame::Frame as Out;
 use tonic::Code;
 
 /// The last `server_seq` handed out: unchanged means nothing was stored.
-async fn envelope_count(pi: &support::harness::TestPi) -> i64 {
-    pi.query(|db| db.query_row("SELECT last_server_seq FROM sequence", [], |r| r.get(0)))
+async fn envelope_count(server: &support::harness::TestServer) -> i64 {
+    server
+        .query(|db| db.query_row("SELECT last_server_seq FROM sequence", [], |r| r.get(0)))
         .await
 }
 
@@ -67,7 +68,7 @@ async fn one_stream_carries_sends_results_deliveries_and_acks() {
 
 // spec: wire-transport/heartbeats
 #[tokio::test]
-async fn pi_replies_to_each_heartbeat() {
+async fn server_replies_to_each_heartbeat() {
     let mut w = world().await;
     for _ in 0..3 {
         w.phone_stream.send(In::Heartbeat(pb::Heartbeat {})).await;
@@ -80,20 +81,20 @@ async fn pi_replies_to_each_heartbeat() {
 async fn silent_client_is_closed_after_90_seconds_and_treated_as_offline() {
     let mut w = world().await;
     // Activity within 90 seconds keeps the stream open.
-    w.pi.clock.advance(Duration::from_secs(60));
+    w.server.clock.advance(Duration::from_secs(60));
     w.phone_stream.send(In::Heartbeat(pb::Heartbeat {})).await;
     assert!(matches!(w.phone_stream.next().await, Out::Heartbeat(_)));
-    w.pi.clock.advance(Duration::from_secs(60));
+    w.server.clock.advance(Duration::from_secs(60));
     tokio::time::sleep(Duration::from_millis(1500)).await;
     w.phone_stream.send(In::Heartbeat(pb::Heartbeat {})).await;
     assert!(matches!(w.phone_stream.next().await, Out::Heartbeat(_)));
 
-    // Nothing for 90 seconds: the Pi closes the stream.
-    w.pi.clock.advance(Duration::from_secs(90));
+    // Nothing for 90 seconds: the server closes the stream.
+    w.server.clock.advance(Duration::from_secs(90));
     let ended = w.phone_stream.ended().await;
     assert_eq!(ended.err().map(|s| s.code()), Some(Code::Unavailable));
-    // The Pi unregisters the stream just after ending it.
-    wait_offline(&w.pi, &w.phone).await;
+    // The server unregisters the stream just after ending it.
+    wait_offline(&w.server, &w.phone).await;
 }
 
 // spec: wire-transport/protocol-version-negotiation
@@ -191,14 +192,14 @@ async fn connect_needs_a_session_token() {
 #[tokio::test]
 async fn oversized_application_message_is_too_large_and_stores_nothing() {
     let mut w = world().await;
-    let before = envelope_count(&w.pi).await;
+    let before = envelope_count(&w.server).await;
     let epoch = w.admin.epoch();
     let rejected = w
         .admin_stream
         .rejected(envelope(Kind::Application, epoch, vec![0u8; 65_537]))
         .await;
     assert_eq!(rejected.reason, pb::RejectionReason::TooLarge as i32);
-    assert_eq!(envelope_count(&w.pi).await, before);
+    assert_eq!(envelope_count(&w.server).await, before);
     w.laptop_stream.assert_quiet().await;
 }
 
@@ -206,7 +207,7 @@ async fn oversized_application_message_is_too_large_and_stores_nothing() {
 #[tokio::test]
 async fn welcome_counts_toward_the_commit_cap() {
     let mut w = world().await;
-    let before = envelope_count(&w.pi).await;
+    let before = envelope_count(&w.server).await;
     let epoch = w.admin.epoch();
     let carol = support::clients::TestUser::new("carol");
     let carol_phone = carol.new_device();
@@ -225,7 +226,7 @@ async fn welcome_counts_toward_the_commit_cap() {
     let proposal = envelope(Kind::Proposal, epoch, vec![0u8; 262_145]);
     let rejected = w.admin_stream.rejected(proposal).await;
     assert_eq!(rejected.reason, pb::RejectionReason::TooLarge as i32);
-    assert_eq!(envelope_count(&w.pi).await, before);
+    assert_eq!(envelope_count(&w.server).await, before);
 }
 
 // spec: device-identity/device-revocation
@@ -280,7 +281,7 @@ async fn revoked_devices_open_stream_closes() {
 async fn a_token_minted_on_one_connection_opens_connect_on_another() {
     let mut w = world().await;
     // A fresh TLS connection, as a reconnect makes; its exporter differs.
-    let second = w.pi.connect().await;
+    let second = w.server.connect().await;
     assert_ne!(w.conn.exporter, second.exporter);
 
     // The phone's token was obtained on `w.conn`. Opening the phone's stream on
@@ -300,14 +301,15 @@ async fn a_token_minted_on_one_connection_opens_connect_on_another() {
 async fn connect_with_an_expired_token_is_unauthenticated() {
     let w = world().await;
     // The hour-long token ages out.
-    w.pi.clock
+    w.server
+        .clock
         .advance(SESSION_TOKEN_MAX_LIFETIME + Duration::from_secs(1));
     let hello = pb::ClientFrame {
         frame: Some(In::Hello(pb::Hello {
             protocol_version: PROTOCOL_VERSION,
         })),
     };
-    // The Pi refuses the stream, whether at the open or as its first status.
+    // The server refuses the stream, whether at the open or as its first status.
     match Stream::open_with(&w.conn, w.phone.token(), Some(hello)).await {
         Err(status) => assert_eq!(status.code(), Code::Unauthenticated),
         Ok(mut stream) => {

@@ -1,9 +1,9 @@
 //! group-membership: commit authority and inactivity.
 //!
 //! [`check_commit_authority`] is the commit authority rule (Commit authority) on
-//! plain types. The Pi and the device core each read a commit with OpenMLS,
+//! plain types. The server and the device core each read a commit with OpenMLS,
 //! describe its proposals as [`Proposal`]s and call it, so both sides apply the
-//! same rule (pi-server-core design D3).
+//! same rule (server-core design D3).
 
 use std::time::Duration;
 
@@ -26,7 +26,7 @@ pub const ROTATION_CHECK_INTERVAL: Duration = Duration::from_secs(DAY);
 /// devices do not all commit at the same moment (Own leaf rotation).
 pub const ROTATION_MAX_JITTER: Duration = Duration::from_secs(60 * 60);
 
-/// How many times the Pi accepts `Keys.RequestReadd` from one device in any
+/// How many times the server accepts `Keys.RequestReadd` from one device in any
 /// [`READD_REQUEST_WINDOW`] (Re-add after an unusable Welcome): enough for a
 /// passing fault, not a commit loop.
 pub const MAX_READD_REQUESTS_PER_DAY: usize = 3;
@@ -34,7 +34,7 @@ pub const MAX_READD_REQUESTS_PER_DAY: usize = 3;
 /// The sliding window [`MAX_READD_REQUESTS_PER_DAY`] counts in.
 pub const READD_REQUEST_WINDOW: Duration = Duration::from_secs(DAY);
 
-/// The longest `RequestReaddRequest.reason` the Pi accepts, in bytes; the core
+/// The longest `RequestReaddRequest.reason` the server accepts, in bytes; the core
 /// cuts its error text to this (at a character boundary).
 pub const MAX_READD_REASON_BYTES: usize = 512;
 
@@ -60,7 +60,7 @@ pub fn own_leaf_rotation_due(leaf_age: Duration) -> bool {
 /// MLS extension type (RFC 9420 private-use range) of the group context
 /// extension that names the admin (Group creation). Its `extension_data` is the
 /// admin's user id in its textual form `<username>@<server_id>`, as UTF-8. The
-/// Pi checks it at `Admin.CreateGroup`. Because it is a group context extension,
+/// Server checks it at `Admin.CreateGroup`. Because it is a group context extension,
 /// every device lists this type in its leaf `capabilities.extensions` (in each
 /// KeyPackage and leaf update), or OpenMLS refuses to add it.
 pub const ADMIN_EXTENSION_TYPE: u16 = 0xF0A1;
@@ -118,8 +118,8 @@ pub enum ProposalSender {
         /// The proposing member's leaf index.
         leaf_index: u32,
     },
-    /// The Pi, as the group's MLS external sender (its inactivity Removes).
-    Pi,
+    /// The server, as the group's MLS external sender (its inactivity Removes).
+    Server,
     /// Any other external sender or new-member proposal.
     Other,
 }
@@ -164,16 +164,16 @@ pub enum Violation {
     /// A non-admin added a device certified for another user; in a DM, for a
     /// user outside the pair.
     AddForAnotherUser,
-    /// A non-admin removed another user's device, and the Pi did not propose it.
+    /// A non-admin removed another user's device, and the server did not propose it.
     RemoveOfAnotherUser,
     /// A non-admin committed an Update of another member's leaf.
     UpdateOfAnotherLeaf,
     /// A non-admin committed a proposal of a kind only the admin may commit, or
-    /// a proposal from an external sender other than the Pi.
+    /// a proposal from an external sender other than the server.
     NotAllowed,
 }
 
-/// A commit that breaks the commit authority rule; the Pi answers it with
+/// A commit that breaks the commit authority rule; the server answers it with
 /// `REJECTION_REASON_POLICY_VIOLATION`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("proposal {index} breaks commit authority: {violation:?}")]
@@ -194,7 +194,7 @@ pub struct CommitAuthorityError {
 ///   only updates the committer's leaf through its path, is always allowed);
 /// - an Add of a device certified for the committer's own user;
 /// - a Remove of a device of the committer's own user;
-/// - a Remove the Pi issued as external sender, whatever its target.
+/// - a Remove the server issued as external sender, whatever its target.
 ///
 /// Returns the first proposal that breaks the rule. Proposal order does not
 /// matter (OpenMLS does not keep it).
@@ -215,8 +215,8 @@ pub fn check_commit_authority(
 
 fn member_violation(committer: &Committer<'_>, proposal: &Proposal<'_>) -> Option<Violation> {
     match (proposal.sender, proposal.kind) {
-        (ProposalSender::Pi, ProposalKind::Remove { .. }) => None,
-        (ProposalSender::Pi | ProposalSender::Other, _) => Some(Violation::NotAllowed),
+        (ProposalSender::Server, ProposalKind::Remove { .. }) => None,
+        (ProposalSender::Server | ProposalSender::Other, _) => Some(Violation::NotAllowed),
         (ProposalSender::Member { .. }, ProposalKind::Other { .. }) => Some(Violation::NotAllowed),
         (ProposalSender::Member { leaf_index }, ProposalKind::Update) => {
             (leaf_index != committer.leaf_index).then_some(Violation::UpdateOfAnotherLeaf)
@@ -240,7 +240,7 @@ fn member_violation(committer: &Committer<'_>, proposal: &Proposal<'_>) -> Optio
 ///   always allowed);
 /// - an Add of a device certified for either of the two users;
 /// - a Remove of a device of the committer's own user;
-/// - a Remove the Pi issued as external sender, whatever its target.
+/// - a Remove the server issued as external sender, whatever its target.
 ///
 /// No device has more power in a DM: `committer.is_admin` is ignored. A
 /// committer who is not one of the two users breaks the rule with its first
