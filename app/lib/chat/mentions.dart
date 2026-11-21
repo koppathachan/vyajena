@@ -2,9 +2,11 @@
 // Ranges are Dart string indices (UTF-16 code units), as the bridge's
 // MentionSpan; the core converts them to UTF-8 bytes. Nothing here stores
 // or logs text.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
+import 'links.dart';
 
 /// What "everyone" is called in the picker and in a drawn mention.
 const everyoneLabel = 'everyone';
@@ -149,6 +151,11 @@ bool namesMe(MentionTarget target, UserRef? me) => switch (target) {
 /// [text] with each of [mentions] drawn as "@" + [label] of its target
 /// (the reader's name for it, design D2), mentions of [me] and everyone
 /// highlighted more strongly. Ranges that do not fit are drawn as text.
+///
+/// When [onLink] is given, `http(s)` URLs in the rest of the text are drawn
+/// as tappable links (app-ui: Links in messages); a URL that overlaps a
+/// mention is not (the mention wins). Each link's recognizer is added to
+/// [recognizers], which the caller disposes.
 TextSpan mentionSpans(
   BuildContext context,
   String text,
@@ -156,15 +163,64 @@ TextSpan mentionSpans(
   required String Function(MentionTarget target) label,
   required UserRef? me,
   bool own = false,
+  void Function(String url)? onLink,
+  List<GestureRecognizer>? recognizers,
 }) {
   final scheme = Theme.of(context).colorScheme;
   final children = <InlineSpan>[];
   var at = 0;
   final sorted = [...mentions]..sort((a, b) => a.start.compareTo(b.start));
+  final drawn = <MentionSpan>[];
   for (final m in sorted) {
     final end = m.start + m.length;
     if (m.start < at || end > text.length || m.length <= 0) continue;
-    if (m.start > at) children.add(TextSpan(text: text.substring(at, m.start)));
+    drawn.add(m);
+    at = end;
+  }
+
+  // Plain text between mentions, with its links.
+  void plain(int from, int to) {
+    if (to <= from) return;
+    final links = onLink == null
+        ? const <LinkRange>[]
+        : [
+            for (final l in findLinks(text))
+              if (l.start >= from &&
+                  l.end <= to &&
+                  !drawn.any(
+                    (m) => l.start < m.start + m.length && m.start < l.end,
+                  ))
+                l,
+          ];
+    var pos = from;
+    for (final l in links) {
+      if (l.start > pos) {
+        children.add(TextSpan(text: text.substring(pos, l.start)));
+      }
+      final url = text.substring(l.start, l.end);
+      final tap = TapGestureRecognizer()..onTap = () => onLink!(url);
+      recognizers?.add(tap);
+      children.add(
+        TextSpan(
+          text: url,
+          recognizer: tap,
+          style: TextStyle(
+            color: scheme.primary,
+            decoration: TextDecoration.underline,
+            decorationColor: scheme.primary,
+          ),
+        ),
+      );
+      pos = l.end;
+    }
+    if (pos < to) children.add(TextSpan(text: text.substring(pos, to)));
+  }
+
+  at = 0;
+  for (final m in drawn) {
+    // A link that touches a mention is not inside any gap, so it is dropped
+    // whole and the mention keeps the text.
+    plain(at, m.start);
     final mine = !own && namesMe(m.target, me);
     children.add(
       TextSpan(
@@ -179,8 +235,8 @@ TextSpan mentionSpans(
         semanticsLabel: mine ? 'mention of you' : null,
       ),
     );
-    at = end;
+    at = m.start + m.length;
   }
-  if (at < text.length) children.add(TextSpan(text: text.substring(at)));
+  plain(at, text.length);
   return TextSpan(children: children);
 }

@@ -71,7 +71,7 @@ void main() {
       multiLine: true,
     ).allMatches(dependencies).map((m) => m.group(1)).toSet();
     // The bridge and what its generated code needs, the network state
-    // (qa-fixes D6) and the gallery picker (media-blobs); nothing for the
+    // (qa-fixes D6), the gallery picker (media-blobs) and the URL launcher (links); nothing for the
     // look.
     expect(names, {
       'flutter',
@@ -80,6 +80,7 @@ void main() {
       'freezed_annotation',
       'connectivity_plus',
       'image_picker',
+      'url_launcher',
     });
     final flutterSection = pubspec.substring(
       pubspec.lastIndexOf(RegExp(r'^flutter:', multiLine: true)),
