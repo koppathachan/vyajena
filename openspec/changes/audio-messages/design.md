@@ -124,6 +124,36 @@ with `record` 7.2.0 and `just_audio` 0.10.6; the spike is deleted.
 - **Tooling note:** on this machine Gradle needs `JAVA_TOOL_OPTIONS=-Djava.net.useSystemProxies=true`
   to download its distribution (Java sockets cannot connect directly).
 
+### D7. Decisions made while building (2026-11-21)
+
+- **WAV in, path out (client-runtime: the core owns every media transform).**
+  The recorder's WAV is the only audio Dart holds for the wire: it is a temp file
+  the app deletes as soon as the clip is sent, deleted or cancelled (also when
+  the composer is left mid-preview). A received clip is decrypted by the core into
+  its media cache as an `.opus` file (the extension is what a player reads the
+  format from) and the bridge hands Dart the **path**, never the bytes; Dart does
+  not copy or keep it. The invariant "decrypted pictures reach Dart only to be
+  shown" is read to cover playing the clip; the owner can veto, in which case
+  the core must decode to PCM and stream it to a native player (a larger change).
+- **Core input is a 16-bit PCM WAV** (mono or stereo, any rate): it mixes to mono
+  and resamples (linear) when the rate is not one Opus takes. It refuses a
+  clip over `MAX_AUDIO_DURATION_MS` by sample count before copying samples
+  (`AudioError::TooLong`), and one with no samples (`Empty`).
+- **The app stops recording at 119 s** (`voiceLimit`), a second under the core's
+  120 s refusal, because the recorder keeps a little past the timer; a hold
+  shorter than **1 s** is a stray tap and is dropped with a hint. Neither number
+  is in the spec's scenarios.
+- **Waveform:** 64 peaks (`AUDIO_WAVEFORM_PEAKS`), each the loudest sample of an
+  even slice of the clip, scaled so the loudest bar is 255 (a quiet recording is
+  still readable); silence is all zeros. `MAX_AUDIO_WAVEFORM_BYTES` is 128 so a
+  later sender could be finer.
+- **Voice message in a reply:** a voice message is not sent as a reply (no
+  `reply_to` on `Audio`), so the mic is hidden while the composer is replying; a
+  reply *to* a voice message quotes "Voice message".
+- **Field number:** `Content.audio = 6`; `delete-messages` takes 7.
+- **Errors:** the bridge adds `AudioUnsupported` and `AudioTooLong`; an expired
+  clip reuses `MediaExpired`.
+
 ## Spikes (before code that relies on them)
 
 - **S1 (done, D4):** `record` + `just_audio`, with the core encoding the WAV the

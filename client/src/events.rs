@@ -69,7 +69,7 @@ pub enum SendStatus {
     },
 }
 
-/// Where an image message's picture is on this device (client-runtime: Image
+/// Where an image or voice message's media is on this device (client-runtime: Image
 /// download and cache; Expired media).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaState {
@@ -103,6 +103,23 @@ pub struct ImageBody {
     pub state: MediaState,
 }
 
+/// A voice message, as the UI sees it (message-content: Audio messages). The blob
+/// key is not here: it never leaves the core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioBody {
+    /// The blob's id, which keys the cache.
+    pub blob_id: [u8; protocol::blob_store::BLOB_ID_LEN],
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The amplitude peaks, one byte each (255 the loudest), drawn as bars before
+    /// the clip is downloaded.
+    pub waveform: Vec<u8>,
+    /// The blob's size on the server, in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaState,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -113,6 +130,8 @@ pub enum MessageBody {
     /// Boxed: a picture's description is large next to a text, and `Message`
     /// is carried in every event.
     Image(Box<ImageBody>),
+    /// A voice message (message-content: Audio messages). Boxed like an image.
+    Audio(Box<AudioBody>),
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,

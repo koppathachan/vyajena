@@ -59,6 +59,10 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 webp = { version = "0.3", default-features = false }
 thumbhash = "0.1"
 
+# Voice messages (audio-messages design D4): Opus encode and the OGG container, in
+# pure Rust, so no C library or cmake is needed for the phone targets (spike S1).
+opus-pure = "0.2"
+
 thiserror = "2"
 # Logging: ids, epochs, sizes; never content.
 tracing = "0.1"

@@ -10,7 +10,7 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, ImageView,
+    AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, ImageView,
     InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote,
     SendState, UserRef,
 };
@@ -141,6 +141,21 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                         size: image.size,
                         caption: image.caption,
                         state: match image.state {
+                            client::MediaState::Available => MediaStatus::Available,
+                            client::MediaState::Expired => MediaStatus::Expired,
+                            _ => MediaStatus::NotDownloaded,
+                        },
+                    }),
+                }
+            }
+            MessageBody::Audio(audio) => {
+                let audio = *audio;
+                ChatBody::Audio {
+                    audio: Box::new(AudioView {
+                        duration_ms: audio.duration_ms,
+                        waveform: audio.waveform,
+                        size: audio.size,
+                        state: match audio.state {
                             client::MediaState::Available => MediaStatus::Available,
                             client::MediaState::Expired => MediaStatus::Expired,
                             _ => MediaStatus::NotDownloaded,
@@ -307,6 +322,12 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::Media(client::media::MediaError::Image(image)) => match image {
             client::media::ImageError::TooLarge => K::ImageTooLarge,
             _ => K::ImageUnsupported,
+        },
+        ClientError::Media(client::media::MediaError::Audio(audio)) => match audio {
+            client::media::AudioError::TooLong | client::media::AudioError::TooLarge => {
+                K::AudioTooLong
+            }
+            _ => K::AudioUnsupported,
         },
         _ => K::Internal,
     };

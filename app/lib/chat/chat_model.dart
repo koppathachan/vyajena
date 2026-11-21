@@ -621,6 +621,19 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Sends the recording [wav] as a voice message (app-ui: Record a voice
+  /// message); returns once the core stored it.
+  Future<void> sendAudio(Uint8List wav) async {
+    _lastId = await core.sendAudio(wav, chatId: chatId);
+    await _reload();
+  }
+
+  /// Sends the clip of own voice message [id] again, as a new message.
+  Future<void> resendAudio(int id) async {
+    _lastId = await core.resendAudio(id);
+    await _reload();
+  }
+
   /// The user has seen this chat up to its newest message (the unread mark
   /// in the chat list).
   Future<void> markRead() async {

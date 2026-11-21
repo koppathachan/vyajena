@@ -264,6 +264,31 @@ abstract class CoreService {
   /// the new message's local id.
   Future<int> resendImage(int id);
 
+  // --- Voice messages (message-content: Audio messages; app-ui: Record a voice
+  // message, Play a voice message). The core makes the OGG/Opus, encrypts it,
+  // uploads it and decrypts what comes back: the app only passes the
+  // recorder's WAV in and plays the file path it gets out. ---
+
+  /// Sends the recording [wav] (the file the recorder wrote) to chat [chatId];
+  /// returns its local id. Throws [CoreError] with [CoreErrorKind.audioTooLong]
+  /// for a clip over two minutes. Like an image it is queued at once,
+  /// connected or not.
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0});
+
+  /// The path of voice message [id]'s clip, an OGG/Opus file in the core's media
+  /// cache for a player to open: from the cache on this device, else downloaded
+  /// first. The app never copies or keeps the file. Throws [CoreError] with
+  /// [CoreErrorKind.mediaExpired] when the server no longer has it.
+  Future<String> downloadAudio(int id);
+
+  /// The path of voice message [id]'s clip if this device has it cached; never
+  /// uses the network.
+  Future<String?> cachedAudio(int id);
+
+  /// Resends the clip of own voice message [id] as a new message; returns the
+  /// new message's local id.
+  Future<int> resendAudio(int id);
+
   /// The blur a ThumbHash stands for, as a small PNG; null if the bytes are
   /// not a ThumbHash. Decoded by the core.
   Uint8List? thumbhashPreview(Uint8List thumbhash);

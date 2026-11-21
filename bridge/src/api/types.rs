@@ -11,7 +11,7 @@ pub struct UserRef {
     pub server_id: String,
 }
 
-/// Where an image message's picture is on this device (client-runtime: Image
+/// Where an image or voice message's media is on this device (client-runtime: Image
 /// download and cache; Expired media).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaStatus {
@@ -42,6 +42,21 @@ pub struct ImageView {
     pub state: MediaStatus,
 }
 
+/// A voice message (message-content: Audio messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioView {
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The amplitude peaks, one byte each (255 the loudest), drawn as bars
+    /// before the clip is downloaded.
+    pub waveform: Vec<u8>,
+    /// The clip's size on the server in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaStatus,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatBody {
@@ -55,6 +70,11 @@ pub enum ChatBody {
         /// The image. Boxed: it is large next to a text, and a message is
         /// carried in every event.
         image: Box<ImageView>,
+    },
+    /// A voice message.
+    Audio {
+        /// The clip. Boxed like an image: a message is carried in every event.
+        audio: Box<AudioView>,
     },
     /// A body this version does not know: shown as a placeholder saying the
     /// app needs an update (app-ui: Chat screen).

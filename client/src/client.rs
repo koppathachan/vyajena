@@ -937,7 +937,8 @@ impl Client {
             Decoded::Text(text) => text.text,
             // Replying to a picture quotes its caption, if it has one.
             Decoded::Image(image) => image.caption.unwrap_or_default(),
-            Decoded::Unsupported => String::new(),
+            // A voice message has no text to quote.
+            Decoded::Audio(_) | Decoded::Unsupported => String::new(),
             Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
                 return Err(ClientError::NoSuchMessage);
             }
@@ -1365,6 +1366,183 @@ impl Client {
         }
     }
 
+    // --- Voice messages (message-content: Audio messages; audio-messages:
+    // Recording and encoding; the blob send order, download, cache and expiry
+    // are the image ones) ---
+
+    /// Sends a recorded voice message to the main group: [`Client::send_audio_in`].
+    pub async fn send_audio(&self, wav: &[u8]) -> Result<MessageId, ClientError> {
+        self.send_audio_in(ChatId::MAIN, wav).await
+    }
+
+    /// Sends a voice message to chat `chat`. `wav` is the file the recorder wrote
+    /// (16-bit PCM, mono or stereo): the core turns it into OGG/Opus mono at the
+    /// voice bitrate, refuses one longer than two minutes, computes the waveform
+    /// and keeps the clip in its media cache.
+    ///
+    /// The message is stored and queued at once, like an image, connected or
+    /// not; the outbox uploads the blob and then sends it (client-runtime: Blob
+    /// crypto and send order). It shows as sending until then.
+    pub async fn send_audio_in(&self, chat: ChatId, wav: &[u8]) -> Result<MessageId, ClientError> {
+        self.account()?;
+        self.check_can_queue(chat)?;
+        let wav = wav.to_vec();
+        let encoded =
+            blocking(move || Ok(crate::media::audio::encode(&wav).map_err(MediaError::from)?))
+                .await?;
+        self.queue_encoded_audio(chat, encoded).await
+    }
+
+    /// Resends the clip of the own voice message `id` as a new message with a
+    /// fresh blob, key and `msg_id`, from the clip this device kept (client-runtime:
+    /// Expired media). Fails with [`ClientError::MediaNotOnDevice`] when the clip
+    /// is no longer cached.
+    pub async fn resend_audio(&self, id: MessageId) -> Result<MessageId, ClientError> {
+        use crate::messaging::Decoded;
+        self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if !stored.outgoing {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let chat = ChatId(stored.chat);
+        self.check_can_queue(chat)?;
+        let path = self
+            .cached_audio_path(&audio.blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)?;
+        let ogg = blocking(move || Ok(std::fs::read(path).map_err(MediaError::from)?)).await?;
+        let encoded = crate::media::EncodedAudio {
+            ogg,
+            duration_ms: audio.duration_ms,
+            waveform: audio.waveform,
+        };
+        self.queue_encoded_audio(chat, encoded).await
+    }
+
+    /// Caches `audio`, then stores its message as waiting for its blob and wakes
+    /// the outbox, which uploads the blob and sends the message.
+    async fn queue_encoded_audio(
+        &self,
+        chat: ChatId,
+        audio: crate::media::EncodedAudio,
+    ) -> Result<MessageId, ClientError> {
+        use protocol::blob_store::{BLOB_NONCE_LEN, BLOB_TAG_LEN};
+        let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
+        let content = crate::messaging::AudioContent {
+            blob_id,
+            blob_key,
+            // The blob is the nonce, the clip and the tag.
+            blob_size: (audio.ogg.len() + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64,
+            duration_ms: audio.duration_ms,
+            waveform: audio.waveform,
+        };
+        let encoded = crate::messaging::encode_audio(&content, self.now()).map_err(too_long)?;
+        // The sender cannot decrypt its own message, so it keeps the clip; the
+        // outbox encrypts and uploads it from here.
+        self.cache_blob(crate::media::MediaKind::Audio, &blob_id, audio.ogg, true)
+            .await?;
+        match self.queue_content_with(chat.0, &encoded, true) {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let store = Arc::clone(&self.shared.store);
+                let cache = self.shared.media.clone();
+                let _ = blocking(move || Ok(cache.remove(&store, &blob_id)?)).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// The clip of voice message `id` as the path of an OGG/Opus file in this
+    /// device's media cache, for a player to open: from the cache if it is there,
+    /// else downloaded, decrypted and cached, and the blob acked so the server can
+    /// delete it once everyone has it. The file stays in the core's media
+    /// directory; Dart never copies it. Fails with [`ClientError::MediaExpired`]
+    /// when the server no longer has it, and with [`ClientError::Offline`] when it
+    /// must download and is not connected.
+    pub async fn download_audio(&self, id: MessageId) -> Result<std::path::PathBuf, ClientError> {
+        use crate::messaging::Decoded;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if let Some(path) = self.cached_audio_path(&audio.blob_id).await? {
+            return Ok(path);
+        }
+        if self.shared.store.is_media_expired(&audio.blob_id)? {
+            return Err(ClientError::MediaExpired);
+        }
+        let blob = self
+            .fetch_blob(ChatId(stored.chat), &audio.blob_id)
+            .await?;
+        let (key, blob_id) = (audio.blob_key, audio.blob_id);
+        let ogg = blocking(move || {
+            let ogg =
+                crate::media::crypto::decrypt(&key, &blob_id, &blob).map_err(MediaError::from)?;
+            // Only a clip the core can read is cached and played.
+            if !crate::media::audio::is_ogg_opus(&ogg) {
+                return Err(MediaError::Audio(crate::media::AudioError::Unsupported).into());
+            }
+            Ok(ogg)
+        })
+        .await?;
+        self.cache_blob(crate::media::MediaKind::Audio, &blob_id, ogg, false)
+            .await?;
+        self.ack_blob(ChatId(stored.chat), &blob_id).await;
+        self.cached_audio_path(&blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)
+    }
+
+    /// The path of voice message `id`'s clip if this device has it cached; never
+    /// touches the network.
+    pub async fn cached_audio(
+        &self,
+        id: MessageId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        use crate::messaging::Decoded;
+        let Some(stored) = self.shared.store.message(id)? else {
+            return Ok(None);
+        };
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Ok(None);
+        };
+        self.cached_audio_path(&audio.blob_id).await
+    }
+
+    async fn cached_audio_path(
+        &self,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.get_path(&store, &blob_id, now)?)).await
+    }
+
+    async fn cache_blob(
+        &self,
+        kind: crate::media::MediaKind,
+        blob_id: &crate::media::BlobId,
+        bytes: Vec<u8>,
+        own: bool,
+    ) -> Result<(), ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.put_as(&store, kind, &blob_id, &bytes, own, now)?)).await
+    }
+
     /// Whether chat `chat` takes a message now, as text does: the main group
     /// exists, or the DM exists and is open. (An image waits in the outbox
     /// until its chat can send, like any message.)
@@ -1408,26 +1586,9 @@ impl Client {
         if self.shared.store.is_media_expired(&image.blob_id)? {
             return Err(ClientError::MediaExpired);
         }
-        let group_id = self.group_id_of(ChatId(stored.chat))?;
-        let session = self.session()?;
-        let downloaded = session
-            .conn()
-            .blobs()
-            .download_blob(session.request(pb::DownloadBlobRequest {
-                group_id: group_id.clone(),
-                blob_id: image.blob_id.to_vec(),
-            })?)
-            .await;
-        let blob = match downloaded {
-            Ok(response) => response.into_inner().ciphertext,
-            Err(status) if status.code() == tonic::Code::NotFound => {
-                self.shared
-                    .store
-                    .mark_media_expired(&image.blob_id, self.now())?;
-                return Err(ClientError::MediaExpired);
-            }
-            Err(status) => return Err(NetError::from(status).into()),
-        };
+        let blob = self
+            .fetch_blob(ChatId(stored.chat), &image.blob_id)
+            .await?;
         let (key, blob_id) = (image.blob_key, image.blob_id);
         let webp = blocking(move || {
             let webp =
@@ -1439,19 +1600,58 @@ impl Client {
         })
         .await?;
         self.cache_webp(&blob_id, webp.clone(), false).await?;
-        // Best effort: if the ack is lost the blob simply lives its 7 days.
-        let acked = session
+        self.ack_blob(ChatId(stored.chat), &blob_id).await;
+        Ok(webp)
+    }
+
+    /// Downloads the ciphertext of blob `blob_id` in chat `chat`. A blob the
+    /// server no longer has is remembered as expired and fails with
+    /// [`ClientError::MediaExpired`] (client-runtime: Expired media).
+    async fn fetch_blob(
+        &self,
+        chat: ChatId,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Vec<u8>, ClientError> {
+        let group_id = self.group_id_of(chat)?;
+        let session = self.session()?;
+        let downloaded = session
             .conn()
             .blobs()
-            .ack_blob(session.request(pb::AckBlobRequest {
+            .download_blob(session.request(pb::DownloadBlobRequest {
                 group_id,
                 blob_id: blob_id.to_vec(),
             })?)
             .await;
-        if let Err(error) = acked {
-            tracing::warn!(%error, "could not ack a downloaded image");
+        match downloaded {
+            Ok(response) => Ok(response.into_inner().ciphertext),
+            Err(status) if status.code() == tonic::Code::NotFound => {
+                self.shared.store.mark_media_expired(blob_id, self.now())?;
+                Err(ClientError::MediaExpired)
+            }
+            Err(status) => Err(NetError::from(status).into()),
         }
-        Ok(webp)
+    }
+
+    /// Acks a downloaded blob so the server can delete it once everyone has it.
+    /// Best effort: if the ack is lost the blob simply lives its 7 days.
+    async fn ack_blob(&self, chat: ChatId, blob_id: &crate::media::BlobId) {
+        let acked = async {
+            let group_id = self.group_id_of(chat)?;
+            let session = self.session()?;
+            session
+                .conn()
+                .blobs()
+                .ack_blob(session.request(pb::AckBlobRequest {
+                    group_id,
+                    blob_id: blob_id.to_vec(),
+                })?)
+                .await
+                .map_err(|status| ClientError::from(NetError::from(status)))
+        }
+        .await;
+        if let Err(error) = acked {
+            tracing::warn!(%error, "could not ack a downloaded blob");
+        }
     }
 
     /// The picture of image message `id` if this device has it cached; never

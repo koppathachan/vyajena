@@ -80,6 +80,17 @@ class FakeCoreService extends CoreService {
   /// The pictures [sendImage] was given, in order.
   final List<Uint8List> sentPictures = [];
 
+  /// The clips this device has cached, by message id: the path
+  /// [cachedAudio] returns.
+  final Map<int, String> cachedClips = {};
+
+  /// The clips the server still has, by message id: what [downloadAudio]
+  /// downloads. A message not here has expired.
+  final Map<int, String> serverClips = {};
+
+  /// The recordings [sendAudio] was given, in order.
+  final List<Uint8List> sentRecordings = [];
+
   /// A new local id, after every id in [messages].
   int _newId() {
     for (final m in messages) {
@@ -133,6 +144,40 @@ class FakeCoreService extends CoreService {
     );
     messages.add(message);
     if (!expired) piPictures[id] = blurPng;
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  /// A received voice message from [sender]. The server still has its clip
+  /// ([serverClips]) unless [expired]; it is not cached yet.
+  ChatMessage receiveAudio(
+    UserRef sender, {
+    bool expired = false,
+    int durationMs = 7000,
+    int chatId = 0,
+  }) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.audio(
+        audio: AudioView(
+          durationMs: durationMs,
+          waveform: Uint8List.fromList([for (var i = 0; i < 64; i++) i * 4]),
+          size: BigInt.from(21 * 1024),
+          state: expired ? MediaStatus.expired : MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: const [],
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    if (!expired) serverClips[id] = '/media/clip-$id.opus';
     emit(CoreEvent.message(message: message));
     return message;
   }
@@ -472,6 +517,68 @@ class FakeCoreService extends CoreService {
       );
     }
     return sendImage(picture);
+  }
+
+  @override
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0}) async {
+    _call('sendAudio', chatId);
+    sentRecordings.add(wav);
+    final id = _newId();
+    cachedClips[id] = '/media/clip-$id.opus';
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.audio(
+          audio: AudioView(
+            durationMs: 3000,
+            waveform: Uint8List.fromList([10, 80, 255, 120]),
+            size: BigInt.from(9 * 1024),
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: const [],
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<String> downloadAudio(int id) async {
+    _call('downloadAudio', id);
+    final cached = cachedClips[id];
+    if (cached != null) return cached;
+    final clip = serverClips[id];
+    if (clip == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaExpired,
+        message: 'the voice message has expired',
+      );
+    }
+    cachedClips[id] = clip;
+    return clip;
+  }
+
+  @override
+  Future<String?> cachedAudio(int id) async => cachedClips[id];
+
+  @override
+  Future<int> resendAudio(int id) async {
+    _call('resendAudio', id);
+    if (cachedClips[id] == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaNotOnDevice,
+        message: 'not on this device',
+      );
+    }
+    return sendAudio(Uint8List(0));
   }
 
   @override

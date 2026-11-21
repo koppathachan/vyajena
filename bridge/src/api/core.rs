@@ -33,6 +33,11 @@ impl std::fmt::Debug for Core {
     }
 }
 
+/// A file path as the text Dart takes it as.
+fn path_text(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 fn forward<T>(result: Result<T, client::ClientError>) -> Result<T, CoreError> {
     result.map_err(map::error)
 }
@@ -343,6 +348,44 @@ impl Core {
     /// media); returns the new message's local id.
     pub async fn resend_image(&self, id: i64) -> Result<i64, CoreError> {
         Ok(forward(self.client.resend_image(MessageId(id)).await)?.0)
+    }
+
+    /// Sends a recorded voice message to the main group; returns its local id.
+    /// `wav` is the file the recorder wrote (16-bit PCM). The core makes the
+    /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
+    /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
+    /// connected or not, like an image (audio-messages: Recording and encoding).
+    pub async fn send_audio(&self, wav: Vec<u8>) -> Result<i64, CoreError> {
+        self.send_audio_in(0, wav).await
+    }
+
+    /// [`Core::send_audio`] in chat `chat_id`.
+    pub async fn send_audio_in(&self, chat_id: i64, wav: Vec<u8>) -> Result<i64, CoreError> {
+        Ok(forward(self.client.send_audio_in(ChatId(chat_id), &wav).await)?.0)
+    }
+
+    /// The path of voice message `id`'s clip, an OGG/Opus file in the core's
+    /// media cache for a player to open: from the cache, else downloaded,
+    /// decrypted and cached (client-runtime: Image download and cache). Dart
+    /// never copies or keeps the file. Fails with
+    /// [`CoreErrorKind::MediaExpired`] when the server no longer has it.
+    pub async fn download_audio(&self, id: i64) -> Result<String, CoreError> {
+        Ok(path_text(forward(
+            self.client.download_audio(MessageId(id)).await,
+        )?))
+    }
+
+    /// The path of voice message `id`'s clip if this device has it cached;
+    /// never uses the network.
+    pub async fn cached_audio(&self, id: i64) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.cached_audio(MessageId(id)).await)?.map(path_text))
+    }
+
+    /// Resends the clip of the own voice message `id` as a new message with a
+    /// new blob, when the first one expired (client-runtime: Expired media);
+    /// returns the new message's local id.
+    pub async fn resend_audio(&self, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.resend_audio(MessageId(id)).await)?.0)
     }
 
     /// The local ids of messages whose mention of this user is not seen yet,

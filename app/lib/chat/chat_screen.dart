@@ -21,6 +21,8 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'voice_playback.dart';
+import 'voice_plugins.dart';
 
 /// The banner of a closed named group (app-ui: Named group screen).
 const groupClosedText = 'This group was closed';
@@ -64,6 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final _list = GlobalKey();
   final Map<int, GlobalKey> _tiles = {};
   ReplyDraft? _reply;
+
+  /// The chat's one voice player: one clip plays at a time, and it stops when
+  /// the chat closes (app-ui: Play a voice message).
+  VoicePlayback? _playback;
   bool _checkQueued = false;
 
   /// While the chat scrolls on its own (to a quote's original or the
@@ -150,9 +156,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playback ??= VoicePlayback(VoiceScope.of(context).newPlayer);
+  }
+
+  @override
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _playback?.dispose();
     super.dispose();
   }
 
@@ -203,6 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
         quote: switch (body) {
           ChatBody_Text(:final text) => text,
           ChatBody_Image(:final image) => image.caption ?? pictureQuote,
+          ChatBody_Audio() => voiceQuote,
           _ => unsupportedText,
         },
       ),
@@ -219,6 +233,17 @@ class _ChatScreenState extends State<ChatScreen> {
     String? caption,
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+
+  Future<void> _sendAudio(Uint8List wav) => _model.sendAudio(wav);
+
+  Future<void> _resendAudio(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendAudio(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
 
   Future<void> _resendImage(ChatMessage message) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -428,6 +453,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   },
                                   core: widget.core,
                                   onResendImage: () => _resendImage(message),
+                                  onResendAudio: () => _resendAudio(message),
+                                  playback: _playback,
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
@@ -498,6 +525,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
+                sendAudio: _sendAudio,
+                onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,
                 onCancelReply: () => setState(() => _reply = null),
