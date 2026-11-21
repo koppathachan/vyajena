@@ -383,7 +383,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 names: _model.names,
               )
             else
-              ChatMenu(admin: widget.admin && _model.isMain),
+              ChatMenu(
+                admin: widget.admin && _model.isMain,
+                lobby: _model.isMain,
+              ),
           ],
         ),
         body: Column(
@@ -562,9 +565,14 @@ enum MenuEntry {
 /// The chat's menu: everyone's entries, and the admin's only on admin
 /// devices (the server rejects other devices' admin calls anyway).
 class ChatMenu extends StatelessWidget {
-  const ChatMenu({super.key, required this.admin});
+  const ChatMenu({super.key, required this.admin, this.lobby = false});
 
   final bool admin;
+
+  /// Whether this is the lobby's menu: it lists "Rename group" and "Close
+  /// group" greyed out, so the fixed name and the missing close show
+  /// (app-ui: Lobby is fixed; change `lobby-multi-group`).
+  final bool lobby;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<MenuEntry>(
@@ -574,6 +582,19 @@ class ChatMenu extends StatelessWidget {
       for (final entry in MenuEntry.values)
         if (admin || !entry.adminOnly)
           PopupMenuItem(value: entry, child: Text(entry.label)),
+      if (lobby) ...const [
+        PopupMenuDivider(),
+        PopupMenuItem<MenuEntry>(
+          key: ValueKey('lobby-rename-disabled'),
+          enabled: false,
+          child: Text('Rename group (the lobby is fixed)'),
+        ),
+        PopupMenuItem<MenuEntry>(
+          key: ValueKey('lobby-close-disabled'),
+          enabled: false,
+          child: Text('Close group (the lobby cannot be closed)'),
+        ),
+      ],
     ],
   );
 }

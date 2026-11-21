@@ -267,6 +267,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   key: const ValueKey('chat-main'),
                   leading: const Icon(Icons.groups_outlined),
                   title: const Text(lobbyName),
+                  subtitle: const Text('Fixed name · cannot be closed'),
                   trailing: _trailing(chat),
                   onTap: () => _open(chat),
                 ),

@@ -53,6 +53,23 @@ FakeCoreService aliceInWeekend() => FakeCoreService(storedUser: alice)
 
 void main() {
   // spec: app-ui/chat-list
+  testWidgets('the lobby shows it is fixed: no rename, no close, even for the '
+      'admin', (tester) async {
+    await openHome(tester, adminWithGroups());
+    expect(find.text('Fixed name · cannot be closed'), findsOneWidget);
+    await enterGroup(tester);
+    await tap(tester, find.byTooltip('Menu'));
+    for (final key in ['lobby-rename-disabled', 'lobby-close-disabled']) {
+      final item = tester.widget<PopupMenuItem<dynamic>>(
+        find.byKey(ValueKey(key)),
+      );
+      expect(item.enabled, isFalse);
+    }
+    expect(find.text('Rename group'), findsNothing);
+    expect(find.text('Close group'), findsNothing);
+  });
+
+  // spec: app-ui/chat-list
   testWidgets('lobby first labelled "lobby", then the group by name and the '
       'DM, each with its own unread mark', (tester) async {
     final core = aliceInWeekend()
