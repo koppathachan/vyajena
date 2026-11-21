@@ -43,6 +43,7 @@ const allowedDart = {
 /// clipboard; it has no socket or HTTP client.
 const allowedFlutter = {
   'package:flutter/foundation.dart',
+  'package:flutter/gestures.dart',
   'package:flutter/material.dart',
   'package:flutter/services.dart',
   'package:flutter/widgets.dart',
@@ -57,6 +58,10 @@ const mainOnly = {'package:connectivity_plus/connectivity_plus.dart'};
 /// (app-ui: Send an image). It picks a file the user chooses and opens no
 /// connection.
 const pickerOnly = {'package:image_picker/image_picker.dart'};
+
+/// What only the link sheet's file may import: it hands a tapped URL to the
+/// OS browser (app-ui: Links in messages). It opens no connection in Dart.
+const linksOnly = {'package:url_launcher/url_launcher.dart'};
 
 /// What only the generated bindings may import: FFI to the Rust core.
 const bindingOnly = {
@@ -81,6 +86,8 @@ void main() {
           _ when bindingOnly.contains(uri) => generated(file),
           _ when mainOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/main.dart',
+          _ when linksOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/chat/links.dart',
           _ when pickerOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/picture_picker.dart',
           _ => false,
@@ -117,7 +124,9 @@ void main() {
       multiLine: true,
     ).allMatches(section).map((m) => m.group(1)!).toSet();
     // connectivity_plus only reports whether a connection is up (D6);
-    // image_picker only picks a file from the gallery (Send an image).
+    // image_picker only picks a file from the gallery (Send an image);
+    // url_launcher only hands a tapped URL to the OS browser (Links in
+    // messages).
     expect(names, {
       'flutter',
       'bridge',
@@ -125,6 +134,7 @@ void main() {
       'freezed_annotation',
       'connectivity_plus',
       'image_picker',
+      'url_launcher',
     });
   });
 
@@ -179,9 +189,6 @@ void main() {
         displayName: 'Zed',
         about: 'secret about',
       ),
-    );
-    core.emit(
-      const CoreEvent.groupSettingsChanged(name: 'Hidden group', by: akhil),
     );
     await settle(tester);
     await tester.enterText(find.byKey(const Key('composer')), 'yo there');

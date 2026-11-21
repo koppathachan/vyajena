@@ -8,6 +8,7 @@ pub mod certificate;
 pub mod group;
 pub mod inactivity;
 pub mod joins;
+pub mod named;
 pub mod readd;
 
 pub use group::{

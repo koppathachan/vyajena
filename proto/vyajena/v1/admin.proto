@@ -26,6 +26,12 @@ service Admin {
   // group-membership: Group creation.
   rpc CreateGroup(CreateGroupRequest) returns (CreateGroupResponse);
 
+  // multi-group: Named group creation (change `lobby-multi-group`).
+  rpc CreateNamedGroup(CreateNamedGroupRequest) returns (CreateNamedGroupResponse);
+
+  // multi-group: Closing a named group.
+  rpc CloseGroup(CloseGroupRequest) returns (CloseGroupResponse);
+
   // group-membership: Removing a user.
   rpc RemoveUser(RemoveUserRequest) returns (RemoveUserResponse);
 }
@@ -110,3 +116,33 @@ message RemoveUserRequest {
 }
 
 message RemoveUserResponse {}
+
+// multi-group: Named group creation. The admin's device has created an MLS group
+// whose only member is itself, whose group context lists the server as external
+// sender, names the admin in the `0xF0A1` extension and carries the named-group
+// extension `0xF0A3`, and sends its epoch-0 public state. The server records it
+// with kind `named`. `INVALID_ARGUMENT` if the state does not parse, is not at
+// epoch 0 with the caller's device as only member, the server is not an external
+// sender, or `0xF0A1` / `0xF0A3` is missing or wrong; `ALREADY_EXISTS` if the
+// group id is taken.
+message CreateNamedGroupRequest {
+  // The MLS group id, 16 random bytes.
+  bytes group_id = 1;
+  // TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+  // ratchet tree extension.
+  bytes group_info = 2;
+  // TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+  bytes ratchet_tree = 3;
+}
+
+message CreateNamedGroupResponse {}
+
+// multi-group: Closing a named group. Sets `closed_at`, deletes the group's queue
+// and public state, and sends `GroupClosed` to its member devices until acked.
+// `FAILED_PRECONDITION` for the system group; `NOT_FOUND` for an unknown group,
+// a DM included; closing a closed group is a no-op.
+message CloseGroupRequest {
+  bytes group_id = 1;
+}
+
+message CloseGroupResponse {}

@@ -36,8 +36,9 @@ use openmls_traits::signatures::{Signer, SignerError};
 use openmls_traits::types::SignatureScheme;
 use protocol::device_identity::DeviceId;
 use protocol::group_membership::{
-    ADMIN_EXTENSION_TYPE, Committer, DM_EXTENSION_TYPE, ProposalKind, ProposalSender,
-    admin_extension_data, check_commit_authority, check_dm_commit_authority, parse_dm_extension,
+    ADMIN_EXTENSION_TYPE, Committer, DM_EXTENSION_TYPE, NAMED_EXTENSION_TYPE, ProposalKind,
+    ProposalSender, admin_extension_data, check_commit_authority, check_dm_commit_authority,
+    check_named_commit_authority, parse_dm_extension, parse_named_extension,
 };
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use tonic::Status;
@@ -84,11 +85,16 @@ pub struct MemberDevice {
     pub leaf_index: u32,
 }
 
-/// What a group is (change `dms`, design D1).
+/// What a group is (changes `dms` D1, `lobby-multi-group` D1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupKind {
-    /// The one admin-run group.
-    Main,
+    /// The system lobby: the one all-members, admin-run group.
+    System,
+    /// An admin-created named group (multi-group: Named group creation).
+    Named {
+        /// When the server closed it (multi-group: Closing a named group).
+        closed_at: Option<std::time::SystemTime>,
+    },
     /// A DM between two users (direct-messages).
     Dm {
         /// The two usernames, sorted.
@@ -103,6 +109,22 @@ impl GroupKind {
     pub fn is_dm(&self) -> bool {
         matches!(self, Self::Dm { .. })
     }
+
+    /// Whether this is a named group.
+    pub fn is_named(&self) -> bool {
+        matches!(self, Self::Named { .. })
+    }
+
+    /// Whether the server closed this group.
+    pub fn is_closed(&self) -> bool {
+        matches!(
+            self,
+            Self::Dm {
+                closed_at: Some(_),
+                ..
+            } | Self::Named { closed_at: Some(_) }
+        )
+    }
 }
 
 /// One `mls_groups` row.
@@ -112,7 +134,7 @@ pub struct GroupRow {
     pub group_id: Vec<u8>,
     /// The current epoch.
     pub epoch: u64,
-    /// Main group or DM.
+    /// System lobby, named group or DM.
     pub kind: GroupKind,
 }
 
@@ -250,13 +272,7 @@ impl GroupState {
         let Some(row) = row(conn, group_id)? else {
             return Ok(None);
         };
-        if matches!(
-            row.kind,
-            GroupKind::Dm {
-                closed_at: Some(_),
-                ..
-            }
-        ) {
+        if row.kind.is_closed() {
             return Ok(None);
         }
         let pi_sender_index: i64 = conn.query_row(
@@ -337,10 +353,76 @@ impl GroupState {
         if !names_admin {
             return Err(invalid("the group context does not name the admin"));
         }
-        state.kind = GroupKind::Main;
+        if state
+            .group
+            .group_context()
+            .extensions()
+            .unknown(NAMED_EXTENSION_TYPE)
+            .is_some()
+        {
+            return Err(invalid(
+                "the system group must not carry the named extension",
+            ));
+        }
+        state.kind = GroupKind::System;
         tx.execute(
             "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
-             VALUES (?1, 'main', 0, ?2, ?3)",
+             VALUES (?1, 'system', 0, ?2, ?3)",
+            params![request.group_id, state.pi_sender_index, unix_millis(now)],
+        )
+        .map_err(StoreError::from)?;
+        state.save(tx)?;
+        Ok(state)
+    }
+
+    /// `Admin.CreateNamedGroup` (multi-group: Named group creation): builds a
+    /// named group from its epoch-0 state, checks it and stores it in `tx`. The
+    /// caller checks that the device is the admin's.
+    ///
+    /// Checks: those of [`GroupState::from_epoch_zero`], the
+    /// [`ADMIN_EXTENSION_TYPE`] extension names `admin_user_id`, the
+    /// [`NAMED_EXTENSION_TYPE`] extension is present, and no DM extension.
+    pub fn create_named(
+        tx: &Transaction<'_>,
+        caller: &Caller,
+        admin_user_id: &str,
+        server: &ExternalSender,
+        request: &pb::CreateNamedGroupRequest,
+        now: std::time::SystemTime,
+    ) -> Result<Self, CreateGroupError> {
+        if row(tx, &request.group_id)?.is_some() {
+            return Err(CreateGroupError::AlreadyExists);
+        }
+        let mut state = Self::from_epoch_zero(
+            tx,
+            caller,
+            server,
+            &request.group_id,
+            &request.group_info,
+            &request.ratchet_tree,
+        )?;
+        let extensions = state.group.group_context().extensions();
+        let names_admin = extensions
+            .unknown(ADMIN_EXTENSION_TYPE)
+            .is_some_and(|ext| ext.0 == admin_extension_data(admin_user_id));
+        if !names_admin {
+            return Err(invalid("the group context does not name the admin"));
+        }
+        if !extensions
+            .unknown(NAMED_EXTENSION_TYPE)
+            .is_some_and(|ext| parse_named_extension(&ext.0))
+        {
+            return Err(invalid(
+                "the group context does not carry the named-group extension 0xF0A3",
+            ));
+        }
+        if extensions.unknown(DM_EXTENSION_TYPE).is_some() {
+            return Err(invalid("a named group must not carry the DM extension"));
+        }
+        state.kind = GroupKind::Named { closed_at: None };
+        tx.execute(
+            "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+             VALUES (?1, 'named', 0, ?2, ?3)",
             params![request.group_id, state.pi_sender_index, unix_millis(now)],
         )
         .map_err(StoreError::from)?;
@@ -478,7 +560,7 @@ impl GroupState {
             storage,
             group,
             pi_sender_index,
-            kind: GroupKind::Main,
+            kind: GroupKind::System,
         })
     }
 
@@ -527,7 +609,7 @@ impl GroupState {
                AND device_id NOT IN (SELECT device_id FROM mls_members WHERE group_id = ?1)",
             params![group_id],
         )?;
-        if self.kind == GroupKind::Main {
+        if self.kind == GroupKind::System {
             // group-membership: Automatic add of new users: a member is never
             // announced again.
             tx.execute(
@@ -555,7 +637,7 @@ impl GroupState {
         self.pi_sender_index
     }
 
-    /// Main group or DM.
+    /// System lobby, named group or DM.
     pub fn kind(&self) -> &GroupKind {
         &self.kind
     }
@@ -671,7 +753,8 @@ impl GroupState {
             leaf_index: committer_leaf,
         };
         let checked = match &self.kind {
-            GroupKind::Main => check_commit_authority(&rule, &proposals),
+            GroupKind::System => check_commit_authority(&rule, &proposals),
+            GroupKind::Named { .. } => check_named_commit_authority(&rule, &proposals),
             GroupKind::Dm { users, .. } => {
                 let pair = (
                     format!("{}@{server_id}", users.0),
@@ -1019,6 +1102,17 @@ impl GroupState {
                 "an added leaf does not list the DM extension 0xF0A2",
             )));
         }
+        // multi-group: Named groups reach only v3 apps. Only a version 3
+        // core's leaf can join a named group.
+        if self.kind.is_named()
+            && !leaf.capabilities().extensions().contains(
+                &openmls::prelude::ExtensionType::Unknown(NAMED_EXTENSION_TYPE),
+            )
+        {
+            return Ok(Err(policy(
+                "an added leaf does not list the named-group extension 0xF0A3",
+            )));
+        }
         if device.revoked {
             return Ok(Err(policy("an added device is revoked")));
         }
@@ -1129,7 +1223,10 @@ fn finish_row(
     (group_id, kind, epoch, user_a, user_b, closed_at): RawRow,
 ) -> Result<GroupRow, StoreError> {
     let kind = match (kind.as_str(), user_a, user_b) {
-        ("main", None, None) => GroupKind::Main,
+        ("system", None, None) => GroupKind::System,
+        ("named", None, None) => GroupKind::Named {
+            closed_at: closed_at.map(crate::runtime::clock::from_unix_millis),
+        },
         ("dm", Some(a), Some(b)) => GroupKind::Dm {
             users: (a, b),
             closed_at: closed_at.map(crate::runtime::clock::from_unix_millis),
@@ -1171,7 +1268,7 @@ pub fn row(conn: &Connection, group_id: &[u8]) -> Result<Option<GroupRow>, Store
 /// The main group's row, if it was created.
 pub fn main_row(conn: &Connection) -> Result<Option<GroupRow>, StoreError> {
     conn.query_row(
-        &format!("SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = 'main'"),
+        &format!("SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = 'system'"),
         [],
         raw_row,
     )
@@ -1201,17 +1298,28 @@ pub fn groups_of(conn: &Connection, device_id: &DeviceId) -> Result<Vec<GroupRow
     Ok(groups)
 }
 
-/// Every open group: the main group, then the open DMs, oldest first.
+/// Every open group: the system group, then the open named groups and DMs,
+/// oldest first.
 pub fn open_groups(conn: &Connection) -> Result<Vec<GroupRow>, StoreError> {
     let mut groups: Vec<GroupRow> = main_row(conn)?.into_iter().collect();
+    groups.extend(open_of_kind(conn, "named")?);
     groups.extend(open_dms(conn)?);
     Ok(groups)
 }
 
+/// Every open named group, oldest first.
+pub fn open_named_groups(conn: &Connection) -> Result<Vec<GroupRow>, StoreError> {
+    open_of_kind(conn, "named")
+}
+
 /// Every open DM, oldest first.
 pub fn open_dms(conn: &Connection) -> Result<Vec<GroupRow>, StoreError> {
+    open_of_kind(conn, "dm")
+}
+
+fn open_of_kind(conn: &Connection, kind: &str) -> Result<Vec<GroupRow>, StoreError> {
     let mut stmt = conn.prepare(&format!(
-        "SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = 'dm' AND closed_at IS NULL
+        "SELECT {ROW_COLUMNS} FROM mls_groups WHERE kind = '{kind}' AND closed_at IS NULL
          ORDER BY created_at, group_id"
     ))?;
     let rows = stmt.query_map([], raw_row)?;

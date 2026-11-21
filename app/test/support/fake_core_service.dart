@@ -34,9 +34,6 @@ class FakeCoreService extends CoreService {
   /// What [isAdmin] returns.
   bool admin = false;
 
-  /// What [groupName] returns.
-  String? group;
-
   /// The limit [textFits] applies, in UTF-16 code units.
   int maxTextLength = 1000;
 
@@ -503,12 +500,101 @@ class FakeCoreService extends CoreService {
     if (epochValue != null)
       ChatSummary(
         chatId: 0,
-        kind: const ChatKindInfo.main(),
+        kind: const ChatKindInfo.lobby(),
         unread: 0,
         unseenMentions: (await unseenMentionsIn(0)).length,
       ),
+    ...groupChats,
     ...dmChats,
   ];
+
+  /// What [namedGroupsAvailable] returns.
+  bool namedGroups = true;
+
+  /// The named groups [chats] lists after the lobby, as the core lists them.
+  List<ChatSummary> groupChats = [];
+
+  /// What [groupMembers] returns, by chat id.
+  Map<int, List<MemberDevice>> groupMemberDevices = {};
+
+  @override
+  Future<bool> namedGroupsAvailable() async => namedGroups;
+
+  @override
+  Future<int> createNamedGroup(String? name, List<UserRef> members) async {
+    _call('createNamedGroup', [name, members]);
+    final chatId = 100 + groupChats.length;
+    groupChats.add(
+      ChatSummary(
+        chatId: chatId,
+        kind: ChatKindInfo.group(name: name, closed: false),
+        unread: 0,
+        unseenMentions: 0,
+      ),
+    );
+    emit(const CoreEvent.chatsChanged());
+    return chatId;
+  }
+
+  @override
+  Future<void> addToGroup(int chatId, UserRef user) async =>
+      _call('addToGroup', [chatId, user]);
+
+  @override
+  Future<void> removeFromGroup(int chatId, UserRef user) async {
+    _call('removeFromGroup', [chatId, user]);
+    groupMemberDevices[chatId] = [
+      for (final d in groupMemberDevices[chatId] ?? const <MemberDevice>[])
+        if (_key(d.user) != _key(user)) d,
+    ];
+  }
+
+  @override
+  Future<int> renameGroup(int chatId, String name) async {
+    _call('renameGroup', [chatId, name]);
+    groupChats = [
+      for (final c in groupChats)
+        if (c.chatId == chatId)
+          ChatSummary(
+            chatId: c.chatId,
+            kind: ChatKindInfo.group(
+              name: name,
+              closed: (c.kind as ChatKindInfo_Group).closed,
+            ),
+            unread: c.unread,
+            unseenMentions: c.unseenMentions,
+          )
+        else
+          c,
+    ];
+    emit(const CoreEvent.chatsChanged());
+    return _nextId++;
+  }
+
+  @override
+  Future<void> closeGroup(int chatId) async {
+    _call('closeGroup', chatId);
+    groupChats = [
+      for (final c in groupChats)
+        if (c.chatId == chatId)
+          ChatSummary(
+            chatId: c.chatId,
+            kind: ChatKindInfo.group(
+              name: (c.kind as ChatKindInfo_Group).name,
+              closed: true,
+            ),
+            unread: c.unread,
+            unseenMentions: c.unseenMentions,
+          )
+        else
+          c,
+    ];
+    emit(const CoreEvent.chatsChanged());
+  }
+
+  @override
+  Future<List<MemberDevice>> groupMembers(int chatId) async =>
+      groupMemberDevices[chatId] ?? const [];
 
   @override
   Future<int> openDm(UserRef user) async {
@@ -586,9 +672,6 @@ class FakeCoreService extends CoreService {
   Future<List<MemberDevice>> members() async => memberDevices;
 
   @override
-  Future<String?> groupName() async => group;
-
-  @override
   Future<BigInt?> epoch() async => epochValue;
 
   @override
@@ -633,13 +716,6 @@ class FakeCoreService extends CoreService {
       for (final d in memberDevices)
         if (_key(d.user) != _key(user)) d,
     ];
-  }
-
-  @override
-  Future<int> setGroupName(String? name) async {
-    _call('setGroupName', name);
-    group = name;
-    return _nextId++;
   }
 
   @override

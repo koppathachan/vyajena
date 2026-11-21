@@ -168,6 +168,62 @@ impl Admin for AdminService {
         Ok(Response::new(pb::CreateGroupResponse {}))
     }
 
+    async fn create_named_group(
+        &self,
+        request: Request<pb::CreateNamedGroupRequest>,
+    ) -> Result<Response<pb::CreateNamedGroupResponse>, Status> {
+        let caller = admin(&request)?;
+        let request = request.into_inner();
+        let admin_user_id = self.state.config.admin_user_id();
+        let server = membership::external_sender(&self.state.config.server_id, &self.state.keys);
+        let now = self.state.clock.now();
+        self.state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                match GroupState::create_named(&tx, &caller, &admin_user_id, &server, &request, now)
+                {
+                    Ok(_) => {
+                        tx.commit()?;
+                        Ok(Ok(()))
+                    }
+                    Err(membership::CreateGroupError::Store(error)) => Err(error),
+                    Err(error) => Ok(Err(Status::from(error))),
+                }
+            })
+            .await??;
+        tracing::info!("created a named group at epoch 0");
+        Ok(Response::new(pb::CreateNamedGroupResponse {}))
+    }
+
+    async fn close_group(
+        &self,
+        request: Request<pb::CloseGroupRequest>,
+    ) -> Result<Response<pb::CloseGroupResponse>, Status> {
+        admin(&request)?;
+        let group_id = request.into_inner().group_id;
+        let now = self.state.clock.now();
+        let notices = self
+            .state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                let owed = match membership::named::close_named_group(&tx, &group_id, now)? {
+                    Ok(owed) => owed,
+                    Err(status) => return Ok(Err(status)),
+                };
+                let notices = crate::dms::open_notices(&tx, &owed)?;
+                tx.commit()?;
+                Ok(Ok(notices))
+            })
+            .await??;
+        for (device_id, notice) in notices {
+            self.state.hub.send_frame(&device_id, notice);
+        }
+        tracing::info!("closed a named group");
+        Ok(Response::new(pb::CloseGroupResponse {}))
+    }
+
     async fn remove_user(
         &self,
         request: Request<pb::RemoveUserRequest>,

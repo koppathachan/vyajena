@@ -1,7 +1,6 @@
 //! What the app's own-message look and notices need from the bridge
 //! (qa-fixes task 3.1): `own_user` on messages, `MembersChanged` with the
-//! devices and the committer, `GroupSettingsChanged` with the previous name
-//! and who renamed, `Removed`, and `reconnect_now`.
+//! devices and the committer, `Removed`, and `reconnect_now`.
 
 mod support;
 
@@ -89,34 +88,6 @@ async fn members_changed_and_renames_name_what_changed_and_who() {
             removed: Vec::new(),
             by: None,
             automatic: Vec::new(),
-        }
-    })
-    .await;
-
-    // First name: nothing stored before, so `previous` is unset.
-    let id = admin
-        .core
-        .set_group_name(Some("Home chat".into()))
-        .check("rename");
-    wait_accepted(&mut admin, id).await;
-    bob.wait_event("first name", |e| {
-        *e == CoreEvent::GroupSettingsChanged {
-            name: Some("Home chat".into()),
-            previous: None,
-            by: user(ADMIN),
-        }
-    })
-    .await;
-    let id = admin
-        .core
-        .set_group_name(Some("Family".into()))
-        .check("rename");
-    wait_accepted(&mut admin, id).await;
-    bob.wait_event("rename", |e| {
-        *e == CoreEvent::GroupSettingsChanged {
-            name: Some("Family".into()),
-            previous: Some("Home chat".into()),
-            by: user(ADMIN),
         }
     })
     .await;

@@ -49,7 +49,7 @@ pub mod store;
 pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
-    Chat, ChatId, ChatKind, ConnectionState, DeviceId, Event, EventStream, GroupSettings,
-    ImageBody, InviteInfo, MediaState, Member, Mention, MentionTarget, Message, MessageBody,
-    MessageId, Profile, PushPlatform, PushToken, ReaddOutcome, Reply, SendStatus, UserId,
+    Chat, ChatId, ChatKind, ConnectionState, DeviceId, Event, EventStream, ImageBody, InviteInfo,
+    MediaState, Member, Mention, MentionTarget, Message, MessageBody, MessageId, Profile,
+    PushPlatform, PushToken, ReaddOutcome, Reply, SendStatus, UserId,
 };

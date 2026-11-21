@@ -144,3 +144,75 @@ fn the_server_holds_at_most_one_main_group_and_one_open_dm_per_pair() {
     )
     .expect("a new DM once the old one is closed");
 }
+
+const NAMED_GROUPS: &str = include_str!("../src/store/migrations/0007_named_groups.sql");
+
+// spec: group-membership/membership-state-on-the-server
+#[test]
+fn a_dm_era_database_keeps_its_group_as_the_system_lobby() {
+    let conn = version_4_database();
+    conn.execute_batch(GROUPS).expect("the DM migration");
+    conn.execute(
+        "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at,
+                                 dm_user_a, dm_user_b)
+         VALUES (x'dd', 'dm', 0, 0, 2, 'alice', 'bob')",
+        [],
+    )
+    .expect("a DM");
+    // The runner turns foreign keys off around a migration that rebuilds a table.
+    conn.execute_batch("PRAGMA foreign_keys = OFF")
+        .expect("pragma");
+    conn.execute_batch(NAMED_GROUPS)
+        .expect("the named-groups migration");
+    conn.execute_batch("PRAGMA foreign_keys = ON")
+        .expect("pragma");
+    let broken: i64 = conn
+        .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| {
+            r.get(0)
+        })
+        .expect("foreign_key_check");
+    assert_eq!(broken, 0);
+
+    let kinds: Vec<(Vec<u8>, String, i64)> = conn
+        .prepare("SELECT group_id, kind, epoch FROM mls_groups ORDER BY created_at")
+        .expect("prepare")
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .expect("query")
+        .collect::<Result<_, _>>()
+        .expect("rows");
+    assert_eq!(
+        kinds,
+        vec![
+            (GROUP.to_vec(), "system".to_string(), 7),
+            (vec![0xdd], "dm".to_string(), 0)
+        ]
+    );
+    let state: i64 = conn
+        .query_row("SELECT count(*) FROM mls_public_state", [], |r| r.get(0))
+        .expect("state kept");
+    assert_eq!(state, 1);
+    // A named group fits; a second system group and a named group with DM users do not.
+    conn.execute(
+        "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+         VALUES (x'ee', 'named', 0, 0, 3)",
+        [],
+    )
+    .expect("a named group");
+    assert!(
+        conn.execute(
+            "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+             VALUES (x'ff', 'system', 0, 0, 3)",
+            [],
+        )
+        .is_err()
+    );
+    let flagged: i64 = conn
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('key_packages')
+             WHERE name = 'named_group_capable'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("column");
+    assert_eq!(flagged, 1);
+}

@@ -15,7 +15,8 @@ use openmls_traits::OpenMlsProvider as _;
 use prost::Message as _;
 use protocol::device_identity::{DeviceId, device_id, sign_device_certificate};
 use protocol::group_membership::{
-    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, admin_extension_data, dm_extension_data,
+    ADMIN_EXTENSION_TYPE, DM_EXTENSION_TYPE, NAMED_EXTENSION_TYPE, admin_extension_data,
+    dm_extension_data, named_extension_data,
 };
 use protocol::wire_transport::sign_auth_challenge;
 
@@ -48,6 +49,22 @@ pub fn capabilities() -> Capabilities {
         None,
         Some(&[CIPHERSUITE]),
         Some(&[ExtensionType::Unknown(ADMIN_EXTENSION_TYPE)]),
+        None,
+        None,
+    )
+}
+
+/// Leaf capabilities of a version 3 core: the admin, DM and named-group
+/// extensions (multi-group: Named groups reach only v3 apps).
+pub fn named_capabilities() -> Capabilities {
+    Capabilities::new(
+        None,
+        Some(&[CIPHERSUITE]),
+        Some(&[
+            ExtensionType::Unknown(ADMIN_EXTENSION_TYPE),
+            ExtensionType::Unknown(DM_EXTENSION_TYPE),
+            ExtensionType::Unknown(NAMED_EXTENSION_TYPE),
+        ]),
         None,
         None,
     )
@@ -262,6 +279,82 @@ impl TestDevice {
         let state = self.public_state();
         pb::CreateDmRequest {
             peer: Some(peer),
+            group_id: state.group_id,
+            group_info: state.group_info,
+            ratchet_tree: state.ratchet_tree,
+        }
+    }
+
+    /// A KeyPackage of a version 3 core: its capabilities list `0xF0A3`.
+    pub fn named_key_package(&self) -> Vec<u8> {
+        KeyPackage::builder()
+            .leaf_node_capabilities(named_capabilities())
+            .build(
+                CIPHERSUITE,
+                &self.provider,
+                &self.signer,
+                self.credential_with_key(),
+            )
+            .check("KeyPackage")
+            .key_package()
+            .tls_serialize_detached()
+            .check("KeyPackage bytes")
+    }
+
+    /// Uploads `one_time` named-group-capable one-time KeyPackages plus a
+    /// capable last-resort one, as a version 3 core does.
+    pub async fn upload_named_key_packages(&self, conn: &Conn, one_time: usize) {
+        let key_packages = (0..one_time).map(|_| self.named_key_package()).collect();
+        conn.keys()
+            .upload_key_packages(authed(
+                self.token(),
+                pb::UploadKeyPackagesRequest {
+                    key_packages,
+                    last_resort_key_package: self.named_key_package(),
+                },
+            ))
+            .await
+            .check("UploadKeyPackages");
+    }
+
+    /// Creates a named group as the admin's version 3 core would, as
+    /// [`TestDevice::group`] (the current group moves to
+    /// [`TestDevice::other`]): the server as external sender, the admin in
+    /// `0xF0A1` and, when `with_named`, the marker `0xF0A3`.
+    pub fn create_named_group(
+        &mut self,
+        group_id: &[u8],
+        server: &pb::ExternalSender,
+        admin_user_id: &str,
+        with_named: bool,
+    ) -> pb::CreateNamedGroupRequest {
+        let mut list = vec![
+            Extension::ExternalSenders(vec![external_sender(server)]),
+            Extension::Unknown(
+                ADMIN_EXTENSION_TYPE,
+                UnknownExtension(admin_extension_data(admin_user_id)),
+            ),
+        ];
+        if with_named {
+            list.push(Extension::Unknown(
+                NAMED_EXTENSION_TYPE,
+                UnknownExtension(named_extension_data()),
+            ));
+        }
+        let extensions = Extensions::from_vec(list).check("named group context extensions");
+        let group = MlsGroup::builder()
+            .with_group_id(GroupId::from_slice(group_id))
+            .ciphersuite(CIPHERSUITE)
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .use_ratchet_tree_extension(true)
+            .with_capabilities(named_capabilities())
+            .with_group_context_extensions(extensions)
+            .build(&self.provider, &self.signer, self.credential_with_key())
+            .check("named MlsGroup");
+        self.other = self.group.take();
+        self.group = Some(group);
+        let state = self.public_state();
+        pb::CreateNamedGroupRequest {
             group_id: state.group_id,
             group_info: state.group_info,
             ratchet_tree: state.ratchet_tree,

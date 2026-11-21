@@ -65,6 +65,8 @@ pub enum CoreErrorKind {
     ChatClosed,
     /// The server does not support DMs yet.
     DmsUnavailable,
+    /// The server does not support named groups yet.
+    GroupsUnavailable,
     /// The picked file is not an image the app can send (JPEG, PNG, GIF or
     /// WebP).
     ImageUnsupported,

@@ -8,12 +8,7 @@ import '../support/fake_core_service.dart';
 
 FakeCoreService adminCore() => FakeCoreService(storedUser: akhil)..admin = true;
 
-const adminEntries = [
-  'Invite a user',
-  'Invites',
-  'Remove a user',
-  'Group name',
-];
+const adminEntries = ['Invite a user', 'Invites', 'Remove a user'];
 
 void main() {
   // spec: app-ui/admin-screens
@@ -111,20 +106,5 @@ void main() {
     await tap(tester, find.widgetWithText(FilledButton, 'Remove'));
     expect(core.args['removeUser'], bob);
     expect(find.text('Nobody else is in the group'), findsOneWidget);
-  });
-
-  // spec: app-ui/admin-screens
-  testWidgets('the admin changes the group name', (tester) async {
-    final core = adminCore();
-    await openApp(tester, core);
-    await menu(tester, 'Group name');
-    await tester.enterText(find.byKey(const Key('groupName')), 'Family');
-    await tap(tester, find.text('Save'));
-    expect(core.args['setGroupName'], 'Family');
-
-    // The settings reach the members encrypted; the chat's title follows.
-    core.emit(const CoreEvent.groupSettingsChanged(name: 'Family', by: akhil));
-    await settle(tester);
-    expect(find.text('Family'), findsOneWidget);
   });
 }

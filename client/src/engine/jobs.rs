@@ -79,6 +79,36 @@ pub(crate) enum Job {
     CommitServerRemovesIn { group_id: Vec<u8> },
     /// group-membership: Own leaf rotation, in the DM `group_id`.
     RotateIn { group_id: Vec<u8> },
+    /// multi-group: Named group creation. Admin: the named group `group_id` at
+    /// epoch 0, then `Admin.CreateNamedGroup`; the name and the `members` are
+    /// queued after it.
+    CreateNamedGroup {
+        group_id: Vec<u8>,
+        name: Option<String>,
+        members: Vec<UserId>,
+        reply: Option<Reply>,
+    },
+    /// multi-group: Named group membership. Admin: add all of `user`'s
+    /// version 3 devices to the named group `group_id`.
+    AddToGroup {
+        group_id: Vec<u8>,
+        user: UserId,
+        reply: Option<Reply>,
+    },
+    /// multi-group: Named group membership. Admin: remove all of `user`'s
+    /// devices from the named group `group_id`; `after` runs next (removing a
+    /// user from every group, then `Admin.RemoveUser`).
+    RemoveFromGroup {
+        group_id: Vec<u8>,
+        user: UserId,
+        reply: Option<Reply>,
+        after: Option<Box<Job>>,
+    },
+    /// multi-group: Closing a named group. Admin: `Admin.CloseGroup`.
+    CloseGroup {
+        group_id: Vec<u8>,
+        reply: Option<Reply>,
+    },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -136,6 +166,8 @@ impl Job {
     pub(crate) fn dm_group(&self) -> Option<&[u8]> {
         match self {
             Job::AddToDm { group_id, .. }
+            | Job::AddToGroup { group_id, .. }
+            | Job::RemoveFromGroup { group_id, .. }
             | Job::CommitServerRemovesIn { group_id }
             | Job::RotateIn { group_id } => Some(group_id),
             _ => None,
@@ -199,6 +231,14 @@ impl Job {
                 format!("dm_server_removes|{}", hex(group_id))
             }
             Job::RotateIn { group_id } => format!("dm_rotate|{}", hex(group_id)),
+            Job::CreateNamedGroup { group_id, .. } => format!("ng_create|{}", hex(group_id)),
+            Job::AddToGroup { group_id, user, .. } => {
+                format!("ng_add|{}|{user}", hex(group_id))
+            }
+            Job::RemoveFromGroup { group_id, user, .. } => {
+                format!("ng_remove|{}|{user}", hex(group_id))
+            }
+            Job::CloseGroup { group_id, .. } => format!("ng_close|{}", hex(group_id)),
         }
     }
 
@@ -243,6 +283,23 @@ impl Job {
                 unhex(group).map(|group_id| Job::CommitServerRemovesIn { group_id })
             }
             ["dm_rotate", group] => unhex(group).map(|group_id| Job::RotateIn { group_id }),
+            ["ng_add", group, user] => match (unhex(group), parse_user(user)) {
+                (Some(group_id), Some(user)) => Some(Job::AddToGroup {
+                    group_id,
+                    user,
+                    reply: None,
+                }),
+                _ => None,
+            },
+            ["ng_remove", group, user] => match (unhex(group), parse_user(user)) {
+                (Some(group_id), Some(user)) => Some(Job::RemoveFromGroup {
+                    group_id,
+                    user,
+                    reply: None,
+                    after: None,
+                }),
+                _ => None,
+            },
             _ => None,
         };
         job.unwrap_or(Job::Rotate)
@@ -254,13 +311,25 @@ impl Job {
             | Job::AddUser { reply, .. }
             | Job::RemoveUser { reply, .. }
             | Job::RemoveDevice { reply, .. }
-            | Job::OpenDm { reply, .. } => reply.take(),
+            | Job::OpenDm { reply, .. }
+            | Job::CreateNamedGroup { reply, .. }
+            | Job::AddToGroup { reply, .. }
+            | Job::RemoveFromGroup { reply, .. }
+            | Job::CloseGroup { reply, .. } => reply.take(),
             _ => None,
         }
     }
 
     /// Ends the job with `error`.
     pub(crate) fn fail(mut self, error: ClientError) {
+        // A removal chained to this one cannot run now: it fails too.
+        if let Job::RemoveFromGroup { after, reply, .. } = &mut self
+            && reply.is_none()
+            && let Some(after) = after.take()
+        {
+            after.fail(error);
+            return;
+        }
         match self.take_reply() {
             Some(reply) => {
                 let _ = reply.send(Err(error));
@@ -270,6 +339,7 @@ impl Job {
     }
 
     fn succeed(mut self) {
+        // A chained job still has to run: the caller queues it (see `finish`).
         if let Some(reply) = self.take_reply() {
             let _ = reply.send(Ok(()));
         }
@@ -290,6 +360,23 @@ impl Engine {
             Job::OpenDm { ref peer, .. } => {
                 let peer = peer.clone();
                 let result = self.open_dm(&peer).await;
+                match result {
+                    Ok(()) => job.succeed(),
+                    Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::CreateNamedGroup { .. } => {
+                let result = self.create_named_group(&job).await;
+                match result {
+                    Ok(()) => job.succeed(),
+                    Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::CloseGroup { ref group_id, .. } => {
+                let group_id = group_id.clone();
+                let result = self.close_named_group(&group_id).await;
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
@@ -355,9 +442,25 @@ impl Engine {
 
     /// What to do after the server accepted a job's commit (or the job needed
     /// none).
-    pub(super) async fn finish(&mut self, job: Job) {
+    pub(super) async fn finish(&mut self, mut job: Job) {
         match job {
-            Job::RemoveUser { ref user, .. } => {
+            Job::RemoveUser {
+                ref user,
+                ref mut reply,
+            } => {
+                // multi-group: Removing a user. Every named group the user is
+                // in loses their devices first, one commit at a time.
+                if let Some(group_id) = self.named_group_with(user) {
+                    let user = user.clone();
+                    let reply = reply.take();
+                    self.jobs.push_front(Job::RemoveFromGroup {
+                        group_id,
+                        user: user.clone(),
+                        reply: None,
+                        after: Some(Box::new(Job::RemoveUser { user, reply })),
+                    });
+                    return;
+                }
                 let result = self.admin_remove_user(user).await;
                 match result {
                     Ok(()) => job.succeed(),
@@ -367,6 +470,34 @@ impl Engine {
             Job::AddLinked { device } => {
                 if let Err(error) = self.store().remove_pending_link(&device) {
                     tracing::warn!(%error, "cannot clear a pending link");
+                }
+                // multi-group: Named group membership. A member adds their own
+                // new device to the named groups they are in too.
+                let named: Vec<Vec<u8>> = self
+                    .dms
+                    .iter()
+                    .filter(|(_, group)| mls_group::is_named(group.extensions()))
+                    .map(|(group_id, _)| group_id.clone())
+                    .collect();
+                for group_id in named {
+                    self.push_job(Job::AddToDm {
+                        group_id,
+                        user: self.user(),
+                        device,
+                    });
+                }
+            }
+            Job::RemoveFromGroup {
+                ref mut after,
+                ref mut reply,
+                ..
+            } => {
+                let next = after.take();
+                if let Some(reply) = reply.take() {
+                    let _ = reply.send(Ok(()));
+                }
+                if let Some(next) = next {
+                    self.jobs.push_front(*next);
                 }
             }
             job => job.succeed(),
@@ -751,11 +882,195 @@ impl Engine {
                 )?;
                 Ok(Prepared::Commit(staged, Vec::new()))
             }
+            Job::AddToGroup { group_id, user, .. } => {
+                self.require_admin()?;
+                let Some(group) = self.dms.get(group_id) else {
+                    return Err(ClientError::NoSuchChat);
+                };
+                let Some(response) = self.fetch_in(user, &[], group_id).await? else {
+                    return Err(ClientError::UnknownUser(user.clone()));
+                };
+                self.check_pin(user, &response.identity_public_key)?;
+                let mut checked = Vec::new();
+                for entry in &response.devices {
+                    let (key_package, cert) = check_fetched(
+                        self.store().mls(),
+                        &response.identity_public_key,
+                        user,
+                        entry,
+                    )
+                    .map_err(|problem| ClientError::Certificate(problem.to_string()))?;
+                    if leaf_of(group, &cert.device_id).is_some() {
+                        continue;
+                    }
+                    checked.push((key_package, device_ref(user, &cert.device_id)));
+                }
+                if checked.is_empty() {
+                    return if response.devices.is_empty() {
+                        Err(ClientError::NoKeyPackages(user.clone()))
+                    } else {
+                        Ok(Prepared::Nothing)
+                    };
+                }
+                let (adds, recipients): (Vec<_>, Vec<_>) = checked.into_iter().unzip();
+                let staged = self.stage_in(
+                    group_id,
+                    CommitPlan {
+                        adds,
+                        ..Default::default()
+                    },
+                )?;
+                Ok(Prepared::Commit(staged, recipients))
+            }
+            Job::RemoveFromGroup { group_id, user, .. } => {
+                self.require_admin()?;
+                let Some(group) = self.dms.get(group_id) else {
+                    return Ok(Prepared::Nothing);
+                };
+                let pending = pending_removals(group);
+                let removes: Vec<LeafNodeIndex> = leaves_of_user(group, user)
+                    .into_iter()
+                    .map(|(leaf, _)| leaf)
+                    .filter(|leaf| !pending.contains(leaf))
+                    .collect();
+                if removes.is_empty() {
+                    return Ok(Prepared::Nothing);
+                }
+                let staged = self.stage_in(
+                    group_id,
+                    CommitPlan {
+                        removes,
+                        ..Default::default()
+                    },
+                )?;
+                Ok(Prepared::Commit(staged, Vec::new()))
+            }
             Job::CreateGroup { .. }
+            | Job::CreateNamedGroup { .. }
+            | Job::CloseGroup { .. }
             | Job::UploadKeyPackages { .. }
             | Job::RequestReadd { .. }
             | Job::OpenDm { .. } => Ok(Prepared::Nothing),
         }
+    }
+
+    /// The id of an open named group this device is in that `user` has a
+    /// device in, if any.
+    fn named_group_with(&self, user: &UserId) -> Option<Vec<u8>> {
+        self.dms.iter().find_map(|(group_id, group)| {
+            (mls_group::is_named(group.extensions()) && !leaves_of_user(group, user).is_empty())
+                .then(|| group_id.clone())
+        })
+    }
+
+    /// multi-group: Named group creation. The group at epoch 0 with this
+    /// device (the admin's) as its only member, then `Admin.CreateNamedGroup`;
+    /// afterwards the name and the member adds are queued.
+    async fn create_named_group(&mut self, job: &Job) -> Result<(), ClientError> {
+        let Job::CreateNamedGroup {
+            group_id,
+            name,
+            members,
+            ..
+        } = job
+        else {
+            return Ok(());
+        };
+        self.require_admin()?;
+        if !self
+            .shared
+            .server_knows_named_groups
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Err(ClientError::GroupsUnavailable);
+        }
+        let session = self.session().map_err(ClientError::from)?;
+        let admin = self.user().to_string();
+        let signer = self.keys.mls_signer();
+        let mut group = mls_group::create_named_group(
+            self.store().mls(),
+            &signer,
+            self.credential(),
+            openmls::prelude::GroupId::from_slice(group_id),
+            self.server.clone(),
+            &admin,
+        )?;
+        let group_info = group
+            .export_group_info(self.store().mls().crypto(), &signer, false)
+            .map_err(|e| crate::mls::MlsError::new("exporting the GroupInfo", e))?;
+        let request = pb::CreateNamedGroupRequest {
+            group_id: group.group_id().as_slice().to_vec(),
+            group_info: mls_group::wire(&group_info)?,
+            ratchet_tree: group
+                .export_ratchet_tree()
+                .tls_serialize_detached()
+                .map_err(|e| crate::mls::MlsError::new("serializing the ratchet tree", e))?,
+        };
+        let created = session
+            .conn()
+            .admin()
+            .create_named_group(session.request(request)?)
+            .await;
+        if let Err(status) = created {
+            let _ = group.delete(self.store().mls().storage());
+            return Err(NetError::from(status).into());
+        }
+        let now = self.now();
+        let chat = self
+            .store()
+            .set_named_joined(group.group_id().as_slice(), now, 0)?;
+        tracing::info!("created a named group");
+        self.dms.insert(group.group_id().as_slice().to_vec(), group);
+        if let Some(name) = name {
+            self.store().set_named_name(group_id, name)?;
+            self.queue_named_name(chat, name)?;
+        }
+        for user in members {
+            self.push_job(Job::AddToGroup {
+                group_id: group_id.clone(),
+                user: user.clone(),
+                reply: None,
+            });
+        }
+        self.emit(crate::events::Event::ChatsChanged);
+        Ok(())
+    }
+
+    /// Queues a `GroupSettings` with `name` in the named group's chat `chat`.
+    pub(super) fn queue_named_name(&self, chat: i64, name: &str) -> Result<(), ClientError> {
+        let now = self.now();
+        let content = crate::messaging::encode_group_settings(Some(name), now)
+            .map_err(|_| ClientError::TooLong)?;
+        let user = self.user().to_string();
+        self.store().insert_outgoing_in(
+            chat,
+            &crate::store::OutgoingMessage {
+                msg_id: super::random_msg_id()?,
+                sender_user: &user,
+                sender_device: self.account.device_id,
+                content: &content,
+                created_at: now,
+            },
+        )?;
+        Ok(())
+    }
+
+    /// multi-group: Closing a named group. `Admin.CloseGroup`; the
+    /// `GroupClosed` notice then marks the chat closed everywhere, this device
+    /// included.
+    async fn close_named_group(&mut self, group_id: &[u8]) -> Result<(), ClientError> {
+        self.require_admin()?;
+        let session = self.session().map_err(ClientError::from)?;
+        session
+            .conn()
+            .admin()
+            .close_group(session.request(pb::CloseGroupRequest {
+                group_id: group_id.to_vec(),
+            })?)
+            .await
+            .map_err(NetError::from)?;
+        tracing::info!("closed a named group");
+        Ok(())
     }
 
     fn server_index_in(&self, group_id: &[u8]) -> Option<u32> {

@@ -144,11 +144,19 @@ pub struct ChatMessage {
     pub status: Option<SendState>,
 }
 
-/// What a chat is (app-ui: Chat list, change `dms`).
+/// What a chat is (app-ui: Chat list, changes `dms`, `lobby-multi-group`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatKindInfo {
-    /// The one admin-run group.
-    Main,
+    /// The system lobby, shown as the fixed name "lobby".
+    Lobby,
+    /// An admin-created named group.
+    Group {
+        /// The name the admin set; unset until then (the app shows
+        /// "Unnamed group").
+        name: Option<String>,
+        /// The admin closed it: history only.
+        closed: bool,
+    },
     /// A DM with `peer`.
     Dm {
         /// The other user.
@@ -163,9 +171,9 @@ pub enum ChatKindInfo {
 /// One chat in the chat list (app-ui: Chat list).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatSummary {
-    /// Its id: 0 is the main group.
+    /// Its id: 0 is the lobby.
     pub chat_id: i64,
-    /// Main group or DM.
+    /// Lobby, named group or DM.
     pub kind: ChatKindInfo,
     /// Received messages after the read mark.
     pub unread: u32,
@@ -237,17 +245,6 @@ pub enum CoreEvent {
         display_name: Option<String>,
         /// The "about" text, if set.
         about: Option<String>,
-    },
-    /// The admin changed the group settings; emitted only when the name
-    /// changes.
-    GroupSettingsChanged {
-        /// The group's name, if set.
-        name: Option<String>,
-        /// The name stored before; unset on this device's first sync, when
-        /// no rename notice is shown (app-ui: Notices in the chat).
-        previous: Option<String>,
-        /// The user whose admin device renamed it.
-        by: UserRef,
     },
     /// A message arrived that this device cannot read.
     Unreadable {

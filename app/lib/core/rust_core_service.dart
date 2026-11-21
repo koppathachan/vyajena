@@ -198,9 +198,6 @@ class RustCoreService extends CoreService {
   Future<List<MemberDevice>> members() => _c.members();
 
   @override
-  Future<String?> groupName() => _c.groupName();
-
-  @override
   Future<BigInt?> epoch() => _c.epoch();
 
   @override
@@ -226,7 +223,30 @@ class RustCoreService extends CoreService {
   Future<void> removeUser(UserRef user) => _c.removeUser(user: user);
 
   @override
-  Future<int> setGroupName(String? name) => _c.setGroupName(name: name);
+  Future<bool> namedGroupsAvailable() => _c.namedGroupsAvailable();
+
+  @override
+  Future<int> createNamedGroup(String? name, List<UserRef> members) =>
+      _c.createNamedGroup(name: name, members: members);
+
+  @override
+  Future<void> addToGroup(int chatId, UserRef user) =>
+      _c.addToGroup(chatId: chatId, user: user);
+
+  @override
+  Future<void> removeFromGroup(int chatId, UserRef user) =>
+      _c.removeFromGroup(chatId: chatId, user: user);
+
+  @override
+  Future<int> renameGroup(int chatId, String name) =>
+      _c.renameGroup(chatId: chatId, name: name);
+
+  @override
+  Future<void> closeGroup(int chatId) => _c.closeGroup(chatId: chatId);
+
+  @override
+  Future<List<MemberDevice>> groupMembers(int chatId) =>
+      _c.groupMembers(chatId: chatId);
 
   @override
   Future<bool> acceptIdentityKey(UserRef user) =>

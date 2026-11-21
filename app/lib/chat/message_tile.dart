@@ -10,10 +10,12 @@
 // are drawn with the reader's name for their target, mentions of this user
 // highlighted. A reply shows who and what it answers above its text; the
 // quote is tappable. Swiping right or long-pressing offers Reply.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
 import 'image_bubble.dart';
+import 'links.dart';
 import 'mentions.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -119,20 +121,14 @@ class MessageTile extends StatelessWidget {
     }
   }
 
-  /// [text] with this message's mentions drawn in it.
-  Widget _withMentions(BuildContext context, String text) =>
-      message.mentions.isEmpty
-      ? Text(text)
-      : Text.rich(
-          mentionSpans(
-            context,
-            text,
-            message.mentions,
-            label: _label,
-            me: me,
-            own: message.ownUser,
-          ),
-        );
+  /// [text] with this message's mentions and its links drawn in it.
+  Widget _withMentions(BuildContext context, String text) => _MessageText(
+    text: text,
+    mentions: message.mentions,
+    label: _label,
+    me: me,
+    own: message.ownUser,
+  );
 
   Widget _image(BuildContext context, ImageView image) {
     final core = this.core;
@@ -290,6 +286,65 @@ class MessageTile extends StatelessWidget {
         ),
       ),
       child: GestureDetector(onLongPress: () => _sheet(context), child: bubble),
+    );
+  }
+}
+
+/// Message text: plain when it has neither mentions nor links, else rich with
+/// mentions drawn and URLs tappable (app-ui: Links in messages). Owns the
+/// links' tap recognizers.
+class _MessageText extends StatefulWidget {
+  const _MessageText({
+    required this.text,
+    required this.mentions,
+    required this.label,
+    required this.me,
+    required this.own,
+  });
+
+  final String text;
+  final List<MentionSpan> mentions;
+  final String Function(MentionTarget target) label;
+  final UserRef? me;
+  final bool own;
+
+  @override
+  State<_MessageText> createState() => _MessageTextState();
+}
+
+class _MessageTextState extends State<_MessageText> {
+  final List<GestureRecognizer> _recognizers = [];
+
+  void _dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+  }
+
+  @override
+  void dispose() {
+    _dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _dispose();
+    if (widget.mentions.isEmpty && findLinks(widget.text).isEmpty) {
+      return Text(widget.text);
+    }
+    return Text.rich(
+      mentionSpans(
+        context,
+        widget.text,
+        widget.mentions,
+        label: widget.label,
+        me: widget.me,
+        own: widget.own,
+        onLink: (url) => showLinkSheet(context, url),
+        recognizers: _recognizers,
+      ),
     );
   }
 }
