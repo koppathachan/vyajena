@@ -1,12 +1,12 @@
 ## 0. Before starting
 
-- [ ] 0.1 `media-blobs` merged (the blob store and media send/download machinery)
-- [ ] 0.2 Owner decides the deferred items: captions on audio (proposed: no); the
+- [x] 0.1 `media-blobs` merged (the blob store and media send/download machinery)
+- [x] 0.2 Owner decides the deferred items: captions on audio (proposed: no); the
       record/playback plugins (proposed: `record` + `just_audio`)
 
 ## 1. Spikes
 
-- [ ] 1.1 S1: a cross-platform record + playback plugin pair (proposed `record` +
+- [x] 1.1 S1: a cross-platform record + playback plugin pair (proposed `record` +
       `just_audio`) that lets the core own the Opus/OGG encode; result in design D4
 
 ## 2. Proto and shared rules

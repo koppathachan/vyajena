@@ -95,11 +95,39 @@
   `Content`; the server stores ciphertext with no key (blob-store). The wake ping
   stays the fixed "New message".
 
+### D4 — Spike S1 result (2026-11-21)
+
+Run on an iPhone 16 simulator (iOS 26.5) and an Android 15 (API 35) arm64 emulator
+with `record` 7.2.0 and `just_audio` 0.10.6; the spike is deleted.
+
+- **Capture:** `record` writes a **WAV** (PCM 16-bit, mono, 48 kHz) on both
+  platforms (`AudioEncoder.wav`; the header on both reported fmt 1, 1 channel,
+  48 000 Hz, 16 bit). Its own Opus encoder is **not canonical**: on iOS it
+  produces a CAF container (`caff`), on Android an OGG one. So the recorder is
+  asked for the WAV and **the core encodes the canonical OGG/Opus mono from it**;
+  Dart hands the core the temp file's bytes and never encodes. The same WAV also
+  plays in the preview through `just_audio` on both platforms.
+- **Playback:** `just_audio` plays the core's OGG/Opus on both (iOS duration
+  5.14 s for a 5.0 s clip, Android 5.006 s; both ran to `completed`).
+  **Unverified:** iOS older than 26.5 (the app's floor is iOS 15; only the 26.5
+  simulator runtime is installed here). If a device cannot play OGG/Opus the
+  core can decode the cached blob to WAV for the player; not built, no
+  evidence it is needed.
+- **Core encoder: `opus-pure` 0.2.3** (pure Rust: Opus encoder and decoder plus the
+  RFC 7845 OGG muxer and reader, no C, no `build.rs`). libopus through `opusic-sys`
+  or `audiopus_sys` needs `cmake` (absent here, and a build-tool dependency for
+  each phone target), so it was rejected. The spike encoded 5 s of mono at 24 and
+  32 kbps (`Application::Voip`): output 13.5 and 17.3 kB (21 and 27 kbps
+  effective), and libopus (`opusic-sys`) decoded the same packets to the same
+  length and the same SNR as `opus-pure` did, so the OGG/Opus is standard.
+  Risk: a young third-party crate; the core's own round-trip tests are the net.
+- **Tooling note:** on this machine Gradle needs `JAVA_TOOL_OPTIONS=-Djava.net.useSystemProxies=true`
+  to download its distribution (Java sockets cannot connect directly).
+
 ## Spikes (before code that relies on them)
 
-- **S1:** a cross-platform record + playback plugin pair that lets the core own the
-  encode (D4). Run before the app and core code; record the choice here; delete the
-  spike.
+- **S1 (done, D4):** `record` + `just_audio`, with the core encoding the WAV the
+  recorder writes; the spike is deleted.
 
 ## Risks / Trade-offs
 
