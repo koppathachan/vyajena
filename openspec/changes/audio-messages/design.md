@@ -1,0 +1,116 @@
+## Context
+
+- **`media-blobs` built the whole media path.** `Blobs.UploadBlob` /
+  `DownloadBlob` / `AckBlob` store opaque ciphertext; the `Image` body carries a
+  `blob_id`, `blob_key`, size and a ThumbHash; the core owns the transform, the
+  blob crypto (XChaCha20-Poly1305, `blob_id` as AAD), the send order (upload the
+  blob, then the `APPLICATION` envelope), the cache, expiry and resend. An audio
+  message is the same shape with a different payload.
+- **The `Content` oneof degrades unknown bodies** (message-content: Inner content
+  format), so adding `Audio` is safe for old apps.
+- **The core owns every media transform; keys never leave it** (client-runtime).
+- **Owner decisions (2026-11-20):** Opus/mono (locked 2026-11-19) in OGG; ~2 min
+  reusing `MAX_BLOB_BYTES`; amplitude peaks in the body; hold-to-record.
+
+## Goals / Non-Goals
+
+**Goals**
+- Record, send and play a short voice message, end-to-end encrypted like an image.
+- Reuse the blob store and the image send/download/expiry machinery unchanged.
+- A waveform preview that needs no download.
+
+**Non-goals**
+- Video, calls, background playback, speed controls, transcription.
+- A new `Blobs` RPC or any server change.
+- Captions on audio in MVP (deferred).
+
+## Decisions
+
+### D1. The `Audio` body mirrors `Image`
+
+- **`Audio { bytes blob_id; bytes blob_key; uint64 blob_size; uint32 duration_ms;
+  bytes waveform; }`**
+  - `blob_id` (16) / `blob_key` (32): as `Image`; the key travels only inside the
+    encrypted `Content`.
+  - `duration_ms`: at most `protocol::audio::MAX_AUDIO_DURATION_MS` (~120 000).
+  - `waveform`: a bounded array of amplitude peaks (one byte per peak, a fixed
+    small count), at most `protocol::audio::MAX_AUDIO_WAVEFORM_BYTES`; shown as the
+    bar heights before the clip downloads.
+- **No MIME field:** the container and codec are fixed (OGG/Opus mono), as WebP is
+  fixed for images.
+- **No caption field in MVP** (owner, 2026-11-21: voice note only). If the owner
+  later wants captions, add `caption` + `caption_mentions` exactly as `Image` has them.
+
+### D2. OGG container, Opus mono, one voice bitrate
+
+- **OGG/Opus (RFC 7845)** is the standard for a standalone Opus stream, with mature
+  native support on iOS and Android. Mono at ~24–32 kbps keeps a 2-minute clip
+  ≈ 0.5 MB, well under `MAX_BLOB_BYTES`.
+- **Why not WebM:** WebM/Opus is the web-streaming convention; for a stored mobile
+  voice note OGG is more conventional and as widely decodable. The owner chose OGG
+  (2026-11-20).
+
+### D3. Reuse the image blob machinery wholesale
+
+- **Blob crypto and send order** (client-runtime: Blob crypto and send order): the
+  core encrypts the OGG with a fresh key and `blob_id`, uploads the blob, then
+  sends the `APPLICATION` envelope — identical to an image, including offline
+  queueing, crash recovery, the `UNAVAILABLE` backoff, and resend reusing the
+  `msg_id`.
+- **Download and cache / expired media** (client-runtime): download on tap,
+  decrypt, cache in the media cache, ack; a deleted-on-server blob shows "audio
+  expired"; the sender can resend from its cache.
+- **No server change:** the server treats the blob as any blob; `MAX_BLOB_BYTES`,
+  `BLOB_TTL` and ack-delete apply unchanged.
+
+### D4. Recording: hold-to-record, core-owned encode
+
+- **Hold-to-record** in the composer: press and hold the mic, release to stop;
+  slide to cancel while holding. On release the composer shows a **preview**
+  (play / delete / send).
+- **Dart captures nothing for the wire.** The recorder plugin writes the clip to a
+  temp file; Dart hands the **raw recorded bytes (or the file path) to the core**,
+  which re-encodes to the canonical OGG/Opus mono at the target bitrate, enforces
+  `MAX_AUDIO_DURATION_MS` and `MAX_BLOB_BYTES`, and computes the waveform. Dart
+  never encodes Opus or computes the waveform for the wire, mirroring the image
+  rule (client-runtime: the core owns every media transform).
+- **Spike S1:** confirm a recorder and a player plugin that work on both iOS and
+  Android and let the core take the raw audio. Proposed: `record` (captures
+  Opus/OGG on both platforms) and `just_audio` (plays OGG/Opus on both). If a
+  plugin cannot hand the core raw audio the core decodes and re-encodes to the
+  canonical form. Record the result here.
+
+### D5. Playback bubble
+
+- **The bubble** shows a play/pause control, the waveform (from the body, filled as
+  it plays), and the duration. First tap downloads (as an image does), then plays.
+- **One clip plays at a time;** starting another stops the first. Playback stops
+  when the chat closes.
+- **No auto-advance** (owner, 2026-11-21): playing one voice note does not start the
+  next; continuous playback is a later change.
+
+### D6. Audio stays encrypted, push unchanged
+
+- The audio reference, key and waveform travel only inside the encrypted
+  `Content`; the server stores ciphertext with no key (blob-store). The wake ping
+  stays the fixed "New message".
+
+## Spikes (before code that relies on them)
+
+- **S1:** a cross-platform record + playback plugin pair that lets the core own the
+  encode (D4). Run before the app and core code; record the choice here; delete the
+  spike.
+
+## Risks / Trade-offs
+
+- **Opus encode on device:** the chosen recorder should emit Opus directly; if not,
+  the core re-encodes, costing CPU on send. Measured in S1.
+- **Waveform cost:** computing peaks is cheap; bounded bytes in the body.
+- **No caption** means no text with a voice note in MVP; deferred by the owner.
+
+## Open Questions — resolved (owner, 2026-11-21)
+
+1. **Captions on audio:** text-free voice note for MVP; no caption field.
+2. **Plugins:** `record` + `just_audio`, validated by spike S1 on iOS + Android.
+3. **Auto-play / continuous playback:** no; one clip at a time, auto-advance is a
+   later change.
