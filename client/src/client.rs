@@ -1482,9 +1482,7 @@ impl Client {
         if self.shared.store.is_media_expired(&audio.blob_id)? {
             return Err(ClientError::MediaExpired);
         }
-        let blob = self
-            .fetch_blob(ChatId(stored.chat), &audio.blob_id)
-            .await?;
+        let blob = self.fetch_blob(ChatId(stored.chat), &audio.blob_id).await?;
         let (key, blob_id) = (audio.blob_key, audio.blob_id);
         let ogg = blocking(move || {
             let ogg =
@@ -1586,9 +1584,7 @@ impl Client {
         if self.shared.store.is_media_expired(&image.blob_id)? {
             return Err(ClientError::MediaExpired);
         }
-        let blob = self
-            .fetch_blob(ChatId(stored.chat), &image.blob_id)
-            .await?;
+        let blob = self.fetch_blob(ChatId(stored.chat), &image.blob_id).await?;
         let (key, blob_id) = (image.blob_key, image.blob_id);
         let webp = blocking(move || {
             let webp =

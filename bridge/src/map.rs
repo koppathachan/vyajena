@@ -10,9 +10,9 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, ImageView,
-    InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote,
-    SendState, UserRef,
+    AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
+    ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
+    ReplyQuote, SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {

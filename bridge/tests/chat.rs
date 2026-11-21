@@ -16,6 +16,7 @@ fn text_of(message: &ChatMessage) -> &str {
     match &message.body {
         ChatBody::Text { text } => text,
         ChatBody::Image { .. } => "<image>",
+        ChatBody::Audio { .. } => "<audio>",
         ChatBody::Unsupported => "<unsupported>",
     }
 }

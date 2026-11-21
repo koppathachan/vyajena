@@ -80,7 +80,7 @@ async fn alice_and_bob(server: &TestServer) -> (Device, Device) {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_recording_goes_in_as_wav_and_a_clip_path_comes_out() {
     let server = TestServer::start().await;
-    let (alice, mut bob) = alice_and_bob(&server).await;
+    let (mut alice, mut bob) = alice_and_bob(&server).await;
 
     let id = alice
         .core
@@ -107,11 +107,7 @@ async fn a_recording_goes_in_as_wav_and_a_clip_path_comes_out() {
     // The sender has her own clip; Bob's tap gets a path to an OGG/Opus file.
     let own = alice.core.message(id).check("message").check("some");
     assert_eq!(audio_of(&own).state, MediaStatus::Available);
-    let path = bob
-        .core
-        .download_audio(received.id)
-        .await
-        .check("download");
+    let path = bob.core.download_audio(received.id).await.check("download");
     assert!(path.ends_with(".opus"), "{path}");
     let bytes = std::fs::read(&path).check("read the clip");
     assert_eq!(&bytes[..4], b"OggS");

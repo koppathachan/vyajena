@@ -148,7 +148,11 @@ async fn alice_sends_a_voice_message_and_bob_and_the_admin_play_it() {
         .download_audio(at_admin.id)
         .await
         .check("download");
-    assert_eq!(std::fs::read(admin_path).check("read"), ogg, "the same clip");
+    assert_eq!(
+        std::fs::read(admin_path).check("read"),
+        ogg,
+        "the same clip"
+    );
     assert!(server.blobs().is_empty(), "every member device has acked");
 }
 
@@ -283,7 +287,11 @@ async fn an_expired_voice_message_shows_as_expired_and_the_sender_can_resend_it(
         .check("message")
         .check("some");
     assert_eq!(audio_of(&now).state, MediaState::Expired);
-    assert_eq!(audio_of(&now).duration_ms, 4_000, "the bubble keeps its shape");
+    assert_eq!(
+        audio_of(&now).duration_ms,
+        4_000,
+        "the bubble keeps its shape"
+    );
 
     // Alice kept the clip: resending makes a new message with a new blob.
     let again_id = alice.client.resend_audio(id).await.check("resend");

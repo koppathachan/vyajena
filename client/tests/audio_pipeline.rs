@@ -133,10 +133,7 @@ fn what_is_not_a_readable_recording_is_refused() {
     assert_eq!(encode(b"hello"), Err(AudioError::Unsupported));
     assert_eq!(encode(&[]), Err(AudioError::Unsupported));
     // A WAV with no sound in it.
-    assert_eq!(
-        encode(&wav_of(&[], 48_000, 1, 16)),
-        Err(AudioError::Empty)
-    );
+    assert_eq!(encode(&wav_of(&[], 48_000, 1, 16)), Err(AudioError::Empty));
     // 8-bit samples and three channels are not what the recorder is asked for.
     assert_eq!(
         encode(&wav_of(&[0; 4_800], 48_000, 1, 8)),
@@ -147,7 +144,10 @@ fn what_is_not_a_readable_recording_is_refused() {
         Err(AudioError::Unsupported)
     );
     // The container of an image is not audio either.
-    assert_eq!(encode(b"RIFF\0\0\0\0WEBPVP8 "), Err(AudioError::Unsupported));
+    assert_eq!(
+        encode(b"RIFF\0\0\0\0WEBPVP8 "),
+        Err(AudioError::Unsupported)
+    );
 }
 
 // spec: audio-messages/recording-and-encoding

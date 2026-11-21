@@ -19,16 +19,16 @@
 
 ## 3. Core
 
-- [ ] 3.1 Audio encode pipeline: raw audio → Opus/OGG mono at the target bitrate,
+- [x] 3.1 Audio encode pipeline: raw audio → Opus/OGG mono at the target bitrate,
       enforce duration and `MAX_BLOB_BYTES`, compute the waveform; tests
       `audio-messages/recording-and-encoding`
-- [ ] 3.2 `Audio` body; blob crypto, send order, download, cache, expiry and resend
+- [x] 3.2 `Audio` body; blob crypto, send order, download, cache, expiry and resend
       reused from images; tests `audio-messages/audio-messages`,
       `audio-messages/audio-stays-encrypted`
 
 ## 4. Bridge
 
-- [ ] 4.1 `ChatBody::Audio` (duration, waveform, media status), `send_audio`,
+- [x] 4.1 `ChatBody::Audio` (duration, waveform, media status), `send_audio`,
       playback hooks; `flutter_rust_bridge_codegen generate`; bridge end-to-end test
 
 ## 5. App
@@ -40,6 +40,6 @@
 
 ## 6. Check
 
-- [ ] 6.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
+- [x] 6.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
       `flutter analyze`, `flutter test`, `openspec validate audio-messages
       --strict`

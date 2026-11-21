@@ -664,10 +664,8 @@ pub(crate) fn receive_application(
     };
     let sent_at = decoded.sent_at;
     Ok(match decoded.body {
-        body @ (Decoded::Text(_)
-        | Decoded::Image(_)
-        | Decoded::Audio(_)
-        | Decoded::Unsupported) => {
+        body
+        @ (Decoded::Text(_) | Decoded::Image(_) | Decoded::Audio(_) | Decoded::Unsupported) => {
             let Some((body, mentions, reply)) = chat_parts(store, body) else {
                 return Ok(Received::Nothing);
             };
