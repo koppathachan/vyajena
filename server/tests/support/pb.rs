@@ -760,7 +760,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -776,6 +776,11 @@ pub mod content {
         /// message-content: Image messages (change `media-blobs`).
         #[prost(message, tag = "5")]
         Image(super::Image),
+        /// message-content: Audio messages (change `audio-messages`). The next free
+        /// field after this one is 7 for the change that follows; `delete-messages`
+        /// takes it, so the two never collide.
+        #[prost(message, tag = "6")]
+        Audio(super::Audio),
     }
 }
 /// message-content: Image messages. One static image, stored as an encrypted blob
@@ -815,6 +820,38 @@ pub struct Image {
     /// (message-content: Image caption and mentions).
     #[prost(message, repeated, tag = "8")]
     pub caption_mentions: ::prost::alloc::vec::Vec<Mention>,
+}
+/// message-content: Audio messages. One voice message: an Opus mono clip in an OGG
+/// container (RFC 7845), stored as an encrypted blob on the server (blob-store)
+/// exactly as an image is. This body is what a receiver needs to draw the bubble
+/// (duration and waveform) before anything downloads, and to fetch and decrypt the
+/// clip on tap. A client that predates it decodes the body as unset and shows the
+/// "needs a newer app version" placeholder. Only the Rust core reads it; the server
+/// never sees it, and `blob_key` never leaves the encrypted `Content`. There is no
+/// caption in this version.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Audio {
+    /// The random id the ciphertext is stored under on the server, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most
+    /// `protocol::blob_store::MAX_BLOB_BYTES`.
+    #[prost(uint64, tag = "3")]
+    pub blob_size: u64,
+    /// The clip's length in milliseconds, at least 1 and at most
+    /// `protocol::audio::MAX_AUDIO_DURATION_MS`.
+    #[prost(uint32, tag = "4")]
+    pub duration_ms: u32,
+    /// Amplitude peaks of the clip, one byte per peak (0 silent, 255 loudest), evenly
+    /// spaced over its length, at most `protocol::audio::MAX_AUDIO_WAVEFORM_BYTES`
+    /// bytes. The bubble draws it as bar heights before the clip downloads.
+    #[prost(bytes = "vec", tag = "5")]
+    pub waveform: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich

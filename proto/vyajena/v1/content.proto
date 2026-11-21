@@ -23,6 +23,10 @@ message Content {
     Profile profile = 4;
     // message-content: Image messages (change `media-blobs`).
     Image image = 5;
+    // message-content: Audio messages (change `audio-messages`). The next free
+    // field after this one is 7 for the change that follows; `delete-messages`
+    // takes it, so the two never collide.
+    Audio audio = 6;
   }
 }
 
@@ -54,6 +58,33 @@ message Image {
   // The mentions in `caption`, under the same rules as `Text.mentions`
   // (message-content: Image caption and mentions).
   repeated Mention caption_mentions = 8;
+}
+
+// message-content: Audio messages. One voice message: an Opus mono clip in an OGG
+// container (RFC 7845), stored as an encrypted blob on the server (blob-store)
+// exactly as an image is. This body is what a receiver needs to draw the bubble
+// (duration and waveform) before anything downloads, and to fetch and decrypt the
+// clip on tap. A client that predates it decodes the body as unset and shows the
+// "needs a newer app version" placeholder. Only the Rust core reads it; the server
+// never sees it, and `blob_key` never leaves the encrypted `Content`. There is no
+// caption in this version.
+message Audio {
+  // The random id the ciphertext is stored under on the server, 16 bytes
+  // (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+  bytes blob_id = 1;
+  // The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+  // (`protocol::blob_store::BLOB_KEY_LEN`).
+  bytes blob_key = 2;
+  // The blob ciphertext's size in bytes, at most
+  // `protocol::blob_store::MAX_BLOB_BYTES`.
+  uint64 blob_size = 3;
+  // The clip's length in milliseconds, at least 1 and at most
+  // `protocol::audio::MAX_AUDIO_DURATION_MS`.
+  uint32 duration_ms = 4;
+  // Amplitude peaks of the clip, one byte per peak (0 silent, 255 loudest), evenly
+  // spaced over its length, at most `protocol::audio::MAX_AUDIO_WAVEFORM_BYTES`
+  // bytes. The bubble draws it as bar heights before the clip downloads.
+  bytes waveform = 5;
 }
 
 // message-content: Text only. UTF-8 text, optional mentions and one optional

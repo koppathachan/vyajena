@@ -11,9 +11,9 @@
 
 ## 2. Proto and shared rules
 
-- [ ] 2.1 `content.proto`: `Audio` body in the `Content` oneof (next free field);
+- [x] 2.1 `content.proto`: `Audio` body in the `Content` oneof (next free field);
       `buf lint`, `buf breaking`; `cargo run -p pbgen`
-- [ ] 2.2 `protocol::audio`: `MAX_AUDIO_DURATION_MS`, the Opus voice bitrate, the
+- [x] 2.2 `protocol::audio`: `MAX_AUDIO_DURATION_MS`, the Opus voice bitrate, the
       OGG container, `MAX_AUDIO_WAVEFORM_BYTES`; tests
       `audio-messages/recording-and-encoding`
 
