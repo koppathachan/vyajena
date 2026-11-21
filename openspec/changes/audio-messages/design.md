@@ -154,6 +154,20 @@ with `record` 7.2.0 and `just_audio` 0.10.6; the spike is deleted.
 - **Errors:** the bridge adds `AudioUnsupported` and `AudioTooLong`; an expired
   clip reuses `MediaExpired`.
 
+### D8. The microphone widens three recorded app invariants (owner to confirm)
+
+Adding `record` and `just_audio` changed what four existing app tests assert, and I
+updated them with the reason beside each: (1) the Android manifest declares
+`RECORD_AUDIO` (app-release: declared permissions, as push added
+`POST_NOTIFICATIONS`); (2) `Info.plist` declares `NSMicrophoneUsageDescription`
+(so "asks for nothing" becomes "nothing but the microphone, on the first voice
+message"); (3) the app's dependency list gains `record` and `just_audio`; (4)
+`dart:io` and a `File` are allowed in the one file `lib/chat/voice_plugins.dart`
+(the temp WAV), as `image_picker` is confined to `picture_picker.dart`. Nothing
+else in `lib/` imports `dart:io`, a socket or HTTP. **Not done, owner's call:** the
+store privacy sheet, the privacy policy and the Play data-safety answers (all
+`app/store/` and `docs/`) do not yet mention the microphone or voice data.
+
 ## Spikes (before code that relies on them)
 
 - **S1 (done, D4):** `record` + `just_audio`, with the core encoding the WAV the

@@ -20,7 +20,6 @@
 // here encodes or uploads audio. The temporary file is deleted once the clip is
 // sent or thrown away.
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -256,7 +255,7 @@ class _ComposerState extends State<Composer> {
       );
     }
     final clip = _clip;
-    if (clip != null) unawaited(deleteRecording(clip.path));
+    if (clip != null) unawaited(clip.delete());
     super.dispose();
   }
 
@@ -337,12 +336,12 @@ class _ComposerState extends State<Composer> {
       }
       final clip = await recorder.stop();
       if (clip == null || clip.length < voiceMinimum) {
-        if (clip != null) await deleteRecording(clip.path);
+        if (clip != null) await clip.delete();
         if (mounted) setState(() => _error = voiceHoldHint);
         return;
       }
       if (!mounted) {
-        await deleteRecording(clip.path);
+        await clip.delete();
         return;
       }
       _preview?.dispose();
@@ -365,7 +364,7 @@ class _ComposerState extends State<Composer> {
       _preview = null;
     });
     preview?.dispose();
-    await deleteRecording(clip.path);
+    await clip.delete();
   }
 
   /// Hands the previewed recording to the core.
@@ -378,7 +377,7 @@ class _ComposerState extends State<Composer> {
       _sending = true;
     });
     try {
-      await sendAudio(await File(clip.path).readAsBytes());
+      await sendAudio(await clip.read());
       await _deleteClip();
     } catch (error) {
       // The preview stays, so the clip can be sent again or deleted.
@@ -548,7 +547,7 @@ class _ComposerState extends State<Composer> {
             ),
           ],
           const SizedBox(width: 4),
-          if (_micShown || _recording)
+          if ((_micShown && !removed) || _recording)
             _micButton(context, removed)
           else
             IconButton.filled(
@@ -670,7 +669,9 @@ class _ComposerState extends State<Composer> {
                           onPressed: () => _previewToggle(preview, clip),
                           icon: Icon(playing ? Icons.pause : Icons.play_arrow),
                         ),
-                        Expanded(child: LinearProgressIndicator(value: progress)),
+                        Expanded(
+                          child: LinearProgressIndicator(value: progress),
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           key: const Key('preview-length'),

@@ -184,9 +184,9 @@ class _AudioBubbleState extends State<AudioBubble> {
             child: Text(
               audioFailedText,
               key: const Key('audio-failed'),
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: scheme.error,
-              ),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: scheme.error),
             ),
           ),
       ],

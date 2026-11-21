@@ -1,13 +1,27 @@
 // The microphone and speaker for widget tests: no plugin, no audio. A test
 // drives what the "recorder" produced and what the "player" is doing.
 import 'dart:async';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:vyajena/chat/voice_plugins.dart';
 
-/// A recorder that writes a real file, so the app's read-and-delete of it is
-/// exercised, and reports the length a test sets.
+/// A recording held in memory (a real file's I/O never finishes under a widget
+/// test's fake clock), which remembers whether the app deleted it.
+class FakeClip extends VoiceClip {
+  FakeClip(this.bytes, Duration length)
+    : super(path: '/tmp/fake-voice.wav', length: length);
+
+  final Uint8List bytes;
+  bool deleted = false;
+
+  @override
+  Future<Uint8List> read() async => bytes;
+
+  @override
+  Future<void> delete() async => deleted = true;
+}
+
+/// A recorder that reports the length a test sets.
 class FakeRecorder implements VoiceRecorder {
   FakeRecorder(this.plugins);
 
@@ -22,27 +36,23 @@ class FakeRecorder implements VoiceRecorder {
   @override
   Future<void> start() async {
     plugins.started++;
-    plugins.file = File(
-      '${Directory.systemTemp.path}/fake-voice-${DateTime.now().microsecondsSinceEpoch}.wav',
-    )..writeAsBytesSync(plugins.contents);
-    plugins.lastPath = plugins.file!.path;
+    plugins.recording = FakeClip(plugins.contents, plugins.length);
+    plugins.lastClip = plugins.recording;
   }
 
   @override
   Future<VoiceClip?> stop() async {
     plugins.stopped++;
-    final file = plugins.file;
-    plugins.file = null;
-    if (file == null) return null;
-    return VoiceClip(path: file.path, length: plugins.length);
+    final clip = plugins.recording;
+    plugins.recording = null;
+    return clip;
   }
 
   @override
   Future<void> cancel() async {
     plugins.cancelled++;
-    final file = plugins.file;
-    plugins.file = null;
-    if (file != null && file.existsSync()) file.deleteSync();
+    plugins.recording?.deleted = true;
+    plugins.recording = null;
   }
 
   @override
@@ -130,11 +140,10 @@ class FakeVoicePlugins extends VoicePlugins {
   int stops = 0;
 
   /// The recording in progress.
-  File? file;
+  FakeClip? recording;
 
-  /// The file the latest recording was written to, whether or not it is still
-  /// there.
-  String? lastPath;
+  /// The latest recording, whether or not it is still in progress.
+  FakeClip? lastClip;
 
   /// Every path any player was asked to open.
   final List<String> opened = [];

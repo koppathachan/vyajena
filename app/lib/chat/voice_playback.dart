@@ -98,8 +98,6 @@ class VoicePlayback extends ChangeNotifier {
     _forget();
   }
 
-
-
   void _forget() {
     _current = null;
     _playing = false;

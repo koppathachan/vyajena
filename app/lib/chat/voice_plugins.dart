@@ -10,12 +10,14 @@
 // the screens fakes (test/support/fake_voice.dart) through [VoiceScope].
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:record/record.dart';
 
-/// A finished recording: a WAV file and how long it is.
+/// A finished recording: a WAV file and how long it is. Widget tests replace
+/// it with one held in memory.
 class VoiceClip {
   const VoiceClip({required this.path, required this.length});
 
@@ -25,6 +27,12 @@ class VoiceClip {
 
   /// The recording's length.
   final Duration length;
+
+  /// The file's bytes, which go to the core as they are.
+  Future<Uint8List> read() => File(path).readAsBytes();
+
+  /// Deletes the file; one already gone is fine.
+  Future<void> delete() => _delete(path);
 }
 
 /// The microphone.
@@ -126,10 +134,7 @@ class _DeviceRecorder implements VoiceRecorder {
     _path = null;
     _started = null;
     if (stopped == null || started == null) return null;
-    return VoiceClip(
-      path: stopped,
-      length: DateTime.now().difference(started),
-    );
+    return VoiceClip(path: stopped, length: DateTime.now().difference(started));
   }
 
   @override
@@ -154,8 +159,9 @@ class _DevicePlayer implements VoicePlayer {
   Stream<bool> get playing => _player.playingStream;
 
   @override
-  Stream<void> get completed => _player.processingStateStream
-      .where((state) => state == ProcessingState.completed);
+  Stream<void> get completed => _player.processingStateStream.where(
+    (state) => state == ProcessingState.completed,
+  );
 
   @override
   Future<Duration?> open(String path) => _player.setFilePath(path);
@@ -182,9 +188,6 @@ class _DevicePlayer implements VoicePlayer {
   @override
   Future<void> dispose() => _player.dispose();
 }
-
-/// Deletes a temporary recording; a file already gone is fine.
-Future<void> deleteRecording(String path) => _delete(path);
 
 Future<void> _delete(String path) async {
   try {

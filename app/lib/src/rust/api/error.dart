@@ -135,7 +135,15 @@ enum CoreErrorKind {
   /// The image cannot be made small enough to send.
   imageTooLarge,
 
-  /// The server no longer has the picture (client-runtime: Expired media).
+  /// The recording is not a WAV the app can send (16-bit PCM), or has no
+  /// sound in it.
+  audioUnsupported,
+
+  /// The voice message is longer than two minutes.
+  audioTooLong,
+
+  /// The server no longer has the picture or voice message (client-runtime:
+  /// Expired media).
   mediaExpired,
 
   /// This device no longer has the picture to resend.

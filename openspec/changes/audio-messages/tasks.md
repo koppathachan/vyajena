@@ -33,9 +33,9 @@
 
 ## 5. App
 
-- [ ] 5.1 Composer hold-to-record with slide-to-cancel and a preview; widget tests
+- [x] 5.1 Composer hold-to-record with slide-to-cancel and a preview; widget tests
       `app-ui/record-a-voice-message`
-- [ ] 5.2 Playback bubble: play/pause, waveform, duration, download-on-tap; widget
+- [x] 5.2 Playback bubble: play/pause, waveform, duration, download-on-tap; widget
       tests `app-ui/play-a-voice-message`
 
 ## 6. Check

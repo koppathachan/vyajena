@@ -56,17 +56,21 @@ void main() {
       'android.permission.ACCESS_NETWORK_STATE',
       // push design D12: the "New message" notification (asked once).
       'android.permission.POST_NOTIFICATIONS',
+      // audio-messages: the microphone for voice messages (asked on first use).
+      'android.permission.RECORD_AUDIO',
     });
   });
 
   // spec: app-release/declared-permissions
   test('First connect on an iPhone: the app dials the relay and asks for '
-      'nothing', () {
+      'nothing but the microphone, when a voice message is first recorded', () {
     final plist = read(infoPlist);
     final usages = RegExp(
       r'<key>(NS\w+UsageDescription)</key>',
     ).allMatches(plist).map((m) => m.group(1)).toSet();
-    expect(usages, isEmpty);
+    // audio-messages: the one thing it asks for is the microphone, on the first
+    // voice message.
+    expect(usages, {'NSMicrophoneUsageDescription'});
     expect(plist, isNot(contains('UIBackgroundModes')));
     // push design D12: the one capability beyond the default keychain is
     // Push Notifications (aps-environment), in Runner.entitlements only.

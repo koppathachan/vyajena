@@ -115,6 +115,9 @@ Future<void> enterGroup(WidgetTester tester) async {
 
 /// Taps [finder] and settles.
 Future<void> tap(WidgetTester tester, Finder finder) async {
+  // Whatever was just typed or set has been drawn (the composer's button is
+  // the mic until there is text).
+  await tester.pump();
   await tester.ensureVisible(finder);
   await tester.tap(finder);
   await settle(tester);

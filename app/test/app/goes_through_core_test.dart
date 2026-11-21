@@ -63,6 +63,16 @@ const pickerOnly = {'package:image_picker/image_picker.dart'};
 /// OS browser (app-ui: Links in messages). It opens no connection in Dart.
 const linksOnly = {'package:url_launcher/url_launcher.dart'};
 
+/// What only the one voice-plugin file may import: the microphone and the
+/// speaker (app-ui: Record a voice message; Play a voice message). It records
+/// to a temporary file and plays a file the core cached; it opens no
+/// connection, and `dart:io` there is for those files only.
+const voiceOnly = {
+  'dart:io',
+  'package:record/record.dart',
+  'package:just_audio/just_audio.dart',
+};
+
 /// What only the generated bindings may import: FFI to the Rust core.
 const bindingOnly = {
   'dart:ffi',
@@ -90,6 +100,8 @@ void main() {
             file.path.replaceAll(r'\', '/') == 'lib/chat/links.dart',
           _ when pickerOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/picture_picker.dart',
+          _ when voiceOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/chat/voice_plugins.dart',
           _ => false,
         };
         if (!ok) bad.add('${file.path}: $uri');
@@ -106,8 +118,11 @@ void main() {
     );
     final bad = [
       for (final file in libFiles())
-        for (final m in api.allMatches(file.readAsStringSync()))
-          '${file.path}: ${m.group(0)}',
+        // The voice plugins' temporary recording is the one file this app
+        // touches; it holds no network code.
+        if (file.path.replaceAll(r'\', '/') != 'lib/chat/voice_plugins.dart')
+          for (final m in api.allMatches(file.readAsStringSync()))
+            '${file.path}: ${m.group(0)}',
     ];
     expect(bad, isEmpty);
   });
@@ -127,6 +142,8 @@ void main() {
     // image_picker only picks a file from the gallery (Send an image);
     // url_launcher only hands a tapped URL to the OS browser (Links in
     // messages).
+    // record and just_audio only use the microphone and the speaker (Record a
+    // voice message; Play a voice message).
     expect(names, {
       'flutter',
       'bridge',
@@ -135,6 +152,8 @@ void main() {
       'connectivity_plus',
       'image_picker',
       'url_launcher',
+      'record',
+      'just_audio',
     });
   });
 

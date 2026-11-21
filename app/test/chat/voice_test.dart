@@ -1,5 +1,4 @@
 // app-ui: Record a voice message; Play a voice message (change `audio-messages`).
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -13,12 +12,13 @@ import '../support/app.dart';
 import '../support/fake_core_service.dart';
 import '../support/fake_voice.dart';
 
-FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
-  ..memberDevices = const [
-    MemberDevice(user: akhil, device: '01'),
-    MemberDevice(user: alice, device: '02'),
-    MemberDevice(user: bob, device: '03'),
-  ];
+FakeCoreService groupAsBob() =>
+    FakeCoreService(storedUser: bob)
+      ..memberDevices = const [
+        MemberDevice(user: akhil, device: '01'),
+        MemberDevice(user: alice, device: '02'),
+        MemberDevice(user: bob, device: '03'),
+      ];
 
 final mic = find.byKey(const Key('record-voice'));
 final recordingBar = find.byKey(const Key('recording-bar'));
@@ -76,7 +76,7 @@ void main() {
       await tap(tester, sendVoice);
       // The core got the recorder's bytes, untouched: the app encodes nothing.
       expect(core.sentRecordings.single, [9, 8, 7, 6, 5]);
-      expect(File(voice.lastPath!).existsSync(), isFalse);
+      expect(voice.lastClip!.deleted, isTrue);
       expect(voicePreview, findsNothing);
       // Shown as sending until the core accepts it.
       expect(find.byKey(const Key('audio-bubble')), findsOneWidget);
@@ -106,7 +106,7 @@ void main() {
       expect(recordingBar, findsNothing);
       expect(core.sentRecordings, isEmpty);
       expect(core.messages, isEmpty);
-      expect(File(voice.lastPath!).existsSync(), isFalse);
+      expect(voice.lastClip!.deleted, isTrue);
       // Back to the message box.
       expect(composer, findsOneWidget);
     });
@@ -134,7 +134,7 @@ void main() {
 
       expect(voicePreview, findsNothing);
       expect(find.text(voiceHoldHint), findsOneWidget);
-      expect(File(voice.lastPath!).existsSync(), isFalse);
+      expect(voice.lastClip!.deleted, isTrue);
       expect(core.sentRecordings, isEmpty);
     });
 
@@ -149,7 +149,7 @@ void main() {
       await tap(tester, deleteVoice);
       expect(voicePreview, findsNothing);
       expect(composer, findsOneWidget);
-      expect(File(voice.lastPath!).existsSync(), isFalse);
+      expect(voice.lastClip!.deleted, isTrue);
       expect(core.sentRecordings, isEmpty);
     });
 
@@ -163,7 +163,7 @@ void main() {
       await record(tester);
 
       await tap(tester, find.byKey(const Key('preview-play')));
-      expect(voice.opened, [voice.lastPath]);
+      expect(voice.opened, [voice.lastClip!.path]);
       expect(voice.plays, 1);
       expect(find.byTooltip('Pause'), findsOneWidget);
       // Playing it sent nothing.
@@ -199,7 +199,7 @@ void main() {
       await tap(tester, sendVoice);
       expect(find.textContaining('too long to send'), findsOneWidget);
       expect(voicePreview, findsOneWidget);
-      expect(File(voice.lastPath!).existsSync(), isTrue);
+      expect(voice.lastClip!.deleted, isFalse);
     });
 
     // spec: app-ui/record-a-voice-message
@@ -278,11 +278,13 @@ void main() {
       final third = core.receiveAudio(alice);
       await settle(tester);
 
-      await tap(tester, play.at(0));
+      Finder playOf(ChatMessage m) =>
+          find.descendant(of: find.byKey(Key('audio-${m.id}')), matching: play);
+      await tap(tester, playOf(first));
       expect(voice.opened, ['/media/clip-${first.id}.opus']);
       expect(find.byTooltip('Pause'), findsOneWidget);
 
-      await tap(tester, play.at(1));
+      await tap(tester, playOf(second));
       // The first was stopped; only the second plays.
       expect(voice.stops, 1);
       expect(voice.opened.last, '/media/clip-${second.id}.opus');
@@ -355,7 +357,9 @@ void main() {
       final core = groupAsBob();
       await openAppWithVoice(tester, core, FakeVoicePlugins());
       final id = await core.sendAudio(Uint8List.fromList([1]));
-      core.emit(CoreEvent.sendStatus(id: id, status: const SendState.accepted()));
+      core.emit(
+        CoreEvent.sendStatus(id: id, status: const SendState.accepted()),
+      );
       await settle(tester);
       // A fresh read of the history shows the sent clip.
       await tester.pump(const Duration(milliseconds: 100));
