@@ -33,6 +33,11 @@ impl std::fmt::Debug for Core {
     }
 }
 
+/// A file path as the text Dart takes it as.
+fn path_text(path: std::path::PathBuf) -> String {
+    path.to_string_lossy().into_owned()
+}
+
 fn forward<T>(result: Result<T, client::ClientError>) -> Result<T, CoreError> {
     result.map_err(map::error)
 }
@@ -253,11 +258,6 @@ impl Core {
         forward(self.client.revoke_invite(&code).await)
     }
 
-    /// Admin: sets the group's name for every member.
-    pub fn set_group_name(&self, name: Option<String>) -> Result<i64, CoreError> {
-        Ok(forward(self.client.set_group_settings(name.as_deref()))?.0)
-    }
-
     // --- Own devices and keys ---
 
     /// Revokes another device of this user (hex id).
@@ -350,6 +350,44 @@ impl Core {
         Ok(forward(self.client.resend_image(MessageId(id)).await)?.0)
     }
 
+    /// Sends a recorded voice message to the main group; returns its local id.
+    /// `wav` is the file the recorder wrote (16-bit PCM). The core makes the
+    /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
+    /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
+    /// connected or not, like an image (audio-messages: Recording and encoding).
+    pub async fn send_audio(&self, wav: Vec<u8>) -> Result<i64, CoreError> {
+        self.send_audio_in(0, wav).await
+    }
+
+    /// [`Core::send_audio`] in chat `chat_id`.
+    pub async fn send_audio_in(&self, chat_id: i64, wav: Vec<u8>) -> Result<i64, CoreError> {
+        Ok(forward(self.client.send_audio_in(ChatId(chat_id), &wav).await)?.0)
+    }
+
+    /// The path of voice message `id`'s clip, an OGG/Opus file in the core's
+    /// media cache for a player to open: from the cache, else downloaded,
+    /// decrypted and cached (client-runtime: Image download and cache). Dart
+    /// never copies or keeps the file. Fails with
+    /// [`CoreErrorKind::MediaExpired`] when the server no longer has it.
+    pub async fn download_audio(&self, id: i64) -> Result<String, CoreError> {
+        Ok(path_text(forward(
+            self.client.download_audio(MessageId(id)).await,
+        )?))
+    }
+
+    /// The path of voice message `id`'s clip if this device has it cached;
+    /// never uses the network.
+    pub async fn cached_audio(&self, id: i64) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.cached_audio(MessageId(id)).await)?.map(path_text))
+    }
+
+    /// Resends the clip of the own voice message `id` as a new message with a
+    /// new blob, when the first one expired (client-runtime: Expired media);
+    /// returns the new message's local id.
+    pub async fn resend_audio(&self, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.resend_audio(MessageId(id)).await)?.0)
+    }
+
     /// The local ids of messages whose mention of this user is not seen yet,
     /// in chat order (client-runtime: Unseen mentions).
     pub fn unseen_mentions(&self) -> Result<Vec<i64>, CoreError> {
@@ -410,11 +448,6 @@ impl Core {
         forward(self.client.display_name(&map::user_id(&user)))
     }
 
-    /// The group's name, as an admin device last set it.
-    pub fn group_name(&self) -> Result<Option<String>, CoreError> {
-        Ok(forward(self.client.group_settings())?.name)
-    }
-
     /// The group's member devices.
     pub fn members(&self) -> Result<Vec<MemberDevice>, CoreError> {
         Ok(forward(self.client.members())?
@@ -435,7 +468,66 @@ impl Core {
         self.client.dms_available()
     }
 
-    /// The chats: the main group first, then DMs, newest first, closed last.
+    /// Whether the server knows named groups: the app offers "Create group"
+    /// only then.
+    pub fn named_groups_available(&self) -> bool {
+        self.client.named_groups_available()
+    }
+
+    /// Admin: creates a named group with `name` and adds `members`; its chat
+    /// id. The adds finish in the background (a chats-changed event follows).
+    pub async fn create_named_group(
+        &self,
+        name: Option<String>,
+        members: Vec<UserRef>,
+    ) -> Result<i64, CoreError> {
+        let members: Vec<_> = members.iter().map(map::user_id).collect();
+        Ok(forward(
+            self.client
+                .create_named_group(name.as_deref(), &members)
+                .await,
+        )?
+        .0)
+    }
+
+    /// Admin: adds all of `user`'s devices to the named group `chat_id`.
+    pub async fn add_to_group(&self, chat_id: i64, user: UserRef) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .add_to_group(ChatId(chat_id), &map::user_id(&user))
+                .await,
+        )
+    }
+
+    /// Admin: removes `user` from the named group `chat_id` (not from the lobby).
+    pub async fn remove_from_group(&self, chat_id: i64, user: UserRef) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .remove_from_group(ChatId(chat_id), &map::user_id(&user))
+                .await,
+        )
+    }
+
+    /// Admin: sets the name of the named group `chat_id` for every member.
+    pub fn rename_group(&self, chat_id: i64, name: String) -> Result<i64, CoreError> {
+        Ok(forward(self.client.rename_group(ChatId(chat_id), &name))?.0)
+    }
+
+    /// Admin: closes the named group `chat_id`; it becomes read-only.
+    pub async fn close_group(&self, chat_id: i64) -> Result<(), CoreError> {
+        forward(self.client.close_group(ChatId(chat_id)).await)
+    }
+
+    /// The member devices of the named group `chat_id`.
+    pub fn group_members(&self, chat_id: i64) -> Result<Vec<MemberDevice>, CoreError> {
+        Ok(forward(self.client.group_members(ChatId(chat_id)))?
+            .iter()
+            .map(map::member)
+            .collect())
+    }
+
+    /// The chats: the lobby first, then named groups and DMs, newest first,
+    /// closed last.
     pub fn chats(&self) -> Result<Vec<ChatSummary>, CoreError> {
         Ok(forward(self.client.chats())?
             .into_iter()

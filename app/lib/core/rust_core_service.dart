@@ -144,6 +144,20 @@ class RustCoreService extends CoreService {
       (await _c.resendImage(id: id)).toInt();
 
   @override
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0}) async =>
+      (await _c.sendAudioIn(chatId: chatId, wav: wav)).toInt();
+
+  @override
+  Future<String> downloadAudio(int id) => _c.downloadAudio(id: id);
+
+  @override
+  Future<String?> cachedAudio(int id) => _c.cachedAudio(id: id);
+
+  @override
+  Future<int> resendAudio(int id) async =>
+      (await _c.resendAudio(id: id)).toInt();
+
+  @override
   Uint8List? thumbhashPreview(Uint8List thumbhash) =>
       rust.thumbhashPreview(thumbhash: thumbhash);
 
@@ -198,9 +212,6 @@ class RustCoreService extends CoreService {
   Future<List<MemberDevice>> members() => _c.members();
 
   @override
-  Future<String?> groupName() => _c.groupName();
-
-  @override
   Future<BigInt?> epoch() => _c.epoch();
 
   @override
@@ -226,7 +237,30 @@ class RustCoreService extends CoreService {
   Future<void> removeUser(UserRef user) => _c.removeUser(user: user);
 
   @override
-  Future<int> setGroupName(String? name) => _c.setGroupName(name: name);
+  Future<bool> namedGroupsAvailable() => _c.namedGroupsAvailable();
+
+  @override
+  Future<int> createNamedGroup(String? name, List<UserRef> members) =>
+      _c.createNamedGroup(name: name, members: members);
+
+  @override
+  Future<void> addToGroup(int chatId, UserRef user) =>
+      _c.addToGroup(chatId: chatId, user: user);
+
+  @override
+  Future<void> removeFromGroup(int chatId, UserRef user) =>
+      _c.removeFromGroup(chatId: chatId, user: user);
+
+  @override
+  Future<int> renameGroup(int chatId, String name) =>
+      _c.renameGroup(chatId: chatId, name: name);
+
+  @override
+  Future<void> closeGroup(int chatId) => _c.closeGroup(chatId: chatId);
+
+  @override
+  Future<List<MemberDevice>> groupMembers(int chatId) =>
+      _c.groupMembers(chatId: chatId);
 
   @override
   Future<bool> acceptIdentityKey(UserRef user) =>

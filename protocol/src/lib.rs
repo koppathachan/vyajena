@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod audio;
 pub mod blob_store;
 pub mod device_identity;
 pub mod group_membership;

@@ -65,12 +65,20 @@ pub enum CoreErrorKind {
     ChatClosed,
     /// The server does not support DMs yet.
     DmsUnavailable,
+    /// The server does not support named groups yet.
+    GroupsUnavailable,
     /// The picked file is not an image the app can send (JPEG, PNG, GIF or
     /// WebP).
     ImageUnsupported,
     /// The image cannot be made small enough to send.
     ImageTooLarge,
-    /// The server no longer has the picture (client-runtime: Expired media).
+    /// The recording is not a WAV the app can send (16-bit PCM), or has no
+    /// sound in it.
+    AudioUnsupported,
+    /// The voice message is longer than two minutes.
+    AudioTooLong,
+    /// The server no longer has the picture or voice message (client-runtime:
+    /// Expired media).
     MediaExpired,
     /// This device no longer has the picture to resend.
     MediaNotOnDevice,

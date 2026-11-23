@@ -148,7 +148,6 @@ void main() {
       'reconnect_now', (tester) async {
     // A DM is present, so the home screen is the chat list (GroupGate).
     final core = FakeCoreService(storedUser: bob)
-      ..group = 'Home chat'
       ..dmChats = [
         const ChatSummary(
           chatId: 1,

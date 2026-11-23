@@ -36,3 +36,8 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.image-webp]
 opt-level = 3
+
+# The voice encoder's tests (audio-messages) encode up to two minutes of audio;
+# unoptimised the pure-Rust Opus encoder takes minutes.
+[profile.dev.package.opus-pure]
+opt-level = 3

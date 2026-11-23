@@ -198,13 +198,7 @@ pub(crate) fn submit(
         return Ok(reject(RejectionReason::Malformed));
     };
     // direct-messages: DM closed on user removal.
-    if matches!(
-        row.kind,
-        GroupKind::Dm {
-            closed_at: Some(_),
-            ..
-        }
-    ) {
+    if row.kind.is_closed() {
         return Ok(reject(RejectionReason::GroupClosed));
     }
     let (group_id, epoch) = (row.group_id, row.epoch);
@@ -338,7 +332,7 @@ pub(crate) fn submit(
                     log::insert_delivery(conn, &added.device_id, server_seq, true)?;
                     // Back in the main group means active again; its DMs
                     // follow (direct-messages: Inactivity across groups).
-                    if *state.kind() == GroupKind::Main {
+                    if *state.kind() == GroupKind::System {
                         inactivity::clear(conn, &added.device_id, ctx.now)?;
                     }
                     notify.push(added.device_id);
@@ -348,7 +342,7 @@ pub(crate) fn submit(
                 // again (group-membership: Inactive devices are kept out).
                 notify.extend(reissue_removes(conn, ctx, &mut state)?);
                 state.save(conn)?;
-                if *state.kind() == GroupKind::Main {
+                if *state.kind() == GroupKind::System {
                     for added in &accepted.added {
                         notices.extend(joins::dm_notices_about(
                             conn,

@@ -1,5 +1,5 @@
-//! client-runtime: Image download and cache. Decrypted WebP bytes kept as
-//! files, one per blob id, in a directory of their own beside (not inside) the
+//! client-runtime: Image download and cache. Decrypted WebP bytes (and the OGG/Opus
+//! of voice messages, change `audio-messages`) kept as files, one per blob id, in a directory of their own beside (not inside) the
 //! message database; this device's index of them is in the store
 //! ([`Store::media_put`] and friends).
 //!
@@ -27,6 +27,27 @@ pub const DEFAULT_CACHE_BYTES: u64 = 256 * 1024 * 1024;
 /// Mode of the media directory and of its files.
 const DIR_MODE: u32 = 0o700;
 const FILE_MODE: u32 = 0o600;
+
+/// What a cached blob holds; it decides the file's extension, which a media player
+/// reads the format from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaKind {
+    /// A WebP picture.
+    Image,
+    /// An OGG/Opus voice message.
+    Audio,
+}
+
+impl MediaKind {
+    const ALL: [Self; 2] = [Self::Image, Self::Audio];
+
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Image => "webp",
+            Self::Audio => "opus",
+        }
+    }
+}
 
 /// The device media cache.
 #[derive(Debug, Clone)]
@@ -57,8 +78,16 @@ impl MediaCache {
         &self.dir
     }
 
-    fn path(&self, id: &BlobId) -> PathBuf {
-        self.dir.join(format!("{}.webp", hex(id)))
+    fn path(&self, id: &BlobId, kind: MediaKind) -> PathBuf {
+        self.dir.join(format!("{}.{}", hex(id), kind.extension()))
+    }
+
+    /// The file `id` is cached in, whatever it holds.
+    fn file_of(&self, id: &BlobId) -> Option<PathBuf> {
+        MediaKind::ALL
+            .into_iter()
+            .map(|kind| self.path(id, kind))
+            .find(|path| path.is_file())
     }
 
     /// Caches `webp` under `id`. `own` marks an image this device sent, kept for
@@ -71,13 +100,26 @@ impl MediaCache {
         own: bool,
         now: SystemTime,
     ) -> Result<(), MediaError> {
+        self.put_as(store, MediaKind::Image, id, webp, own, now)
+    }
+
+    /// [`MediaCache::put`] for a blob of `kind`.
+    pub fn put_as(
+        &self,
+        store: &Store,
+        kind: MediaKind,
+        id: &BlobId,
+        webp: &[u8],
+        own: bool,
+        now: SystemTime,
+    ) -> Result<(), MediaError> {
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(DIR_MODE)
             .create(&self.dir)?;
         // Written beside the target and renamed, so a crash never leaves half
         // an image under a blob's name.
-        let target = self.path(id);
+        let target = self.path(id, kind);
         let temp = self.dir.join(format!(".{}.tmp", hex(id)));
         let written = (|| {
             let mut file = OpenOptions::new()
@@ -109,33 +151,68 @@ impl MediaCache {
         if store.media_entry(id)?.is_none() {
             return Ok(None);
         }
-        match std::fs::read(self.path(id)) {
+        match std::fs::read(self.path(id, MediaKind::Image)) {
             Ok(bytes) => {
                 store.media_touch(id, now)?;
                 Ok(Some(bytes))
             }
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                store.media_remove(id)?;
+                // Only forget an entry whose file is gone altogether: a voice
+                // message is cached under another extension.
+                if self.file_of(id).is_none() {
+                    store.media_remove(id)?;
+                }
                 Ok(None)
             }
             Err(error) => Err(error.into()),
         }
     }
 
+    /// The path of the cached file `id`, marked as just shown; `None` if there is
+    /// none (or its file is gone, which forgets the entry). A media player is
+    /// handed this path, so the clip is never copied out of the cache.
+    pub fn get_path(
+        &self,
+        store: &Store,
+        id: &BlobId,
+        now: SystemTime,
+    ) -> Result<Option<PathBuf>, MediaError> {
+        if store.media_entry(id)?.is_none() {
+            return Ok(None);
+        }
+        match self.file_of(id) {
+            Some(path) => {
+                store.media_touch(id, now)?;
+                Ok(Some(path))
+            }
+            None => {
+                store.media_remove(id)?;
+                Ok(None)
+            }
+        }
+    }
+
     /// Forgets the image: its file and its index entry.
     pub fn remove(&self, store: &Store, id: &BlobId) -> Result<(), MediaError> {
-        match std::fs::remove_file(self.path(id)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
+        self.remove_files(id)?;
         store.media_remove(id)?;
+        Ok(())
+    }
+
+    fn remove_files(&self, id: &BlobId) -> Result<(), MediaError> {
+        for kind in MediaKind::ALL {
+            match std::fs::remove_file(self.path(id, kind)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
         Ok(())
     }
 
     /// Whether the image is cached.
     pub fn contains(&self, store: &Store, id: &BlobId) -> Result<bool, MediaError> {
-        Ok(store.media_entry(id)?.is_some() && self.path(id).is_file())
+        Ok(store.media_entry(id)?.is_some() && self.file_of(id).is_some())
     }
 
     /// Deletes the oldest-shown entries until the total is within the cap. An
@@ -156,11 +233,7 @@ impl MediaCache {
                 store.media_remove(&entry.blob_id)?;
                 continue;
             };
-            match std::fs::remove_file(self.path(&id)) {
-                Ok(()) => {}
-                Err(error) if error.kind() == ErrorKind::NotFound => {}
-                Err(error) => return Err(error.into()),
-            }
+            self.remove_files(&id)?;
             store.media_remove(&entry.blob_id)?;
             total = total.saturating_sub(entry.size);
             tracing::debug!(size = entry.size, "evicted a cached image");

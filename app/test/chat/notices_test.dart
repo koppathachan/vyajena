@@ -242,37 +242,6 @@ void main() {
   });
 
   // spec: app-ui/notices-in-the-chat
-  testWidgets('Group renamed: every member sees "akhil renamed the group to '
-      '“Home chat”"', (tester) async {
-    final core = FakeCoreService(storedUser: bob)..group = 'Vyajena';
-    await openApp(tester, core);
-    expect(find.text('Vyajena'), findsOneWidget);
-    core.emit(
-      const CoreEvent.groupSettingsChanged(
-        name: 'Home chat',
-        previous: 'Vyajena',
-        by: akhil,
-      ),
-    );
-    await settle(tester);
-    expect(find.text('akhil renamed the group to “Home chat”'), findsOne);
-    expect(find.text('Home chat'), findsOneWidget);
-  });
-
-  // spec: app-ui/notices-in-the-chat
-  testWidgets('the first sync of the group name on a new device shows no '
-      'rename notice', (tester) async {
-    final core = FakeCoreService(storedUser: bob);
-    await openApp(tester, core);
-    core.emit(
-      const CoreEvent.groupSettingsChanged(name: 'Home chat', by: akhil),
-    );
-    await settle(tester);
-    expect(find.text('Home chat'), findsOneWidget);
-    expect(find.byType(NoticeTile), findsNothing);
-  });
-
-  // spec: app-ui/notices-in-the-chat
   testWidgets('Membership changes: "carol joined", "bob added a device" and '
       '"akhil removed carol", in that order', (tester) async {
     final core = FakeCoreService(storedUser: bob)

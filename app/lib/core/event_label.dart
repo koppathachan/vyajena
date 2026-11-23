@@ -13,7 +13,6 @@ String eventLabel(CoreEvent event) => switch (event) {
     }}',
   CoreEvent_ProfileChanged(:final user) =>
     'profile-changed ${user.username}@${user.serverId}',
-  CoreEvent_GroupSettingsChanged() => 'group-settings-changed',
   CoreEvent_Unreadable() => 'unreadable',
   CoreEvent_Gap() => 'gap',
   CoreEvent_ChatsChanged() => 'chats changed',

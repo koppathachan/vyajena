@@ -10,11 +10,18 @@
 // are drawn with the reader's name for their target, mentions of this user
 // highlighted. A reply shows who and what it answers above its text; the
 // quote is tappable. Swiping right or long-pressing offers Reply.
+//
+// app-ui: Play a voice message. A voice message is a bubble with a play button
+// and the waveform (audio_bubble.dart).
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
+import 'audio_bubble.dart';
 import 'image_bubble.dart';
+import 'links.dart';
 import 'mentions.dart';
+import 'voice_playback.dart';
 
 /// Placeholder for a message body this version does not know.
 const unsupportedText =
@@ -33,8 +40,14 @@ const replyLabel = 'Reply';
 /// What a reply to a picture without a caption quotes.
 const pictureQuote = 'Picture';
 
+/// What a reply to a voice message quotes.
+const voiceQuote = 'Voice message';
+
 /// What the long-press sheet's entry for sending a picture again says.
 const resendPictureLabel = 'Resend picture';
+
+/// What the long-press sheet's entry for sending a voice message again says.
+const resendVoiceLabel = 'Resend voice message';
 
 /// One message row.
 class MessageTile extends StatelessWidget {
@@ -49,6 +62,8 @@ class MessageTile extends StatelessWidget {
     this.onQuoteTap,
     this.core,
     this.onResendImage,
+    this.onResendAudio,
+    this.playback,
   });
 
   final ChatMessage message;
@@ -78,6 +93,13 @@ class MessageTile extends StatelessWidget {
   /// picture").
   final VoidCallback? onResendImage;
 
+  /// Resends an own voice message as a new message (long-press → "Resend
+  /// voice message").
+  final VoidCallback? onResendAudio;
+
+  /// The chat's one player, which a voice message plays through.
+  final VoicePlayback? playback;
+
   String _label(MentionTarget target) =>
       mentionLabel?.call(target) ??
       switch (target) {
@@ -88,6 +110,9 @@ class MessageTile extends StatelessWidget {
   Future<void> _sheet(BuildContext context) async {
     final resend = message.outgoing && message.body is ChatBody_Image
         ? onResendImage
+        : null;
+    final resendVoice = message.outgoing && message.body is ChatBody_Audio
+        ? onResendAudio
         : null;
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -107,6 +132,13 @@ class MessageTile extends StatelessWidget {
                 title: const Text(resendPictureLabel),
                 onTap: () => Navigator.of(context).pop('resend'),
               ),
+            if (resendVoice != null)
+              ListTile(
+                key: const Key('resend-voice'),
+                leading: const Icon(Icons.refresh),
+                title: const Text(resendVoiceLabel),
+                onTap: () => Navigator.of(context).pop('resend-voice'),
+              ),
           ],
         ),
       ),
@@ -116,23 +148,19 @@ class MessageTile extends StatelessWidget {
         onReply?.call();
       case 'resend':
         resend?.call();
+      case 'resend-voice':
+        resendVoice?.call();
     }
   }
 
-  /// [text] with this message's mentions drawn in it.
-  Widget _withMentions(BuildContext context, String text) =>
-      message.mentions.isEmpty
-      ? Text(text)
-      : Text.rich(
-          mentionSpans(
-            context,
-            text,
-            message.mentions,
-            label: _label,
-            me: me,
-            own: message.ownUser,
-          ),
-        );
+  /// [text] with this message's mentions and its links drawn in it.
+  Widget _withMentions(BuildContext context, String text) => _MessageText(
+    text: text,
+    mentions: message.mentions,
+    label: _label,
+    me: me,
+    own: message.ownUser,
+  );
 
   Widget _image(BuildContext context, ImageView image) {
     final core = this.core;
@@ -155,6 +183,19 @@ class MessageTile extends StatelessWidget {
           _withMentions(context, caption),
         ],
       ],
+    );
+  }
+
+  Widget _audio(BuildContext context, AudioView audio) {
+    final core = this.core;
+    final playback = this.playback;
+    if (core == null || playback == null) return const Text('Voice message');
+    return AudioBubble(
+      key: ValueKey('audio-${message.id}'),
+      core: core,
+      messageId: message.id,
+      audio: audio,
+      playback: playback,
     );
   }
 
@@ -200,6 +241,7 @@ class MessageTile extends StatelessWidget {
     final textBody = switch (message.body) {
       ChatBody_Text(:final text) => _withMentions(context, text),
       ChatBody_Image(:final image) => _image(context, image),
+      ChatBody_Audio(:final audio) => _audio(context, audio),
       ChatBody_Unsupported() => Text(
         unsupportedText,
         style: TextStyle(
@@ -290,6 +332,65 @@ class MessageTile extends StatelessWidget {
         ),
       ),
       child: GestureDetector(onLongPress: () => _sheet(context), child: bubble),
+    );
+  }
+}
+
+/// Message text: plain when it has neither mentions nor links, else rich with
+/// mentions drawn and URLs tappable (app-ui: Links in messages). Owns the
+/// links' tap recognizers.
+class _MessageText extends StatefulWidget {
+  const _MessageText({
+    required this.text,
+    required this.mentions,
+    required this.label,
+    required this.me,
+    required this.own,
+  });
+
+  final String text;
+  final List<MentionSpan> mentions;
+  final String Function(MentionTarget target) label;
+  final UserRef? me;
+  final bool own;
+
+  @override
+  State<_MessageText> createState() => _MessageTextState();
+}
+
+class _MessageTextState extends State<_MessageText> {
+  final List<GestureRecognizer> _recognizers = [];
+
+  void _dispose() {
+    for (final r in _recognizers) {
+      r.dispose();
+    }
+    _recognizers.clear();
+  }
+
+  @override
+  void dispose() {
+    _dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _dispose();
+    if (widget.mentions.isEmpty && findLinks(widget.text).isEmpty) {
+      return Text(widget.text);
+    }
+    return Text.rich(
+      mentionSpans(
+        context,
+        widget.text,
+        widget.mentions,
+        label: widget.label,
+        me: widget.me,
+        own: widget.own,
+        onLink: (url) => showLinkSheet(context, url),
+        recognizers: _recognizers,
+      ),
     );
   }
 }

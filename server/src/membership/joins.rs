@@ -25,12 +25,12 @@ const WAITING: &str = "
       AND u.removed_at IS NULL
       AND d.device_id NOT IN (
           SELECT m.device_id FROM mls_members m
-          JOIN mls_groups g ON g.group_id = m.group_id WHERE g.kind = 'main')
+          JOIN mls_groups g ON g.group_id = m.group_id WHERE g.kind = 'system')
       AND d.username NOT IN (
           SELECT d2.username FROM mls_members m
           JOIN mls_groups g ON g.group_id = m.group_id
           JOIN devices d2 ON d2.device_id = m.device_id
-          WHERE g.kind = 'main' AND d2.revoked_at IS NULL)
+          WHERE g.kind = 'system' AND d2.revoked_at IS NULL)
       AND EXISTS (SELECT 1 FROM key_packages k WHERE k.device_id = d.device_id)";
 
 fn device_id(bytes: &[u8]) -> Result<DeviceId, StoreError> {
@@ -125,7 +125,7 @@ pub fn after_upload(
 fn group_id(conn: &Connection) -> Result<Option<Vec<u8>>, StoreError> {
     Ok(conn
         .query_row(
-            "SELECT group_id FROM mls_groups WHERE kind = 'main'",
+            "SELECT group_id FROM mls_groups WHERE kind = 'system'",
             [],
             |row| row.get(0),
         )
@@ -152,7 +152,7 @@ pub fn dm_needing(
            AND d.device_id NOT IN (SELECT device_id FROM inactive_devices)
            AND d.device_id IN (SELECT m.device_id FROM mls_members m
                                JOIN mls_groups g ON g.group_id = m.group_id
-                               WHERE g.kind = 'main')
+                               WHERE g.kind = 'system')
            AND EXISTS (SELECT 1 FROM key_packages k
                        WHERE k.device_id = d.device_id AND k.last_resort = 1
                          AND k.dm_capable = 1)

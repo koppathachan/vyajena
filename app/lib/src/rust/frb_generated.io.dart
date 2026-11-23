@@ -52,7 +52,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AudioView dco_decode_audio_view(dynamic raw);
+
+  @protected
   bool dco_decode_bool(dynamic raw);
+
+  @protected
+  AudioView dco_decode_box_audio_view(dynamic raw);
 
   @protected
   ChatMessage dco_decode_box_autoadd_chat_message(dynamic raw);
@@ -137,6 +143,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw);
+
+  @protected
+  List<UserRef> dco_decode_list_user_ref(dynamic raw);
 
   @protected
   MediaStatus dco_decode_media_status(dynamic raw);
@@ -237,7 +246,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AudioView sse_decode_audio_view(SseDeserializer deserializer);
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer);
+
+  @protected
+  AudioView sse_decode_box_audio_view(SseDeserializer deserializer);
 
   @protected
   ChatMessage sse_decode_box_autoadd_chat_message(SseDeserializer deserializer);
@@ -324,6 +339,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   Uint8List sse_decode_list_prim_u_8_strict(SseDeserializer deserializer);
+
+  @protected
+  List<UserRef> sse_decode_list_user_ref(SseDeserializer deserializer);
 
   @protected
   MediaStatus sse_decode_media_status(SseDeserializer deserializer);
@@ -437,7 +455,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_audio_view(AudioView self, SseSerializer serializer);
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_audio_view(AudioView self, SseSerializer serializer);
 
   @protected
   void sse_encode_box_autoadd_chat_message(
@@ -558,6 +582,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
     Uint8List self,
     SseSerializer serializer,
   );
+
+  @protected
+  void sse_encode_list_user_ref(List<UserRef> self, SseSerializer serializer);
 
   @protected
   void sse_encode_media_status(MediaStatus self, SseSerializer serializer);

@@ -125,6 +125,9 @@ enum CoreErrorKind {
   /// The server does not support DMs yet.
   dmsUnavailable,
 
+  /// The server does not support named groups yet.
+  groupsUnavailable,
+
   /// The picked file is not an image the app can send (JPEG, PNG, GIF or
   /// WebP).
   imageUnsupported,
@@ -132,7 +135,15 @@ enum CoreErrorKind {
   /// The image cannot be made small enough to send.
   imageTooLarge,
 
-  /// The server no longer has the picture (client-runtime: Expired media).
+  /// The recording is not a WAV the app can send (16-bit PCM), or has no
+  /// sound in it.
+  audioUnsupported,
+
+  /// The voice message is longer than two minutes.
+  audioTooLong,
+
+  /// The server no longer has the picture or voice message (client-runtime:
+  /// Expired media).
   mediaExpired,
 
   /// This device no longer has the picture to resend.

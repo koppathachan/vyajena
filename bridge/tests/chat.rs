@@ -16,6 +16,7 @@ fn text_of(message: &ChatMessage) -> &str {
     match &message.body {
         ChatBody::Text { text } => text,
         ChatBody::Image { .. } => "<image>",
+        ChatBody::Audio { .. } => "<audio>",
         ChatBody::Unsupported => "<unsupported>",
     }
 }
@@ -200,7 +201,7 @@ async fn alice_renames_herself_and_bob_sees_ali_alice() {
 #[tokio::test(flavor = "multi_thread")]
 async fn admin_calls_work_for_the_admin_and_not_for_bob() {
     let server = TestServer::start().await;
-    let mut admin = device::admin_with_group(&server).await;
+    let admin = device::admin_with_group(&server).await;
     let bob = device::member_of_group(&admin, "bob").await;
 
     let invite = admin
@@ -224,16 +225,6 @@ async fn admin_calls_work_for_the_admin_and_not_for_bob() {
     let listed = admin.core.list_invites().await.check("list invites");
     assert!(listed.iter().all(|i| i.code != invite.code));
 
-    let id = admin
-        .core
-        .set_group_name(Some("Family".to_owned()))
-        .check("group name");
-    wait_accepted(&mut admin, id).await;
-    bob.wait_until("bob sees the group name", |c| {
-        c.group_name().ok().flatten().as_deref() == Some("Family")
-    })
-    .await;
-
     let error = bob
         .core
         .create_invite("dave".to_owned())
@@ -242,7 +233,7 @@ async fn admin_calls_work_for_the_admin_and_not_for_bob() {
     assert_eq!(error.kind, CoreErrorKind::Refused, "{error:?}");
     let error = bob
         .core
-        .set_group_name(Some("Mine".to_owned()))
+        .rename_group(0, "Mine".to_owned())
         .expect_err("bob is not the admin");
     assert_eq!(error.kind, CoreErrorKind::NotAdmin);
 

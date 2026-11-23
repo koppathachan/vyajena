@@ -10,9 +10,9 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent, ImageView,
-    InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer, ReplyQuote,
-    SendState, UserRef,
+    AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
+    ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
+    ReplyQuote, SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -148,6 +148,21 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                     }),
                 }
             }
+            MessageBody::Audio(audio) => {
+                let audio = *audio;
+                ChatBody::Audio {
+                    audio: Box::new(AudioView {
+                        duration_ms: audio.duration_ms,
+                        waveform: audio.waveform,
+                        size: audio.size,
+                        state: match audio.state {
+                            client::MediaState::Available => MediaStatus::Available,
+                            client::MediaState::Expired => MediaStatus::Expired,
+                            _ => MediaStatus::NotDownloaded,
+                        },
+                    }),
+                }
+            }
             _ => ChatBody::Unsupported,
         },
         sent_at_ms: message.sent_at.map(millis),
@@ -160,7 +175,8 @@ pub(crate) fn chat(chat: client::Chat) -> ChatSummary {
     ChatSummary {
         chat_id: chat.id.0,
         kind: match chat.kind {
-            client::ChatKind::Main => ChatKindInfo::Main,
+            client::ChatKind::Lobby => ChatKindInfo::Lobby,
+            client::ChatKind::Group { name, closed } => ChatKindInfo::Group { name, closed },
             client::ChatKind::Dm {
                 peer,
                 waiting,
@@ -210,11 +226,6 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             user: user(&u),
             display_name,
             about,
-        },
-        Event::GroupSettingsChanged { name, previous, by } => CoreEvent::GroupSettingsChanged {
-            name,
-            previous,
-            by: user(&by),
         },
         Event::Unreadable {
             sender,
@@ -305,11 +316,18 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::NoSuchChat => K::NoSuchChat,
         ClientError::ChatClosed => K::ChatClosed,
         ClientError::DmsUnavailable => K::DmsUnavailable,
+        ClientError::GroupsUnavailable => K::GroupsUnavailable,
         ClientError::MediaExpired => K::MediaExpired,
         ClientError::MediaNotOnDevice => K::MediaNotOnDevice,
         ClientError::Media(client::media::MediaError::Image(image)) => match image {
             client::media::ImageError::TooLarge => K::ImageTooLarge,
             _ => K::ImageUnsupported,
+        },
+        ClientError::Media(client::media::MediaError::Audio(audio)) => match audio {
+            client::media::AudioError::TooLong | client::media::AudioError::TooLarge => {
+                K::AudioTooLong
+            }
+            _ => K::AudioUnsupported,
         },
         _ => K::Internal,
     };

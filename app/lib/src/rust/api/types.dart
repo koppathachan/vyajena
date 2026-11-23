@@ -8,7 +8,45 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+
+/// A voice message (message-content: Audio messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+class AudioView {
+  /// The clip's length in milliseconds.
+  final int durationMs;
+
+  /// The amplitude peaks, one byte each (255 the loudest), drawn as bars
+  /// before the clip is downloaded.
+  final Uint8List waveform;
+
+  /// The clip's size on the server in bytes.
+  final BigInt size;
+
+  /// Where the clip is.
+  final MediaStatus state;
+
+  const AudioView({
+    required this.durationMs,
+    required this.waveform,
+    required this.size,
+    required this.state,
+  });
+
+  @override
+  int get hashCode =>
+      durationMs.hashCode ^ waveform.hashCode ^ size.hashCode ^ state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AudioView &&
+          runtimeType == other.runtimeType &&
+          durationMs == other.durationMs &&
+          waveform == other.waveform &&
+          size == other.size &&
+          state == other.state;
+}
 
 @freezed
 sealed class ChatBody with _$ChatBody {
@@ -27,6 +65,12 @@ sealed class ChatBody with _$ChatBody {
     required ImageView image,
   }) = ChatBody_Image;
 
+  /// A voice message.
+  const factory ChatBody.audio({
+    /// The clip. Boxed like an image: a message is carried in every event.
+    required AudioView audio,
+  }) = ChatBody_Audio;
+
   /// A body this version does not know: shown as a placeholder saying the
   /// app needs an update (app-ui: Chat screen).
   const factory ChatBody.unsupported() = ChatBody_Unsupported;
@@ -36,8 +80,18 @@ sealed class ChatBody with _$ChatBody {
 sealed class ChatKindInfo with _$ChatKindInfo {
   const ChatKindInfo._();
 
-  /// The one admin-run group.
-  const factory ChatKindInfo.main() = ChatKindInfo_Main;
+  /// The system lobby, shown as the fixed name "lobby".
+  const factory ChatKindInfo.lobby() = ChatKindInfo_Lobby;
+
+  /// An admin-created named group.
+  const factory ChatKindInfo.group({
+    /// The name the admin set; unset until then (the app shows
+    /// "Unnamed group").
+    String? name,
+
+    /// The admin closed it: history only.
+    required bool closed,
+  }) = ChatKindInfo_Group;
 
   /// A DM with `peer`.
   const factory ChatKindInfo.dm({
@@ -150,10 +204,10 @@ class ChatMessage {
 
 /// One chat in the chat list (app-ui: Chat list).
 class ChatSummary {
-  /// Its id: 0 is the main group.
+  /// Its id: 0 is the lobby.
   final PlatformInt64 chatId;
 
-  /// Main group or DM.
+  /// Lobby, named group or DM.
   final ChatKindInfo kind;
 
   /// Received messages after the read mark.
@@ -236,20 +290,6 @@ sealed class CoreEvent with _$CoreEvent {
     /// The "about" text, if set.
     String? about,
   }) = CoreEvent_ProfileChanged;
-
-  /// The admin changed the group settings; emitted only when the name
-  /// changes.
-  const factory CoreEvent.groupSettingsChanged({
-    /// The group's name, if set.
-    String? name,
-
-    /// The name stored before; unset on this device's first sync, when
-    /// no rename notice is shown (app-ui: Notices in the chat).
-    String? previous,
-
-    /// The user whose admin device renamed it.
-    required UserRef by,
-  }) = CoreEvent_GroupSettingsChanged;
 
   /// A message arrived that this device cannot read.
   const factory CoreEvent.unreadable({
@@ -455,7 +495,7 @@ class InvitePreview {
           relayAddress == other.relayAddress;
 }
 
-/// Where an image message's picture is on this device (client-runtime: Image
+/// Where an image or voice message's media is on this device (client-runtime: Image
 /// download and cache; Expired media).
 enum MediaStatus {
   /// Not downloaded: the blur shows and a tap downloads it.

@@ -11,7 +11,7 @@ pub struct UserRef {
     pub server_id: String,
 }
 
-/// Where an image message's picture is on this device (client-runtime: Image
+/// Where an image or voice message's media is on this device (client-runtime: Image
 /// download and cache; Expired media).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaStatus {
@@ -42,6 +42,21 @@ pub struct ImageView {
     pub state: MediaStatus,
 }
 
+/// A voice message (message-content: Audio messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioView {
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The amplitude peaks, one byte each (255 the loudest), drawn as bars
+    /// before the clip is downloaded.
+    pub waveform: Vec<u8>,
+    /// The clip's size on the server in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaStatus,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatBody {
@@ -55,6 +70,11 @@ pub enum ChatBody {
         /// The image. Boxed: it is large next to a text, and a message is
         /// carried in every event.
         image: Box<ImageView>,
+    },
+    /// A voice message.
+    Audio {
+        /// The clip. Boxed like an image: a message is carried in every event.
+        audio: Box<AudioView>,
     },
     /// A body this version does not know: shown as a placeholder saying the
     /// app needs an update (app-ui: Chat screen).
@@ -144,11 +164,19 @@ pub struct ChatMessage {
     pub status: Option<SendState>,
 }
 
-/// What a chat is (app-ui: Chat list, change `dms`).
+/// What a chat is (app-ui: Chat list, changes `dms`, `lobby-multi-group`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatKindInfo {
-    /// The one admin-run group.
-    Main,
+    /// The system lobby, shown as the fixed name "lobby".
+    Lobby,
+    /// An admin-created named group.
+    Group {
+        /// The name the admin set; unset until then (the app shows
+        /// "Unnamed group").
+        name: Option<String>,
+        /// The admin closed it: history only.
+        closed: bool,
+    },
     /// A DM with `peer`.
     Dm {
         /// The other user.
@@ -163,9 +191,9 @@ pub enum ChatKindInfo {
 /// One chat in the chat list (app-ui: Chat list).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatSummary {
-    /// Its id: 0 is the main group.
+    /// Its id: 0 is the lobby.
     pub chat_id: i64,
-    /// Main group or DM.
+    /// Lobby, named group or DM.
     pub kind: ChatKindInfo,
     /// Received messages after the read mark.
     pub unread: u32,
@@ -237,17 +265,6 @@ pub enum CoreEvent {
         display_name: Option<String>,
         /// The "about" text, if set.
         about: Option<String>,
-    },
-    /// The admin changed the group settings; emitted only when the name
-    /// changes.
-    GroupSettingsChanged {
-        /// The group's name, if set.
-        name: Option<String>,
-        /// The name stored before; unset on this device's first sync, when
-        /// no rename notice is shown (app-ui: Notices in the chat).
-        previous: Option<String>,
-        /// The user whose admin device renamed it.
-        by: UserRef,
     },
     /// A message arrived that this device cannot read.
     Unreadable {

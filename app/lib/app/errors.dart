@@ -18,9 +18,13 @@ String errorText(Object error) {
     CoreErrorKind.imageUnsupported =>
       'That file is not a picture the app can send.',
     CoreErrorKind.imageTooLarge => 'That picture is too large to send.',
-    CoreErrorKind.mediaExpired => 'The picture has expired.',
+    CoreErrorKind.audioUnsupported =>
+      'That recording cannot be sent. Try recording it again.',
+    CoreErrorKind.audioTooLong =>
+      'That voice message is too long to send. Keep it under two minutes.',
+    CoreErrorKind.mediaExpired => 'This has expired.',
     CoreErrorKind.mediaNotOnDevice =>
-      'This phone no longer has the picture to send again.',
+      'This phone no longer has it to send again.',
     _ => error.message,
   };
 }

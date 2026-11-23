@@ -251,6 +251,40 @@ pub struct RemoveUserRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RemoveUserResponse {}
+/// multi-group: Named group creation. The admin's device has created an MLS group
+/// whose only member is itself, whose group context lists the server as external
+/// sender, names the admin in the `0xF0A1` extension and carries the named-group
+/// extension `0xF0A3`, and sends its epoch-0 public state. The server records it
+/// with kind `named`. `INVALID_ARGUMENT` if the state does not parse, is not at
+/// epoch 0 with the caller's device as only member, the server is not an external
+/// sender, or `0xF0A1` / `0xF0A3` is missing or wrong; `ALREADY_EXISTS` if the
+/// group id is taken.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateNamedGroupRequest {
+    /// The MLS group id, 16 random bytes.
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized `MLSMessage` carrying the epoch-0 GroupInfo, without the
+    /// ratchet tree extension.
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_info: ::prost::alloc::vec::Vec<u8>,
+    /// TLS-serialized MLS ratchet tree (RFC 9420 section 12.4.3.3).
+    #[prost(bytes = "vec", tag = "3")]
+    pub ratchet_tree: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CreateNamedGroupResponse {}
+/// multi-group: Closing a named group. Sets `closed_at`, deletes the group's queue
+/// and public state, and sends `GroupClosed` to its member devices until acked.
+/// `FAILED_PRECONDITION` for the system group; `NOT_FOUND` for an unknown group,
+/// a DM included; closing a closed group is a no-op.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseGroupRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CloseGroupResponse {}
 /// Generated client implementations.
 pub mod admin_client {
     #![allow(
@@ -431,6 +465,56 @@ pub mod admin_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("vyajena.v1.Admin", "CreateGroup"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// multi-group: Named group creation (change `lobby-multi-group`).
+        pub async fn create_named_group(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CreateNamedGroupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CreateNamedGroupResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Admin/CreateNamedGroup",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Admin", "CreateNamedGroup"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// multi-group: Closing a named group.
+        pub async fn close_group(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloseGroupRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseGroupResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Admin/CloseGroup",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Admin", "CloseGroup"));
             self.inner.unary(req, path, codec).await
         }
         /// group-membership: Removing a user.
@@ -676,7 +760,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -692,6 +776,11 @@ pub mod content {
         /// message-content: Image messages (change `media-blobs`).
         #[prost(message, tag = "5")]
         Image(super::Image),
+        /// message-content: Audio messages (change `audio-messages`). The next free
+        /// field after this one is 7 for the change that follows; `delete-messages`
+        /// takes it, so the two never collide.
+        #[prost(message, tag = "6")]
+        Audio(super::Audio),
     }
 }
 /// message-content: Image messages. One static image, stored as an encrypted blob
@@ -731,6 +820,38 @@ pub struct Image {
     /// (message-content: Image caption and mentions).
     #[prost(message, repeated, tag = "8")]
     pub caption_mentions: ::prost::alloc::vec::Vec<Mention>,
+}
+/// message-content: Audio messages. One voice message: an Opus mono clip in an OGG
+/// container (RFC 7845), stored as an encrypted blob on the server (blob-store)
+/// exactly as an image is. This body is what a receiver needs to draw the bubble
+/// (duration and waveform) before anything downloads, and to fetch and decrypt the
+/// clip on tap. A client that predates it decodes the body as unset and shows the
+/// "needs a newer app version" placeholder. Only the Rust core reads it; the server
+/// never sees it, and `blob_key` never leaves the encrypted `Content`. There is no
+/// caption in this version.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Audio {
+    /// The random id the ciphertext is stored under on the server, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most
+    /// `protocol::blob_store::MAX_BLOB_BYTES`.
+    #[prost(uint64, tag = "3")]
+    pub blob_size: u64,
+    /// The clip's length in milliseconds, at least 1 and at most
+    /// `protocol::audio::MAX_AUDIO_DURATION_MS`.
+    #[prost(uint32, tag = "4")]
+    pub duration_ms: u32,
+    /// Amplitude peaks of the clip, one byte per peak (0 silent, 255 loudest), evenly
+    /// spaced over its length, at most `protocol::audio::MAX_AUDIO_WAVEFORM_BYTES`
+    /// bytes. The bubble draws it as bar heights before the clip downloads.
+    #[prost(bytes = "vec", tag = "5")]
+    pub waveform: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich
@@ -1860,7 +1981,7 @@ pub mod client_frame {
 /// A frame from the server to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9")]
+    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -1887,6 +2008,9 @@ pub mod server_frame {
         JoinNotice(super::JoinNotice),
         #[prost(message, tag = "9")]
         DmClosed(super::DmClosed),
+        /// multi-group: Closing a named group (change `lobby-multi-group`).
+        #[prost(message, tag = "10")]
+        GroupClosed(super::GroupClosed),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2087,8 +2211,8 @@ pub mod send_result {
 /// durably processed in `group_id`; cumulative. The server then deletes that device's
 /// queue entries up to it, advances its commit-log cursor and does not redeliver
 /// them.
-/// With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
-/// `dms`).
+/// With `server_seq` 0 it acknowledges a `DmClosed` or a `GroupClosed` for
+/// `group_id` (changes `dms`, `lobby-multi-group`).
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Ack {
     #[prost(bytes = "vec", tag = "1")]
@@ -2183,6 +2307,18 @@ pub struct JoinNotice {
 /// never in a DM.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DmClosed {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub closed_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// multi-group: Closing a named group. Sent to each member device of a closed
+/// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.
+/// The client marks the chat closed and keeps its history read-only; envelopes for
+/// it are rejected with `REJECTION_REASON_GROUP_CLOSED`. Never sent to a device
+/// below protocol version 3, which is never in a named group.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct GroupClosed {
     #[prost(bytes = "vec", tag = "1")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]

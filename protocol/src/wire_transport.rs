@@ -9,12 +9,12 @@ use crate::device_identity::{ED25519_PUBLIC_KEY_LEN, ED25519_SIGNATURE_LEN};
 /// The protocol version this contract defines, sent in `Hello.protocol_version`
 /// and listed in `ServerInfo.supported_protocol_versions`
 /// (Protocol version negotiation). Version 2 adds DMs (change `dms`): a server that
-/// lists it knows the `Dms` service. On the stream both versions behave the
-/// same.
-pub const PROTOCOL_VERSION: u32 = 2;
+/// lists it knows the `Dms` service. Version 3 adds named groups (change
+/// `lobby-multi-group`). On the stream all versions behave the same.
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Every version the server accepts in `Hello`: version 1 is what 1.0.0 apps speak.
-pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 2] = [1, 2];
+pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 3] = [1, 2, 3];
 
 /// The version a client speaks to a server that lists `supported`: the highest
 /// one this contract knows, or `None` if they share none.
@@ -24,6 +24,11 @@ pub fn negotiate_protocol_version(supported: &[u32]) -> Option<u32> {
         .rev()
         .find(|v| supported.contains(v))
         .copied()
+}
+
+/// Whether a server that lists `supported` knows named groups (multi-group).
+pub fn server_knows_named_groups(supported: &[u32]) -> bool {
+    supported.contains(&3)
 }
 
 /// Whether a server that lists `supported` knows DMs (direct-messages).

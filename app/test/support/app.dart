@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
 import 'package:vyajena/chat/picture_picker.dart';
+import 'package:vyajena/chat/voice_plugins.dart';
 import 'package:vyajena/core/core_service.dart';
 
 import 'fake_core_service.dart';
@@ -31,7 +32,7 @@ Future<FakeCoreService> openApp(
   FakeCoreService? core,
 ]) async {
   final fake = await openHome(tester, core);
-  if (fake.dmChats.isEmpty) {
+  if (fake.dmChats.isEmpty && fake.groupChats.isEmpty) {
     final group = find.byKey(const ValueKey('chat-main'));
     if (group.evaluate().isNotEmpty) await tap(tester, group);
   }
@@ -67,6 +68,25 @@ Future<FakeCoreService> openAppWithPictures(
   await core.open();
   await settle(tester);
   final group = find.byKey(const ValueKey('chat-main'));
+  if (core.dmChats.isEmpty &&
+      core.groupChats.isEmpty &&
+      group.evaluate().isNotEmpty) {
+    await tap(tester, group);
+  }
+  return core;
+}
+
+/// [openApp] with [voice] as the microphone and speaker (app-ui: Record a voice
+/// message; Play a voice message).
+Future<FakeCoreService> openAppWithVoice(
+  WidgetTester tester,
+  FakeCoreService core,
+  VoicePlugins voice,
+) async {
+  await tester.pumpWidget(VyajenaApp(core: core, voice: voice));
+  await core.open();
+  await settle(tester);
+  final group = find.byKey(const ValueKey('chat-main'));
   if (core.dmChats.isEmpty && group.evaluate().isNotEmpty) {
     await tap(tester, group);
   }
@@ -95,6 +115,9 @@ Future<void> enterGroup(WidgetTester tester) async {
 
 /// Taps [finder] and settles.
 Future<void> tap(WidgetTester tester, Finder finder) async {
+  // Whatever was just typed or set has been drawn (the composer's button is
+  // the mic until there is text).
+  await tester.pump();
   await tester.ensureVisible(finder);
   await tester.tap(finder);
   await settle(tester);

@@ -264,6 +264,31 @@ abstract class CoreService {
   /// the new message's local id.
   Future<int> resendImage(int id);
 
+  // --- Voice messages (message-content: Audio messages; app-ui: Record a voice
+  // message, Play a voice message). The core makes the OGG/Opus, encrypts it,
+  // uploads it and decrypts what comes back: the app only passes the
+  // recorder's WAV in and plays the file path it gets out. ---
+
+  /// Sends the recording [wav] (the file the recorder wrote) to chat [chatId];
+  /// returns its local id. Throws [CoreError] with [CoreErrorKind.audioTooLong]
+  /// for a clip over two minutes. Like an image it is queued at once,
+  /// connected or not.
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0});
+
+  /// The path of voice message [id]'s clip, an OGG/Opus file in the core's media
+  /// cache for a player to open: from the cache on this device, else downloaded
+  /// first. The app never copies or keeps the file. Throws [CoreError] with
+  /// [CoreErrorKind.mediaExpired] when the server no longer has it.
+  Future<String> downloadAudio(int id);
+
+  /// The path of voice message [id]'s clip if this device has it cached; never
+  /// uses the network.
+  Future<String?> cachedAudio(int id);
+
+  /// Resends the clip of own voice message [id] as a new message; returns the
+  /// new message's local id.
+  Future<int> resendAudio(int id);
+
   /// The blur a ThumbHash stands for, as a small PNG; null if the bytes are
   /// not a ThumbHash. Decoded by the core.
   Uint8List? thumbhashPreview(Uint8List thumbhash);
@@ -314,9 +339,6 @@ abstract class CoreService {
   /// The group's member devices.
   Future<List<MemberDevice>> members();
 
-  /// The group's name.
-  Future<String?> groupName();
-
   /// The group's epoch on this device.
   Future<BigInt?> epoch();
 
@@ -341,8 +363,28 @@ abstract class CoreService {
   /// Admin: removes [user] from the group and the server.
   Future<void> removeUser(UserRef user);
 
-  /// Admin: sets the group's name.
-  Future<int> setGroupName(String? name);
+  /// Whether the server knows named groups (it lists protocol version 3):
+  /// "New group", "Rename" and "Close group" are offered only then.
+  Future<bool> namedGroupsAvailable();
+
+  /// Admin: creates a named group called [name] (optional) and adds the
+  /// devices of [members]; returns its chat id.
+  Future<int> createNamedGroup(String? name, List<UserRef> members);
+
+  /// Admin: adds all devices of [user] to the named group [chatId].
+  Future<void> addToGroup(int chatId, UserRef user);
+
+  /// Admin: removes [user] from the named group [chatId] (not from the lobby).
+  Future<void> removeFromGroup(int chatId, UserRef user);
+
+  /// Admin: sets the name of the named group [chatId].
+  Future<int> renameGroup(int chatId, String name);
+
+  /// Admin: closes the named group [chatId]; it becomes read-only.
+  Future<void> closeGroup(int chatId);
+
+  /// The member devices of the named group [chatId].
+  Future<List<MemberDevice>> groupMembers(int chatId);
 
   /// Admin: accepts [user]'s changed identity key.
   Future<bool> acceptIdentityKey(UserRef user);

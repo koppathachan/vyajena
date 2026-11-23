@@ -87,13 +87,6 @@ class DeviceRemovedNotice extends Notice {
   const DeviceRemovedNotice();
 }
 
-/// [by] renamed the group to [name] (null: cleared the name).
-class RenamedNotice extends Notice {
-  const RenamedNotice(this.by, this.name);
-  final UserRef by;
-  final String? name;
-}
-
 /// What a membership notice says (qa-fixes design D5).
 enum MemberChange {
   /// [MemberNotice.user]'s first device was added: "bob joined".
@@ -124,6 +117,14 @@ class MemberNotice extends Notice {
   final UserRef by;
 }
 
+/// The lobby's fixed name (multi-group: The system lobby): the app shows it
+/// whatever any `GroupSettings` says.
+const lobbyName = 'lobby';
+
+/// The title of a named group before the admin sets a name (app-ui: Named
+/// group screen).
+const unnamedGroupName = 'Unnamed group';
+
 /// One row of the chat.
 sealed class ChatItem {
   const ChatItem();
@@ -152,9 +153,11 @@ class _Anchored {
 /// The chat's messages and notices, kept up to date from the core.
 class ChatModel extends ChangeNotifier {
   /// Follows [core]'s events from now on; make it before the core opens.
-  /// [chatId] 0 is the main group; a DM's model (change `dms`) names its
-  /// [peer] and lives as long as its screen.
-  ChatModel(this.core, {this.chatId = 0, this.peer}) : names = UserNames(core) {
+  /// [chatId] 0 is the lobby; a DM's model (change `dms`) names its [peer]
+  /// and a named group's model (change `lobby-multi-group`) is made with
+  /// [group]; both live as long as their screen.
+  ChatModel(this.core, {this.chatId = 0, this.peer, this.group = false})
+    : names = UserNames(core) {
     _subscription = core.events.listen(_onEvent);
     if (isMain) core.addBeforeStart(_prime);
   }
@@ -162,13 +165,19 @@ class ChatModel extends ChangeNotifier {
   final CoreService core;
   final UserNames names;
 
-  /// The chat: 0 is the main group, else a DM.
+  /// The chat: 0 is the lobby, else a DM or a named group.
   final int chatId;
+
+  /// Whether this is a named group's chat.
+  final bool group;
+
+  /// Whether this is a named group's chat.
+  bool get isGroup => group;
 
   /// The DM's other user; null for the main group.
   final UserRef? peer;
 
-  /// Whether this is the main group's chat.
+  /// Whether this is the lobby's chat.
   bool get isMain => chatId == 0;
 
   bool _closed = false;
@@ -220,7 +229,7 @@ class ChatModel extends ChangeNotifier {
   List<UserRef> get memberUsers => [
     for (final e in _memberUsers.entries)
       if ((_members[e.key]?.isNotEmpty ?? false) &&
-          (isMain || _same(e.value, peer!)))
+          (isMain || isGroup || _same(e.value, peer!)))
         e.value,
   ];
 
@@ -228,8 +237,17 @@ class ChatModel extends ChangeNotifier {
   /// oldest first (app-ui: Mentions of me).
   List<int> get unseenMentions => _unseen;
 
-  /// The group's name, once an admin device set it.
+  /// A named group's name, once its admin set one; null for the lobby, whose
+  /// name is the fixed "lobby", and for a DM.
   String? get groupName => _groupName;
+
+  /// The chat's title: "lobby", a named group's name ("Unnamed group" until
+  /// the admin sets one), or a DM's peer (the screen shows the peer's name).
+  String get title => isMain
+      ? lobbyName
+      : isGroup
+      ? (_groupName ?? unnamedGroupName)
+      : '';
 
   /// The newest refusal since the device last joined; null: none.
   Refusal? get refusal => _refusal;
@@ -269,7 +287,6 @@ class ChatModel extends ChangeNotifier {
     if (_primed) return;
     _primed = true;
     try {
-      _groupName = await core.groupName();
       await _reloadMembers();
       if (peer case final UserRef peer) await names.load([peer]);
       await _reloadChat();
@@ -291,7 +308,7 @@ class ChatModel extends ChangeNotifier {
       try {
         final dms = [
           for (final c in await core.chats())
-            if (c.kind is ChatKindInfo_Dm) c,
+            if (c.kind is ChatKindInfo_Dm || c.kind is ChatKindInfo_Group) c,
         ];
         _hasDms = dms.isNotEmpty;
         _dmUnread = dms.fold(0, (sum, c) => sum + c.unread);
@@ -307,6 +324,11 @@ class ChatModel extends ChangeNotifier {
         if (chat.kind case ChatKindInfo_Dm(:final closed, :final waiting)) {
           _closed = closed;
           _waiting = waiting;
+          _changed();
+        }
+        if (chat.kind case ChatKindInfo_Group(:final name, :final closed)) {
+          _groupName = name;
+          _closed = closed;
           _changed();
         }
       }
@@ -366,7 +388,9 @@ class ChatModel extends ChangeNotifier {
   Future<void> _reloadMembers() async {
     List<MemberDevice> devices;
     try {
-      devices = await core.members();
+      devices = isGroup
+          ? await core.groupMembers(chatId)
+          : await core.members();
     } on Object {
       devices = const [];
     }
@@ -488,19 +512,6 @@ class ChatModel extends ChangeNotifier {
       case CoreEvent_ProfileChanged(:final user):
         names.forget(user);
         names.load([user]).then((_) => _changed());
-      case CoreEvent_GroupSettingsChanged(
-        :final name,
-        :final previous,
-        :final by,
-      ):
-        _groupName = name;
-        // `previous` is null on this device's first sync: no notice then.
-        if (previous != null && previous != name) {
-          names.load([by]).then((_) => _changed());
-          _notice(RenamedNotice(by, name));
-        } else {
-          _changed();
-        }
       case CoreEvent_Unreadable(:final sender, :final acceptedAtMs, chatId: _):
         if (sender != null) {
           names.load([sender]).then((_) => _changed());
@@ -607,6 +618,19 @@ class ChatModel extends ChangeNotifier {
   /// Sends the picture of own message [id] again, as a new message.
   Future<void> resendImage(int id) async {
     _lastId = await core.resendImage(id);
+    await _reload();
+  }
+
+  /// Sends the recording [wav] as a voice message (app-ui: Record a voice
+  /// message); returns once the core stored it.
+  Future<void> sendAudio(Uint8List wav) async {
+    _lastId = await core.sendAudio(wav, chatId: chatId);
+    await _reload();
+  }
+
+  /// Sends the clip of own voice message [id] again, as a new message.
+  Future<void> resendAudio(int id) async {
+    _lastId = await core.resendAudio(id);
     await _reload();
   }
 

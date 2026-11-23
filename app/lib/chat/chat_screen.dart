@@ -16,10 +16,16 @@ import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import 'chat_model.dart';
 import 'composer.dart';
+import 'group_menu.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'voice_playback.dart';
+import 'voice_plugins.dart';
+
+/// The banner of a closed named group (app-ui: Named group screen).
+const groupClosedText = 'This group was closed';
 
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
@@ -60,6 +66,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final _list = GlobalKey();
   final Map<int, GlobalKey> _tiles = {};
   ReplyDraft? _reply;
+
+  /// The chat's one voice player: one clip plays at a time, and it stops when
+  /// the chat closes (app-ui: Play a voice message).
+  VoicePlayback? _playback;
   bool _checkQueued = false;
 
   /// While the chat scrolls on its own (to a quote's original or the
@@ -146,9 +156,16 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _playback ??= VoicePlayback(VoiceScope.of(context).newPlayer);
+  }
+
+  @override
   void dispose() {
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
+    _playback?.dispose();
     super.dispose();
   }
 
@@ -184,7 +201,9 @@ class _ChatScreenState extends State<ChatScreen> {
             _model.names.short(user),
             _model.names.of(user),
           ),
-      if (_model.isMain) const MentionChoice.everyone(),
+      // `@everyone` means everyone in this chat: the lobby or a named group
+      // (a DM has just the two).
+      if (_model.isMain || _model.isGroup) const MentionChoice.everyone(),
     ];
   }
 
@@ -197,6 +216,7 @@ class _ChatScreenState extends State<ChatScreen> {
         quote: switch (body) {
           ChatBody_Text(:final text) => text,
           ChatBody_Image(:final image) => image.caption ?? pictureQuote,
+          ChatBody_Audio() => voiceQuote,
           _ => unsupportedText,
         },
       ),
@@ -213,6 +233,17 @@ class _ChatScreenState extends State<ChatScreen> {
     String? caption,
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+
+  Future<void> _sendAudio(Uint8List wav) => _model.sendAudio(wav);
+
+  Future<void> _resendAudio(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendAudio(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
 
   Future<void> _resendImage(ChatMessage message) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -364,11 +395,23 @@ class _ChatScreenState extends State<ChatScreen> {
       return Scaffold(
         appBar: shellAppBar(
           widget.core,
-          title: peer == null ? _model.groupName ?? 'Vyajena' : peerName,
+          title: peer == null ? _model.title : peerName,
           actions: [
             _mentionBadge(),
-            // A DM shows no admin actions (app-ui: DM screen).
-            ChatMenu(admin: widget.admin && _model.isMain),
+            // A DM shows no admin actions (app-ui: DM screen); a named
+            // group has its own menu (app-ui: Named group screen).
+            if (_model.isGroup)
+              GroupMenu(
+                core: widget.core,
+                chatId: _model.chatId,
+                admin: widget.admin,
+                names: _model.names,
+              )
+            else
+              ChatMenu(
+                admin: widget.admin && _model.isMain,
+                lobby: _model.isMain,
+              ),
           ],
         ),
         body: Column(
@@ -410,6 +453,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   },
                                   core: widget.core,
                                   onResendImage: () => _resendImage(message),
+                                  onResendAudio: () => _resendAudio(message),
+                                  playback: _playback,
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
@@ -450,7 +495,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 ],
               ),
             ),
-            if (_model.closed)
+            if (_model.closed && _model.isGroup)
+              const MaterialBanner(
+                key: Key('group-closed'),
+                content: Text(groupClosedText),
+                actions: [SizedBox.shrink()],
+              )
+            else if (_model.closed)
               MaterialBanner(
                 key: const Key('dm-closed'),
                 content: Text(dmClosedText(peerName)),
@@ -474,6 +525,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
+                sendAudio: _sendAudio,
+                onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,
                 onCancelReply: () => setState(() => _reply = null),
@@ -524,8 +577,7 @@ enum MenuEntry {
   linkDevice('Link a new device', Routes.approveLink),
   invite('Invite a user', Routes.invite),
   invites('Invites', Routes.invites),
-  removeUser('Remove a user', Routes.removeUser),
-  groupName('Group name', Routes.groupName);
+  removeUser('Remove a user', Routes.removeUser);
 
   const MenuEntry(this.label, this.route);
 
@@ -534,7 +586,7 @@ enum MenuEntry {
 
   /// Whether only admin devices show it.
   bool get adminOnly => switch (this) {
-    invite || invites || removeUser || groupName => true,
+    invite || invites || removeUser => true,
     members || profile || linkDevice => false,
   };
 }
@@ -542,9 +594,14 @@ enum MenuEntry {
 /// The chat's menu: everyone's entries, and the admin's only on admin
 /// devices (the server rejects other devices' admin calls anyway).
 class ChatMenu extends StatelessWidget {
-  const ChatMenu({super.key, required this.admin});
+  const ChatMenu({super.key, required this.admin, this.lobby = false});
 
   final bool admin;
+
+  /// Whether this is the lobby's menu: it lists "Rename group" and "Close
+  /// group" greyed out, so the fixed name and the missing close show
+  /// (app-ui: Lobby is fixed; change `lobby-multi-group`).
+  final bool lobby;
 
   @override
   Widget build(BuildContext context) => PopupMenuButton<MenuEntry>(
@@ -554,6 +611,19 @@ class ChatMenu extends StatelessWidget {
       for (final entry in MenuEntry.values)
         if (admin || !entry.adminOnly)
           PopupMenuItem(value: entry, child: Text(entry.label)),
+      if (lobby) ...const [
+        PopupMenuDivider(),
+        PopupMenuItem<MenuEntry>(
+          key: ValueKey('lobby-rename-disabled'),
+          enabled: false,
+          child: Text('Rename group (the lobby is fixed)'),
+        ),
+        PopupMenuItem<MenuEntry>(
+          key: ValueKey('lobby-close-disabled'),
+          enabled: false,
+          child: Text('Close group (the lobby cannot be closed)'),
+        ),
+      ],
     ],
   );
 }

@@ -7,7 +7,7 @@
 //! actions ([`Client::create_group`], [`Client::add_user`],
 //! [`Client::remove_user`], invites) and linking other devices need the
 //! client to be started and connected. Messaging ([`Client::send_text`],
-//! [`Client::set_profile`], [`Client::set_group_settings`]) stores the
+//! [`Client::set_profile`], [`Client::rename_group`]) stores the
 //! message first and sends it whenever the engine can, so it works offline;
 //! its status arrives as [`Event::SendStatus`].
 
@@ -22,8 +22,8 @@ use tokio::sync::{mpsc, oneshot};
 use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
-    self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, GroupSettings, InviteInfo, Member,
-    Message, MessageId, Profile, PushPlatform, PushToken, UserId,
+    self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
+    MessageId, Profile, PushPlatform, PushToken, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -211,6 +211,11 @@ pub enum ClientError {
     #[error("this DM is closed")]
     ChatClosed,
 
+    /// The server does not know named groups yet (it lists no protocol
+    /// version 3).
+    #[error("the server does not support groups yet")]
+    GroupsUnavailable,
+
     /// The server does not know DMs yet (it lists no protocol version 2).
     #[error("the server does not support DMs yet")]
     DmsUnavailable,
@@ -322,6 +327,7 @@ impl Client {
                 events,
                 session: Mutex::new(None),
                 server_knows_dms: std::sync::atomic::AtomicBool::new(false),
+                server_knows_named_groups: std::sync::atomic::AtomicBool::new(false),
                 media,
             }),
             stream: Some(stream),
@@ -931,7 +937,8 @@ impl Client {
             Decoded::Text(text) => text.text,
             // Replying to a picture quotes its caption, if it has one.
             Decoded::Image(image) => image.caption.unwrap_or_default(),
-            Decoded::Unsupported => String::new(),
+            // A voice message has no text to quote.
+            Decoded::Audio(_) | Decoded::Unsupported => String::new(),
             Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
                 return Err(ClientError::NoSuchMessage);
             }
@@ -968,8 +975,16 @@ impl Client {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// The chats: the main group first, then the DMs, newest message first,
-    /// closed DMs last.
+    /// Whether the server this device last connected to knows named groups (it
+    /// lists protocol version 3); the app offers "Create group" only then.
+    pub fn named_groups_available(&self) -> bool {
+        self.shared
+            .server_knows_named_groups
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// The chats: the lobby first, then the named groups and the DMs, newest
+    /// message first, closed ones last (app-ui: Chat list).
     pub fn chats(&self) -> Result<Vec<Chat>, ClientError> {
         let store = &self.shared.store;
         let summary = |id: ChatId, kind: ChatKind| -> Result<Chat, ClientError> {
@@ -984,16 +999,26 @@ impl Client {
         };
         let mut chats = Vec::new();
         if store.group()?.is_some() {
-            chats.push(summary(ChatId::MAIN, ChatKind::Main)?);
+            chats.push(summary(ChatId::MAIN, ChatKind::Lobby)?);
         }
-        let mut dms = Vec::new();
+        let mut others = Vec::new();
         for dm in store.dms()? {
+            let closed = dm.closed_at.is_some();
+            if dm.named {
+                others.push(summary(
+                    ChatId(dm.chat),
+                    ChatKind::Group {
+                        name: dm.name,
+                        closed,
+                    },
+                )?);
+                continue;
+            }
             let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
                 continue;
             };
-            let closed = dm.closed_at.is_some();
             let waiting = !closed && !self.dm_has_peer(&dm.group_id, &peer)?;
-            dms.push(summary(
+            others.push(summary(
                 ChatId(dm.chat),
                 ChatKind::Dm {
                     peer,
@@ -1002,15 +1027,137 @@ impl Client {
                 },
             )?);
         }
-        dms.sort_by(|a, b| {
-            let closed = |c: &Chat| matches!(c.kind, ChatKind::Dm { closed: true, .. });
+        others.sort_by(|a, b| {
+            let closed = |c: &Chat| {
+                matches!(
+                    c.kind,
+                    ChatKind::Dm { closed: true, .. } | ChatKind::Group { closed: true, .. }
+                )
+            };
             closed(a)
                 .cmp(&closed(b))
                 .then(b.last_message_at.cmp(&a.last_message_at))
                 .then(a.id.cmp(&b.id))
         });
-        chats.extend(dms);
+        chats.extend(others);
         Ok(chats)
+    }
+
+    // --- Named groups (multi-group; admin only to create and moderate) ---
+
+    /// Admin: creates a named group with `name` (if given) and adds the
+    /// version 3 devices of `members`, which finishes in the background
+    /// ([`Event::ChatsChanged`]); returns its chat. Fails with
+    /// [`ClientError::NotAdmin`] on other devices and
+    /// [`ClientError::GroupsUnavailable`] on a server below version 3.
+    pub async fn create_named_group(
+        &self,
+        name: Option<&str>,
+        members: &[UserId],
+    ) -> Result<ChatId, ClientError> {
+        let mut group_id = [0u8; 16];
+        getrandom::fill(&mut group_id)
+            .map_err(|e| ClientError::Mls(MlsError::new("randomness", e)))?;
+        let (name, members) = (name.map(str::to_owned), members.to_vec());
+        self.job(move |reply| Job::CreateNamedGroup {
+            group_id: group_id.to_vec(),
+            name,
+            members,
+            reply,
+        })
+        .await?;
+        let chat = self
+            .shared
+            .store
+            .dm_by_group(&group_id)?
+            .ok_or(ClientError::NoSuchChat)?;
+        Ok(ChatId(chat.chat))
+    }
+
+    fn named_group(&self, chat: ChatId) -> Result<crate::store::DmRow, ClientError> {
+        self.shared
+            .store
+            .dm_by_chat(chat.0)?
+            .filter(|row| row.named)
+            .ok_or(ClientError::NoSuchChat)
+    }
+
+    /// Admin: adds the version 3 devices of `user` to the named group `chat`.
+    pub async fn add_to_group(&self, chat: ChatId, user: &UserId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        let user = user.clone();
+        self.job(move |reply| Job::AddToGroup {
+            group_id: row.group_id,
+            user,
+            reply,
+        })
+        .await
+    }
+
+    /// Admin: removes all devices of `user` from the named group `chat`; they
+    /// stay in the lobby.
+    pub async fn remove_from_group(&self, chat: ChatId, user: &UserId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        let user = user.clone();
+        self.job(move |reply| Job::RemoveFromGroup {
+            group_id: row.group_id,
+            user,
+            reply,
+            after: None,
+        })
+        .await
+    }
+
+    /// Admin: sets the name of the named group `chat` for every member
+    /// (message-content: Group settings travel encrypted). The lobby's name is
+    /// fixed: it is [`ClientError::NoSuchChat`] here.
+    pub fn rename_group(&self, chat: ChatId, name: &str) -> Result<MessageId, ClientError> {
+        if !self.account()?.is_admin {
+            return Err(ClientError::NotAdmin);
+        }
+        let row = self.named_group(chat)?;
+        if row.closed_at.is_some() {
+            return Err(ClientError::ChatClosed);
+        }
+        let content =
+            crate::messaging::encode_group_settings(Some(name), self.now()).map_err(too_long)?;
+        self.shared.store.set_named_name(&row.group_id, name)?;
+        let id = self.queue_content(chat.0, &content)?;
+        self.shared.events.emit(Event::ChatsChanged);
+        Ok(id)
+    }
+
+    /// Admin: closes the named group `chat` (`Admin.CloseGroup`). It becomes
+    /// read-only for everyone; the lobby cannot be closed.
+    pub async fn close_group(&self, chat: ChatId) -> Result<(), ClientError> {
+        let row = self.named_group(chat)?;
+        self.job(move |reply| Job::CloseGroup {
+            group_id: row.group_id,
+            reply,
+        })
+        .await
+    }
+
+    /// The member devices of the named group `chat`, as this device sees
+    /// them (the admin's member picker); empty once the group is closed.
+    pub fn group_members(&self, chat: ChatId) -> Result<Vec<Member>, ClientError> {
+        let row = self.named_group(chat)?;
+        let store = &self.shared.store;
+        let group = store.transaction(|| -> Result<_, ClientError> {
+            Ok(crate::mls::group::load(store.mls(), &row.group_id)?)
+        })?;
+        let Some(group) = group else {
+            return Ok(Vec::new());
+        };
+        let mut members: Vec<Member> = verify::members(&group)
+            .into_iter()
+            .map(|(_, claim)| Member {
+                user: claim.claimed.user,
+                device: claim.claimed.device_id,
+            })
+            .collect();
+        members.sort();
+        Ok(members)
     }
 
     /// Whether one of `peer`'s devices is in the DM `group_id` on this
@@ -1219,6 +1366,181 @@ impl Client {
         }
     }
 
+    // --- Voice messages (message-content: Audio messages; audio-messages:
+    // Recording and encoding; the blob send order, download, cache and expiry
+    // are the image ones) ---
+
+    /// Sends a recorded voice message to the main group: [`Client::send_audio_in`].
+    pub async fn send_audio(&self, wav: &[u8]) -> Result<MessageId, ClientError> {
+        self.send_audio_in(ChatId::MAIN, wav).await
+    }
+
+    /// Sends a voice message to chat `chat`. `wav` is the file the recorder wrote
+    /// (16-bit PCM, mono or stereo): the core turns it into OGG/Opus mono at the
+    /// voice bitrate, refuses one longer than two minutes, computes the waveform
+    /// and keeps the clip in its media cache.
+    ///
+    /// The message is stored and queued at once, like an image, connected or
+    /// not; the outbox uploads the blob and then sends it (client-runtime: Blob
+    /// crypto and send order). It shows as sending until then.
+    pub async fn send_audio_in(&self, chat: ChatId, wav: &[u8]) -> Result<MessageId, ClientError> {
+        self.account()?;
+        self.check_can_queue(chat)?;
+        let wav = wav.to_vec();
+        let encoded =
+            blocking(move || Ok(crate::media::audio::encode(&wav).map_err(MediaError::from)?))
+                .await?;
+        self.queue_encoded_audio(chat, encoded).await
+    }
+
+    /// Resends the clip of the own voice message `id` as a new message with a
+    /// fresh blob, key and `msg_id`, from the clip this device kept (client-runtime:
+    /// Expired media). Fails with [`ClientError::MediaNotOnDevice`] when the clip
+    /// is no longer cached.
+    pub async fn resend_audio(&self, id: MessageId) -> Result<MessageId, ClientError> {
+        use crate::messaging::Decoded;
+        self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if !stored.outgoing {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let chat = ChatId(stored.chat);
+        self.check_can_queue(chat)?;
+        let path = self
+            .cached_audio_path(&audio.blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)?;
+        let ogg = blocking(move || Ok(std::fs::read(path).map_err(MediaError::from)?)).await?;
+        let encoded = crate::media::EncodedAudio {
+            ogg,
+            duration_ms: audio.duration_ms,
+            waveform: audio.waveform,
+        };
+        self.queue_encoded_audio(chat, encoded).await
+    }
+
+    /// Caches `audio`, then stores its message as waiting for its blob and wakes
+    /// the outbox, which uploads the blob and sends the message.
+    async fn queue_encoded_audio(
+        &self,
+        chat: ChatId,
+        audio: crate::media::EncodedAudio,
+    ) -> Result<MessageId, ClientError> {
+        use protocol::blob_store::{BLOB_NONCE_LEN, BLOB_TAG_LEN};
+        let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
+        let content = crate::messaging::AudioContent {
+            blob_id,
+            blob_key,
+            // The blob is the nonce, the clip and the tag.
+            blob_size: (audio.ogg.len() + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64,
+            duration_ms: audio.duration_ms,
+            waveform: audio.waveform,
+        };
+        let encoded = crate::messaging::encode_audio(&content, self.now()).map_err(too_long)?;
+        // The sender cannot decrypt its own message, so it keeps the clip; the
+        // outbox encrypts and uploads it from here.
+        self.cache_blob(crate::media::MediaKind::Audio, &blob_id, audio.ogg, true)
+            .await?;
+        match self.queue_content_with(chat.0, &encoded, true) {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let store = Arc::clone(&self.shared.store);
+                let cache = self.shared.media.clone();
+                let _ = blocking(move || Ok(cache.remove(&store, &blob_id)?)).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// The clip of voice message `id` as the path of an OGG/Opus file in this
+    /// device's media cache, for a player to open: from the cache if it is there,
+    /// else downloaded, decrypted and cached, and the blob acked so the server can
+    /// delete it once everyone has it. The file stays in the core's media
+    /// directory; Dart never copies it. Fails with [`ClientError::MediaExpired`]
+    /// when the server no longer has it, and with [`ClientError::Offline`] when it
+    /// must download and is not connected.
+    pub async fn download_audio(&self, id: MessageId) -> Result<std::path::PathBuf, ClientError> {
+        use crate::messaging::Decoded;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if let Some(path) = self.cached_audio_path(&audio.blob_id).await? {
+            return Ok(path);
+        }
+        if self.shared.store.is_media_expired(&audio.blob_id)? {
+            return Err(ClientError::MediaExpired);
+        }
+        let blob = self.fetch_blob(ChatId(stored.chat), &audio.blob_id).await?;
+        let (key, blob_id) = (audio.blob_key, audio.blob_id);
+        let ogg = blocking(move || {
+            let ogg =
+                crate::media::crypto::decrypt(&key, &blob_id, &blob).map_err(MediaError::from)?;
+            // Only a clip the core can read is cached and played.
+            if !crate::media::audio::is_ogg_opus(&ogg) {
+                return Err(MediaError::Audio(crate::media::AudioError::Unsupported).into());
+            }
+            Ok(ogg)
+        })
+        .await?;
+        self.cache_blob(crate::media::MediaKind::Audio, &blob_id, ogg, false)
+            .await?;
+        self.ack_blob(ChatId(stored.chat), &blob_id).await;
+        self.cached_audio_path(&blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)
+    }
+
+    /// The path of voice message `id`'s clip if this device has it cached; never
+    /// touches the network.
+    pub async fn cached_audio(
+        &self,
+        id: MessageId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        use crate::messaging::Decoded;
+        let Some(stored) = self.shared.store.message(id)? else {
+            return Ok(None);
+        };
+        let Decoded::Audio(audio) = crate::messaging::decode(&stored.content).body else {
+            return Ok(None);
+        };
+        self.cached_audio_path(&audio.blob_id).await
+    }
+
+    async fn cached_audio_path(
+        &self,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.get_path(&store, &blob_id, now)?)).await
+    }
+
+    async fn cache_blob(
+        &self,
+        kind: crate::media::MediaKind,
+        blob_id: &crate::media::BlobId,
+        bytes: Vec<u8>,
+        own: bool,
+    ) -> Result<(), ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.put_as(&store, kind, &blob_id, &bytes, own, now)?)).await
+    }
+
     /// Whether chat `chat` takes a message now, as text does: the main group
     /// exists, or the DM exists and is open. (An image waits in the outbox
     /// until its chat can send, like any message.)
@@ -1262,26 +1584,7 @@ impl Client {
         if self.shared.store.is_media_expired(&image.blob_id)? {
             return Err(ClientError::MediaExpired);
         }
-        let group_id = self.group_id_of(ChatId(stored.chat))?;
-        let session = self.session()?;
-        let downloaded = session
-            .conn()
-            .blobs()
-            .download_blob(session.request(pb::DownloadBlobRequest {
-                group_id: group_id.clone(),
-                blob_id: image.blob_id.to_vec(),
-            })?)
-            .await;
-        let blob = match downloaded {
-            Ok(response) => response.into_inner().ciphertext,
-            Err(status) if status.code() == tonic::Code::NotFound => {
-                self.shared
-                    .store
-                    .mark_media_expired(&image.blob_id, self.now())?;
-                return Err(ClientError::MediaExpired);
-            }
-            Err(status) => return Err(NetError::from(status).into()),
-        };
+        let blob = self.fetch_blob(ChatId(stored.chat), &image.blob_id).await?;
         let (key, blob_id) = (image.blob_key, image.blob_id);
         let webp = blocking(move || {
             let webp =
@@ -1293,19 +1596,58 @@ impl Client {
         })
         .await?;
         self.cache_webp(&blob_id, webp.clone(), false).await?;
-        // Best effort: if the ack is lost the blob simply lives its 7 days.
-        let acked = session
+        self.ack_blob(ChatId(stored.chat), &blob_id).await;
+        Ok(webp)
+    }
+
+    /// Downloads the ciphertext of blob `blob_id` in chat `chat`. A blob the
+    /// server no longer has is remembered as expired and fails with
+    /// [`ClientError::MediaExpired`] (client-runtime: Expired media).
+    async fn fetch_blob(
+        &self,
+        chat: ChatId,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Vec<u8>, ClientError> {
+        let group_id = self.group_id_of(chat)?;
+        let session = self.session()?;
+        let downloaded = session
             .conn()
             .blobs()
-            .ack_blob(session.request(pb::AckBlobRequest {
+            .download_blob(session.request(pb::DownloadBlobRequest {
                 group_id,
                 blob_id: blob_id.to_vec(),
             })?)
             .await;
-        if let Err(error) = acked {
-            tracing::warn!(%error, "could not ack a downloaded image");
+        match downloaded {
+            Ok(response) => Ok(response.into_inner().ciphertext),
+            Err(status) if status.code() == tonic::Code::NotFound => {
+                self.shared.store.mark_media_expired(blob_id, self.now())?;
+                Err(ClientError::MediaExpired)
+            }
+            Err(status) => Err(NetError::from(status).into()),
         }
-        Ok(webp)
+    }
+
+    /// Acks a downloaded blob so the server can delete it once everyone has it.
+    /// Best effort: if the ack is lost the blob simply lives its 7 days.
+    async fn ack_blob(&self, chat: ChatId, blob_id: &crate::media::BlobId) {
+        let acked = async {
+            let group_id = self.group_id_of(chat)?;
+            let session = self.session()?;
+            session
+                .conn()
+                .blobs()
+                .ack_blob(session.request(pb::AckBlobRequest {
+                    group_id,
+                    blob_id: blob_id.to_vec(),
+                })?)
+                .await
+                .map_err(|status| ClientError::from(NetError::from(status)))
+        }
+        .await;
+        if let Err(error) = acked {
+            tracing::warn!(%error, "could not ack a downloaded blob");
+        }
     }
 
     /// The picture of image message `id` if this device has it cached; never
@@ -1392,18 +1734,6 @@ impl Client {
             about: about.map(str::to_owned),
         };
         let content = crate::messaging::encode_profile(&profile, self.now()).map_err(too_long)?;
-        self.send_content(&content)
-    }
-
-    /// Admin: sets the group's name for every member (message-content: Group
-    /// settings travel encrypted). Members ignore settings from non-admin
-    /// devices, so other devices get [`ClientError::NotAdmin`].
-    pub fn set_group_settings(&self, name: Option<&str>) -> Result<MessageId, ClientError> {
-        if !self.account()?.is_admin {
-            return Err(ClientError::NotAdmin);
-        }
-        let content =
-            crate::messaging::encode_group_settings(name, self.now()).map_err(too_long)?;
         self.send_content(&content)
     }
 
@@ -1515,13 +1845,6 @@ impl Client {
         Ok(match self.profile(user)?.display_name {
             Some(name) if !name.is_empty() => format!("{name} ({})", user.username),
             _ => user.username.clone(),
-        })
-    }
-
-    /// The group's settings, as an admin device last set them.
-    pub fn group_settings(&self) -> Result<GroupSettings, ClientError> {
-        Ok(GroupSettings {
-            name: self.shared.store.group_name()?,
         })
     }
 

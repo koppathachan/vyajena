@@ -1,5 +1,5 @@
-//! Uploading the blob of a queued image message at send time (client-runtime:
-//! Blob crypto and send order).
+//! Uploading the blob of a queued image or voice message at send time
+//! (client-runtime: Blob crypto and send order).
 //!
 //! An own image message waits in the outbox like text, whether or not the
 //! device is connected; its plaintext WebP is in the media cache and its key and
@@ -20,8 +20,9 @@ use protocol::blob_store::BLOB_TTL;
 
 use super::{Command, Engine, EngineError, UPLOAD_RETRY_DELAY};
 use crate::events::MessageId;
+use crate::media::{BlobId, BlobKey};
 use crate::media::{MediaCache, crypto};
-use crate::messaging::{Decoded, ImageContent, decode};
+use crate::messaging::{Decoded, decode};
 use crate::net::Session;
 use crate::pb;
 use crate::store::{Store, StoredMessage};
@@ -46,14 +47,31 @@ pub(crate) enum Outcome {
     Fail(String),
 }
 
+/// What a queued blob holds, for the messages that name it.
+#[derive(Debug, Clone, Copy)]
+enum Noun {
+    Picture,
+    VoiceMessage,
+}
+
+impl Noun {
+    fn text(self) -> &'static str {
+        match self {
+            Self::Picture => "picture",
+            Self::VoiceMessage => "voice message",
+        }
+    }
+}
+
 /// Whether a status from `UploadBlob` is one a retry can fix.
-fn classify(status: &tonic::Status) -> Outcome {
+fn classify(status: &tonic::Status, noun: Noun) -> Outcome {
     use tonic::Code::{AlreadyExists, InvalidArgument, NotFound, PermissionDenied};
     match status.code() {
         // Not a member of the group, a blob the server will not take: no retry
         // changes that.
         PermissionDenied | InvalidArgument | AlreadyExists | NotFound => Outcome::Fail(format!(
-            "the server refused the picture ({})",
+            "the server refused the {} ({})",
+            noun.text(),
             status.message()
         )),
         // Unavailable (its drive is away, or it stores no pictures),
@@ -62,22 +80,24 @@ fn classify(status: &tonic::Status) -> Outcome {
     }
 }
 
-/// Encrypts the cached picture and uploads it.
+/// Encrypts the cached picture or clip and uploads it.
 async fn upload(
     store: Arc<Store>,
     cache: MediaCache,
     session: Session,
     group_id: Vec<u8>,
-    image: ImageContent,
+    (blob_id, key, noun): (BlobId, BlobKey, Noun),
     now: SystemTime,
 ) -> Outcome {
-    let (blob_id, key) = (image.blob_id, image.blob_key);
     let sealed = tokio::task::spawn_blocking(move || {
-        let webp = cache
-            .get(&store, &blob_id, now)
+        let path = cache
+            .get_path(&store, &blob_id, now)
             .map_err(|error| Outcome::Retry(error.to_string()))?
-            .ok_or_else(|| Outcome::Fail("the picture is no longer on this device".to_owned()))?;
-        crypto::encrypt(&key, &blob_id, &webp).map_err(|error| Outcome::Fail(error.to_string()))
+            .ok_or_else(|| {
+                Outcome::Fail(format!("the {} is no longer on this device", noun.text()))
+            })?;
+        let plain = std::fs::read(path).map_err(|error| Outcome::Retry(error.to_string()))?;
+        crypto::encrypt(&key, &blob_id, &plain).map_err(|error| Outcome::Fail(error.to_string()))
     })
     .await;
     let ciphertext = match sealed {
@@ -95,12 +115,12 @@ async fn upload(
     };
     match session.conn().blobs().upload_blob(request).await {
         Ok(_) => Outcome::Done,
-        Err(status) => classify(&status),
+        Err(status) => classify(&status, noun),
     }
 }
 
 impl Engine {
-    /// Starts uploading the blob of the queued image `message`, whose chat is
+    /// Starts uploading the blob of the queued image or voice `message`, whose chat is
     /// `group_id`, unless an upload runs or waits to retry. A message waiting
     /// longer than the blob would live fails instead.
     pub(super) fn start_upload(
@@ -113,10 +133,14 @@ impl Engine {
             Some(Upload::RetryAt(at)) if Instant::now() < *at => return Ok(()),
             _ => {}
         }
-        let Decoded::Image(image) = decode(&message.content).body else {
-            // Marked pending but not an image: nothing to upload.
-            self.store().set_blob_pending(message.id, false)?;
-            return Ok(());
+        let blob = match decode(&message.content).body {
+            Decoded::Image(image) => (image.blob_id, image.blob_key, Noun::Picture),
+            Decoded::Audio(audio) => (audio.blob_id, audio.blob_key, Noun::VoiceMessage),
+            _ => {
+                // Marked pending but carrying no blob: nothing to upload.
+                self.store().set_blob_pending(message.id, false)?;
+                return Ok(());
+            }
         };
         let waited = self
             .now()
@@ -124,7 +148,10 @@ impl Engine {
             .unwrap_or_default();
         if waited >= BLOB_TTL {
             self.uploads.remove(&message.id);
-            return self.fail(message.id, "the picture could not be sent in time");
+            return self.fail(
+                message.id,
+                &format!("the {} could not be sent in time", blob.2.text()),
+            );
         }
         let Some(link) = self.link.as_ref() else {
             return Ok(());
@@ -135,7 +162,7 @@ impl Engine {
         let (tx, store) = (self.command_tx.clone(), Arc::clone(&self.shared.store));
         let cache = self.shared.media.clone();
         tokio::spawn(async move {
-            let outcome = upload(store, cache, session, group_id, image, now).await;
+            let outcome = upload(store, cache, session, group_id, blob, now).await;
             let _ = tx.send(Command::Uploaded { id, outcome }).await;
         });
         Ok(())

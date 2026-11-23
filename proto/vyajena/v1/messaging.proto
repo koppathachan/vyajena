@@ -65,6 +65,8 @@ message ServerFrame {
     Heartbeat heartbeat = 7;
     JoinNotice join_notice = 8;
     DmClosed dm_closed = 9;
+    // multi-group: Closing a named group (change `lobby-multi-group`).
+    GroupClosed group_closed = 10;
   }
 }
 
@@ -210,8 +212,8 @@ message SendResult {
 // durably processed in `group_id`; cumulative. The server then deletes that device's
 // queue entries up to it, advances its commit-log cursor and does not redeliver
 // them.
-// With `server_seq` 0 it acknowledges a `DmClosed` for `group_id` (change
-// `dms`).
+// With `server_seq` 0 it acknowledges a `DmClosed` or a `GroupClosed` for
+// `group_id` (changes `dms`, `lobby-multi-group`).
 message Ack {
   bytes group_id = 1;
   uint64 server_seq = 2;
@@ -294,6 +296,16 @@ message JoinNotice {
 // `REJECTION_REASON_GROUP_CLOSED`. Never sent to a version 1 device, which is
 // never in a DM.
 message DmClosed {
+  bytes group_id = 1;
+  google.protobuf.Timestamp closed_at = 2;
+}
+
+// multi-group: Closing a named group. Sent to each member device of a closed
+// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.
+// The client marks the chat closed and keeps its history read-only; envelopes for
+// it are rejected with `REJECTION_REASON_GROUP_CLOSED`. Never sent to a device
+// below protocol version 3, which is never in a named group.
+message GroupClosed {
   bytes group_id = 1;
   google.protobuf.Timestamp closed_at = 2;
 }

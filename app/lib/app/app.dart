@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../chat/chat_model.dart';
 import '../chat/group_gate.dart';
 import '../chat/picture_picker.dart';
+import '../chat/voice_plugins.dart';
 import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../push/push_platform.dart';
@@ -27,6 +28,7 @@ class VyajenaApp extends StatefulWidget {
     this.push,
     this.background,
     this.pictures = const GalleryPicker(),
+    this.voice = const DeviceVoicePlugins(),
   });
 
   final CoreService core;
@@ -34,6 +36,10 @@ class VyajenaApp extends StatefulWidget {
   /// Where a picture to send comes from (app-ui: Send an image); the
   /// gallery, or a fake in widget tests.
   final PicturePicker pictures;
+
+  /// The microphone and speaker for voice messages (app-ui: Record a voice
+  /// message; Play a voice message); the phone's, or fakes in widget tests.
+  final VoicePlugins voice;
 
   /// The phone's network changes (see [CoreLifecycle.networkChanges]).
   final Stream<bool>? networkChanges;
@@ -78,16 +84,19 @@ class _VyajenaAppState extends State<VyajenaApp> {
     background: widget.background,
     child: PicturePickerScope(
       picker: widget.pictures,
-      child: MaterialApp(
-        title: 'Vyajena',
-        // Never the debug banner, also in profile builds and screenshots
-        // (app-release design D7).
-        debugShowCheckedModeBanner: false,
-        theme: lightTheme,
-        darkTheme: darkTheme,
-        themeMode: themeMode,
-        home: HomeScreen(core: widget.core, chat: _chat),
-        routes: appRoutes(widget.core),
+      child: VoiceScope(
+        plugins: widget.voice,
+        child: MaterialApp(
+          title: 'Vyajena',
+          // Never the debug banner, also in profile builds and screenshots
+          // (app-release design D7).
+          debugShowCheckedModeBanner: false,
+          theme: lightTheme,
+          darkTheme: darkTheme,
+          themeMode: themeMode,
+          home: HomeScreen(core: widget.core, chat: _chat),
+          routes: appRoutes(widget.core),
+        ),
       ),
     ),
   );

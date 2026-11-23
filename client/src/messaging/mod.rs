@@ -3,7 +3,7 @@
 //!
 //! The plaintext of every application message is an encoded
 //! `vyajena.v1.Content` (message-content: Inner content format): a send time
-//! and one of `Text`, `Image`, `GroupSettings` or `Profile`. Only this core encodes or
+//! and one of `Text`, `Image`, `Audio`, `GroupSettings` or `Profile`. Only this core encodes or
 //! decodes it. Sending lives in the engine (`engine/outbox.rs`), which owns
 //! the group; [`receive_application`] is the step it runs for each incoming
 //! `APPLICATION` envelope inside the store transaction that also records
@@ -84,6 +84,22 @@ pub struct ImageContent {
     pub mentions: Vec<Mention>,
 }
 
+/// An `Audio` body, decoded and checked (message-content: Audio messages). It
+/// keeps the blob key; the UI's [`crate::AudioBody`] does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioContent {
+    /// The blob's id.
+    pub blob_id: BlobId,
+    /// The blob's key.
+    pub blob_key: BlobKey,
+    /// The blob's size on the server.
+    pub blob_size: u64,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The amplitude peaks, one byte each.
+    pub waveform: Vec<u8>,
+}
+
 /// What a `Content` says, decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decoded {
@@ -91,6 +107,8 @@ pub enum Decoded {
     Text(TextContent),
     /// An image message.
     Image(ImageContent),
+    /// A voice message.
+    Audio(AudioContent),
     /// `GroupSettings`: the group's name.
     GroupSettings {
         /// The name, if set.
@@ -134,6 +152,10 @@ pub fn decode(content: &[u8]) -> DecodedContent {
         // version cannot read, never dropped.
         Some(Body::Image(image)) => {
             decode_image(image).map_or(Decoded::Unsupported, Decoded::Image)
+        }
+        // Likewise a voice message that is not well formed.
+        Some(Body::Audio(audio)) => {
+            decode_audio(audio).map_or(Decoded::Unsupported, Decoded::Audio)
         }
         None => Decoded::Unsupported,
     };
@@ -209,6 +231,28 @@ fn decode_image(image: pb::Image) -> Option<ImageContent> {
         blob_size,
         caption: image.caption,
         mentions,
+    })
+}
+
+/// An `Audio` body, if it is well formed: a 16-byte id, a 32-byte key, a blob size
+/// within the cap, a duration from 1 ms to the longest clip and a waveform within
+/// its limit (message-content: Audio messages).
+fn decode_audio(audio: pb::Audio) -> Option<AudioContent> {
+    use protocol::audio::{MAX_AUDIO_DURATION_MS, MAX_AUDIO_WAVEFORM_BYTES};
+    use protocol::blob_store::MAX_BLOB_BYTES;
+    if !(1..=MAX_AUDIO_DURATION_MS).contains(&audio.duration_ms)
+        || audio.waveform.len() > MAX_AUDIO_WAVEFORM_BYTES
+        || audio.blob_size == 0
+        || audio.blob_size > MAX_BLOB_BYTES as u64
+    {
+        return None;
+    }
+    Some(AudioContent {
+        blob_id: BlobId::try_from(audio.blob_id.as_slice()).ok()?,
+        blob_key: BlobKey::try_from(audio.blob_key.as_slice()).ok()?,
+        blob_size: audio.blob_size,
+        duration_ms: audio.duration_ms,
+        waveform: audio.waveform,
     })
 }
 
@@ -345,6 +389,21 @@ pub fn encode_image(image: &ImageContent, sent_at: SystemTime) -> Result<Vec<u8>
     )
 }
 
+/// An `Audio` body (message-content: Audio messages). Fails with
+/// [`ContentError::TooLong`] if it would encrypt to more than the ciphertext cap.
+pub fn encode_audio(audio: &AudioContent, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
+    encode(
+        Body::Audio(pb::Audio {
+            blob_id: audio.blob_id.to_vec(),
+            blob_key: audio.blob_key.to_vec(),
+            blob_size: audio.blob_size,
+            duration_ms: audio.duration_ms,
+            waveform: audio.waveform.clone(),
+        }),
+        sent_at,
+    )
+}
+
 /// A `Profile` body for this device's own user (message-content: User-owned
 /// profiles).
 pub fn encode_profile(profile: &ProfileRow, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
@@ -399,6 +458,10 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
             let body = image_body(store, &image);
             Some((MessageBody::Image(Box::new(body)), image.mentions, None))
         }
+        Decoded::Audio(audio) => {
+            let body = audio_body(store, &audio);
+            Some((MessageBody::Audio(Box::new(body)), Vec::new(), None))
+        }
         Decoded::Unsupported => Some((MessageBody::Unsupported, Vec::new(), None)),
         Decoded::Profile(_) | Decoded::GroupSettings { .. } => None,
     }
@@ -420,6 +483,24 @@ pub(crate) fn image_body(store: &Store, image: &ImageContent) -> crate::events::
         thumbhash: image.thumbhash.clone(),
         size: image.blob_size,
         caption: image.caption.clone(),
+        state,
+    }
+}
+
+/// A voice message as the UI sees it: where its clip is on this device.
+pub(crate) fn audio_body(store: &Store, audio: &AudioContent) -> crate::events::AudioBody {
+    let state = if store.media_entry(&audio.blob_id).ok().flatten().is_some() {
+        MediaState::Available
+    } else if store.is_media_expired(&audio.blob_id).unwrap_or(false) {
+        MediaState::Expired
+    } else {
+        MediaState::NotDownloaded
+    };
+    crate::events::AudioBody {
+        blob_id: audio.blob_id,
+        duration_ms: audio.duration_ms,
+        waveform: audio.waveform.clone(),
+        size: audio.blob_size,
         state,
     }
 }
@@ -481,15 +562,8 @@ pub(crate) enum Received {
         /// What they set.
         profile: ProfileRow,
     },
-    /// An admin device changed the group settings.
-    GroupSettings {
-        /// The group's name.
-        name: Option<String>,
-        /// The name stored before.
-        previous: Option<String>,
-        /// The sending (admin) user.
-        by: UserId,
-    },
+    /// The admin renamed a named group; the chat list shows the new name.
+    ChatRenamed,
     /// Stored but nothing for the UI: a redelivery, `GroupSettings` from a
     /// non-admin device (which clients ignore), or a profile or group name
     /// equal to the stored one (a re-send after an add, qa-fixes D2).
@@ -590,7 +664,8 @@ pub(crate) fn receive_application(
     };
     let sent_at = decoded.sent_at;
     Ok(match decoded.body {
-        body @ (Decoded::Text(_) | Decoded::Image(_) | Decoded::Unsupported) => {
+        body
+        @ (Decoded::Text(_) | Decoded::Image(_) | Decoded::Audio(_) | Decoded::Unsupported) => {
             let Some((body, mentions, reply)) = chat_parts(store, body) else {
                 return Ok(Received::Nothing);
             };
@@ -633,17 +708,17 @@ pub(crate) fn receive_application(
                     "ignored group settings from a non-admin device"
                 );
                 Received::Nothing
+            } else if chat == crate::store::MAIN_CHAT {
+                // multi-group: The system lobby. Its name is fixed ("lobby");
+                // a `GroupSettings` name for it is ignored.
+                Received::Nothing
             } else {
-                let previous = store.group_name()?;
-                store.set_group_name(name.as_deref(), now)?;
-                if previous == name {
-                    Received::Nothing
-                } else {
-                    Received::GroupSettings {
-                        name,
-                        previous,
-                        by: sender_user,
+                // A named group's name, from its admin.
+                match name.as_deref() {
+                    Some(name) if store.set_named_name(&envelope.group_id, name)? => {
+                        Received::ChatRenamed
                     }
+                    _ => Received::Nothing,
                 }
             }
         }

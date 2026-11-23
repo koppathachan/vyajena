@@ -69,7 +69,7 @@ pub enum SendStatus {
     },
 }
 
-/// Where an image message's picture is on this device (client-runtime: Image
+/// Where an image or voice message's media is on this device (client-runtime: Image
 /// download and cache; Expired media).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaState {
@@ -103,6 +103,23 @@ pub struct ImageBody {
     pub state: MediaState,
 }
 
+/// A voice message, as the UI sees it (message-content: Audio messages). The blob
+/// key is not here: it never leaves the core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioBody {
+    /// The blob's id, which keys the cache.
+    pub blob_id: [u8; protocol::blob_store::BLOB_ID_LEN],
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The amplitude peaks, one byte each (255 the loudest), drawn as bars before
+    /// the clip is downloaded.
+    pub waveform: Vec<u8>,
+    /// The blob's size on the server, in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaState,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -113,6 +130,8 @@ pub enum MessageBody {
     /// Boxed: a picture's description is large next to a text, and `Message`
     /// is carried in every event.
     Image(Box<ImageBody>),
+    /// A voice message (message-content: Audio messages). Boxed like an image.
+    Audio(Box<AudioBody>),
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,
@@ -161,8 +180,8 @@ pub struct Reply {
     pub original: Option<MessageId>,
 }
 
-/// A chat: the main group or a DM (change `dms`). The main group is
-/// [`ChatId::MAIN`]; a DM's id is local to this device.
+/// A chat: the lobby, a named group or a DM. The lobby is
+/// [`ChatId::MAIN`]; the other ids are local to this device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ChatId(pub i64);
 
@@ -179,8 +198,17 @@ impl ChatId {
 /// What a chat is (app-ui: Chat list).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatKind {
-    /// The one admin-run group.
-    Main,
+    /// The system lobby: the one all-members group (multi-group: The system
+    /// lobby). Shown as the fixed name "lobby".
+    Lobby,
+    /// An admin-created named group (multi-group).
+    Group {
+        /// The name the admin set; `None` until then (the UI shows a
+        /// placeholder).
+        name: Option<String>,
+        /// The server closed it. History only.
+        closed: bool,
+    },
     /// A DM with `peer` (direct-messages).
     Dm {
         /// The other user.
@@ -280,18 +308,6 @@ pub enum Event {
         display_name: Option<String>,
         /// The "about" text, if set.
         about: Option<String>,
-    },
-    /// The admin changed the group settings (message-content: Group settings
-    /// travel encrypted). Emitted only when the stored name changes, so a
-    /// re-send of the same name (after an add) emits nothing.
-    GroupSettingsChanged {
-        /// The group's display name, if set.
-        name: Option<String>,
-        /// The name stored before. `None` on a device's first sync (it just
-        /// joined), when the UI shows no rename notice (qa-fixes D5).
-        previous: Option<String>,
-        /// The user whose admin device sent it.
-        by: UserId,
     },
     /// A message arrived that this device cannot read: it does not decrypt,
     /// or its MLS sender is not the device the server says sent it. Shown as a
@@ -400,13 +416,6 @@ pub struct Profile {
     pub display_name: Option<String>,
     /// The "about" text, if set.
     pub about: Option<String>,
-}
-
-/// The group's settings (message-content: Group settings travel encrypted).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct GroupSettings {
-    /// The group's display name, if an admin device set one.
-    pub name: Option<String>,
 }
 
 /// A group member device, as the UI lists it.

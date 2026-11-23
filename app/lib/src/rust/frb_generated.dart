@@ -67,7 +67,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.12.0';
 
   @override
-  int get rustContentHash => -1930671923;
+  int get rustContentHash => -852274248;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -84,6 +84,12 @@ abstract class RustLibApi extends BaseApi {
     required UserRef user,
   });
 
+  Future<void> crateApiCoreCoreAddToGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required UserRef user,
+  });
+
   Future<void> crateApiCoreCoreAddUser({
     required Core that,
     required UserRef user,
@@ -92,6 +98,11 @@ abstract class RustLibApi extends BaseApi {
   Future<String> crateApiCoreCoreApproveLink({
     required Core that,
     required String requestText,
+  });
+
+  Future<String?> crateApiCoreCoreCachedAudio({
+    required Core that,
+    required PlatformInt64 id,
   });
 
   Future<Uint8List?> crateApiCoreCoreCachedImage({
@@ -108,6 +119,11 @@ abstract class RustLibApi extends BaseApi {
 
   Future<void> crateApiCoreCoreClearPushToken({required Core that});
 
+  Future<void> crateApiCoreCoreCloseGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+  });
+
   Future<UserRef> crateApiCoreCoreCompleteLink({
     required Core that,
     required String approvalText,
@@ -120,6 +136,12 @@ abstract class RustLibApi extends BaseApi {
     required String username,
   });
 
+  Future<PlatformInt64> crateApiCoreCoreCreateNamedGroup({
+    required Core that,
+    String? name,
+    required List<UserRef> members,
+  });
+
   Future<String?> crateApiCoreCoreDeviceId({required Core that});
 
   Future<String> crateApiCoreCoreDisplayName({
@@ -128,6 +150,11 @@ abstract class RustLibApi extends BaseApi {
   });
 
   Future<bool> crateApiCoreCoreDmsAvailable({required Core that});
+
+  Future<String> crateApiCoreCoreDownloadAudio({
+    required Core that,
+    required PlatformInt64 id,
+  });
 
   Future<Uint8List> crateApiCoreCoreDownloadImage({
     required Core that,
@@ -138,7 +165,10 @@ abstract class RustLibApi extends BaseApi {
 
   Stream<CoreEvent> crateApiCoreCoreEvents({required Core that});
 
-  Future<String?> crateApiCoreCoreGroupName({required Core that});
+  Future<List<MemberDevice>> crateApiCoreCoreGroupMembers({
+    required Core that,
+    required PlatformInt64 chatId,
+  });
 
   Future<bool> crateApiCoreCoreHasUnsent({required Core that});
 
@@ -178,6 +208,8 @@ abstract class RustLibApi extends BaseApi {
     required PlatformInt64 id,
   });
 
+  Future<bool> crateApiCoreCoreNamedGroupsAvailable({required Core that});
+
   Future<Core> crateApiCoreCoreOpen({required String dataDir});
 
   Future<PlatformInt64> crateApiCoreCoreOpenDm({
@@ -197,9 +229,26 @@ abstract class RustLibApi extends BaseApi {
     required String inviteText,
   });
 
+  Future<void> crateApiCoreCoreRemoveFromGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required UserRef user,
+  });
+
   Future<void> crateApiCoreCoreRemoveUser({
     required Core that,
     required UserRef user,
+  });
+
+  Future<PlatformInt64> crateApiCoreCoreRenameGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required String name,
+  });
+
+  Future<PlatformInt64> crateApiCoreCoreResendAudio({
+    required Core that,
+    required PlatformInt64 id,
   });
 
   Future<PlatformInt64> crateApiCoreCoreResendImage({
@@ -215,6 +264,17 @@ abstract class RustLibApi extends BaseApi {
   Future<void> crateApiCoreCoreRevokeInvite({
     required Core that,
     required String code,
+  });
+
+  Future<PlatformInt64> crateApiCoreCoreSendAudio({
+    required Core that,
+    required List<int> wav,
+  });
+
+  Future<PlatformInt64> crateApiCoreCoreSendAudioIn({
+    required Core that,
+    required PlatformInt64 chatId,
+    required List<int> wav,
   });
 
   Future<PlatformInt64> crateApiCoreCoreSendImage({
@@ -250,11 +310,6 @@ abstract class RustLibApi extends BaseApi {
   Future<PlatformInt64> crateApiCoreCoreSendText({
     required Core that,
     required String text,
-  });
-
-  Future<PlatformInt64> crateApiCoreCoreSetGroupName({
-    required Core that,
-    String? name,
   });
 
   Future<PlatformInt64> crateApiCoreCoreSetProfile({
@@ -344,6 +399,45 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiCoreCoreAddToGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required UserRef user,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(chatId, serializer);
+          sse_encode_box_autoadd_user_ref(user, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 2,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreAddToGroupConstMeta,
+        argValues: [that, chatId, user],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreAddToGroupConstMeta => const TaskConstMeta(
+    debugName: "Core_add_to_group",
+    argNames: ["that", "chatId", "user"],
+  );
+
+  @override
   Future<void> crateApiCoreCoreAddUser({
     required Core that,
     required UserRef user,
@@ -360,7 +454,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 2,
+            funcId: 3,
             port: port_,
           );
         },
@@ -397,7 +491,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 3,
+            funcId: 4,
             port: port_,
           );
         },
@@ -419,6 +513,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<String?> crateApiCoreCoreCachedAudio({
+    required Core that,
+    required PlatformInt64 id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 5,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_opt_String,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreCachedAudioConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreCachedAudioConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_cached_audio",
+        argNames: ["that", "id"],
+      );
+
+  @override
   Future<Uint8List?> crateApiCoreCoreCachedImage({
     required Core that,
     required PlatformInt64 id,
@@ -435,7 +567,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 4,
+            funcId: 6,
             port: port_,
           );
         },
@@ -473,7 +605,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 5,
+            funcId: 7,
             port: port_,
           );
         },
@@ -507,7 +639,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 6,
+            funcId: 8,
             port: port_,
           );
         },
@@ -538,7 +670,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 7,
+            funcId: 9,
             port: port_,
           );
         },
@@ -560,6 +692,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<void> crateApiCoreCoreCloseGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(chatId, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 10,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreCloseGroupConstMeta,
+        argValues: [that, chatId],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreCloseGroupConstMeta => const TaskConstMeta(
+    debugName: "Core_close_group",
+    argNames: ["that", "chatId"],
+  );
+
+  @override
   Future<UserRef> crateApiCoreCoreCompleteLink({
     required Core that,
     required String approvalText,
@@ -576,7 +745,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 8,
+            funcId: 11,
             port: port_,
           );
         },
@@ -610,7 +779,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 9,
+            funcId: 12,
             port: port_,
           );
         },
@@ -645,7 +814,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 10,
+            funcId: 13,
             port: port_,
           );
         },
@@ -667,6 +836,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       );
 
   @override
+  Future<PlatformInt64> crateApiCoreCoreCreateNamedGroup({
+    required Core that,
+    String? name,
+    required List<UserRef> members,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_opt_String(name, serializer);
+          sse_encode_list_user_ref(members, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 14,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreCreateNamedGroupConstMeta,
+        argValues: [that, name, members],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreCreateNamedGroupConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_create_named_group",
+        argNames: ["that", "name", "members"],
+      );
+
+  @override
   Future<String?> crateApiCoreCoreDeviceId({required Core that}) {
     return handler.executeNormal(
       NormalTask(
@@ -679,7 +888,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 11,
+            funcId: 15,
             port: port_,
           );
         },
@@ -714,7 +923,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 12,
+            funcId: 16,
             port: port_,
           );
         },
@@ -748,7 +957,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 13,
+            funcId: 17,
             port: port_,
           );
         },
@@ -767,6 +976,44 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "Core_dms_available", argNames: ["that"]);
 
   @override
+  Future<String> crateApiCoreCoreDownloadAudio({
+    required Core that,
+    required PlatformInt64 id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 18,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_String,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreDownloadAudioConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreDownloadAudioConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_download_audio",
+        argNames: ["that", "id"],
+      );
+
+  @override
   Future<Uint8List> crateApiCoreCoreDownloadImage({
     required Core that,
     required PlatformInt64 id,
@@ -783,7 +1030,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 14,
+            funcId: 19,
             port: port_,
           );
         },
@@ -817,7 +1064,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 15,
+            funcId: 20,
             port: port_,
           );
         },
@@ -851,7 +1098,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             pdeCallFfi(
               generalizedFrbRustBinding,
               serializer,
-              funcId: 16,
+              funcId: 21,
               port: port_,
             );
           },
@@ -872,7 +1119,10 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "Core_events", argNames: ["that", "sink"]);
 
   @override
-  Future<String?> crateApiCoreCoreGroupName({required Core that}) {
+  Future<List<MemberDevice>> crateApiCoreCoreGroupMembers({
+    required Core that,
+    required PlatformInt64 chatId,
+  }) {
     return handler.executeNormal(
       NormalTask(
         callFfi: (port_) {
@@ -881,26 +1131,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             that,
             serializer,
           );
+          sse_encode_i_64(chatId, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 17,
+            funcId: 22,
             port: port_,
           );
         },
         codec: SseCodec(
-          decodeSuccessData: sse_decode_opt_String,
+          decodeSuccessData: sse_decode_list_member_device,
           decodeErrorData: sse_decode_core_error,
         ),
-        constMeta: kCrateApiCoreCoreGroupNameConstMeta,
-        argValues: [that],
+        constMeta: kCrateApiCoreCoreGroupMembersConstMeta,
+        argValues: [that, chatId],
         apiImpl: this,
       ),
     );
   }
 
-  TaskConstMeta get kCrateApiCoreCoreGroupNameConstMeta =>
-      const TaskConstMeta(debugName: "Core_group_name", argNames: ["that"]);
+  TaskConstMeta get kCrateApiCoreCoreGroupMembersConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_group_members",
+        argNames: ["that", "chatId"],
+      );
 
   @override
   Future<bool> crateApiCoreCoreHasUnsent({required Core that}) {
@@ -915,7 +1169,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 18,
+            funcId: 23,
             port: port_,
           );
         },
@@ -950,7 +1204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 19,
+            funcId: 24,
             port: port_,
           );
         },
@@ -989,7 +1243,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 20,
+            funcId: 25,
             port: port_,
           );
         },
@@ -1022,7 +1276,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 21,
+            funcId: 26,
             port: port_,
           );
         },
@@ -1053,7 +1307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 22,
+            funcId: 27,
             port: port_,
           );
         },
@@ -1084,7 +1338,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 23,
+            funcId: 28,
             port: port_,
           );
         },
@@ -1115,7 +1369,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 24,
+            funcId: 29,
             port: port_,
           );
         },
@@ -1150,7 +1404,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 25,
+            funcId: 30,
             port: port_,
           );
         },
@@ -1188,7 +1442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 26,
+            funcId: 31,
             port: port_,
           );
         },
@@ -1222,7 +1476,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 27,
+            funcId: 32,
             port: port_,
           );
         },
@@ -1257,7 +1511,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 28,
+            funcId: 33,
             port: port_,
           );
         },
@@ -1276,6 +1530,40 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(debugName: "Core_message", argNames: ["that", "id"]);
 
   @override
+  Future<bool> crateApiCoreCoreNamedGroupsAvailable({required Core that}) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 34,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: null,
+        ),
+        constMeta: kCrateApiCoreCoreNamedGroupsAvailableConstMeta,
+        argValues: [that],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreNamedGroupsAvailableConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_named_groups_available",
+        argNames: ["that"],
+      );
+
+  @override
   Future<Core> crateApiCoreCoreOpen({required String dataDir}) {
     return handler.executeNormal(
       NormalTask(
@@ -1285,7 +1573,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 29,
+            funcId: 35,
             port: port_,
           );
         },
@@ -1321,7 +1609,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 30,
+            funcId: 36,
             port: port_,
           );
         },
@@ -1358,7 +1646,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 31,
+            funcId: 37,
             port: port_,
           );
         },
@@ -1391,7 +1679,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 32,
+            funcId: 38,
             port: port_,
           );
         },
@@ -1426,7 +1714,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 33,
+            funcId: 39,
             port: port_,
           );
         },
@@ -1447,6 +1735,46 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<void> crateApiCoreCoreRemoveFromGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required UserRef user,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(chatId, serializer);
+          sse_encode_box_autoadd_user_ref(user, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 40,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_unit,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreRemoveFromGroupConstMeta,
+        argValues: [that, chatId, user],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreRemoveFromGroupConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_remove_from_group",
+        argNames: ["that", "chatId", "user"],
+      );
+
+  @override
   Future<void> crateApiCoreCoreRemoveUser({
     required Core that,
     required UserRef user,
@@ -1463,7 +1791,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 34,
+            funcId: 41,
             port: port_,
           );
         },
@@ -1484,6 +1812,84 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
+  Future<PlatformInt64> crateApiCoreCoreRenameGroup({
+    required Core that,
+    required PlatformInt64 chatId,
+    required String name,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(chatId, serializer);
+          sse_encode_String(name, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 42,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreRenameGroupConstMeta,
+        argValues: [that, chatId, name],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreRenameGroupConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_rename_group",
+        argNames: ["that", "chatId", "name"],
+      );
+
+  @override
+  Future<PlatformInt64> crateApiCoreCoreResendAudio({
+    required Core that,
+    required PlatformInt64 id,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(id, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 43,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreResendAudioConstMeta,
+        argValues: [that, id],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreResendAudioConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_resend_audio",
+        argNames: ["that", "id"],
+      );
+
+  @override
   Future<PlatformInt64> crateApiCoreCoreResendImage({
     required Core that,
     required PlatformInt64 id,
@@ -1500,7 +1906,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 35,
+            funcId: 44,
             port: port_,
           );
         },
@@ -1538,7 +1944,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 36,
+            funcId: 45,
             port: port_,
           );
         },
@@ -1576,7 +1982,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 37,
+            funcId: 46,
             port: port_,
           );
         },
@@ -1595,6 +2001,83 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       const TaskConstMeta(
         debugName: "Core_revoke_invite",
         argNames: ["that", "code"],
+      );
+
+  @override
+  Future<PlatformInt64> crateApiCoreCoreSendAudio({
+    required Core that,
+    required List<int> wav,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_list_prim_u_8_loose(wav, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 47,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreSendAudioConstMeta,
+        argValues: [that, wav],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreSendAudioConstMeta => const TaskConstMeta(
+    debugName: "Core_send_audio",
+    argNames: ["that", "wav"],
+  );
+
+  @override
+  Future<PlatformInt64> crateApiCoreCoreSendAudioIn({
+    required Core that,
+    required PlatformInt64 chatId,
+    required List<int> wav,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
+            that,
+            serializer,
+          );
+          sse_encode_i_64(chatId, serializer);
+          sse_encode_list_prim_u_8_loose(wav, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 48,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_i_64,
+          decodeErrorData: sse_decode_core_error,
+        ),
+        constMeta: kCrateApiCoreCoreSendAudioInConstMeta,
+        argValues: [that, chatId, wav],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateApiCoreCoreSendAudioInConstMeta =>
+      const TaskConstMeta(
+        debugName: "Core_send_audio_in",
+        argNames: ["that", "chatId", "wav"],
       );
 
   @override
@@ -1618,7 +2101,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 38,
+            funcId: 49,
             port: port_,
           );
         },
@@ -1661,7 +2144,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 39,
+            funcId: 50,
             port: port_,
           );
         },
@@ -1703,7 +2186,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 40,
+            funcId: 51,
             port: port_,
           );
         },
@@ -1747,7 +2230,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 41,
+            funcId: 52,
             port: port_,
           );
         },
@@ -1785,7 +2268,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 42,
+            funcId: 53,
             port: port_,
           );
         },
@@ -1806,44 +2289,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   );
 
   @override
-  Future<PlatformInt64> crateApiCoreCoreSetGroupName({
-    required Core that,
-    String? name,
-  }) {
-    return handler.executeNormal(
-      NormalTask(
-        callFfi: (port_) {
-          final serializer = SseSerializer(generalizedFrbRustBinding);
-          sse_encode_Auto_Ref_RustOpaque_flutter_rust_bridgefor_generatedRustAutoOpaqueInnerCore(
-            that,
-            serializer,
-          );
-          sse_encode_opt_String(name, serializer);
-          pdeCallFfi(
-            generalizedFrbRustBinding,
-            serializer,
-            funcId: 43,
-            port: port_,
-          );
-        },
-        codec: SseCodec(
-          decodeSuccessData: sse_decode_i_64,
-          decodeErrorData: sse_decode_core_error,
-        ),
-        constMeta: kCrateApiCoreCoreSetGroupNameConstMeta,
-        argValues: [that, name],
-        apiImpl: this,
-      ),
-    );
-  }
-
-  TaskConstMeta get kCrateApiCoreCoreSetGroupNameConstMeta =>
-      const TaskConstMeta(
-        debugName: "Core_set_group_name",
-        argNames: ["that", "name"],
-      );
-
-  @override
   Future<PlatformInt64> crateApiCoreCoreSetProfile({
     required Core that,
     String? displayName,
@@ -1862,7 +2307,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 44,
+            funcId: 54,
             port: port_,
           );
         },
@@ -1901,7 +2346,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 45,
+            funcId: 55,
             port: port_,
           );
         },
@@ -1935,7 +2380,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 46,
+            funcId: 56,
             port: port_,
           );
         },
@@ -1966,7 +2411,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 47,
+            funcId: 57,
             port: port_,
           );
         },
@@ -1997,7 +2442,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 48,
+            funcId: 58,
             port: port_,
           );
         },
@@ -2035,7 +2480,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 49,
+            funcId: 59,
             port: port_,
           );
         },
@@ -2069,7 +2514,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 50,
+            funcId: 60,
             port: port_,
           );
         },
@@ -2094,7 +2539,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 51)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 61)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_invite_preview,
@@ -2119,7 +2564,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
-            funcId: 52,
+            funcId: 62,
             port: port_,
           );
         },
@@ -2144,7 +2589,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_String(text, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 53)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_bool,
@@ -2167,7 +2612,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         callFfi: () {
           final serializer = SseSerializer(generalizedFrbRustBinding);
           sse_encode_list_prim_u_8_loose(thumbhash, serializer);
-          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 54)!;
+          return pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 64)!;
         },
         codec: SseCodec(
           decodeSuccessData: sse_decode_opt_list_prim_u_8_strict,
@@ -2240,9 +2685,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AudioView dco_decode_audio_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    final arr = raw as List<dynamic>;
+    if (arr.length != 4)
+      throw Exception('unexpected arr length: expect 4 but see ${arr.length}');
+    return AudioView(
+      durationMs: dco_decode_u_32(arr[0]),
+      waveform: dco_decode_list_prim_u_8_strict(arr[1]),
+      size: dco_decode_u_64(arr[2]),
+      state: dco_decode_media_status(arr[3]),
+    );
+  }
+
+  @protected
   bool dco_decode_bool(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as bool;
+  }
+
+  @protected
+  AudioView dco_decode_box_audio_view(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_audio_view(raw);
   }
 
   @protected
@@ -2296,6 +2761,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 1:
         return ChatBody_Image(image: dco_decode_box_image_view(raw[1]));
       case 2:
+        return ChatBody_Audio(audio: dco_decode_box_audio_view(raw[1]));
+      case 3:
         return ChatBody_Unsupported();
       default:
         throw Exception("unreachable");
@@ -2307,8 +2774,13 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     switch (raw[0]) {
       case 0:
-        return ChatKindInfo_Main();
+        return ChatKindInfo_Lobby();
       case 1:
+        return ChatKindInfo_Group(
+          name: dco_decode_opt_String(raw[1]),
+          closed: dco_decode_bool(raw[2]),
+        );
+      case 2:
         return ChatKindInfo_Dm(
           peer: dco_decode_box_autoadd_user_ref(raw[1]),
           waiting: dco_decode_bool(raw[2]),
@@ -2401,58 +2873,52 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           about: dco_decode_opt_String(raw[3]),
         );
       case 3:
-        return CoreEvent_GroupSettingsChanged(
-          name: dco_decode_opt_String(raw[1]),
-          previous: dco_decode_opt_String(raw[2]),
-          by: dco_decode_box_autoadd_user_ref(raw[3]),
-        );
-      case 4:
         return CoreEvent_Unreadable(
           sender: dco_decode_opt_box_autoadd_user_ref(raw[1]),
           acceptedAtMs: dco_decode_opt_box_autoadd_i_64(raw[2]),
           chatId: dco_decode_i_64(raw[3]),
         );
-      case 5:
+      case 4:
         return CoreEvent_Gap(
           newestExpiredAtMs: dco_decode_i_64(raw[1]),
           chatId: dco_decode_i_64(raw[2]),
         );
-      case 6:
+      case 5:
         return CoreEvent_ChatsChanged();
-      case 7:
+      case 6:
         return CoreEvent_RemovedForInactivity(
           missedSinceMs: dco_decode_i_64(raw[1]),
         );
-      case 8:
+      case 7:
         return CoreEvent_Rejoined();
-      case 9:
+      case 8:
         return CoreEvent_IdentityKeyChanged(
           user: dco_decode_box_autoadd_user_ref(raw[1]),
         );
-      case 10:
+      case 9:
         return CoreEvent_ServerIdentityError();
-      case 11:
+      case 10:
         return CoreEvent_Removed();
-      case 12:
+      case 11:
         return CoreEvent_JoinedGroup();
-      case 13:
+      case 12:
         return CoreEvent_MembersChanged(
           added: dco_decode_list_member_device(raw[1]),
           removed: dco_decode_list_member_device(raw[2]),
           by: dco_decode_opt_box_autoadd_user_ref(raw[3]),
           automatic: dco_decode_list_member_device(raw[4]),
         );
-      case 14:
+      case 13:
         return CoreEvent_CommitRefused(reason: dco_decode_String(raw[1]));
-      case 15:
+      case 14:
         return CoreEvent_ReaddRequested(
           outcome: dco_decode_readd_answer(raw[1]),
         );
-      case 16:
+      case 15:
         return CoreEvent_Connection(
           status: dco_decode_connection_status(raw[1]),
         );
-      case 17:
+      case 16:
         return CoreEvent_Other();
       default:
         throw Exception("unreachable");
@@ -2559,6 +3025,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Uint8List dco_decode_list_prim_u_8_strict(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as Uint8List;
+  }
+
+  @protected
+  List<UserRef> dco_decode_list_user_ref(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return (raw as List<dynamic>).map(dco_decode_user_ref).toList();
   }
 
   @protected
@@ -2808,9 +3280,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  AudioView sse_decode_audio_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var var_durationMs = sse_decode_u_32(deserializer);
+    var var_waveform = sse_decode_list_prim_u_8_strict(deserializer);
+    var var_size = sse_decode_u_64(deserializer);
+    var var_state = sse_decode_media_status(deserializer);
+    return AudioView(
+      durationMs: var_durationMs,
+      waveform: var_waveform,
+      size: var_size,
+      state: var_state,
+    );
+  }
+
+  @protected
   bool sse_decode_bool(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return deserializer.buffer.getUint8() != 0;
+  }
+
+  @protected
+  AudioView sse_decode_box_audio_view(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_audio_view(deserializer));
   }
 
   @protected
@@ -2870,6 +3363,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         var var_image = sse_decode_box_image_view(deserializer);
         return ChatBody_Image(image: var_image);
       case 2:
+        var var_audio = sse_decode_box_audio_view(deserializer);
+        return ChatBody_Audio(audio: var_audio);
+      case 3:
         return ChatBody_Unsupported();
       default:
         throw UnimplementedError('');
@@ -2883,8 +3379,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var tag_ = sse_decode_i_32(deserializer);
     switch (tag_) {
       case 0:
-        return ChatKindInfo_Main();
+        return ChatKindInfo_Lobby();
       case 1:
+        var var_name = sse_decode_opt_String(deserializer);
+        var var_closed = sse_decode_bool(deserializer);
+        return ChatKindInfo_Group(name: var_name, closed: var_closed);
+      case 2:
         var var_peer = sse_decode_box_autoadd_user_ref(deserializer);
         var var_waiting = sse_decode_bool(deserializer);
         var var_closed = sse_decode_bool(deserializer);
@@ -2993,15 +3493,6 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           about: var_about,
         );
       case 3:
-        var var_name = sse_decode_opt_String(deserializer);
-        var var_previous = sse_decode_opt_String(deserializer);
-        var var_by = sse_decode_box_autoadd_user_ref(deserializer);
-        return CoreEvent_GroupSettingsChanged(
-          name: var_name,
-          previous: var_previous,
-          by: var_by,
-        );
-      case 4:
         var var_sender = sse_decode_opt_box_autoadd_user_ref(deserializer);
         var var_acceptedAtMs = sse_decode_opt_box_autoadd_i_64(deserializer);
         var var_chatId = sse_decode_i_64(deserializer);
@@ -3010,30 +3501,30 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           acceptedAtMs: var_acceptedAtMs,
           chatId: var_chatId,
         );
-      case 5:
+      case 4:
         var var_newestExpiredAtMs = sse_decode_i_64(deserializer);
         var var_chatId = sse_decode_i_64(deserializer);
         return CoreEvent_Gap(
           newestExpiredAtMs: var_newestExpiredAtMs,
           chatId: var_chatId,
         );
-      case 6:
+      case 5:
         return CoreEvent_ChatsChanged();
-      case 7:
+      case 6:
         var var_missedSinceMs = sse_decode_i_64(deserializer);
         return CoreEvent_RemovedForInactivity(missedSinceMs: var_missedSinceMs);
-      case 8:
+      case 7:
         return CoreEvent_Rejoined();
-      case 9:
+      case 8:
         var var_user = sse_decode_box_autoadd_user_ref(deserializer);
         return CoreEvent_IdentityKeyChanged(user: var_user);
-      case 10:
+      case 9:
         return CoreEvent_ServerIdentityError();
-      case 11:
+      case 10:
         return CoreEvent_Removed();
-      case 12:
+      case 11:
         return CoreEvent_JoinedGroup();
-      case 13:
+      case 12:
         var var_added = sse_decode_list_member_device(deserializer);
         var var_removed = sse_decode_list_member_device(deserializer);
         var var_by = sse_decode_opt_box_autoadd_user_ref(deserializer);
@@ -3044,16 +3535,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           by: var_by,
           automatic: var_automatic,
         );
-      case 14:
+      case 13:
         var var_reason = sse_decode_String(deserializer);
         return CoreEvent_CommitRefused(reason: var_reason);
-      case 15:
+      case 14:
         var var_outcome = sse_decode_readd_answer(deserializer);
         return CoreEvent_ReaddRequested(outcome: var_outcome);
-      case 16:
+      case 15:
         var var_status = sse_decode_connection_status(deserializer);
         return CoreEvent_Connection(status: var_status);
-      case 17:
+      case 16:
         return CoreEvent_Other();
       default:
         throw UnimplementedError('');
@@ -3195,6 +3686,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var len_ = sse_decode_i_32(deserializer);
     return deserializer.buffer.getUint8List(len_);
+  }
+
+  @protected
+  List<UserRef> sse_decode_list_user_ref(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    var len_ = sse_decode_i_32(deserializer);
+    var ans_ = <UserRef>[];
+    for (var idx_ = 0; idx_ < len_; ++idx_) {
+      ans_.add(sse_decode_user_ref(deserializer));
+    }
+    return ans_;
   }
 
   @protected
@@ -3493,9 +3996,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_audio_view(AudioView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_u_32(self.durationMs, serializer);
+    sse_encode_list_prim_u_8_strict(self.waveform, serializer);
+    sse_encode_u_64(self.size, serializer);
+    sse_encode_media_status(self.state, serializer);
+  }
+
+  @protected
   void sse_encode_bool(bool self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     serializer.buffer.putUint8(self ? 1 : 0);
+  }
+
+  @protected
+  void sse_encode_box_audio_view(AudioView self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_audio_view(self, serializer);
   }
 
   @protected
@@ -3562,8 +4080,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case ChatBody_Image(image: final image):
         sse_encode_i_32(1, serializer);
         sse_encode_box_image_view(image, serializer);
-      case ChatBody_Unsupported():
+      case ChatBody_Audio(audio: final audio):
         sse_encode_i_32(2, serializer);
+        sse_encode_box_audio_view(audio, serializer);
+      case ChatBody_Unsupported():
+        sse_encode_i_32(3, serializer);
     }
   }
 
@@ -3571,14 +4092,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   void sse_encode_chat_kind_info(ChatKindInfo self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     switch (self) {
-      case ChatKindInfo_Main():
+      case ChatKindInfo_Lobby():
         sse_encode_i_32(0, serializer);
+      case ChatKindInfo_Group(name: final name, closed: final closed):
+        sse_encode_i_32(1, serializer);
+        sse_encode_opt_String(name, serializer);
+        sse_encode_bool(closed, serializer);
       case ChatKindInfo_Dm(
         peer: final peer,
         waiting: final waiting,
         closed: final closed,
       ):
-        sse_encode_i_32(1, serializer);
+        sse_encode_i_32(2, serializer);
         sse_encode_box_autoadd_user_ref(peer, serializer);
         sse_encode_bool(waiting, serializer);
         sse_encode_bool(closed, serializer);
@@ -3658,21 +4183,12 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_box_autoadd_user_ref(user, serializer);
         sse_encode_opt_String(displayName, serializer);
         sse_encode_opt_String(about, serializer);
-      case CoreEvent_GroupSettingsChanged(
-        name: final name,
-        previous: final previous,
-        by: final by,
-      ):
-        sse_encode_i_32(3, serializer);
-        sse_encode_opt_String(name, serializer);
-        sse_encode_opt_String(previous, serializer);
-        sse_encode_box_autoadd_user_ref(by, serializer);
       case CoreEvent_Unreadable(
         sender: final sender,
         acceptedAtMs: final acceptedAtMs,
         chatId: final chatId,
       ):
-        sse_encode_i_32(4, serializer);
+        sse_encode_i_32(3, serializer);
         sse_encode_opt_box_autoadd_user_ref(sender, serializer);
         sse_encode_opt_box_autoadd_i_64(acceptedAtMs, serializer);
         sse_encode_i_64(chatId, serializer);
@@ -3680,47 +4196,47 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         newestExpiredAtMs: final newestExpiredAtMs,
         chatId: final chatId,
       ):
-        sse_encode_i_32(5, serializer);
+        sse_encode_i_32(4, serializer);
         sse_encode_i_64(newestExpiredAtMs, serializer);
         sse_encode_i_64(chatId, serializer);
       case CoreEvent_ChatsChanged():
-        sse_encode_i_32(6, serializer);
+        sse_encode_i_32(5, serializer);
       case CoreEvent_RemovedForInactivity(missedSinceMs: final missedSinceMs):
-        sse_encode_i_32(7, serializer);
+        sse_encode_i_32(6, serializer);
         sse_encode_i_64(missedSinceMs, serializer);
       case CoreEvent_Rejoined():
-        sse_encode_i_32(8, serializer);
+        sse_encode_i_32(7, serializer);
       case CoreEvent_IdentityKeyChanged(user: final user):
-        sse_encode_i_32(9, serializer);
+        sse_encode_i_32(8, serializer);
         sse_encode_box_autoadd_user_ref(user, serializer);
       case CoreEvent_ServerIdentityError():
-        sse_encode_i_32(10, serializer);
+        sse_encode_i_32(9, serializer);
       case CoreEvent_Removed():
-        sse_encode_i_32(11, serializer);
+        sse_encode_i_32(10, serializer);
       case CoreEvent_JoinedGroup():
-        sse_encode_i_32(12, serializer);
+        sse_encode_i_32(11, serializer);
       case CoreEvent_MembersChanged(
         added: final added,
         removed: final removed,
         by: final by,
         automatic: final automatic,
       ):
-        sse_encode_i_32(13, serializer);
+        sse_encode_i_32(12, serializer);
         sse_encode_list_member_device(added, serializer);
         sse_encode_list_member_device(removed, serializer);
         sse_encode_opt_box_autoadd_user_ref(by, serializer);
         sse_encode_list_member_device(automatic, serializer);
       case CoreEvent_CommitRefused(reason: final reason):
-        sse_encode_i_32(14, serializer);
+        sse_encode_i_32(13, serializer);
         sse_encode_String(reason, serializer);
       case CoreEvent_ReaddRequested(outcome: final outcome):
-        sse_encode_i_32(15, serializer);
+        sse_encode_i_32(14, serializer);
         sse_encode_readd_answer(outcome, serializer);
       case CoreEvent_Connection(status: final status):
-        sse_encode_i_32(16, serializer);
+        sse_encode_i_32(15, serializer);
         sse_encode_connection_status(status, serializer);
       case CoreEvent_Other():
-        sse_encode_i_32(17, serializer);
+        sse_encode_i_32(16, serializer);
     }
   }
 
@@ -3853,6 +4369,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self.length, serializer);
     serializer.buffer.putUint8List(self);
+  }
+
+  @protected
+  void sse_encode_list_user_ref(List<UserRef> self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.length, serializer);
+    for (final item in self) {
+      sse_encode_user_ref(item, serializer);
+    }
   }
 
   @protected
@@ -4090,6 +4615,16 @@ class CoreImpl extends RustOpaque implements Core {
       .api
       .crateApiCoreCoreAcceptIdentityKey(that: this, user: user);
 
+  /// Admin: adds all of `user`'s devices to the named group `chat_id`.
+  Future<void> addToGroup({
+    required PlatformInt64 chatId,
+    required UserRef user,
+  }) => RustLib.instance.api.crateApiCoreCoreAddToGroup(
+    that: this,
+    chatId: chatId,
+    user: user,
+  );
+
   /// Admin: adds all devices of `user` to the group.
   Future<void> addUser({required UserRef user}) =>
       RustLib.instance.api.crateApiCoreCoreAddUser(that: this, user: user);
@@ -4100,6 +4635,11 @@ class CoreImpl extends RustOpaque implements Core {
       .instance
       .api
       .crateApiCoreCoreApproveLink(that: this, requestText: requestText);
+
+  /// The path of voice message `id`'s clip if this device has it cached;
+  /// never uses the network.
+  Future<String?> cachedAudio({required PlatformInt64 id}) =>
+      RustLib.instance.api.crateApiCoreCoreCachedAudio(that: this, id: id);
 
   /// The picture of image message `id` if this device has it cached; never
   /// uses the network.
@@ -4114,7 +4654,8 @@ class CoreImpl extends RustOpaque implements Core {
       .api
       .crateApiCoreCoreChatReadMark(that: this, chatId: chatId);
 
-  /// The chats: the main group first, then DMs, newest first, closed last.
+  /// The chats: the lobby first, then named groups and DMs, newest first,
+  /// closed last.
   Future<List<ChatSummary>> chats() =>
       RustLib.instance.api.crateApiCoreCoreChats(that: this);
 
@@ -4122,6 +4663,12 @@ class CoreImpl extends RustOpaque implements Core {
   /// (notifications not allowed).
   Future<void> clearPushToken() =>
       RustLib.instance.api.crateApiCoreCoreClearPushToken(that: this);
+
+  /// Admin: closes the named group `chat_id`; it becomes read-only.
+  Future<void> closeGroup({required PlatformInt64 chatId}) => RustLib
+      .instance
+      .api
+      .crateApiCoreCoreCloseGroup(that: this, chatId: chatId);
 
   /// New device, step 2: completes linking with the approval text. Call
   /// [`Core::start`] next.
@@ -4140,6 +4687,17 @@ class CoreImpl extends RustOpaque implements Core {
       .api
       .crateApiCoreCoreCreateInvite(that: this, username: username);
 
+  /// Admin: creates a named group with `name` and adds `members`; its chat
+  /// id. The adds finish in the background (a chats-changed event follows).
+  Future<PlatformInt64> createNamedGroup({
+    String? name,
+    required List<UserRef> members,
+  }) => RustLib.instance.api.crateApiCoreCoreCreateNamedGroup(
+    that: this,
+    name: name,
+    members: members,
+  );
+
   /// This device's id (hex), once registered or linked.
   Future<String?> deviceId() =>
       RustLib.instance.api.crateApiCoreCoreDeviceId(that: this);
@@ -4151,6 +4709,14 @@ class CoreImpl extends RustOpaque implements Core {
   /// Whether the server knows DMs: the app offers "Message" only then.
   Future<bool> dmsAvailable() =>
       RustLib.instance.api.crateApiCoreCoreDmsAvailable(that: this);
+
+  /// The path of voice message `id`'s clip, an OGG/Opus file in the core's
+  /// media cache for a player to open: from the cache, else downloaded,
+  /// decrypted and cached (client-runtime: Image download and cache). Dart
+  /// never copies or keeps the file. Fails with
+  /// [`CoreErrorKind::MediaExpired`] when the server no longer has it.
+  Future<String> downloadAudio({required PlatformInt64 id}) =>
+      RustLib.instance.api.crateApiCoreCoreDownloadAudio(that: this, id: id);
 
   /// The picture of image message `id` as WebP bytes: from this device's
   /// cache, else downloaded, decrypted and cached (client-runtime: Image
@@ -4169,9 +4735,12 @@ class CoreImpl extends RustOpaque implements Core {
   Stream<CoreEvent> events() =>
       RustLib.instance.api.crateApiCoreCoreEvents(that: this);
 
-  /// The group's name, as an admin device last set it.
-  Future<String?> groupName() =>
-      RustLib.instance.api.crateApiCoreCoreGroupName(that: this);
+  /// The member devices of the named group `chat_id`.
+  Future<List<MemberDevice>> groupMembers({required PlatformInt64 chatId}) =>
+      RustLib.instance.api.crateApiCoreCoreGroupMembers(
+        that: this,
+        chatId: chatId,
+      );
 
   /// Whether any own message is still sending (client-runtime: Unsent messages
   /// query). The app asks it when it goes to the background.
@@ -4227,6 +4796,11 @@ class CoreImpl extends RustOpaque implements Core {
   Future<ChatMessage?> message({required PlatformInt64 id}) =>
       RustLib.instance.api.crateApiCoreCoreMessage(that: this, id: id);
 
+  /// Whether the server knows named groups: the app offers "Create group"
+  /// only then.
+  Future<bool> namedGroupsAvailable() =>
+      RustLib.instance.api.crateApiCoreCoreNamedGroupsAvailable(that: this);
+
   /// The open DM with `user`, opened first if there is none; its chat id.
   Future<PlatformInt64> openDm({required UserRef user}) =>
       RustLib.instance.api.crateApiCoreCoreOpenDm(that: this, user: user);
@@ -4246,9 +4820,35 @@ class CoreImpl extends RustOpaque implements Core {
   Future<UserRef> register({required String inviteText}) => RustLib.instance.api
       .crateApiCoreCoreRegister(that: this, inviteText: inviteText);
 
+  /// Admin: removes `user` from the named group `chat_id` (not from the lobby).
+  Future<void> removeFromGroup({
+    required PlatformInt64 chatId,
+    required UserRef user,
+  }) => RustLib.instance.api.crateApiCoreCoreRemoveFromGroup(
+    that: this,
+    chatId: chatId,
+    user: user,
+  );
+
   /// Admin: removes `user` from the group and the server.
   Future<void> removeUser({required UserRef user}) =>
       RustLib.instance.api.crateApiCoreCoreRemoveUser(that: this, user: user);
+
+  /// Admin: sets the name of the named group `chat_id` for every member.
+  Future<PlatformInt64> renameGroup({
+    required PlatformInt64 chatId,
+    required String name,
+  }) => RustLib.instance.api.crateApiCoreCoreRenameGroup(
+    that: this,
+    chatId: chatId,
+    name: name,
+  );
+
+  /// Resends the clip of the own voice message `id` as a new message with a
+  /// new blob, when the first one expired (client-runtime: Expired media);
+  /// returns the new message's local id.
+  Future<PlatformInt64> resendAudio({required PlatformInt64 id}) =>
+      RustLib.instance.api.crateApiCoreCoreResendAudio(that: this, id: id);
 
   /// Resends the picture of the own image message `id` as a new message
   /// with a new blob, when the first one expired (client-runtime: Expired
@@ -4263,6 +4863,24 @@ class CoreImpl extends RustOpaque implements Core {
   /// Admin: revokes an unused invite by its code.
   Future<void> revokeInvite({required String code}) =>
       RustLib.instance.api.crateApiCoreCoreRevokeInvite(that: this, code: code);
+
+  /// Sends a recorded voice message to the main group; returns its local id.
+  /// `wav` is the file the recorder wrote (16-bit PCM). The core makes the
+  /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
+  /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
+  /// connected or not, like an image (audio-messages: Recording and encoding).
+  Future<PlatformInt64> sendAudio({required List<int> wav}) =>
+      RustLib.instance.api.crateApiCoreCoreSendAudio(that: this, wav: wav);
+
+  /// [`Core::send_audio`] in chat `chat_id`.
+  Future<PlatformInt64> sendAudioIn({
+    required PlatformInt64 chatId,
+    required List<int> wav,
+  }) => RustLib.instance.api.crateApiCoreCoreSendAudioIn(
+    that: this,
+    chatId: chatId,
+    wav: wav,
+  );
 
   /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the
   /// main group with an optional caption and `mentions` (UTF-16 ranges of
@@ -4327,10 +4945,6 @@ class CoreImpl extends RustOpaque implements Core {
   /// [`CoreEvent::SendStatus`].
   Future<PlatformInt64> sendText({required String text}) =>
       RustLib.instance.api.crateApiCoreCoreSendText(that: this, text: text);
-
-  /// Admin: sets the group's name for every member.
-  Future<PlatformInt64> setGroupName({String? name}) =>
-      RustLib.instance.api.crateApiCoreCoreSetGroupName(that: this, name: name);
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about}) =>
