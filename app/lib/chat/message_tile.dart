@@ -64,9 +64,14 @@ class MessageTile extends StatelessWidget {
     this.onResendImage,
     this.onResendAudio,
     this.playback,
+    this.showSender = true,
   });
 
   final ChatMessage message;
+
+  /// Whether another user's bubble names its sender: in the lobby and named
+  /// groups only, never in a DM (app-shell: Conversation screen).
+  final bool showSender;
 
   /// How to show the sender, "Ali (alice)".
   final String sender;
@@ -283,11 +288,13 @@ class MessageTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                sender,
-                style: text.labelMedium?.copyWith(color: scheme.primary),
-              ),
-              const SizedBox(height: 2),
+              if (showSender) ...[
+                Text(
+                  sender,
+                  style: text.labelMedium?.copyWith(color: scheme.primary),
+                ),
+                const SizedBox(height: 2),
+              ],
               body,
             ],
           );
