@@ -163,8 +163,9 @@ Future<RustCoreService> joinFresh(WidgetTester tester) async {
   await tap(tester, find.text('Check invite'));
   await waitFor(tester, find.text('bob@chat'));
   await tap(tester, find.text('Join'));
-  // Added by the admin's device on its own: the chat list shows the group.
-  await tap(tester, find.text('Group'));
+  // Added by the admin's device on its own: the Chats tab shows the lobby.
+  await waitFor(tester, find.text('lobby'));
+  await tap(tester, find.text('lobby'));
   await waitFor(tester, find.byKey(const Key('composer')));
   return core;
 }
@@ -172,6 +173,7 @@ Future<RustCoreService> joinFresh(WidgetTester tester) async {
 /// Attaches [testPicture], types [caption] and sends.
 Future<void> sendPicture(WidgetTester tester, String caption) async {
   await tap(tester, find.byKey(const Key('attach-image')));
+  await tap(tester, find.byKey(const Key('attach-photo')));
   await waitFor(tester, find.byKey(const Key('picture-preview')));
   await tester.enterText(find.byKey(const Key('composer')), caption);
   await tap(tester, find.byTooltip('Send'));
