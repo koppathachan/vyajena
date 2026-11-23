@@ -69,11 +69,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
       switch (event) {
         case CoreEvent_ProfileChanged(:final user):
           _names.forget(user);
-          _load();
+          _reload();
         case CoreEvent_ChatsChanged() ||
             CoreEvent_Message() ||
             CoreEvent_SendStatus():
-          _load();
+          _reload();
         default:
           break;
       }
@@ -87,24 +87,56 @@ class _ChatListScreenState extends State<ChatListScreen> {
     super.dispose();
   }
 
+  bool _loading = false;
+  bool _again = false;
+
+  /// [_load], coalesced: a burst of events (a message, its send status, the
+  /// chats change) runs one load, plus at most one more after it for what
+  /// arrived meanwhile, instead of one full load per event.
+  Future<void> _reload() async {
+    if (_loading) {
+      _again = true;
+      return;
+    }
+    _loading = true;
+    try {
+      do {
+        _again = false;
+        await _load();
+      } while (_again && mounted);
+    } finally {
+      _loading = false;
+    }
+  }
+
   Future<void> _load() async {
     final chats = _arranged(await widget.core.chats());
-    final dms = await widget.core.dmsAvailable();
-    final groups = await widget.core.namedGroupsAvailable();
+    final (dms, groups) = await (
+      widget.core.dmsAvailable(),
+      widget.core.namedGroupsAvailable(),
+    ).wait;
     await _names.load([
       for (final c in chats)
         if (c.kind case ChatKindInfo_Dm(:final peer)) peer,
     ]);
+    // The newest message of every chat, fetched in parallel.
+    final newest = await Future.wait([
+      for (final c in chats) widget.core.historyIn(c.chatId, 1),
+    ]);
+    await _names.load([
+      for (var i = 0; i < chats.length; i++)
+        if (chats[i].kind is! ChatKindInfo_Dm && newest[i].isNotEmpty)
+          newest[i].last.sender,
+    ]);
     final previews = <int, ChatPreview>{};
-    for (final c in chats) {
-      final newest = (await widget.core.historyIn(c.chatId, 1)).lastOrNull;
-      if (newest == null) continue;
-      if (c.kind is ChatKindInfo_Group || c.kind is ChatKindInfo_Lobby) {
-        await _names.load([newest.sender]);
-      }
-      previews[c.chatId] = previewOf(
-        newest,
-        from: c.kind is ChatKindInfo_Dm ? null : _names.short(newest.sender),
+    for (var i = 0; i < chats.length; i++) {
+      final message = newest[i].lastOrNull;
+      if (message == null) continue;
+      previews[chats[i].chatId] = previewOf(
+        message,
+        from: chats[i].kind is ChatKindInfo_Dm
+            ? null
+            : _names.short(message.sender),
       );
     }
     if (mounted) {
