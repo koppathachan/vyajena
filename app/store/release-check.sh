@@ -223,9 +223,10 @@ PY
     perms="$(awk '$1 == "uses-permission" { sub(/^name=/, "", $2); print $2 }' "$work/manifest.txt" |
       grep -vx "$package.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" | sort | tr '\n' ' ' || true)"
     # push design D12: POST_NOTIFICATIONS (the app), WAKE_LOCK and c2dm RECEIVE
-    # (firebase-messaging) for the "New message" wake-up.
-    if [ "$perms" = "android.permission.ACCESS_NETWORK_STATE android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE " ]; then
-      pass permissions "exactly INTERNET, ACCESS_NETWORK_STATE and push (POST_NOTIFICATIONS, WAKE_LOCK, c2dm RECEIVE)"
+    # (firebase-messaging) for the "New message" wake-up. audio-messages:
+    # RECORD_AUDIO, for recording voice messages (record plugin).
+    if [ "$perms" = "android.permission.ACCESS_NETWORK_STATE android.permission.INTERNET android.permission.POST_NOTIFICATIONS android.permission.RECORD_AUDIO android.permission.WAKE_LOCK com.google.android.c2dm.permission.RECEIVE " ]; then
+      pass permissions "exactly INTERNET, ACCESS_NETWORK_STATE, RECORD_AUDIO (voice messages) and push (POST_NOTIFICATIONS, WAKE_LOCK, c2dm RECEIVE)"
     else
       fail permissions "the bundle asks for: ${perms:-nothing readable}"
     fi
@@ -305,10 +306,13 @@ if [ "$check_ios" = 1 ]; then
       fail "export compliance" "ITSAppUsesNonExemptEncryption is not NO (design D8)"
     fi
     usages="$(plutil -convert xml1 -o - "$plist" | sed -n 's/.*<key>\(NS[A-Za-z]*UsageDescription\)<\/key>.*/\1/p' | sort | tr '\n' ' ')"
-    if [ -z "$usages" ]; then
-      pass "ios permissions" "no usage descriptions"
+    # audio-messages: the microphone, for recording voice messages (record
+    # plugin). Nothing else: picking a picture uses PHPicker, which needs no
+    # photo-library usage description, and there is no in-app camera capture.
+    if [ "$usages" = "NSMicrophoneUsageDescription " ]; then
+      pass "ios permissions" "microphone only (voice messages)"
     else
-      fail "ios permissions" "usage descriptions: ${usages:-none}"
+      fail "ios permissions" "usage descriptions: ${usages:-none}, expected NSMicrophoneUsageDescription"
     fi
     # The one capability beyond the keychain is Push (push design D12). The
     # archive is unsigned (build-ipa.sh signs at export), so read the source.
