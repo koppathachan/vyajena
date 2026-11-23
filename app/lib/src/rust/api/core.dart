@@ -8,7 +8,7 @@ import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
-// These functions are ignored because they are not marked as `pub`: `forward`, `take_stream`
+// These functions are ignored because they are not marked as `pub`: `forward`, `path_text`, `take_stream`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`
 // These functions are ignored (category: IgnoreBecauseExplicitAttribute): `next_event`, `open_with`
 
@@ -41,6 +41,10 @@ abstract class Core implements RustOpaqueInterface {
   /// Identity device: approves a link request text and returns the
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
+
+  /// The path of voice message `id`'s clip if this device has it cached;
+  /// never uses the network.
+  Future<String?> cachedAudio({required PlatformInt64 id});
 
   /// The picture of image message `id` if this device has it cached; never
   /// uses the network.
@@ -87,6 +91,13 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Whether the server knows DMs: the app offers "Message" only then.
   Future<bool> dmsAvailable();
+
+  /// The path of voice message `id`'s clip, an OGG/Opus file in the core's
+  /// media cache for a player to open: from the cache, else downloaded,
+  /// decrypted and cached (client-runtime: Image download and cache). Dart
+  /// never copies or keeps the file. Fails with
+  /// [`CoreErrorKind::MediaExpired`] when the server no longer has it.
+  Future<String> downloadAudio({required PlatformInt64 id});
 
   /// The picture of image message `id` as WebP bytes: from this device's
   /// cache, else downloaded, decrypted and cached (client-runtime: Image
@@ -185,6 +196,11 @@ abstract class Core implements RustOpaqueInterface {
     required String name,
   });
 
+  /// Resends the clip of the own voice message `id` as a new message with a
+  /// new blob, when the first one expired (client-runtime: Expired media);
+  /// returns the new message's local id.
+  Future<PlatformInt64> resendAudio({required PlatformInt64 id});
+
   /// Resends the picture of the own image message `id` as a new message
   /// with a new blob, when the first one expired (client-runtime: Expired
   /// media); returns the new message's local id.
@@ -195,6 +211,19 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Admin: revokes an unused invite by its code.
   Future<void> revokeInvite({required String code});
+
+  /// Sends a recorded voice message to the main group; returns its local id.
+  /// `wav` is the file the recorder wrote (16-bit PCM). The core makes the
+  /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
+  /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
+  /// connected or not, like an image (audio-messages: Recording and encoding).
+  Future<PlatformInt64> sendAudio({required List<int> wav});
+
+  /// [`Core::send_audio`] in chat `chat_id`.
+  Future<PlatformInt64> sendAudioIn({
+    required PlatformInt64 chatId,
+    required List<int> wav,
+  });
 
   /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the
   /// main group with an optional caption and `mentions` (UTF-16 ranges of
