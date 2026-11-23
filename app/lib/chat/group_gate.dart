@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import '../admin/create_group_screen.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
-import 'chat_list_screen.dart';
+import '../shell/home_shell.dart';
 import 'chat_model.dart';
 import 'time_text.dart';
 
@@ -92,10 +92,10 @@ class _GroupGateState extends State<GroupGate> {
     if (admin == null || inGroup == null) {
       return Scaffold(appBar: shellAppBar(widget.core));
     }
-    // The chat list is always the home once this device is in the group
+    // The app shell (Chats, Contacts, Profile) is always the home once this device is in the group
     // (app-ui: Chat list); the group's chat opens on top of it.
     if (inGroup) {
-      return ChatListScreen(core: widget.core, chat: widget.chat, admin: admin);
+      return HomeShell(core: widget.core, chat: widget.chat, admin: admin);
     }
     if (admin) return CreateGroupScreen(core: widget.core, onCreated: _check);
     return Scaffold(

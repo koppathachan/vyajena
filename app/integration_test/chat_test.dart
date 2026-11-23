@@ -78,7 +78,21 @@ void main() {
     expect(find.textContaining('on 127.0.0.1:'), findsOneWidget);
     await tap(tester, find.text('Join'));
 
-    // Waiting, then the admin's device adds this phone by itself: the chat.
+    // Waiting, then the admin's device adds this phone by itself: the shell
+    // opens on the Chats tab with the lobby (app-shell: Bottom navigation).
+    await waitFor(tester, find.text('lobby'));
+    expect(find.byKey(const Key('bottom-nav')), findsOneWidget);
+    // Contacts, then Profile (its avatar tab), then back to Chats.
+    await tap(tester, find.byKey(const Key('tab-contacts')));
+    await waitFor(tester, find.byKey(const Key('contact-bob')));
+    expect(find.byKey(const Key('you-bob')), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+    await tap(tester, find.byKey(const Key('tab-profile')));
+    await waitFor(tester, find.byKey(const Key('server-id')));
+    await tester.pump(const Duration(seconds: 4));
+    await tap(tester, find.byKey(const Key('tab-chats')));
+    await tester.pump(const Duration(seconds: 4));
+    await tap(tester, find.text('lobby'));
     await waitFor(tester, find.byKey(const Key('composer')));
     expect(find.text('No messages yet'), findsOneWidget);
 

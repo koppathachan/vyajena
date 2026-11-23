@@ -56,7 +56,7 @@ void main() {
   testWidgets('the lobby shows it is fixed: no rename, no close, even for the '
       'admin', (tester) async {
     await openHome(tester, adminWithGroups());
-    expect(find.text('Fixed name · cannot be closed'), findsOneWidget);
+    expect(find.text('lobby'), findsOneWidget);
     await enterGroup(tester);
     await tap(tester, find.byTooltip('Menu'));
     for (final key in ['lobby-rename-disabled', 'lobby-close-disabled']) {

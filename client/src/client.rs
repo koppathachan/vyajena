@@ -1873,6 +1873,25 @@ impl Client {
         Ok(members)
     }
 
+    /// The admin's user, as the lobby group's context names it (the
+    /// `0xF0A1` extension every member holds); `None` before this device is in
+    /// the group. Lets a non-admin's app mark the admin in the member list.
+    pub fn admin_user(&self) -> Result<Option<UserId>, ClientError> {
+        let store = &self.shared.store;
+        let Some(row) = store.group()? else {
+            return Ok(None);
+        };
+        let group = store.transaction(|| -> Result<_, ClientError> {
+            Ok(crate::mls::group::load(store.mls(), &row.group_id)?)
+        })?;
+        Ok(group
+            .and_then(|g| crate::mls::group::admin_user_id(g.extensions()))
+            .and_then(|text| {
+                let (name, server) = text.split_once('@')?;
+                Some(UserId::new(name, server))
+            }))
+    }
+
     /// The group's epoch on this device, once it is in the group.
     pub fn epoch(&self) -> Result<Option<u64>, ClientError> {
         let store = &self.shared.store;

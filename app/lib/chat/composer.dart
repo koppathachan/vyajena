@@ -387,6 +387,32 @@ class _ComposerState extends State<Composer> {
     }
   }
 
+  /// The attachment sheet (app-shell: Conversation screen). Photo is the only
+  /// kind a message can carry beyond a voice message today; video, audio
+  /// files and files join the sheet as `video-messages` and later changes
+  /// ship, and stay out of it until then.
+  Future<void> _openAttachments() async {
+    if (_sending) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('attachment-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('attach-photo'),
+              leading: const Icon(Icons.image_outlined),
+              title: const Text('Photo'),
+              onTap: () => Navigator.of(sheet).pop('photo'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == 'photo') await _attach();
+  }
+
   Future<void> _attach() async {
     final pick = widget.pickImage;
     if (pick == null || _sending) return;
@@ -519,9 +545,9 @@ class _ComposerState extends State<Composer> {
             if (widget.pickImage != null && widget.reply == null)
               IconButton(
                 key: const Key('attach-image'),
-                tooltip: 'Attach a picture',
-                onPressed: _sending || removed ? null : _attach,
-                icon: const Icon(Icons.add_photo_alternate_outlined),
+                tooltip: 'Attach',
+                onPressed: _sending || removed ? null : _openAttachments,
+                icon: const Icon(Icons.attach_file),
               ),
             Expanded(
               child: TextField(

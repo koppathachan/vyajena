@@ -345,6 +345,10 @@ abstract class CoreService {
   /// Whether this device's user is the admin.
   Future<bool> isAdmin();
 
+  /// The admin's user, as the group names it (every member can tell); null
+  /// before this device is in the group.
+  Future<UserRef?> adminUser();
+
   /// Admin: creates the group.
   Future<void> createGroup();
 

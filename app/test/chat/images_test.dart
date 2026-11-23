@@ -29,6 +29,13 @@ FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
 
 final composer = find.byKey(const Key('composer'));
 final attach = find.byKey(const Key('attach-image'));
+
+/// Opens the attachment sheet and picks Photo (app-shell: Conversation screen).
+Future<void> attachPhoto(WidgetTester tester) async {
+  await tap(tester, attach);
+  await tap(tester, find.byKey(const Key('attach-photo')));
+}
+
 final preview = find.byKey(const Key('picture-preview'));
 final bubble = find.byKey(const Key('image-bubble'));
 final send = find.byTooltip('Send');
@@ -72,7 +79,7 @@ void main() {
     final picker = FakePicker(picked);
     await openAppWithPictures(tester, core, picker);
 
-    await tap(tester, attach);
+    await attachPhoto(tester);
     expect(picker.opened, 1);
     expect(preview, findsOneWidget);
     // The text box now holds the caption.
@@ -102,7 +109,7 @@ void main() {
   testWidgets('a picture needs no caption', (tester) async {
     final core = groupAsBob();
     await openAppWithPictures(tester, core, FakePicker(picked));
-    await tap(tester, attach);
+    await attachPhoto(tester);
     await tap(tester, send);
     final call =
         core.args['sendImage']!
@@ -116,7 +123,7 @@ void main() {
       'passed with the picture', (tester) async {
     final core = groupAsBob();
     await openAppWithPictures(tester, core, FakePicker(picked));
-    await tap(tester, attach);
+    await attachPhoto(tester);
     await typeCaption(tester, '@al');
     await tap(tester, find.text('Ali (alice)'));
     await tap(tester, send);
@@ -135,14 +142,14 @@ void main() {
     final core = groupAsBob();
     final picker = FakePicker(picked);
     await openAppWithPictures(tester, core, picker);
-    await tap(tester, attach);
+    await attachPhoto(tester);
     expect(preview, findsOneWidget);
     await tap(tester, find.byKey(const Key('remove-picture')));
     expect(preview, findsNothing);
     expect(core.calls, isNot(contains('sendImage')));
 
     // The gallery closed with no choice (the fake gives nothing now).
-    await tap(tester, attach);
+    await attachPhoto(tester);
     expect(picker.opened, 2);
     expect(preview, findsNothing);
   });
@@ -156,7 +163,7 @@ void main() {
         message: 'x',
       );
     await openAppWithPictures(tester, core, FakePicker(picked));
-    await tap(tester, attach);
+    await attachPhoto(tester);
     await typeCaption(tester, 'hi');
     await tap(tester, send);
     expect(
@@ -217,7 +224,7 @@ void main() {
   ) async {
     final core = groupAsBob();
     await openAppWithPictures(tester, core, FakePicker(picked));
-    await tap(tester, attach);
+    await attachPhoto(tester);
     await tap(tester, send);
     // The sender's own picture is in its cache: no blur, no download.
     expect(find.byKey(const Key('image-picture')), findsOneWidget);
@@ -296,7 +303,7 @@ void main() {
   ) async {
     final core = groupAsBob();
     await openAppWithPictures(tester, core, FakePicker(picked));
-    await tap(tester, attach);
+    await attachPhoto(tester);
     await tap(tester, send);
     await tester.longPress(bubble);
     await settle(tester);

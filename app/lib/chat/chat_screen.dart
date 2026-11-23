@@ -12,7 +12,8 @@ import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
 import '../app/routes.dart';
-import '../app/shell_app_bar.dart';
+import '../app/connection_indicator.dart';
+import '../shell/avatars.dart';
 import '../core/core_service.dart';
 import 'chat_model.dart';
 import 'composer.dart';
@@ -358,6 +359,51 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// The app bar's second line: the peer's username in a DM, else how many
+  /// members the group has (app-shell: Conversation screen).
+  String _subtitle(UserRef? peer) {
+    if (peer != null) return peer.username;
+    final n = _model.memberUsers.length;
+    return n == 0 ? '' : (n == 1 ? '1 member' : '$n members');
+  }
+
+  /// Back (the route's own), the avatar, the title with its subtitle, the
+  /// connection indicator and the screen's [actions].
+  AppBar _appBar({
+    required String title,
+    required String subtitle,
+    required Widget avatar,
+    required List<Widget> actions,
+  }) => AppBar(
+    titleSpacing: 0,
+    title: Row(
+      children: [
+        avatar,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (subtitle.isNotEmpty)
+                Text(
+                  subtitle,
+                  key: const Key('conversation-subtitle'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      ConnectionIndicator(core: widget.core),
+      ...actions,
+    ],
+  );
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: _model,
@@ -393,9 +439,16 @@ class _ChatScreenState extends State<ChatScreen> {
         _markRead(items);
       });
       return Scaffold(
-        appBar: shellAppBar(
-          widget.core,
+        appBar: _appBar(
           title: peer == null ? _model.title : peerName,
+          subtitle: _subtitle(peer),
+          avatar: NameAvatar(
+            key: const Key('conversation-avatar'),
+            name: peer == null ? _model.title : peerName,
+            seed: peer?.username ?? 'group-${_model.chatId}',
+            radius: 18,
+            icon: _model.isMain ? Icons.groups_outlined : null,
+          ),
           actions: [
             _mentionBadge(),
             // A DM shows no admin actions (app-ui: DM screen); a named
@@ -445,6 +498,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   key: ValueKey('message-${message.id}'),
                                   message: message,
                                   sender: _model.names.of(message.sender),
+                                  showSender: peer == null,
                                   mentionLabel: _mentionLabel,
                                   me: me,
                                   replyTo: switch (message.reply) {

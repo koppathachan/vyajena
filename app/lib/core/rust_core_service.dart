@@ -218,6 +218,9 @@ class RustCoreService extends CoreService {
   Future<bool> isAdmin() => _c.isAdmin();
 
   @override
+  Future<UserRef?> adminUser() => _c.adminUser();
+
+  @override
   Future<void> createGroup() => _c.createGroup();
 
   @override
