@@ -33,6 +33,7 @@ class ContactsTab extends StatefulWidget {
 class _ContactsTabState extends State<ContactsTab> {
   late final UserNames _names = UserNames(widget.core);
   List<MemberUser>? _members;
+  UserRef? _admin;
   String? _error;
   bool _dms = false;
   bool _groups = false;
@@ -62,11 +63,13 @@ class _ContactsTabState extends State<ContactsTab> {
     try {
       final members = byUser(await widget.core.members());
       await _names.load(members.map((m) => m.user));
+      final adminUser = await widget.core.adminUser();
       final dms = await widget.core.dmsAvailable();
       final groups = await widget.core.namedGroupsAvailable();
       if (mounted) {
         setState(() {
           _members = members;
+          _admin = adminUser;
           _dms = dms;
           _groups = groups;
           _error = null;
@@ -107,9 +110,14 @@ class _ContactsTabState extends State<ContactsTab> {
     final me = _isMe(m.user);
     final scheme = Theme.of(context).colorScheme;
     final name = _names.of(m.user);
-    // Only this device's own admin status is known to the app (the core has
-    // no "who is the admin" call), so the badge shows on the admin's own row.
-    final admin = me && widget.admin;
+    // The group names its admin to every member (core.adminUser); this
+    // device's own admin status covers the moment before it has joined.
+    final named = _admin;
+    final admin =
+        (named != null &&
+            named.username == m.user.username &&
+            named.serverId == m.user.serverId) ||
+        (me && widget.admin);
     return ListTile(
       key: ValueKey('contact-${m.user.username}'),
       leading: NameAvatar(name: _names.short(m.user), seed: m.user.username),

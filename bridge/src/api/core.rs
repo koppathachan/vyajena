@@ -456,6 +456,12 @@ impl Core {
             .collect())
     }
 
+    /// The admin's user, as the group names it (visible to every member);
+    /// unset before this device is in the group.
+    pub fn admin_user(&self) -> Result<Option<UserRef>, CoreError> {
+        Ok(forward(self.client.admin_user())?.as_ref().map(map::user))
+    }
+
     /// The group's epoch on this device, once in the group.
     pub fn epoch(&self) -> Result<Option<u64>, CoreError> {
         forward(self.client.epoch())

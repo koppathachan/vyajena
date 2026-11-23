@@ -186,6 +186,26 @@ void main() {
   });
 
   // spec: app-shell/contacts-tab
+  testWidgets('a non-admin member sees the admin badge on the admin row', (
+    tester,
+  ) async {
+    // Alice is not the admin; the group names akhil as its admin.
+    final core = aliceInGroup()
+      ..adminUserRef = akhil
+      ..memberDevices = const [
+        MemberDevice(user: akhil, device: '01'),
+        MemberDevice(user: alice, device: '02'),
+        MemberDevice(user: bob, device: '03'),
+      ];
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    expect(find.byKey(const Key('admin-badge-akhil')), findsOneWidget);
+    expect(find.byKey(const Key('you-alice')), findsOneWidget);
+    expect(find.byKey(const Key('admin-badge-alice')), findsNothing);
+    expect(find.byKey(const Key('admin-badge-bob')), findsNothing);
+  });
+
+  // spec: app-shell/contacts-tab
   testWidgets('tapping a member opens their DM', (tester) async {
     final core = aliceInGroup();
     await openHome(tester, core);

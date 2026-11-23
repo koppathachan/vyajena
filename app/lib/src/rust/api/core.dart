@@ -38,6 +38,10 @@ abstract class Core implements RustOpaqueInterface {
   /// Admin: adds all devices of `user` to the group.
   Future<void> addUser({required UserRef user});
 
+  /// The admin's user, as the group names it (visible to every member);
+  /// unset before this device is in the group.
+  Future<UserRef?> adminUser();
+
   /// Identity device: approves a link request text and returns the
   /// approval text to show back.
   Future<String> approveLink({required String requestText});

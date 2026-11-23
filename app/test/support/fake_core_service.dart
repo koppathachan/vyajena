@@ -784,6 +784,13 @@ class FakeCoreService extends CoreService {
   @override
   Future<bool> isAdmin() async => admin;
 
+  /// What [adminUser] returns; when null, this user if [admin], else nobody.
+  UserRef? adminUserRef;
+
+  @override
+  Future<UserRef?> adminUser() async =>
+      adminUserRef ?? (admin ? user.value : null);
+
   @override
   Future<void> createGroup() async {
     _call('createGroup');
