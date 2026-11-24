@@ -21,6 +21,7 @@ import 'audio_bubble.dart';
 import 'image_bubble.dart';
 import 'links.dart';
 import 'mentions.dart';
+import 'time_text.dart';
 import 'voice_playback.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -243,6 +244,7 @@ class MessageTile extends StatelessWidget {
     final text = Theme.of(context).textTheme;
     final own = message.ownUser;
     final status = message.outgoing ? message.status : null;
+    final sentMs = (message.sentAtMs ?? message.acceptedAtMs)?.toInt();
     final textBody = switch (message.body) {
       ChatBody_Text(:final text) => _withMentions(context, text),
       ChatBody_Image(:final image) => _image(context, image),
@@ -313,8 +315,29 @@ class MessageTile extends StatelessWidget {
               : null,
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: content,
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            child: IntrinsicWidth(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  content,
+                  if (sentMs != null) ...[
+                    const SizedBox(height: 2),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        clockText(context, sentMs),
+                        key: ValueKey('time-${message.id}'),
+                        style: text.labelSmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),

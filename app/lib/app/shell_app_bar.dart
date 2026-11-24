@@ -12,6 +12,7 @@ AppBar shellAppBar(
   String title = 'Vyajena',
   List<Widget> actions = const [],
 }) => AppBar(
+  centerTitle: false,
   title: ValueListenableBuilder<UserRef?>(
     valueListenable: core.user,
     builder: (context, user, _) => Column(
