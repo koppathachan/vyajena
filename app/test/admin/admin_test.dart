@@ -48,18 +48,29 @@ void main() {
     }
   });
 
-  // spec: app-ui/admin-screens
-  testWidgets('on the admin\'s first start the app creates the group', (
+  // spec: app-ui/the-lobby-appears-without-a-manual-create-step
+  testWidgets('the admin\'s first device creates the lobby with no manual step', (
     tester,
   ) async {
     final core = adminCore()..epochValue = null;
-    await openApp(tester, core);
-    expect(find.byKey(const Key('composer')), findsNothing);
-    await tap(tester, find.text('Create the group'));
+    await openHome(tester, core);
+    await settle(tester);
+    // No "Create the group" button: the app calls createGroup itself.
+    expect(find.text('Create the group'), findsNothing);
     expect(core.calls, contains('createGroup'));
-    // The group now exists; the app lands on the chat list, so open the chat.
+    // The lobby now exists, so its row is on the chat list; opening it shows
+    // the composer.
+    expect(find.byKey(const ValueKey('chat-main')), findsOneWidget);
     await enterGroup(tester);
     expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  // spec: app-ui/the-lobby-appears-without-a-manual-create-step
+  testWidgets('a non-admin device never creates a lobby', (tester) async {
+    final core = FakeCoreService(storedUser: bob)..epochValue = null;
+    await openApp(tester, core);
+    // It waits to be added; it must not try to create the lobby.
+    expect(core.calls, isNot(contains('createGroup')));
   });
 
   // spec: app-ui/admin-screens
