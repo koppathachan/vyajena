@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
+import 'emoji.dart';
 import 'image_bubble.dart';
 import 'links.dart';
 import 'mentions.dart';
@@ -159,6 +160,20 @@ class MessageTile extends StatelessWidget {
     }
   }
 
+  /// A plain text body: drawn large when it is only a few emoji ("jumbomoji",
+  /// see emoji.dart), else as ordinary text with its mentions and links.
+  Widget _text(BuildContext context, String text) {
+    final jumbo = jumboEmojiSize(text);
+    if (jumbo != null) {
+      return Text(
+        text,
+        key: ValueKey('jumbo-${message.id}'),
+        style: TextStyle(fontSize: jumbo, height: 1.15),
+      );
+    }
+    return _withMentions(context, text);
+  }
+
   /// [text] with this message's mentions and its links drawn in it.
   Widget _withMentions(BuildContext context, String text) => _MessageText(
     text: text,
@@ -246,7 +261,7 @@ class MessageTile extends StatelessWidget {
     final status = message.outgoing ? message.status : null;
     final sentMs = (message.sentAtMs ?? message.acceptedAtMs)?.toInt();
     final textBody = switch (message.body) {
-      ChatBody_Text(:final text) => _withMentions(context, text),
+      ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Audio(:final audio) => _audio(context, audio),
       ChatBody_Unsupported() => Text(
@@ -349,7 +364,7 @@ class MessageTile extends StatelessWidget {
     return Dismissible(
       key: ValueKey('swipe-${message.id}'),
       direction: DismissDirection.startToEnd,
-      dismissThresholds: const {DismissDirection.startToEnd: 0.25},
+      dismissThresholds: const {DismissDirection.startToEnd: 0.12},
       confirmDismiss: (_) async {
         startReply();
         return false;

@@ -120,6 +120,7 @@ class Composer extends StatefulWidget {
 
 class _ComposerState extends State<Composer> {
   final _text = TextEditingController();
+  final _focus = FocusNode();
   final _mentions = ComposerMentions();
   String? _error;
   bool _sending = false;
@@ -242,9 +243,24 @@ class _ComposerState extends State<Composer> {
   }
 
   @override
+  void didUpdateWidget(Composer old) {
+    super.didUpdateWidget(old);
+    // Swipe-to-reply (and the reply bar appearing) should raise the keyboard
+    // and keep it up: when a reply begins, re-assert focus on the text box so
+    // the user can answer the quote straight away instead of the keyboard
+    // dropping as the bar slides in above it.
+    if (widget.reply != null && old.reply == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !widget.core.removed.value) _focus.requestFocus();
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _ticker?.cancel();
     _text.dispose();
+    _focus.dispose();
     _preview?.dispose();
     final recorder = _recorder;
     if (recorder != null) {
@@ -553,6 +569,7 @@ class _ComposerState extends State<Composer> {
               child: TextField(
                 key: const Key('composer'),
                 controller: _text,
+                focusNode: _focus,
                 enabled: !removed,
                 minLines: 1,
                 maxLines: 6,
