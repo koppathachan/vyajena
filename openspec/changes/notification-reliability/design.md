@@ -68,7 +68,7 @@ D1 + D2 land — the catch-up covers the window and the retries cover a suppress
 ping — and both have costs (more reconnect churn; more pushes). They are left as
 future tuning, out of scope here, so this change is purely additive scheduling.
 
-### D4. Client reconnects promptly
+### D4. Client reconnects promptly (already implemented)
 
 The server cannot make an offline device reconnect except through the wake push;
 the device must also reconnect on its own when it can. The app SHALL re-open
@@ -76,6 +76,72 @@ the device must also reconnect on its own when it can. The app SHALL re-open
 stream drops, with a bounded backoff, so that a delivered wake push — or simply
 coming back online without one — drains the backlog quickly rather than on the
 next manual action.
+
+This behaviour is **already present in the core and app** and is not re-built by
+this change; the change only adds a test pinning it:
+
+- The engine loop reconnects whenever the link is gone, after a drop
+  (`drop_link`) and with an exponential, jittered, bounded backoff reset on a
+  successful connect (`client/src/net/backoff.rs`: 250 ms → 30 s), so a dropped
+  stream reconnects on its own (client-runtime: Connection lifecycle).
+- `Client::reconnect_now` / the bridge `reconnect_now` let the app skip the
+  backoff wait when the network returns.
+- The app lifecycle (`app/lib/app/lifecycle.dart`, flutter-app design D9 +
+  change `finish-sends-in-background`) stops the core on pause (after finishing
+  any unsent message) and **restarts it on resume**, and calls `reconnectNow` on a
+  network-up change (qa-fixes design D6); a tapped wake push opens the app, which
+  starts the core here. So resume, network regain and a delivered push all drain
+  the backlog without a manual action.
+
+### D5. The catch-up attempt counter is durable
+
+The per-device catch-up attempt count of D2 is kept in SQLite (a small `catchup`
+table: device id → attempts), not only in memory. A server restart therefore does
+not forget a live device's progress nor hand a device whose app is gone a fresh
+`CATCH_UP_MAX` budget on every restart. The counter is bumped on each sweep
+catch-up ping, and reset — the row deleted — when the device's backlog drains
+(no `deliveries` rows left) or the device is currently connected (it is receiving
+on its stream). The reset is done in the sweep, in the same transaction, so it
+costs no extra work on the hot `Ack` path:
+
+```sql
+-- once per sweep, before choosing who to catch-up-ping:
+DELETE FROM catchup
+ WHERE device_id NOT IN (SELECT device_id FROM deliveries)   -- drained/expired
+    OR device_id IN (<connected device ids>);                -- receiving now
+```
+
+The wake-push rate limiter (one per device per 60 s) stays in memory in the
+`Hub`; that is fine to reset on restart (it only governs how *soon* a push may be
+re-sent). Only the attempt *bound* needs durability, because it is what stops an
+unbounded series of pings to a device that never comes back.
+
+### D6. Why not a durable queue library (`kyu`)
+
+The owner asked whether to re-architect this around a durable server-side delivery
+queue, specifically the `kyu` library (github.com/koppathachan/kyu). Evaluated on
+2026-11-24 and declined for this change:
+
+- The undelivered-message queue is **already durable**: the SQLite `envelopes` /
+  `deliveries` / `cursors` tables (message-delivery: Per-device queues; Accepted
+  means durable). It is ack-drained and expires entries after `QUEUE_ENTRY_TTL`, so
+  it is a pending-delivery queue, never a message archive — exactly the invariant
+  (config.yaml: "the server … never history"). The reliability gap is wake-push
+  *scheduling* (the zombie window and the un-retried single ping), not durability.
+- `kyu` would not improve durability here and would cost a great deal: it is a Go
+  service exposing gRPC contracts, not a Rust crate ("neither contract is a
+  library: both are gRPC"), so it would run as a separate process on the Pi; its
+  engine keeps no durable state and needs a storage backend the deployment supplies
+  (only an in-memory reference ships), so durability would still be ours to write;
+  and its dead-letter-queue model *retains* exhausted messages, which for
+  undelivered ciphertext would be the message archive the invariant forbids. Its
+  single-message-lease + DLQ model also does not fit per-device fan-out + a
+  monotonic `server_seq` + cursor/ack catch-up.
+
+So this change keeps the existing SQLite store and adds only scheduling (D1, D2)
+and a durable attempt counter (D5); no new dependency, no new process. The full
+assessment was reported to the owner before implementation and the no-kyu decision
+confirmed.
 
 ```mermaid
 sequenceDiagram
@@ -106,8 +172,11 @@ sequenceDiagram
 
 ## Migration Plan
 
-Spec-only here (builds serialize on the shared external-disk cargo target). When
-built: add the re-ping-on-reap and the sweep catch-up (with `CATCH_UP_MAX`) on the
-server; add the reconnect-on-resume/net-regain policy in the core/app. No proto,
-no data migration. Deployable independently of the app (older apps still catch up
-on reconnect; the extra pushes just reach them sooner).
+Add the re-ping-on-reap and the sweep catch-up (with `CATCH_UP_MAX`) on the
+server, backed by one additive SQLite migration (`0009_catchup.sql`, the durable
+counter of D5). No proto regeneration and no core/app change (the reconnect policy
+of D4 already exists). The migration only creates a new, initially-empty table, so
+it is a safe forward-only upgrade with no data move and no `--reset`; an older
+server simply has no `catchup` rows until it runs. Deployable independently of the
+app (older apps still catch up on reconnect; the extra pushes just reach them
+sooner). Builds serialize on the shared external-disk cargo target.
