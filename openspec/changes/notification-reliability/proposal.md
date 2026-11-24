@@ -45,6 +45,11 @@ to reconnect*.
   undelivered entry for an offline device with a push token SHALL keep producing
   catch-up pings (within the rate limit and attempt bound) until it is delivered
   or expires, so nothing sits pinged-once-and-forgotten.
+- **The catch-up attempt budget is durable (server).** The per-device catch-up
+  attempt counter is kept in SQLite, not only in memory, so the attempt bound and
+  the "keep nudging" survive a server restart and a restart does not hand a dead
+  device a fresh budget or forget a live one's progress. It is reset when the
+  device drains its backlog or reconnects.
 
 ## Open decisions resolved
 
@@ -52,6 +57,15 @@ to reconnect*.
   rate limit and collapse (owner diagnosis, 2026-11-23). Shortening the 90 s idle
   timeout and making the limit/collapse per-conversation are noted as optional
   tuning (design D3), not required here.
+- **Durable-queue / `kyu` evaluation (owner, 2026-11-24): no new dependency.**
+  The owner asked whether to re-architect this around a durable server-side
+  delivery queue, specifically the `kyu` library. Evaluated and declined for this
+  change (design D6): the undelivered-message queue is **already durable** — it is
+  the SQLite `envelopes`/`deliveries`/`cursors` tables (message-delivery: Per-device
+  queues; Accepted means durable), ack-drained and expiring, never an archive. The
+  reliability gap is wake-push *scheduling*, not durability, so D1 + D2 + D4 are the
+  fix. The one durability-flavoured strengthening kept is persisting the catch-up
+  attempt counter (D5) so retry budgets survive a server restart.
 
 ## Proto files touched
 
@@ -59,7 +73,10 @@ to reconnect*.
   reconnection behaviour; it adds no wire fields and contends for no field numbers
   with the in-flight changes (`remove-closed-dm`, `mute-notifications`,
   `replace-user`, `self-hostable`, `video-messages`). The push payload is
-  unchanged — still the one content-free "New message".
+  unchanged — still the one content-free "New message". It adds one additive SQLite
+  migration (`0009_catchup.sql`, the durable catch-up counter of D5); the migration
+  number is the next free one on `main` at authoring time and may be renumbered if
+  another change lands a `0009` first (migrations are append-only).
 
 ## Capabilities
 
@@ -72,16 +89,21 @@ to reconnect*.
 
 ## Impact
 
-- **Server:** `server/src/messaging/mod.rs` and `server/src/messaging/sweep.rs`
-  (re-ping on stream close/reap when a backlog exists; per-device catch-up ping in
-  the sweep with a per-device attempt bound and the shared 60 s limit);
-  `server/tests/` (a device with a backlog and no stream gets a catch-up ping;
-  the ping stops once the backlog drains or the bound is hit; connected devices
-  are never pinged). Interacts with `mute-notifications`: a catch-up push is still
-  subject to the mute check (a muted conversation is never pinged, catch-up
-  included).
-- **Core/app:** `client/src/net/conn.rs` reconnection policy; the app's lifecycle
-  (`app/lib/app/lifecycle.dart`) re-opens the stream on resume and on
-  connectivity change. No proto regeneration.
+- **Server:** `server/src/messaging/stream.rs`/`mod.rs` (re-ping on stream
+  close/reap when a backlog exists), `server/src/messaging/sweep.rs` and `log.rs`
+  (per-device catch-up ping in the sweep with a per-device attempt bound and the
+  shared 60 s limit), a durable catch-up counter (`server/src/store/migrations/
+  0009_catchup.sql`, `CATCH_UP_MAX` in `protocol/`); `server/tests/` (a device with
+  a backlog and no stream gets a catch-up ping; the ping stops once the backlog
+  drains or the bound is hit; connected devices are never pinged; the bound
+  survives a restart). Interacts with `mute-notifications` (not yet implemented):
+  the catch-up push goes through the same push path, so the mute check gates it
+  there once that change lands.
+- **Core/app:** no code change — the required prompt reconnection already exists
+  (design D4): the engine auto-reconnects after a dropped stream with bounded
+  backoff (`client/src/net/backoff.rs`, `client/src/engine/mod.rs`), exposes
+  `reconnect_now`, and the app lifecycle (`app/lib/app/lifecycle.dart`) restarts the
+  core on resume and calls `reconnectNow` on network regain. This change only adds a
+  test pinning that behaviour. No proto regeneration, no bridge regeneration.
 - **Ops:** server-side; no data migration, no new credentials. Works with or
   without a real push provider (a logging provider simply logs the catch-up ping).

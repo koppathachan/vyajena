@@ -56,6 +56,13 @@ enforces this.
   attempts, and a platform "unregistered" response clears the token entirely
   (push: Push errors)
 
+#### Scenario: The attempt bound survives a server restart
+- **WHEN** a device has already used its bounded catch-up attempts while offline
+  and the server restarts with the backlog still undelivered
+- **THEN** the sweep does not resume catch-up pushes for it — the attempt count is
+  durable, so a restart hands no fresh budget — until the device drains its backlog
+  or reconnects, which resets the count
+
 #### Scenario: Connected device is never swept-pinged
 - **WHEN** a device has an open `Connect` stream
 - **THEN** the sweep requests no wake push for it, whatever its backlog, because it

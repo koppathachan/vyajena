@@ -127,6 +127,72 @@ pub(crate) fn delete_all_deliveries(
     Ok(oldest.map(from_unix_millis))
 }
 
+/// Whether `device_id` still has any undelivered queued entry, of any kind
+/// (notification-reliability: Re-ping on stream loss with a backlog).
+pub(crate) fn has_backlog(conn: &Connection, device_id: &DeviceId) -> Result<bool, StoreError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM deliveries WHERE device_id = ?1)",
+        params![device_id.as_slice()],
+        |row| row.get::<_, bool>(0),
+    )?)
+}
+
+/// Every device that still has an undelivered queued entry, of any kind
+/// (notification-reliability: Sweep catch-up wake ping).
+pub(crate) fn backlogged_devices(conn: &Connection) -> Result<Vec<DeviceId>, StoreError> {
+    let mut stmt = conn.prepare("SELECT DISTINCT device_id FROM deliveries")?;
+    let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        if let Some(id) = crate::store::records::device_id_from(&row?) {
+            out.push(id);
+        }
+    }
+    Ok(out)
+}
+
+/// How many catch-up wake pings the sweep has sent for `device_id`'s current
+/// backlog (notification-reliability: durable catch-up counter, D5).
+pub(crate) fn catchup_attempts(conn: &Connection, device_id: &DeviceId) -> Result<u32, StoreError> {
+    let n: Option<i64> = conn
+        .query_row(
+            "SELECT attempts FROM catchup WHERE device_id = ?1",
+            params![device_id.as_slice()],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(n.map(|n| u32::try_from(n).unwrap_or(u32::MAX)).unwrap_or(0))
+}
+
+/// Records one more catch-up wake ping for `device_id`.
+pub(crate) fn bump_catchup(conn: &Connection, device_id: &DeviceId) -> Result<(), StoreError> {
+    conn.execute(
+        "INSERT INTO catchup (device_id, attempts) VALUES (?1, 1)
+         ON CONFLICT (device_id) DO UPDATE SET attempts = attempts + 1",
+        params![device_id.as_slice()],
+    )?;
+    Ok(())
+}
+
+/// Resets the catch-up counter for devices that no longer need nudging: any that
+/// has drained (or expired) its backlog, and any that is currently connected and
+/// so is receiving on its stream (notification-reliability, D5). Called once per
+/// sweep, in the sweep's transaction.
+pub(crate) fn prune_catchup(conn: &Connection, connected: &[DeviceId]) -> Result<(), StoreError> {
+    conn.execute(
+        "DELETE FROM catchup
+         WHERE device_id NOT IN (SELECT device_id FROM deliveries)",
+        [],
+    )?;
+    for device_id in connected {
+        conn.execute(
+            "DELETE FROM catchup WHERE device_id = ?1",
+            params![device_id.as_slice()],
+        )?;
+    }
+    Ok(())
+}
+
 /// The cursor of `device_id`, created at 0 if it has none.
 pub(crate) fn cursor(conn: &Connection, device_id: &DeviceId) -> Result<u64, StoreError> {
     conn.execute(

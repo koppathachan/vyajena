@@ -8,7 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use protocol::device_identity::DeviceId;
 use protocol::group_membership::INACTIVITY_TIMEOUT;
-use protocol::message_delivery::{DEDUP_MIN_RETENTION, QUEUE_ENTRY_TTL};
+use protocol::message_delivery::{CATCH_UP_MAX, DEDUP_MIN_RETENTION, QUEUE_ENTRY_TTL};
 use rusqlite::Transaction;
 
 use super::log;
@@ -17,7 +17,7 @@ use crate::membership::{GroupState, group, inactivity};
 use crate::pb;
 use crate::runtime::State;
 use crate::runtime::clock::to_timestamp;
-use crate::store::StoreError;
+use crate::store::{StoreError, records};
 
 /// How often the server sweeps on its own.
 pub const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
@@ -66,6 +66,27 @@ fn sweep_in(
     }
     log::dedup_prune(conn, before(now, DEDUP_MIN_RETENTION))?;
     log::collect_garbage(conn)?;
+    // notification-reliability: Sweep catch-up wake ping (D2) with the durable
+    // attempt counter (D5). First reset the counter for devices that have
+    // drained or expired their backlog, or are connected now (receiving on the
+    // stream); then nudge each offline device that still has a backlog and a
+    // push token, up to CATCH_UP_MAX pings, bumping its durable counter each
+    // time. A device that drains or reconnects starts a fresh budget. The push
+    // itself is rate-limited (one per device per 60 s) by `super::notify`.
+    log::prune_catchup(conn, connected)?;
+    for device_id in log::backlogged_devices(conn)? {
+        if connected.contains(&device_id) {
+            continue;
+        }
+        if records::push_token(conn, &device_id)?.is_none() {
+            continue;
+        }
+        if log::catchup_attempts(conn, &device_id)? >= CATCH_UP_MAX {
+            continue;
+        }
+        log::bump_catchup(conn, &device_id)?;
+        notify.push(device_id);
+    }
     notify.sort_unstable();
     notify.dedup();
     Ok(Swept { notify, gaps })

@@ -496,6 +496,20 @@ pub(crate) async fn run(
         .store
         .call(move |conn| inactivity::touch(conn, &device_id, now))
         .await;
+    // notification-reliability: Re-ping on stream loss with a backlog. The
+    // stream closed or idled out; if the device still has undelivered entries
+    // (queued while this stream was open but dead, or never acked), wake it so
+    // the backlog is not left unpinged. `notify` skips a device that reconnected
+    // meanwhile and applies the one-per-60 s wake-ping limit.
+    let had_backlog = session
+        .state
+        .store
+        .call(move |conn| log::has_backlog(conn, &device_id))
+        .await
+        .unwrap_or(false);
+    if had_backlog {
+        super::notify(&session.state, vec![device_id]);
+    }
     tracing::debug!(device = %crate::runtime::redact(&device_id), "stream closed");
 }
 

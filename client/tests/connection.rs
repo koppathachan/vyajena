@@ -45,6 +45,7 @@ async fn a_wrong_pin_is_a_server_identity_error() {
 }
 
 // spec: client-runtime/connection-lifecycle
+// spec: client-runtime/reconnect-after-a-dropped-stream
 // spec: wire-transport/single-persistent-messaging-stream
 #[tokio::test(flavor = "multi_thread")]
 async fn the_core_reconnects_on_its_own_and_catches_up_in_order() {
