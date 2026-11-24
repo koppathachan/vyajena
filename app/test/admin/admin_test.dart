@@ -28,6 +28,30 @@ void main() {
   });
 
   // spec: app-ui/admin-screens
+  testWidgets('inviting a username that already has an unused invite says so', (
+    tester,
+  ) async {
+    final core = adminCore()
+      ..invites = const [InviteInfo(code: 'c-bob', user: bob, expiresAtMs: 0)];
+    await openApp(tester, core);
+    await menu(tester, 'Invite a user');
+    await tester.enterText(find.byKey(const Key('username')), 'bob');
+    await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
+    expect(find.byKey(const Key('invite-existed')), findsOneWidget);
+  });
+
+  // spec: app-ui/admin-screens
+  testWidgets('inviting a fresh username shows no already-existed note', (
+    tester,
+  ) async {
+    final core = await openApp(tester, adminCore());
+    await menu(tester, 'Invite a user');
+    await tester.enterText(find.byKey(const Key('username')), 'carol');
+    await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
+    expect(find.byKey(const Key('invite-existed')), findsNothing);
+  });
+
+  // spec: app-ui/admin-screens
   testWidgets('Bob has no admin screens: no invite, remove or group-settings '
       'entries', (tester) async {
     await openApp(tester, FakeCoreService(storedUser: bob));
