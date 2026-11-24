@@ -44,7 +44,7 @@ void main() {
   testWidgets('inviting a fresh username shows no already-existed note', (
     tester,
   ) async {
-    final core = await openApp(tester, adminCore());
+    await openApp(tester, adminCore());
     await menu(tester, 'Invite a user');
     await tester.enterText(find.byKey(const Key('username')), 'carol');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
