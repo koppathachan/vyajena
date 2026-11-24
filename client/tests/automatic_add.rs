@@ -46,6 +46,65 @@ async fn bob_joins_while_the_admin_is_online() {
         .await;
 }
 
+// A third user joins the lobby after it already holds the admin and a member,
+// then both the new joiner and the earlier member send. Adding the third user
+// advances the lobby epoch, so the earlier member (Bob) must catch up to that
+// commit before his own send is accepted; a regression that left a later
+// joiner unadded, or an existing member behind the epoch, would leave the
+// message stuck "waiting" (never Accepted).
+// spec: group-membership/automatic-add-of-new-users
+#[tokio::test(flavor = "multi_thread")]
+async fn a_third_joiner_and_the_earlier_member_both_send_in_the_lobby() {
+    let server = TestServer::start().await;
+    let mut admin = device::admin_with_group(&server).await;
+
+    // Bob joins first; the admin's device adds him with no action.
+    let mut bob = device::invited(&admin, "bob").await;
+    bob.wait_event("bob joined", joined).await;
+    admin.wait_members(&[member(&admin), member(&bob)]).await;
+    bob.wait_members(&[member(&admin), member(&bob)]).await;
+
+    // Carol joins AFTER the lobby already exists with the admin and Bob in it.
+    let mut carol = device::invited(&admin, "carol").await;
+    carol.wait_event("carol joined", joined).await;
+    let all = [member(&admin), member(&bob), member(&carol)];
+    admin.wait_members(&all).await;
+    bob.wait_members(&all).await;
+    carol.wait_members(&all).await;
+
+    // The later joiner can send: it is accepted and reaches the others.
+    let from_carol = carol.client.send_text("hi from carol").check("carol send");
+    carol
+        .wait_event("carol's message accepted", |e| {
+            matches!(e, Event::SendStatus { id, status: SendStatus::Accepted } if *id == from_carol)
+        })
+        .await;
+    admin
+        .wait_event("carol's message on the admin", |e| {
+            matches!(e, Event::Message(_))
+        })
+        .await;
+    bob.wait_event("carol's message on bob", |e| matches!(e, Event::Message(_)))
+        .await;
+
+    // The earlier member (Bob) had to process Carol's add to catch up to the
+    // new epoch; his own send is still accepted, not stuck "waiting".
+    let from_bob = bob.client.send_text("hi from bob").check("bob send");
+    bob.wait_event(
+        "bob's message accepted",
+        |e| matches!(e, Event::SendStatus { id, status: SendStatus::Accepted } if *id == from_bob),
+    )
+    .await;
+    admin
+        .wait_event("bob's message on the admin", |e| {
+            matches!(e, Event::Message(_))
+        })
+        .await;
+    carol
+        .wait_event("bob's message on carol", |e| matches!(e, Event::Message(_)))
+        .await;
+}
+
 // spec: group-membership/automatic-add-of-new-users
 #[tokio::test(flavor = "multi_thread")]
 async fn admin_offline_when_bob_joins_adds_him_on_connect() {

@@ -305,6 +305,37 @@ void main() {
   });
 
   // spec: app-shell/profile-tab
+  testWidgets('saving on the profile tab drops the keyboard so Chats is '
+      'reachable again', (tester) async {
+    tall(tester);
+    final core = aliceInGroup();
+    await openHome(tester, core);
+    await tap(tester, profileTab);
+    await tester.enterText(find.byKey(const Key('about')), 'tea');
+    // The keyboard is up; on the Profile tab it covers the bottom navigation.
+    expect(tester.testTextInput.isVisible, isTrue);
+    await tap(tester, find.widgetWithText(FilledButton, 'Save'));
+    // After the save the keyboard is gone, so the user is not trapped and can
+    // get back to Chats.
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tap(tester, chatsTab);
+    expect(find.byKey(const ValueKey('chat-main')), findsOneWidget);
+  });
+
+  // spec: app-shell/profile-tab
+  testWidgets('tapping outside a field on the profile tab dismisses the '
+      'keyboard', (tester) async {
+    tall(tester);
+    await openHome(tester, aliceInGroup());
+    await tap(tester, profileTab);
+    await tester.enterText(find.byKey(const Key('displayName')), 'Alicia');
+    expect(tester.testTextInput.isVisible, isTrue);
+    // A tap on the tab's body (not on a field) drops the keyboard.
+    await tap(tester, find.byKey(const Key('profile-header-avatar')));
+    expect(tester.testTextInput.isVisible, isFalse);
+  });
+
+  // spec: app-shell/profile-tab
   testWidgets('the server id and the connection state show', (tester) async {
     tall(tester);
     final core = aliceInGroup();
