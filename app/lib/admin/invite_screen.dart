@@ -24,6 +24,11 @@ class _InviteScreenState extends State<InviteScreen> {
   String? _error;
   bool _busy = false;
 
+  /// Whether the invite just shown was an existing unused one for this
+  /// username, not a freshly minted one (the server keeps at most one pending
+  /// invite per username). Drives the "already existed" note.
+  bool _existed = false;
+
   @override
   void dispose() {
     _username.dispose();
@@ -37,14 +42,35 @@ class _InviteScreenState extends State<InviteScreen> {
       _busy = true;
       _error = null;
       _invite = null;
+      _existed = false;
     });
     try {
+      // The server returns the existing unused invite for a username instead of
+      // minting a duplicate; check first so the admin is told when that is what
+      // they got, rather than it happening silently.
+      final existing = await _hasUnusedInvite(username);
       final invite = await widget.core.createInvite(username);
-      if (mounted) setState(() => _invite = invite);
+      if (mounted) {
+        setState(() {
+          _invite = invite;
+          _existed = existing;
+        });
+      }
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Whether an unused invite for [username] already exists (best-effort; the
+  /// server dedupes regardless).
+  Future<bool> _hasUnusedInvite(String username) async {
+    try {
+      final invites = await widget.core.listInvites();
+      return invites.any((i) => i.user.username == username);
+    } on Object {
+      return false;
     }
   }
 
@@ -83,6 +109,20 @@ class _InviteScreenState extends State<InviteScreen> {
             ),
           if (invite != null && text != null) ...[
             const SizedBox(height: 16),
+            if (_existed) ...[
+              Card.outlined(
+                key: const Key('invite-existed'),
+                child: ListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: Text(
+                    '${userText(invite.user)} already had an unused invite — '
+                    'this is that same one. Revoke it in Invites first if you '
+                    'want a fresh one.',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Text(
               'Send this invite to ${userText(invite.user)}. It works once. '
               'When they join, this phone adds them to the group.',
