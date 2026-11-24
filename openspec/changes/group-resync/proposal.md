@@ -64,6 +64,17 @@ the admin-driven recovery (remove → re-invite → rejoin) a wiped device needs
   `Admin.CreateInvite` otherwise refuses), then `Admin.CreateInvite`, then the
   device re-registers on the removed-user reset path and is auto-added back to the
   lobby — SHALL be a first-class, documented flow reachable in the app.
+- **Add a member to an existing named group (app).** The admin SHALL be able to add
+  an existing user to an existing named group, not only at group creation. Today the
+  Members screen is view-only, so a recovered (removed→re-invited) user — or any user
+  added after a named group was created — cannot be restored to that named group. The
+  lobby and DMs re-add automatically, so this does not block the immediate recovery,
+  but it is required for a full restore.
+- **The admin is told when a member goes inactive (server + app).** When the server
+  removes a member for inactivity it SHALL notify the admin's connected devices
+  (naming the user and since when), so the admin learns a member fell out of the
+  group instead of discovering it only from a complaint. The existing rejoin notice
+  already tells the admin when such a device returns and needs re-adding.
 
 ## Open decisions resolved
 
@@ -96,8 +107,10 @@ the admin-driven recovery (remove → re-invite → rejoin) a wiped device needs
 ### Added Capabilities
 
 - `group-membership`: Orphaned-device self-recovery (a device wedged behind its
-  group's epoch recovers itself or surfaces re-sync).
-- `app-ui`: Out-of-sync re-sync affordance, and a reachable admin user-recovery flow.
+  group's epoch recovers itself or surfaces re-sync), and Admin is told when a
+  member goes inactive.
+- `app-ui`: Out-of-sync re-sync affordance, a reachable admin user-recovery flow,
+  and adding an existing member to an existing named group.
 
 ## Impact
 

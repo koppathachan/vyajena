@@ -78,3 +78,23 @@ hourglass. The client enforces this.
   daily limit
 - **THEN** the core signals the chat as out of sync so the app can show a re-sync
   action, and Bob's send is not left a silent indefinite hourglass
+
+### Requirement: Admin is told when a member goes inactive
+The server SHALL notify the admin's connected devices when it marks a member's
+device inactive and removes it for inactivity, naming the user and since when, so
+the admin learns a member fell out of the group rather than finding out only when
+that member complains. This is the admin-facing counterpart to the device's own
+durable removal notice (Automatic re-add); the existing rejoin notice already tells
+the admin when such a device returns and needs re-adding. The admin's app SHALL
+surface the inactivity removal (and the pending re-add on return). The server
+enforces the notification; the app surfaces it.
+
+#### Scenario: Admin learns a user went inactive
+- **WHEN** the server marks `thalasserykalaapam`'s only device inactive after 7 days
+  and removes it from the lobby, and the admin's device is connected
+- **THEN** the admin's app shows that `thalasserykalaapam` went inactive and was
+  removed (and since when), where today the admin got no signal at all
+
+#### Scenario: Admin learns they returned and were re-added
+- **WHEN** `thalasserykalaapam` later reconnects and the admin's device re-adds them
+- **THEN** the admin's app shows that they returned and are back in the group

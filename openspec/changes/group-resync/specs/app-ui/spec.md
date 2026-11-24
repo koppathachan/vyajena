@@ -45,3 +45,24 @@ rule.
   removing them
 - **THEN** the server refuses it because the user still exists, and the app tells the
   admin to remove the user first
+
+### Requirement: Add a member to an existing named group
+The admin's app SHALL provide a way to add an existing user to an existing named
+group, not only when the group is created, using the existing add-to-group flow
+(the lobby and named groups: admin devices commit the Add). Without it, a user who
+is removed and re-invited (or any user added after a named group was created) cannot
+be restored to that named group, because today the Members screen is view-only and
+named-group membership can only be chosen at creation. The lobby and DMs re-add
+automatically and are unaffected; this requirement covers named groups only. The app
+enforces reachability; the server and clients enforce commit authority as today.
+
+#### Scenario: Re-add a recovered user to a named group
+- **WHEN** `thalasserykalaapam` has re-registered and is back in the lobby, and was
+  previously in the named group "Weekend"
+- **THEN** the admin opens "Weekend" and uses an add-a-member action to add
+  `thalasserykalaapam` to it, rather than having to recreate the group
+
+#### Scenario: Add a later user to an existing named group
+- **WHEN** the admin created "Weekend" before Dave joined and now wants Dave in it
+- **THEN** the admin can add Dave to "Weekend" from the group, with no need to
+  recreate it

@@ -40,12 +40,27 @@
       same username; the re-registered device is auto-added back to the lobby.
       // spec: app-ui/out-of-sync-re-sync-affordance
 
-## 5. Owner decision (not code)
-- [ ] 5.1 Record the admin single-device lockout decision (link-a-second-admin-device
+## 5. Add a member to an existing named group (app)
+- [ ] 5a.1 Add an "add a member" action to a named group (e.g. its members screen),
+      invoking the existing add-to-group flow; admin-only, named groups only (the
+      lobby auto-adds).
+- [ ] 5a.2 Widget test: the admin adds an existing user to an existing named group
+      without recreating it. // spec: app-ui/add-a-member-to-an-existing-named-group
+
+## 6. Admin is told when a member goes inactive (server + app)
+- [ ] 6a.1 Server: when a member is removed for inactivity, notify the admin's
+      connected devices (user + since-when); reuse the return/rejoin notice for the
+      admin on re-add.
+- [ ] 6a.2 App: surface the inactivity removal (and the return) to the admin.
+- [ ] 6a.3 Tests: admin online is told when a member is removed for inactivity, and
+      when they return. // spec: group-membership/admin-is-told-when-a-member-goes-inactive
+
+## 7. Owner decision (not code)
+- [ ] 7.1 Record the admin single-device lockout decision (link-a-second-admin-device
       recommendation now; real admin recovery = `replace-user` Phase 2) in the
       architecture doc's open decisions for the owner.
 
-## 6. Done
+## 8. Done
 - [ ] 6.1 `cargo test`, `cargo clippy -D warnings`, `cargo fmt --check`,
       `cd app && flutter analyze && flutter test`, `openspec validate group-resync --strict`
       all pass; tasks ticked only when their tests pass.
