@@ -950,6 +950,10 @@ impl Engine {
                 self.on_closed(notice.group_id, notice.closed_at, "group")
                     .await
             }
+            Some(In::ConversationRemoved(notice)) => {
+                // message-deletion: Removed-conversation sync. A set, no ack.
+                Ok(self.apply_removed(&notice.group_id)?)
+            }
             Some(In::GapNotice(notice)) => {
                 if let Some(at) = notice.newest_expired_at.as_ref() {
                     let chat = crate::events::ChatId(self.store().chat_of(&notice.group_id)?);

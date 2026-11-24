@@ -391,3 +391,152 @@ async fn bob_back_from_holiday_is_re_added_to_the_dm_too() {
     wait_accepted(&mut alice, id).await;
     assert_eq!(wait_text(&mut bob, "welcome back").await.chat, bobs_chat);
 }
+
+/// Waits until `device` no longer lists a DM with `peer`.
+async fn wait_dm_gone(device: &Device, peer: &str) {
+    let wanted = user(peer);
+    device
+        .wait_until("the DM gone from the chat list", |c| {
+            c.chats().is_ok_and(|chats| {
+                !chats
+                    .iter()
+                    .any(|chat| matches!(&chat.kind, ChatKind::Dm { peer, .. } if *peer == wanted))
+            })
+        })
+        .await;
+}
+
+// spec: message-deletion/remove-a-closed-dm
+#[tokio::test(flavor = "multi_thread")]
+async fn alice_removes_her_closed_dm_and_its_messages_are_gone() {
+    let server = TestServer::start().await;
+    let (admin, mut alice, mut bob) = group(&server).await;
+    let chat = alice.client.open_dm(&user("bob")).await.check("open");
+    let id = alice
+        .client
+        .send_message_in(chat, "still here?", &[], None)
+        .check("send");
+    wait_accepted(&mut alice, id).await;
+    wait_text(&mut bob, "still here?").await;
+
+    // An open DM and the lobby cannot be removed this way.
+    assert!(matches!(
+        alice.client.remove_closed_dm(chat).await,
+        Err(ClientError::NoSuchChat)
+    ));
+    assert!(matches!(
+        alice.client.remove_closed_dm(ChatId(0)).await,
+        Err(ClientError::NoSuchChat)
+    ));
+    assert_eq!(alice.client.history_in(chat, 10).check("history").len(), 1);
+
+    admin.client.remove_user(&user("bob")).await.check("remove");
+    alice
+        .wait_until("the DM closed", |c| {
+            c.chats().is_ok_and(|chats| {
+                chats
+                    .iter()
+                    .any(|chat| matches!(chat.kind, ChatKind::Dm { closed: true, .. }))
+            })
+        })
+        .await;
+
+    alice.client.remove_closed_dm(chat).await.check("remove");
+    assert!(dm_with(&alice, "bob").is_none());
+    assert!(
+        alice
+            .client
+            .history_in(chat, 10)
+            .map_or(true, |history| history.is_empty())
+    );
+    assert!(
+        alice
+            .client
+            .message(id)
+            .map_or(true, |message| message.is_none())
+    );
+    // Gone, so removing it again finds nothing; the lobby is untouched.
+    assert!(matches!(
+        alice.client.remove_closed_dm(chat).await,
+        Err(ClientError::NoSuchChat)
+    ));
+    assert!(
+        alice
+            .client
+            .chats()
+            .check("chats")
+            .iter()
+            .any(|c| c.id == ChatId(0))
+    );
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test(flavor = "multi_thread")]
+async fn the_removal_reaches_alices_tablet_when_it_connects() {
+    let server = TestServer::start().await;
+    let (admin, mut alice, mut bob) = group(&server).await;
+    let chat = alice.client.open_dm(&user("bob")).await.check("open");
+    let id = alice
+        .client
+        .send_message_in(chat, "hello", &[], None)
+        .check("send");
+    wait_accepted(&mut alice, id).await;
+    wait_text(&mut bob, "hello").await;
+
+    // Alice links a tablet, which joins the DM too.
+    let mut tablet = Device::new().await;
+    let request = tablet.client.link_request().await.check("link request");
+    let approval = alice.client.approve_link(&request).await.check("approve");
+    tablet
+        .client
+        .complete_link(&approval)
+        .await
+        .check("complete");
+    tablet.client.start().await.check("start tablet");
+    tablet
+        .wait_event("the tablet joined", |e| matches!(e, Event::JoinedGroup))
+        .await;
+    wait_dm_ready(&tablet, "bob").await;
+
+    admin.client.remove_user(&user("bob")).await.check("remove");
+    let closed = |c: &client::Client| {
+        c.chats().is_ok_and(|chats| {
+            chats
+                .iter()
+                .any(|chat| matches!(chat.kind, ChatKind::Dm { closed: true, .. }))
+        })
+    };
+    alice.wait_until("the DM closed", closed).await;
+    tablet
+        .wait_until("the DM closed on the tablet", closed)
+        .await;
+
+    // Alice removes it on her phone; nothing reaches Bob (gone) or the admin.
+    alice.client.remove_closed_dm(chat).await.check("remove");
+    wait_dm_gone(&alice, "bob").await;
+
+    // The tablet drops it when it next connects.
+    tablet.restart().await;
+    wait_dm_gone(&tablet, "bob").await;
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test(flavor = "multi_thread")]
+async fn removing_a_closed_dm_fails_offline_and_deletes_nothing() {
+    let server = TestServer::start().await;
+    let (admin, alice, _bob) = group(&server).await;
+    let chat = alice.client.open_dm(&user("bob")).await.check("open");
+    admin.client.remove_user(&user("bob")).await.check("remove");
+    alice
+        .wait_until("the DM closed", |c| {
+            c.chats().is_ok_and(|chats| {
+                chats
+                    .iter()
+                    .any(|chat| matches!(chat.kind, ChatKind::Dm { closed: true, .. }))
+            })
+        })
+        .await;
+    alice.client.stop();
+    assert!(alice.client.remove_closed_dm(chat).await.is_err());
+    assert!(dm_with(&alice, "bob").is_some());
+}

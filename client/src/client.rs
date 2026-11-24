@@ -1138,6 +1138,26 @@ impl Client {
         .await
     }
 
+    /// message-deletion: Remove a closed DM. Tells the server
+    /// (`Dms.RemoveClosedDm`, so the DM leaves the user's other devices too),
+    /// then deletes the DM, its stored messages and its read mark here. Nothing
+    /// is deleted if the server call fails. [`ClientError::NoSuchChat`] unless
+    /// `chat` is a closed DM; an open DM, a group and the lobby cannot be
+    /// removed this way.
+    pub async fn remove_closed_dm(&self, chat: ChatId) -> Result<(), ClientError> {
+        let row = self
+            .shared
+            .store
+            .dm_by_chat(chat.0)?
+            .filter(|row| !row.named && row.closed_at.is_some())
+            .ok_or(ClientError::NoSuchChat)?;
+        self.job(move |reply| Job::RemoveClosedDm {
+            group_id: row.group_id,
+            reply,
+        })
+        .await
+    }
+
     /// The member devices of the named group `chat`, as this device sees
     /// them (the admin's member picker); empty once the group is closed.
     pub fn group_members(&self, chat: ChatId) -> Result<Vec<Member>, ClientError> {
