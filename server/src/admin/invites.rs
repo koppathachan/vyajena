@@ -91,6 +91,35 @@ pub fn usable_bootstrap(
     Ok(row)
 }
 
+/// The newest non-bootstrap invite for `username` that is unused, unrevoked and
+/// unexpired at `now` (device-identity: At most one pending invite per username).
+/// Used to dedupe `Admin.CreateInvite` so asking twice returns the same invite.
+pub fn usable_for_username(
+    tx: &Transaction<'_>,
+    username: &str,
+    now: SystemTime,
+) -> Result<Option<Invite>, StoreError> {
+    let row = tx
+        .query_row(
+            "SELECT code, username, created_at, expires_at FROM invites
+             WHERE username = ?1 AND bootstrap = 0 AND used_at IS NULL
+               AND revoked_at IS NULL AND expires_at > ?2
+             ORDER BY created_at DESC LIMIT 1",
+            params![username, unix_millis(now)],
+            |row| {
+                Ok(Invite {
+                    code: row.get(0)?,
+                    username: row.get(1)?,
+                    created_at: from_unix_millis(row.get(2)?),
+                    expires_at: from_unix_millis(row.get(3)?),
+                    bootstrap: false,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
 /// Every invite that is unused, unrevoked and unexpired at `now`, oldest first
 /// (device-identity: Invites).
 pub fn list_unused(tx: &Transaction<'_>, now: SystemTime) -> Result<Vec<Invite>, StoreError> {

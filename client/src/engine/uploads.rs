@@ -27,12 +27,21 @@ use crate::net::Session;
 use crate::pb;
 use crate::store::{Store, StoredMessage};
 
+/// The most consecutive `UNAVAILABLE` answers from `UploadBlob` tolerated before
+/// an upload fails. At [`UPLOAD_RETRY_DELAY`] (3s) each, this is ~30s: long enough
+/// to ride out a drive remount, short enough that a server with no blob store
+/// surfaces an error instead of a silent 7-day (blob-TTL) hourglass
+/// (client-runtime: Media the server will not store fails promptly).
+pub(super) const MAX_BLOB_UNAVAILABLE_RETRIES: u32 = 10;
+
 /// Where one queued image's upload stands.
 pub(super) enum Upload {
-    /// A task is uploading it.
-    Running,
-    /// It failed in a way that may pass: try again then.
-    RetryAt(Instant),
+    /// A task is uploading it. `unavailable` is the count of consecutive
+    /// `UNAVAILABLE` answers that led here, carried across retries.
+    Running { unavailable: u32 },
+    /// It failed in a way that may pass: try again then. `unavailable` is the
+    /// running count of consecutive `UNAVAILABLE` answers.
+    RetryAt { at: Instant, unavailable: u32 },
 }
 
 /// How an upload ended.
@@ -40,9 +49,13 @@ pub(super) enum Upload {
 pub(crate) enum Outcome {
     /// The server has the blob.
     Done,
-    /// It did not work now (no connection, the server's blob store is away, the
-    /// session ran out): try again.
+    /// It did not work now (no connection, the session ran out, a timeout): try
+    /// again.
     Retry(String),
+    /// The server answered `UNAVAILABLE` (its blob store is off or its drive is
+    /// away). Retry a bounded number of times, then fail; the string is the noun
+    /// ("picture" / "voice message") for the failure reason.
+    Unavailable(String),
     /// It will never work: the message fails with this reason.
     Fail(String),
 }
@@ -65,7 +78,7 @@ impl Noun {
 
 /// Whether a status from `UploadBlob` is one a retry can fix.
 fn classify(status: &tonic::Status, noun: Noun) -> Outcome {
-    use tonic::Code::{AlreadyExists, InvalidArgument, NotFound, PermissionDenied};
+    use tonic::Code::{AlreadyExists, InvalidArgument, NotFound, PermissionDenied, Unavailable};
     match status.code() {
         // Not a member of the group, a blob the server will not take: no retry
         // changes that.
@@ -74,8 +87,11 @@ fn classify(status: &tonic::Status, noun: Noun) -> Outcome {
             noun.text(),
             status.message()
         )),
-        // Unavailable (its drive is away, or it stores no pictures),
-        // unauthenticated (the session ran out), a timeout: wait and retry.
+        // Unavailable: the server's blob store is off (no `[blob_store]`) or its
+        // drive is away. Retry a bounded number of times, then fail, so a server
+        // that stores no media surfaces an error instead of hanging forever.
+        Unavailable => Outcome::Unavailable(noun.text().to_owned()),
+        // Unauthenticated (the session ran out), a timeout: wait and retry.
         code => Outcome::Retry(format!("{code}: {}", status.message())),
     }
 }
@@ -128,11 +144,14 @@ impl Engine {
         message: &StoredMessage,
         group_id: Vec<u8>,
     ) -> Result<(), EngineError> {
-        match self.uploads.get(&message.id) {
-            Some(Upload::Running) => return Ok(()),
-            Some(Upload::RetryAt(at)) if Instant::now() < *at => return Ok(()),
-            _ => {}
-        }
+        // Carry the consecutive-UNAVAILABLE count across a retry so the bound
+        // in `on_uploaded` counts real server answers, not restarts.
+        let unavailable = match self.uploads.get(&message.id) {
+            Some(Upload::Running { .. }) => return Ok(()),
+            Some(Upload::RetryAt { at, .. }) if Instant::now() < *at => return Ok(()),
+            Some(Upload::RetryAt { unavailable, .. }) => *unavailable,
+            None => 0,
+        };
         let blob = match decode(&message.content).body {
             Decoded::Image(image) => (image.blob_id, image.blob_key, Noun::Picture),
             Decoded::Audio(audio) => (audio.blob_id, audio.blob_key, Noun::VoiceMessage),
@@ -157,7 +176,8 @@ impl Engine {
             return Ok(());
         };
         let session = link.session.clone();
-        self.uploads.insert(message.id, Upload::Running);
+        self.uploads
+            .insert(message.id, Upload::Running { unavailable });
         let (id, now) = (message.id, self.now());
         let (tx, store) = (self.command_tx.clone(), Arc::clone(&self.shared.store));
         let cache = self.shared.media.clone();
@@ -174,6 +194,12 @@ impl Engine {
         id: MessageId,
         outcome: Outcome,
     ) -> Result<(), EngineError> {
+        // The count of consecutive UNAVAILABLE answers so far (the upload was
+        // Running with it carried over from the previous retry).
+        let unavailable = match self.uploads.get(&id) {
+            Some(Upload::Running { unavailable }) => *unavailable,
+            _ => 0,
+        };
         match outcome {
             Outcome::Done => {
                 self.uploads.remove(&id);
@@ -182,8 +208,36 @@ impl Engine {
             }
             Outcome::Retry(why) => {
                 tracing::debug!(id = id.0, %why, "an image upload will be tried again");
-                self.uploads
-                    .insert(id, Upload::RetryAt(Instant::now() + UPLOAD_RETRY_DELAY));
+                // A non-UNAVAILABLE retry (auth, timeout) resets the count.
+                self.uploads.insert(
+                    id,
+                    Upload::RetryAt {
+                        at: Instant::now() + UPLOAD_RETRY_DELAY,
+                        unavailable: 0,
+                    },
+                );
+            }
+            Outcome::Unavailable(noun) => {
+                let count = unavailable + 1;
+                if count >= MAX_BLOB_UNAVAILABLE_RETRIES {
+                    let reason = format!("the server is not storing {noun}s right now");
+                    tracing::warn!(id = id.0, %reason, "a blob upload gave up after UNAVAILABLE");
+                    self.uploads.remove(&id);
+                    self.fail(id, &reason)?;
+                } else {
+                    tracing::debug!(
+                        id = id.0,
+                        count,
+                        "the server is UNAVAILABLE for this blob; will try again"
+                    );
+                    self.uploads.insert(
+                        id,
+                        Upload::RetryAt {
+                            at: Instant::now() + UPLOAD_RETRY_DELAY,
+                            unavailable: count,
+                        },
+                    );
+                }
             }
             Outcome::Fail(reason) => {
                 tracing::warn!(id = id.0, %reason, "an image upload failed for good");
@@ -198,12 +252,12 @@ impl Engine {
     pub(super) fn upload_due(&self) -> bool {
         self.uploads
             .values()
-            .any(|upload| matches!(upload, Upload::RetryAt(at) if Instant::now() >= *at))
+            .any(|upload| matches!(upload, Upload::RetryAt { at, .. } if Instant::now() >= *at))
     }
 
     /// A new connection: retries that waited go at once.
     pub(super) fn retry_uploads_now(&mut self) {
         self.uploads
-            .retain(|_, upload| matches!(upload, Upload::Running));
+            .retain(|_, upload| matches!(upload, Upload::Running { .. }));
     }
 }
