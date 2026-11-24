@@ -70,6 +70,11 @@ the admin-driven recovery (remove → re-invite → rejoin) a wiped device needs
   added after a named group was created — cannot be restored to that named group. The
   lobby and DMs re-add automatically, so this does not block the immediate recovery,
   but it is required for a full restore.
+- **Surface invite expiry (app).** An invite is valid only for `invite_ttl` (7 days
+  by default); the app SHALL state when a created invite expires, and SHALL tell a
+  user whose pasted invite the server rejects as expired that it has expired and a
+  fresh one is needed, rather than a generic failure — so the recovery flow stays
+  usable when a wiped user does not paste in time.
 - **The admin is told when a member goes inactive (server + app).** When the server
   removes a member for inactivity it SHALL notify the admin's connected devices
   (naming the user and since when), so the admin learns a member fell out of the

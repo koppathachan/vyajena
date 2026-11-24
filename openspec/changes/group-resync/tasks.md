@@ -47,6 +47,14 @@
 - [ ] 5a.2 Widget test: the admin adds an existing user to an existing named group
       without recreating it. // spec: app-ui/add-a-member-to-an-existing-named-group
 
+## 5b. Surface invite expiry (app)
+- [ ] 5b.1 When the admin creates or displays an invite, show when it expires (valid
+      for `invite_ttl`, 7 days by default); when a pasted invite is rejected as
+      expired, say so and that a fresh one is needed, not a generic failure.
+- [ ] 5b.2 Widget test: a created invite shows its expiry; an expired-invite paste
+      shows the "expired — get a new one" message.
+      // spec: app-ui/invite-expiry-is-surfaced
+
 ## 6. Admin is told when a member goes inactive (server + app)
 - [ ] 6a.1 Server: when a member is removed for inactivity, notify the admin's
       connected devices (user + since-when); reuse the return/rejoin notice for the

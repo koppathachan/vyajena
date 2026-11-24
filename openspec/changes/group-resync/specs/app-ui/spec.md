@@ -46,6 +46,27 @@ rule.
 - **THEN** the server refuses it because the user still exists, and the app tells the
   admin to remove the user first
 
+### Requirement: Invite expiry is surfaced
+The app SHALL surface an invite's expiry wherever an invite is shown or used: when
+the admin creates or displays an invite it SHALL state when the invite expires (an
+invite is valid for `invite_ttl`, 7 days by default), and when a user pastes an
+invite that the server rejects as expired the app SHALL say the invite has expired
+and that a fresh one is needed, rather than showing a generic failure. This keeps the
+recovery flow usable — a wiped user who does not paste the invite in time is told
+plainly, and the admin can create another. The app enforces the surfacing; the server
+enforces the TTL and reports expiry.
+
+#### Scenario: A created invite shows when it expires
+- **WHEN** the admin creates a fresh invite for `thalasserykalaapam`
+- **THEN** the app shows the invite text together with when it expires (for example
+  "expires in 7 days"), not the invite text alone
+
+#### Scenario: Pasting an expired invite is explained
+- **WHEN** `thalasserykalaapam` pastes an invite after it has expired and the server
+  rejects it
+- **THEN** the app says the invite has expired and a new one is needed, rather than a
+  generic "could not join" error
+
 ### Requirement: Add a member to an existing named group
 The admin's app SHALL provide a way to add an existing user to an existing named
 group, not only when the group is created, using the existing add-to-group flow
