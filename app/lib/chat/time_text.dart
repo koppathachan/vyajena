@@ -25,3 +25,13 @@ String listTimeText(BuildContext context, int ms, {DateTime? now}) {
 }
 
 const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/// "4:05 PM" (or "16:05", per the device's 12/24-hour setting) for [ms],
+/// in local time.
+String clockText(BuildContext context, int ms) {
+  final when = DateTime.fromMillisecondsSinceEpoch(ms);
+  return MaterialLocalizations.of(context).formatTimeOfDay(
+    TimeOfDay.fromDateTime(when),
+    alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context),
+  );
+}
