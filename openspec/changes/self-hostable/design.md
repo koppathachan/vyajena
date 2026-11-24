@@ -2,8 +2,7 @@
 
 Owner intent (confirmed): publish one generic app so **operators** — people who
 run a server for their own friend group, like the owner — can have their friends
-join. A friend enters the operator's public relay DNS, uses an invite, and is in;
-no server install on the friend's side.
+join. A friend uses an invite and is in; no server install on the friend's side.
 
 What the code on `main` actually does today (verified, not assumed):
 
@@ -18,91 +17,79 @@ What the code on `main` actually does today (verified, not assumed):
   invite's.
 - The account persists the chosen server (`relay_address`, `tls_pin`,
   `server_id`) in device state (`client/src/store/device_state.rs`).
+- A fresh server prints a bootstrap invite for the configured admin on first start
+  with an empty database (`server/src/runtime/bootstrap.rs`; device-identity:
+  Bootstrap admin), and the bridge's invite box accepts that prefix-less text
+  (`bridge/src/api/text.rs`).
 - `grep` across `client/`, `bridge/`, `app/lib/` finds **no** baked relay
   endpoint, `server_id`, or TLS pin. The real relay DNS appears only in `README`
   and docs. The owner's `purplechaamba.com` is the publisher's store identity
   (bundle id), not a runtime server constant.
 
-So the app is **already operator-agnostic at runtime**: whichever invite you paste
-decides the server. The premise "the server is baked into the client" was true of
-an earlier design (or reflects that the owner only ever hands out their own
-invites); it is not true of the current client. This reshapes the change from
-"rip out a hardcoded server" into "guarantee nothing gets baked, and add the
-first-run UX the owner wants".
+So the app is **already operator-agnostic at runtime**: whichever invite you apply
+decides the server, and the invite carries the proof. The premise "the server is
+baked into the client" was true of an earlier design (or reflects that the owner
+only ever hands out their own invites); it is not true of the current client. This
+reshapes the change from "rip out a hardcoded server" into "guarantee nothing gets
+baked, keep onboarding neutral, and write down the invite-as-trust-root model".
 
 The relay-D2 invariant (CLAUDE.md): the real IP and non-standard ports stay in
 `~/.vyajena-relay`, but the **public relay DNS + 443 are shareable** — which is
-exactly the value the user types on the choose-server screen.
+exactly the value an operator puts in `public_address` and the invite then carries.
 
 ## Decisions
 
-### D1: Trust model — the invite carries the server's TLS pin (option A) — OWNER TO CONFIRM
+### D1: Trust model — the invite carries the server's TLS pin (option A)
 
-Typing a DNS address tells the app *where* the server is, not that the server is
-genuine: a MITM on the path could answer on first connect and impersonate it. Two
-ways to close that gap:
+The invite — minted by that server and shared over the trusted channel the invite
+already requires — carries `tls_spki_sha256`, `server_id`, and the relay address.
+The core pins the TLS key to the invite's pin before any application data flows,
+so there is **no trust-on-first-use window**.
 
-- **Option A (recommended, and already implemented): the invite carries the
-  pin.** The invite — minted by that server, shared over the same trusted channel
-  the invite already requires — carries `tls_spki_sha256`, `server_id`, and the
-  relay address. The core pins the TLS key to the invite's pin before any
-  application data flows, so there is **no trust-on-first-use window**. Typing the
-  DNS adds no new trust requirement; the invite is the proof.
+- **Option A (chosen, and already implemented): the invite carries the pin.** No
+  new trust machinery, no invite proto fields.
   - Cost: the invite payload must stay integrity-protected (already true — it is
     the signup credential) and shared over a trusted channel (already true).
 - **Option B (rejected): trust-on-first-use (TOFU).** Drop/ignore the invite's
   pin; pin whatever key the typed server presents on first connect, and show the
-  SPKI fingerprint for out-of-band verification. Simpler mental model, but:
-  - reintroduces a first-connect MITM window (the whole gap option A closes);
-  - is *more* work than option A, since option A already ships — B means removing
-    the pin from the trust path and building a fingerprint-confirm UX;
-  - only becomes necessary in a world where the invite is slimmed to "just a
-    code" and no longer names the server (see D2).
+  SPKI fingerprint for out-of-band verification. It reintroduces a first-connect
+  MITM window, is *more* work than A (A already ships), and only makes sense if the
+  invite is slimmed to "just a code" that no longer names the server — which D2
+  rejects.
 
-**Decision: option A.** It is the stronger model and it is already built, so this
-change adds no trust machinery and no invite proto fields. Documented here so the
-owner can confirm it rather than inherit it silently.
+**Decision: option A.** Stronger model, already built, no proto fields.
 
-### D2: Does the separate "choose server" screen earn its place? — OWNER'S HEADLINE QUESTION
+### D2: No pre-invite "choose a server" screen (option A2) — RESOLVED BY THE OWNER
 
-Because the invite already names the server (D1), the first-run flow the owner
-described — *enter relay DNS → paste invite → register* — has the user supply the
-relay address twice (typed, and inside the invite). So the real question is what
-the typed address is **for**. Three shapes:
+Because the invite already names the server (D1), a typed "choose a server"
+address would only repeat what the invite carries. The owner has resolved this:
 
-- **A1a — local pre-step (recommended).** The choose-server screen records the
-  relay DNS as the install's single server and shows it; it makes **no network
-  call**. The invite pasted next is the authenticator (its pin, D1). The app
-  cross-checks the invite's `relay_address` and `server_id` against the chosen
-  server and surfaces a mismatch before joining. The invite's `relay_address`
-  stays the canonical connect address, so an invite pasted without a typed server
-  still works.
-  - Keeps TLS always-pinned (the wire-transport invariant): no unpinned
-    connection is ever opened. No proto change. Gives the owner the "which server
-    am I on" anchor, operator-neutral branding, and a natural seam for future
-    multi-server (D3). The typed address is a confirmation + anchor, not a second
-    source of truth.
-- **A1b — live preview.** The screen calls `Devices.GetServerInfo` on the typed
-  address to show `server_id` and reachability *before* the invite. This needs an
-  **unpinned** TLS connection (the app has no pin until the invite), which the
-  current pinned-only `tls::connect` does not do, and it displays
-  attacker-controllable data before any trust is established. More code, a small
-  new surface, little gain over A1a. Not recommended.
-- **A2 — no separate screen.** Keep today's invite-only onboarding (already
-  generic) and do only the branding + guard work. Least effort; loses the explicit
-  server anchor the owner asked for.
+- **A2 (chosen): no separate screen.** Keep today's invite-only onboarding (it is
+  already generic). Onboarding goes straight to the invite; the invite is the one
+  source of truth for the server. Least surface, no second place a server address
+  can diverge, and it keeps TLS always-pinned (no screen ever contacts a server
+  before the pin is known).
+- **A1a (rejected): local pre-step.** A choose-server screen records the relay DNS
+  and shows it, makes no network call, and the app cross-checks the invite against
+  it. Recommended in the earlier draft, but the owner judged the extra screen not
+  worth it when the invite already names and proves the server, and the cross-check
+  guards against a non-problem (the user pastes one invite).
+- **A1b (rejected): live preview.** The screen calls `Devices.GetServerInfo` on a
+  typed address before the invite. Needs an **unpinned** TLS connection (no pin yet)
+  and shows attacker-controllable data before trust is established. More code, a new
+  surface, no gain. Rejected with A1a.
 
-**Recommendation: A1a.** The spec deltas below encode A1a. If the owner prefers
-A2, drop the "Choose a server" requirement and keep the rest; if B (D1) is ever
-chosen, A1b/A2 become the only coherent flows (the typed address would then carry
-real weight). The spec is written so A2 is a clean subtraction.
+**Decision: A2.** The spec deltas encode A2: `app-ui` gains an operator-neutral,
+invite-only onboarding requirement (and explicitly no choose-server step); no
+"Choose a server" requirement and no modification to the base "Join from an invite"
+flow, which is already invite-only.
 
 ### D3: One server per install for the MVP
 
 Device state holds a single server (`relay_address`, `server_id`, `tls_pin`), so
-single-server-per-install is already the shape. Multiple servers or accounts in
-one install is a later nicety: it needs per-server storage, key-store namespacing,
-and a server switcher. Noted, not built here.
+single-server-per-install is already the shape, and one identity per install.
+Multiple servers or accounts in one install is **out of scope**: it needs
+per-server storage, key-store namespacing, and a server switcher. Noted, not built.
 
 ### D4: "Remove the hardcoded server" = a guard, not a deletion
 
@@ -112,49 +99,90 @@ default relay address, `server_id`, TLS pin, or bootstrap invite, and that
 onboarding copy names no single implied server. This is the durable form of the
 owner's request.
 
-## First-run flow (recommended, A1a)
+### D5: Relay topology — own relay vs shared relay (OPEN, surfaced for the owner)
+
+An operator's server sits behind a relay (rathole), and the invite's
+`relay_address`/`public_address` is that relay's public `host:port`. Two shapes,
+**not decided here**:
+
+- **Shared relay:** operators share one relay (as the owner's friends share the
+  Mumbai relay today). An operator only runs a server and is handed a relay
+  endpoint + a tunnel slot; lowest setup cost, but the relay operator sees every
+  operator's ciphertext traffic metadata and is a shared dependency.
+- **Own relay:** each operator stands up their own relay (`deploy/relay/`). Fully
+  independent, but more to run (a GCP VM or equivalent, gcloud, cost) and more for
+  the self-host docs to cover.
+
+The invite model is unaffected either way (it names whatever relay address the
+operator uses), so this does not block the spec. It changes **operator setup**
+(what the docs tell a new operator to stand up) and is the owner's call. Surfaced,
+not resolved.
+
+## Operator setup (what the docs will say)
+
+A new operator runs one server process with a TOML config
+(`server-runtime: Configuration`). The fields:
+
+- `server_id` — the server's id; becomes the `@server_id` of every user id.
+- `admin_username` — the bootstrap admin's local part; the first bootstrap invite
+  is minted for `admin_username@server_id` on first start.
+- `listen_address` — where the server listens (e.g. `127.0.0.1:8443` behind a relay).
+- `public_address` — the relay's public `host:port` written into invite payloads
+  (defaults to `listen_address`); this is the shareable relay DNS + 443.
+- `database_path` — the SQLite database (WAL, mode 0600).
+- `key_dir` — the directory for the TLS and MLS external-sender private keys
+  (created on first start, mode 0600; the TLS pin is logged and never changes).
+- `[blob_store]` — **required for audio and images.** With `backend = "filesystem"`
+  and a stable `path`, the server stores encrypted blobs and serves the `Blobs`
+  RPCs. **With no `[blob_store]`, the server still runs and carries text, but every
+  `Blobs` RPC returns `UNAVAILABLE`** (server-runtime: Blob storage degrades
+  gracefully), so voice messages and images cannot be sent. An operator who wants
+  audio/images must configure it.
+
+First start with an empty key directory and empty database logs the TLS pin and
+prints one bootstrap invite for the admin (device-identity: Bootstrap admin); the
+operator's first device pastes that invite. From then on the admin creates invites
+for everyone else with `Admin.CreateInvite`.
+
+## First-run flow (A2)
 
 ```mermaid
 flowchart TD
-  start([Fresh install, no account]) --> choose[Choose server screen:<br/>type public relay DNS, port = 443]
-  choose -->|store as install's single server| invite[Paste / scan invite]
+  start([Fresh install, no account]) --> invite[Paste / scan invite]
   invite --> parse{Invite valid?}
   parse -->|no| badinvite[Show invalid-invite error] --> invite
-  parse -->|yes| match{Invite's relay + server_id<br/>match chosen server?}
-  match -->|no| mismatch[Warn: invite is for a different server] --> choose
-  match -->|yes| reg[core.register: dial invite.relay_address,<br/>pin TLS to invite.tls_spki_sha256]
-  reg --> pin{TLS key matches pin?}
+  parse -->|yes| reg[core.register: dial invite.relay_address,<br/>pin TLS to invite.tls_spki_sha256,<br/>check ServerInfo.server_id == invite's]
+  reg --> pin{TLS key matches pin<br/>and server_id matches?}
   pin -->|no| iderr[Server identity error] --> stop1([Do not join])
   pin -->|yes| done([Registered: land in chat])
-  linkalt[/"Already have an account?<br/>link this device"/] -.-> choose
+  linkalt[/"Already have an account?<br/>link this device"/] -.-> invite
 ```
 
-Note: the only step that touches the network and establishes trust is
-`core.register`, which pins to the **invite's** pin (D1). The choose-server step is
-local (A1a).
+The only step that touches the network and establishes trust is `core.register`,
+which pins to the **invite's** pin (D1). There is no earlier server-choice step
+(D2, A2).
 
 ## Risks / Trade-offs
 
-- **[Typed address vs invite address diverge]** → the app treats the invite's
-  `relay_address`/`server_id` as canonical and *warns* on mismatch rather than
-  silently preferring one; the user re-chooses or re-pastes. Keeps one source of
-  truth (the invite) while honouring the typed anchor.
+- **[No visible server anchor before joining]** → acceptable: the invite preview
+  already shows the user id and relay address the invite names before Join
+  (app-ui: Join from an invite), so the user does see which server they are about
+  to join. A2 just removes a *typed* anchor, not the shown one.
 - **[A guard test over-fits to current strings]** → scope the guard to concrete
-  constants (no 32-byte pin literal, no default `relay_address`, no embedded
-  bootstrap invite) plus a check that onboarding copy carries no hardcoded server
-  host, not to prose wording in general.
+  constants (no 32-byte pin literal, no default `relay_address`, no `server_id`
+  constant, no embedded bootstrap invite) plus a check that onboarding copy carries
+  no hardcoded server host, not to prose wording in general.
 - **[Owner expected to also rename the app generic]** → out of scope; stated in
   the proposal. One published app, runtime server choice.
 
 ## Migration Plan
 
-Spec-only. No wire change, no data migration, no server change. When built: add
-the choose-server screen and stored server address in the app, add the guard
-test, neutralise onboarding copy. Existing installs are unaffected (they already
-hold their server in device state).
+Spec-only. No wire change, no data migration, no server change. When built: add the
+guard test, neutralise any owner-implying onboarding copy, and write the
+operator-setup docs. Existing installs are unaffected (they already hold their
+server in device state).
 
 ## Open Questions
 
-- **D1 (trust model):** confirm option A (invite-borne pin). Recommended.
-- **D2 (choose-server screen):** confirm A1a (local pre-step), A2 (no screen), or
-  A1b (live preview). Recommended A1a. This is the owner's headline call.
+- **D5 (relay topology):** own relay per operator vs a shared relay. Surfaced for
+  the owner; does not block the spec. Affects operator-setup docs only.

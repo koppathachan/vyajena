@@ -3,13 +3,13 @@
 ### Requirement: Published build is operator-agnostic
 The published client build SHALL embed no operator-specific server identity: no
 default relay address, no `server_id`, no TLS SPKI pin, and no bootstrap invite.
-All server identity SHALL be supplied at runtime — the relay address from the
-chosen server (app-ui: Choose a server) and the TLS pin and `server_id` from the
-invite (device-identity: Invites). The client enforces this; a guard test asserts
-no such constant is compiled in.
+All server identity SHALL be supplied at runtime from the invite the user applies
+(device-identity: Invites), which carries the relay address, the TLS pin, and the
+`server_id`. The client enforces this; a guard test asserts no such constant is
+compiled in.
 
 #### Scenario: Fresh install reaches no server on its own
-- **WHEN** the app is installed with no chosen server and no invite applied
+- **WHEN** the app is installed and no invite has been applied
 - **THEN** the core connects to nothing, because it holds no relay address, pin, or
   `server_id` from the build
 
