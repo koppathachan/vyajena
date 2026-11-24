@@ -105,13 +105,36 @@ pub struct MentionSpan {
     pub length: u32,
 }
 
-/// What a reply answers (message-content: Replies).
+/// What the answered message was, so the reply preview renders correctly even
+/// without the original (message-content: Reply quote describes the original's
+/// kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyKind {
+    /// A text message: show the quoted text.
+    Text,
+    /// A picture: show a picture preview (its caption is the quote, if any).
+    Image,
+    /// A voice message: show a mic glyph and the duration.
+    Audio,
+}
+
+/// What a reply answers (message-content: Replies; Reply quote describes the
+/// original's kind).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplyQuote {
     /// The user who sent the original.
     pub to: UserRef,
-    /// The quote of the original, at most 100 characters, only to be shown.
+    /// The quote of the original, at most 100 characters, only to be shown
+    /// (empty for a voice original; `kind` then says what to render).
     pub quote: String,
+    /// What the original was, for the preview.
+    pub kind: ReplyKind,
+    /// For a voice original, its length in milliseconds (0 otherwise).
+    pub duration_ms: u32,
+    /// For a picture original, its ThumbHash (empty otherwise): the app decodes
+    /// it to a blurred thumbnail for the quote, the same blur the image bubble
+    /// shows, so it works without holding the original.
+    pub thumbhash: Vec<u8>,
     /// The original's local id when this device has it (tap to jump).
     pub original_id: Option<i64>,
 }

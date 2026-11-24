@@ -8,7 +8,7 @@ import 'error.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'types.dart';
 
-// These functions are ignored because they are not marked as `pub`: `invalid`, `invite_bytes`, `invite_text`, `link_approval_bytes`, `link_approval_text`, `link_request_bytes`, `link_request_text`, `payload_bytes`
+// These functions are ignored because they are not marked as `pub`: `invalid`, `invite_bytes`, `invite_text`, `link_approval_bytes`, `link_approval_text`, `link_request_bytes`, `link_request_text`, `payload_bytes`, `starts_with_ci`, `strip_prefix_ci`
 
 /// What an invite text names, without joining: the user it creates and the
 /// relay's address (app-ui: Join from an invite). Fails with

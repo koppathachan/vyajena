@@ -12,7 +12,7 @@ use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
     ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
-    ReplyQuote, SendState, UserRef,
+    ReplyKind, ReplyQuote, SendState, UserRef,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -127,6 +127,13 @@ pub(crate) fn message(message: Message) -> ChatMessage {
         reply: message.reply.map(|reply| ReplyQuote {
             to: user(&reply.to),
             quote: reply.quote,
+            kind: match reply.kind {
+                client::ReplyOriginalKind::Image => ReplyKind::Image,
+                client::ReplyOriginalKind::Audio => ReplyKind::Audio,
+                client::ReplyOriginalKind::Text => ReplyKind::Text,
+            },
+            duration_ms: reply.duration_ms,
+            thumbhash: reply.thumbhash,
             original_id: reply.original.map(|id| id.0),
         }),
         body: match message.body {

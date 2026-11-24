@@ -168,14 +168,35 @@ impl Mention {
     }
 }
 
-/// What a reply answers (message-content: Replies; client-runtime: Reply
-/// lookup).
+/// What a reply's original message was, so the UI renders the right quote
+/// preview even when this device does not hold the original (message-content:
+/// Reply quote describes the original's kind).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReplyOriginalKind {
+    /// A text message: show the quoted text.
+    Text,
+    /// A picture: show a picture preview (its caption is the quote, if any).
+    Image,
+    /// A voice message: show a mic glyph and the duration.
+    Audio,
+}
+
+/// What a reply answers (message-content: Replies; Reply quote describes the
+/// original's kind; client-runtime: Reply lookup).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
     /// The user who sent the original.
     pub to: UserId,
-    /// The quote of the original the replier's core sent.
+    /// The quote of the original the replier's core sent (empty for a voice
+    /// original; `kind` then says what to render).
     pub quote: String,
+    /// What the original was, for the preview.
+    pub kind: ReplyOriginalKind,
+    /// For a voice original, its length in milliseconds (0 otherwise).
+    pub duration_ms: u32,
+    /// For a picture original, its ThumbHash (empty otherwise), so the preview
+    /// shows a thumbnail without holding the original.
+    pub thumbhash: Vec<u8>,
     /// The original's local id, when this device has it stored.
     pub original: Option<MessageId>,
 }

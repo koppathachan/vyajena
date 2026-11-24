@@ -220,6 +220,21 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatBody_Audio() => voiceQuote,
           _ => unsupportedText,
         },
+        // So the reply bar previews a voice (or picture) original correctly
+        // (message-content: Reply quote describes the original's kind).
+        kind: switch (body) {
+          ChatBody_Image() => ReplyKind.image,
+          ChatBody_Audio() => ReplyKind.audio,
+          _ => ReplyKind.text,
+        },
+        durationMs: switch (body) {
+          ChatBody_Audio(:final audio) => audio.durationMs,
+          _ => 0,
+        },
+        thumbhash: switch (body) {
+          ChatBody_Image(:final image) => image.thumbhash,
+          _ => const [],
+        },
       ),
     );
   }
@@ -235,7 +250,10 @@ class _ChatScreenState extends State<ChatScreen> {
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
 
-  Future<void> _sendAudio(Uint8List wav) => _model.sendAudio(wav);
+  Future<void> _sendAudio(Uint8List wav, {int? replyTo}) async {
+    await _model.sendAudio(wav, replyTo: replyTo);
+    if (mounted) setState(() => _reply = null);
+  }
 
   Future<void> _resendAudio(ChatMessage message) async {
     final messenger = ScaffoldMessenger.of(context);

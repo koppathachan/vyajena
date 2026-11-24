@@ -6,16 +6,18 @@ cargo target. Tick a task only when its tests pass.
 ## 1. Proto (message-content: Voice replies; Reply quote describes the original's kind)
 
 - [ ] 1.1 `proto/vyajena/v1/content.proto`: add `ReplyTo.original_kind = 4`
-  (`enum OriginalKind { UNSPECIFIED, TEXT, IMAGE, AUDIO }`) and
-  `ReplyTo.original_duration_ms = 5`; add `Audio.reply_to = 6`.
+  (`enum OriginalKind { UNSPECIFIED, TEXT, IMAGE, AUDIO }`),
+  `ReplyTo.original_duration_ms = 5`, `ReplyTo.original_thumbhash = 6`; add
+  `Audio.reply_to = 6`.
 - [ ] 1.2 `cargo run -p pbgen` and commit the regenerated `pb.rs` files.
 - [ ] 1.3 `buf lint` and `buf breaking --against '.git#branch=main'` are clean.
 
 ## 2. Core (message-content: Voice replies; Reply quote describes the original's kind)
 
 - [ ] 2.1 `reply_ref` (`client/src/client.rs`): set `original_kind` from the
-  decoded original body and `original_duration_ms` from an audio original's
-  duration (0 otherwise); keep the text quote as today.
+  decoded original body, `original_duration_ms` from an audio original's duration,
+  and `original_thumbhash` from a picture original's ThumbHash (0/empty otherwise);
+  keep the text quote (and a picture's caption) as today.
 - [ ] 2.2 Encode/decode (`client/src/messaging/mod.rs`): carry the new `ReplyTo`
   fields; add an `encode_audio`-with-reply path; map `Audio.reply_to` on decode
   into the audio content / event.
@@ -39,16 +41,16 @@ cargo target. Tick a task only when its tests pass.
   regenerated bindings.
 - [ ] 3.4 Bridge tests pass.
 
-## 4. App (app-ui: Reply with a voice message; Voice-message reply preview)
+## 4. App (app-ui: Reply with a voice message; Media reply preview)
 
 - [ ] 4.1 `app/lib/chat/composer.dart`: `_micShown` drops the `widget.reply == null`
   term (mic shows whenever the text field is empty).
 - [ ] 4.2 Audio send passes the pending reply id (`chat_screen.dart`); the reply bar
   clears after sending, like a text reply.
 - [ ] 4.3 `app/lib/chat/message_tile.dart` + reply bar: render the quote from
-  `original_kind` — audio → mic glyph + duration + "Voice message"; captionless
-  image → picture preview; text → quoted text. Remove the `quote.isEmpty →
-  unsupportedText` rule.
+  `original_kind` — audio → mic glyph + duration + "Voice message"; image →
+  ThumbHash thumbnail + caption; text → quoted text. Remove the `quote.isEmpty →
+  unsupportedText` rule so a known media kind never shows the placeholder.
 - [ ] 4.4 Widget tests (`app/test/`): a voice reply preview renders a mic glyph +
   duration (reply bar and bubble, original present and absent); the mic stays while
   a reply is pending; text replies unchanged.

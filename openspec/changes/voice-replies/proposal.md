@@ -25,24 +25,29 @@ no server, relay or wire-envelope code.
   old app ignores the field and still plays the voice message.
 - **The reply quote describes the original's kind (message-content: Reply quote
   describes the original's kind).** `ReplyTo` gains `original_kind` (text / image /
-  audio) and `original_duration_ms`, so a receiver that does not hold the original
-  still renders a correct preview. The empty-quote-means-unsupported rule is
-  removed; the placeholder is reserved for a genuinely unknown body.
+  audio), `original_duration_ms` (for a voice original) and `original_thumbhash`
+  (for a picture original), so a receiver that does not hold the original still
+  renders a correct preview — a voice glyph + duration, or a picture thumbnail. The
+  empty-quote-means-unsupported rule is removed; the placeholder is reserved for a
+  genuinely unknown body. This fix is **general across media** (image and audio),
+  not voice-only: quoting a picture previously showed the "needs a newer version"
+  fallback too (Akhil hit it on an image), and this fixes both.
 - **The composer keeps the mic while a reply is pending (app-ui: Reply with a voice
   message).** `_micShown` drops the `reply == null` term; recording with a reply
   pending sends a voice message answering it and clears the reply bar. Typing text
   with a reply pending still makes a text reply, unchanged.
-- **Voice-message reply preview (app-ui: Voice-message reply preview).** The reply
-  bar and the bubble render a voice original as a mic glyph plus duration, a
-  captionless picture as a picture preview, and text as the quoted text, driven by
-  `original_kind`.
+- **Media reply preview (app-ui: Media reply preview).** The reply bar and the
+  bubble render a voice original as a mic glyph plus duration, a picture original as
+  a thumbnail (its ThumbHash blur) plus caption, and text as the quoted text, driven
+  by `original_kind`.
 - Text replies are unchanged on the wire and in the UI.
 
 ## Proto files touched
 
 - `proto/vyajena/v1/content.proto`:
   - `Audio.reply_to = 6` (field 6, next free on `Audio`).
-  - `ReplyTo.original_kind = 4`, `ReplyTo.original_duration_ms = 5`.
+  - `ReplyTo.original_kind = 4`, `ReplyTo.original_duration_ms = 5`,
+    `ReplyTo.original_thumbhash = 6`.
   - new `enum OriginalKind` (UNSPECIFIED / TEXT / IMAGE / AUDIO).
 - These additions are to `ReplyTo` and `Audio`, not to the `Content.body` oneof, so
   they do **not** contend for `Content.body` field numbers with `delete-messages`
@@ -61,7 +66,7 @@ no server, relay or wire-envelope code.
 
 - `message-content`: new requirements "Voice replies" and "Reply quote describes
   the original's kind".
-- `app-ui`: new requirements "Reply with a voice message" and "Voice-message reply
+- `app-ui`: new requirements "Reply with a voice message" and "Media reply
   preview".
 
 ## Impact

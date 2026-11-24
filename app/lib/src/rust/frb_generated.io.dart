@@ -193,6 +193,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReaddAnswer dco_decode_readd_answer(dynamic raw);
 
   @protected
+  ReplyKind dco_decode_reply_kind(dynamic raw);
+
+  @protected
   ReplyQuote dco_decode_reply_quote(dynamic raw);
 
   @protected
@@ -393,6 +396,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReaddAnswer sse_decode_readd_answer(SseDeserializer deserializer);
+
+  @protected
+  ReplyKind sse_decode_reply_kind(SseDeserializer deserializer);
 
   @protected
   ReplyQuote sse_decode_reply_quote(SseDeserializer deserializer);
@@ -648,6 +654,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_readd_answer(ReaddAnswer self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_reply_kind(ReplyKind self, SseSerializer serializer);
 
   @protected
   void sse_encode_reply_quote(ReplyQuote self, SseSerializer serializer);

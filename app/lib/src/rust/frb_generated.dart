@@ -276,12 +276,14 @@ abstract class RustLibApi extends BaseApi {
   Future<PlatformInt64> crateApiCoreCoreSendAudio({
     required Core that,
     required List<int> wav,
+    PlatformInt64? replyTo,
   });
 
   Future<PlatformInt64> crateApiCoreCoreSendAudioIn({
     required Core that,
     required PlatformInt64 chatId,
     required List<int> wav,
+    PlatformInt64? replyTo,
   });
 
   Future<PlatformInt64> crateApiCoreCoreSendImage({
@@ -2083,6 +2085,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   Future<PlatformInt64> crateApiCoreCoreSendAudio({
     required Core that,
     required List<int> wav,
+    PlatformInt64? replyTo,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2093,6 +2096,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
             serializer,
           );
           sse_encode_list_prim_u_8_loose(wav, serializer);
+          sse_encode_opt_box_autoadd_i_64(replyTo, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2105,7 +2109,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_core_error,
         ),
         constMeta: kCrateApiCoreCoreSendAudioConstMeta,
-        argValues: [that, wav],
+        argValues: [that, wav, replyTo],
         apiImpl: this,
       ),
     );
@@ -2113,7 +2117,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiCoreCoreSendAudioConstMeta => const TaskConstMeta(
     debugName: "Core_send_audio",
-    argNames: ["that", "wav"],
+    argNames: ["that", "wav", "replyTo"],
   );
 
   @override
@@ -2121,6 +2125,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required Core that,
     required PlatformInt64 chatId,
     required List<int> wav,
+    PlatformInt64? replyTo,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2132,6 +2137,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           );
           sse_encode_i_64(chatId, serializer);
           sse_encode_list_prim_u_8_loose(wav, serializer);
+          sse_encode_opt_box_autoadd_i_64(replyTo, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -2144,7 +2150,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_core_error,
         ),
         constMeta: kCrateApiCoreCoreSendAudioInConstMeta,
-        argValues: [that, chatId, wav],
+        argValues: [that, chatId, wav, replyTo],
         apiImpl: this,
       ),
     );
@@ -2153,7 +2159,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   TaskConstMeta get kCrateApiCoreCoreSendAudioInConstMeta =>
       const TaskConstMeta(
         debugName: "Core_send_audio_in",
-        argNames: ["that", "chatId", "wav"],
+        argNames: ["that", "chatId", "wav", "replyTo"],
       );
 
   @override
@@ -3228,15 +3234,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReplyKind dco_decode_reply_kind(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return ReplyKind.values[raw as int];
+  }
+
+  @protected
   ReplyQuote dco_decode_reply_quote(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 3)
-      throw Exception('unexpected arr length: expect 3 but see ${arr.length}');
+    if (arr.length != 6)
+      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
     return ReplyQuote(
       to: dco_decode_user_ref(arr[0]),
       quote: dco_decode_String(arr[1]),
-      originalId: dco_decode_opt_box_autoadd_i_64(arr[2]),
+      kind: dco_decode_reply_kind(arr[2]),
+      durationMs: dco_decode_u_32(arr[3]),
+      thumbhash: dco_decode_list_prim_u_8_strict(arr[4]),
+      originalId: dco_decode_opt_box_autoadd_i_64(arr[5]),
     );
   }
 
@@ -3937,12 +3952,29 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  ReplyKind sse_decode_reply_kind(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    var inner = sse_decode_i_32(deserializer);
+    return ReplyKind.values[inner];
+  }
+
+  @protected
   ReplyQuote sse_decode_reply_quote(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     var var_to = sse_decode_user_ref(deserializer);
     var var_quote = sse_decode_String(deserializer);
+    var var_kind = sse_decode_reply_kind(deserializer);
+    var var_durationMs = sse_decode_u_32(deserializer);
+    var var_thumbhash = sse_decode_list_prim_u_8_strict(deserializer);
     var var_originalId = sse_decode_opt_box_autoadd_i_64(deserializer);
-    return ReplyQuote(to: var_to, quote: var_quote, originalId: var_originalId);
+    return ReplyQuote(
+      to: var_to,
+      quote: var_quote,
+      kind: var_kind,
+      durationMs: var_durationMs,
+      thumbhash: var_thumbhash,
+      originalId: var_originalId,
+    );
   }
 
   @protected
@@ -4607,10 +4639,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_reply_kind(ReplyKind self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_32(self.index, serializer);
+  }
+
+  @protected
   void sse_encode_reply_quote(ReplyQuote self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_user_ref(self.to, serializer);
     sse_encode_String(self.quote, serializer);
+    sse_encode_reply_kind(self.kind, serializer);
+    sse_encode_u_32(self.durationMs, serializer);
+    sse_encode_list_prim_u_8_strict(self.thumbhash, serializer);
     sse_encode_opt_box_autoadd_i_64(self.originalId, serializer);
   }
 
@@ -4959,17 +5000,27 @@ class CoreImpl extends RustOpaque implements Core {
   /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
   /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
   /// connected or not, like an image (audio-messages: Recording and encoding).
-  Future<PlatformInt64> sendAudio({required List<int> wav}) =>
-      RustLib.instance.api.crateApiCoreCoreSendAudio(that: this, wav: wav);
+  /// When `reply_to` is set, the voice message answers that message
+  /// (message-content: Voice replies).
+  Future<PlatformInt64> sendAudio({
+    required List<int> wav,
+    PlatformInt64? replyTo,
+  }) => RustLib.instance.api.crateApiCoreCoreSendAudio(
+    that: this,
+    wav: wav,
+    replyTo: replyTo,
+  );
 
   /// [`Core::send_audio`] in chat `chat_id`.
   Future<PlatformInt64> sendAudioIn({
     required PlatformInt64 chatId,
     required List<int> wav,
+    PlatformInt64? replyTo,
   }) => RustLib.instance.api.crateApiCoreCoreSendAudioIn(
     that: this,
     chatId: chatId,
     wav: wav,
+    replyTo: replyTo,
   );
 
   /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the

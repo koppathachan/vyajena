@@ -355,13 +355,25 @@ impl Core {
     /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
     /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
     /// connected or not, like an image (audio-messages: Recording and encoding).
-    pub async fn send_audio(&self, wav: Vec<u8>) -> Result<i64, CoreError> {
-        self.send_audio_in(0, wav).await
+    /// When `reply_to` is set, the voice message answers that message
+    /// (message-content: Voice replies).
+    pub async fn send_audio(&self, wav: Vec<u8>, reply_to: Option<i64>) -> Result<i64, CoreError> {
+        self.send_audio_in(0, wav, reply_to).await
     }
 
     /// [`Core::send_audio`] in chat `chat_id`.
-    pub async fn send_audio_in(&self, chat_id: i64, wav: Vec<u8>) -> Result<i64, CoreError> {
-        Ok(forward(self.client.send_audio_in(ChatId(chat_id), &wav).await)?.0)
+    pub async fn send_audio_in(
+        &self,
+        chat_id: i64,
+        wav: Vec<u8>,
+        reply_to: Option<i64>,
+    ) -> Result<i64, CoreError> {
+        Ok(forward(
+            self.client
+                .send_audio_in(ChatId(chat_id), &wav, reply_to.map(MessageId))
+                .await,
+        )?
+        .0)
     }
 
     /// The path of voice message `id`'s clip, an OGG/Opus file in the core's

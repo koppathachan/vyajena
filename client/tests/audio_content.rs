@@ -20,6 +20,7 @@ fn audio() -> AudioContent {
         blob_size: 61_000,
         duration_ms: 20_000,
         waveform: (0..64).map(|i| (i * 4) as u8).collect(),
+        reply: None,
     }
 }
 
@@ -182,4 +183,49 @@ fn a_client_that_predates_audio_sees_a_body_it_does_not_know() {
         old.text, None,
         "the old core finds no text and shows its placeholder"
     );
+}
+
+// spec: message-content/voice-replies
+// spec: message-content/reply-quote-describes-the-original-s-kind
+#[test]
+fn a_voice_message_carries_a_reply_with_the_originals_kind() {
+    let mut content = audio();
+    content.reply = Some(messaging::ReplyTo {
+        user: client::UserId::new("alice", "chat"),
+        device: [7; 16],
+        msg_id: [9; 16],
+        // A voice original has no text to quote; its kind and duration carry it.
+        quote: String::new(),
+        original_kind: client::ReplyOriginalKind::Audio,
+        original_duration_ms: 7_000,
+        original_thumbhash: Vec::new(),
+    });
+    let encoded = encode_audio(&content, now()).expect("encode");
+    let decoded = audio_of(&encoded);
+    let reply = decoded.reply.expect("the voice message carries a reply");
+    assert_eq!(reply.user, client::UserId::new("alice", "chat"));
+    assert_eq!(reply.msg_id, [9; 16]);
+    assert_eq!(reply.original_kind, client::ReplyOriginalKind::Audio);
+    assert_eq!(reply.original_duration_ms, 7_000);
+    assert!(reply.quote.is_empty());
+}
+
+// spec: message-content/reply-quote-describes-the-original-s-kind
+#[test]
+fn a_voice_message_can_quote_a_picture_with_a_thumbhash() {
+    let mut content = audio();
+    content.reply = Some(messaging::ReplyTo {
+        user: client::UserId::new("alice", "chat"),
+        device: [7; 16],
+        msg_id: [9; 16],
+        quote: "a caption".to_owned(),
+        original_kind: client::ReplyOriginalKind::Image,
+        original_duration_ms: 0,
+        original_thumbhash: vec![1, 2, 3, 4, 5],
+    });
+    let encoded = encode_audio(&content, now()).expect("encode");
+    let reply = audio_of(&encoded).reply.expect("reply");
+    assert_eq!(reply.original_kind, client::ReplyOriginalKind::Image);
+    assert_eq!(reply.original_thumbhash, vec![1, 2, 3, 4, 5]);
+    assert_eq!(reply.quote, "a caption");
 }

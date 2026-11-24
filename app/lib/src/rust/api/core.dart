@@ -227,12 +227,18 @@ abstract class Core implements RustOpaqueInterface {
   /// OGG/Opus mono clip and its waveform, refuses one over two minutes with
   /// [`CoreErrorKind::AudioTooLong`], and queues the message at once,
   /// connected or not, like an image (audio-messages: Recording and encoding).
-  Future<PlatformInt64> sendAudio({required List<int> wav});
+  /// When `reply_to` is set, the voice message answers that message
+  /// (message-content: Voice replies).
+  Future<PlatformInt64> sendAudio({
+    required List<int> wav,
+    PlatformInt64? replyTo,
+  });
 
   /// [`Core::send_audio`] in chat `chat_id`.
   Future<PlatformInt64> sendAudioIn({
     required PlatformInt64 chatId,
     required List<int> wav,
+    PlatformInt64? replyTo,
   });
 
   /// Sends a picked image (the file's bytes: JPEG, PNG, GIF or WebP) to the

@@ -48,6 +48,9 @@ fn reply_to_alice(quote: &str) -> ReplyTo {
         device: [7; 16],
         msg_id: [9; 16],
         quote: quote.to_owned(),
+        original_kind: client::ReplyOriginalKind::Text,
+        original_duration_ms: 0,
+        original_thumbhash: Vec::new(),
     }
 }
 

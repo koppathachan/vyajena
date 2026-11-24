@@ -405,6 +405,13 @@ class FakeCoreService extends CoreService {
       reply = ReplyQuote(
         to: original.sender,
         quote: body is ChatBody_Text ? body.text : '',
+        kind: switch (body) {
+          ChatBody_Image() => ReplyKind.image,
+          ChatBody_Audio() => ReplyKind.audio,
+          _ => ReplyKind.text,
+        },
+        durationMs: body is ChatBody_Audio ? body.audio.durationMs : 0,
+        thumbhash: body is ChatBody_Image ? body.image.thumbhash : Uint8List(0),
         originalId: original.id,
       );
     }
@@ -520,11 +527,38 @@ class FakeCoreService extends CoreService {
   }
 
   @override
-  Future<int> sendAudio(Uint8List wav, {int chatId = 0}) async {
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async {
     _call('sendAudio', chatId);
     sentRecordings.add(wav);
     final id = _newId();
     cachedClips[id] = '/media/clip-$id.opus';
+    ReplyQuote? reply;
+    if (replyTo != null) {
+      ChatMessage? original;
+      for (final m in messages) {
+        if (m.id == replyTo) {
+          original = m;
+          break;
+        }
+      }
+      if (original != null) {
+        final body = original.body;
+        reply = ReplyQuote(
+          to: original.sender,
+          quote: body is ChatBody_Text ? body.text : '',
+          kind: switch (body) {
+            ChatBody_Image() => ReplyKind.image,
+            ChatBody_Audio() => ReplyKind.audio,
+            _ => ReplyKind.text,
+          },
+          durationMs: body is ChatBody_Audio ? body.audio.durationMs : 0,
+          thumbhash: body is ChatBody_Image
+              ? body.image.thumbhash
+              : Uint8List(0),
+          originalId: original.id,
+        );
+      }
+    }
     messages.add(
       ChatMessage(
         id: id,
@@ -543,6 +577,7 @@ class FakeCoreService extends CoreService {
         ),
         mentions: const [],
         mentionsMe: false,
+        reply: reply,
         sentAtMs: 1,
         status: const SendState.sending(),
       ),

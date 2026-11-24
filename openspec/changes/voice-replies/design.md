@@ -53,9 +53,10 @@ additive fields, both inside the encrypted `Content`:
 message ReplyTo {
   DeviceRef sender = 1;
   bytes msg_id = 2;
-  string quote = 3;                 // text excerpt; empty for a voice/captionless original
+  string quote = 3;                 // text excerpt / picture caption; empty for a voice original
   OriginalKind original_kind = 4;   // what the original was
   uint32 original_duration_ms = 5;  // the voice original's length, 0 otherwise
+  bytes original_thumbhash = 6;     // the picture original's ThumbHash, empty otherwise
 }
 
 enum OriginalKind {
@@ -65,6 +66,16 @@ enum OriginalKind {
   ORIGINAL_KIND_AUDIO = 3;
 }
 ```
+
+**Generalized across media (not voice-only).** The same empty-quote bug hit image
+originals too (quoting a picture showed the "needs a newer version" fallback), so
+the fix covers every media kind: `original_kind` distinguishes them, and each media
+kind carries what a stand-alone preview needs — a voice original its duration, a
+picture original its ThumbHash (a ~25-byte blur placeholder, the same one the image
+bubble shows). A known media kind therefore never falls back to the placeholder.
+If a `video` body is added later, it carries `original_kind = ORIGINAL_KIND_VIDEO`
+and (say) a poster ThumbHash the same way; not in scope here because there is no
+video body yet.
 
 - The core (`reply_ref`) sets `original_kind` from the original's decoded body and
   `original_duration_ms` from an audio original's `duration_ms` (0 otherwise). The
@@ -102,10 +113,10 @@ the mic for Send (text reply), unchanged.
 
 | Layer | Change |
 |---|---|
-| `proto/vyajena/v1/content.proto` | `Audio.reply_to = 6`; `ReplyTo.original_kind = 4`, `ReplyTo.original_duration_ms = 5`; new `enum OriginalKind`. `pbgen` regenerates the committed `pb.rs`. |
-| `client` core | `reply_ref` fills `original_kind` + `original_duration_ms`; new `encode_audio`-with-reply path; `send_audio_in` gains `reply_to: Option<MessageId>`; decode maps `Audio.reply_to` into `AudioContent`/event `Reply`. |
-| `bridge` | `send_audio_in(chat, wav, reply_to)` gains the id; the event `Reply` gains `kind` + `duration_ms`. `flutter_rust_bridge_codegen` regenerates bindings. |
-| `app` | `_micShown` drops the `reply == null` term; audio send passes the pending reply id; the quote block renders from `original_kind` (mic glyph + duration for audio), in both the reply bar and the bubble. |
+| `proto/vyajena/v1/content.proto` | `Audio.reply_to = 6`; `ReplyTo.original_kind = 4`, `ReplyTo.original_duration_ms = 5`, `ReplyTo.original_thumbhash = 6`; new `enum OriginalKind`. `pbgen` regenerates the committed `pb.rs`. |
+| `client` core | `reply_ref` fills `original_kind` + `original_duration_ms` + `original_thumbhash` (picture); new `encode_audio`-with-reply path; `send_audio_in` gains `reply_to: Option<MessageId>`; decode maps `Audio.reply_to` into `AudioContent`/event `Reply`. |
+| `bridge` | `send_audio_in(chat, wav, reply_to)` gains the id; the event `Reply`/`ReplyQuote` gain `kind` + `duration_ms` + `thumbhash`. `flutter_rust_bridge_codegen` regenerates bindings. |
+| `app` | `_micShown` drops the `reply == null` term; audio send passes the pending reply id; the quote block renders from `original_kind` (mic glyph + duration for audio, ThumbHash thumbnail for a picture), in both the reply bar and the bubble. |
 | server / relay / wire envelope | **none** — all inside the encrypted `Content`. |
 
 ### Field-number coordination

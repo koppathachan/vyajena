@@ -24,14 +24,16 @@ does. The UI goes through the core (app-ui: UI goes through the core).
 - **THEN** the composer shows Send (not the mic), and sending makes a text reply as
   before
 
-### Requirement: Voice-message reply preview
-A reply that answers a voice message SHALL render a voice preview — a mic glyph and
-the clip's duration — rather than a text quote or the "needs a newer app version"
-placeholder, in both the composer's reply bar and the sent/received message bubble.
-The preview SHALL render from the reply's `original_kind` (message-content: Reply
-quote describes the original's kind), so it shows correctly even when this device
-does not hold the original. A reply to a captionless picture SHALL likewise show a
-picture preview, and a reply to text SHALL show the quoted text, as before.
+### Requirement: Media reply preview
+A reply that answers a media message SHALL render a media-appropriate preview —
+rather than a text quote or the "needs a newer app version" placeholder — in both
+the composer's reply bar and the sent/received message bubble. A voice original
+SHALL show a mic glyph and the clip's duration; a picture original SHALL show a
+thumbnail (its ThumbHash blur) with its caption if any; a text original SHALL show
+the quoted text, as before. The preview SHALL render from the reply's
+`original_kind` and the media fields it carries (message-content: Reply quote
+describes the original's kind), so it shows correctly even when this device does
+not hold the original.
 
 #### Scenario: Reply bar previews the voice original
 - **WHEN** Bob swipes to reply to Alice's voice message
@@ -44,7 +46,13 @@ picture preview, and a reply to text SHALL show the quoted text, as before.
 - **THEN** the reply quote in the bubble shows a mic glyph and the duration, not the
   "needs a newer version" placeholder
 
-#### Scenario: Empty-quote text no longer looks unsupported
+#### Scenario: Picture reply shows a thumbnail
+- **WHEN** Carol sees Bob's reply to Alice's photo and does not hold Alice's
+  original
+- **THEN** the reply quote shows a thumbnail of the photo (its ThumbHash blur),
+  not the "needs a newer version" placeholder
+
+#### Scenario: A known media kind never looks unsupported
 - **WHEN** a reply quote's text is empty but its `original_kind` is audio or image
 - **THEN** the bubble shows the voice or picture preview, not the "needs a newer
   version" placeholder

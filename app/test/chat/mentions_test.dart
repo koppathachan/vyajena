@@ -368,6 +368,9 @@ void main() {
       reply: ReplyQuote(
         to: alice,
         quote: 'dinner at 8?',
+        kind: ReplyKind.text,
+        durationMs: 0,
+        thumbhash: Uint8List(0),
         originalId: original.id,
       ),
       emitEvent: false,
@@ -395,7 +398,13 @@ void main() {
     final reply = core.receive(
       carol,
       'me too',
-      reply: const ReplyQuote(to: alice, quote: 'dinner at 8?'),
+      reply: ReplyQuote(
+        to: alice,
+        quote: 'dinner at 8?',
+        kind: ReplyKind.text,
+        durationMs: 0,
+        thumbhash: Uint8List(0),
+      ),
     );
     await settle(tester);
     await tap(tester, find.byKey(ValueKey('quote-${reply.id}')));
