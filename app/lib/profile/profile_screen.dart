@@ -82,6 +82,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       if (!mounted) return;
       if (widget.embedded) {
+        // Drop the keyboard: on the Profile tab it covers the shell's bottom
+        // navigation, so leaving it up after a save traps the user with no way
+        // back to Chats (app-shell: Profile tab).
+        FocusScope.of(context).unfocus();
         setState(() => _saving = false);
         ScaffoldMessenger.of(
           context,
@@ -106,67 +110,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
       appBar: widget.embedded
           ? shellAppBar(widget.core, title: 'Profile')
           : AppBar(title: const Text('Profile')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          if (widget.embedded && user != null) ...[
-            Center(
-              child: NameAvatar(
-                key: const Key('profile-header-avatar'),
-                name: _name.text.trim().isEmpty ? user.username : _name.text,
-                seed: user.username,
-                radius: 44,
+      // On the Profile tab the keyboard hides the shell's bottom navigation,
+      // so tapping outside a field must dismiss it to get back to Chats
+      // (app-shell: Profile tab).
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            if (widget.embedded && user != null) ...[
+              Center(
+                child: NameAvatar(
+                  key: const Key('profile-header-avatar'),
+                  name: _name.text.trim().isEmpty ? user.username : _name.text,
+                  seed: user.username,
+                  radius: 44,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            TextFormField(
+              key: const Key('username'),
+              initialValue: user == null ? '' : userText(user),
+              readOnly: true,
+              enabled: false,
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                helperText: 'Chosen by the admin; it cannot be changed.',
               ),
             ),
             const SizedBox(height: 16),
+            TextField(
+              key: const Key('displayName'),
+              controller: _name,
+              enabled: _loaded,
+              decoration: const InputDecoration(
+                labelText: 'Display name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              key: const Key('about'),
+              controller: _about,
+              enabled: _loaded,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'About',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: _loaded && !_saving ? _save : null,
+                child: const Text('Save'),
+              ),
+            ),
+            if (_error case final error?)
+              Text(
+                error,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            if (widget.embedded) ..._serverAndSettings(context, user),
           ],
-          TextFormField(
-            key: const Key('username'),
-            initialValue: user == null ? '' : userText(user),
-            readOnly: true,
-            enabled: false,
-            decoration: const InputDecoration(
-              labelText: 'Username',
-              helperText: 'Chosen by the admin; it cannot be changed.',
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            key: const Key('displayName'),
-            controller: _name,
-            enabled: _loaded,
-            decoration: const InputDecoration(
-              labelText: 'Display name',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            key: const Key('about'),
-            controller: _about,
-            enabled: _loaded,
-            minLines: 2,
-            maxLines: 4,
-            decoration: const InputDecoration(
-              labelText: 'About',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: _loaded && !_saving ? _save : null,
-              child: const Text('Save'),
-            ),
-          ),
-          if (_error case final error?)
-            Text(
-              error,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          if (widget.embedded) ..._serverAndSettings(context, user),
-        ],
+        ),
       ),
     );
   }
