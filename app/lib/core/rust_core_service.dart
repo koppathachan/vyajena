@@ -262,6 +262,9 @@ class RustCoreService extends CoreService {
   Future<void> closeGroup(int chatId) => _c.closeGroup(chatId: chatId);
 
   @override
+  Future<void> removeClosedDm(int chatId) => _c.removeClosedDm(chatId: chatId);
+
+  @override
   Future<List<MemberDevice>> groupMembers(int chatId) =>
       _c.groupMembers(chatId: chatId);
 

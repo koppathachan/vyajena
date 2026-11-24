@@ -678,6 +678,21 @@ class FakeCoreService extends CoreService {
     return _nextId++;
   }
 
+  /// What `removeClosedDm` throws, to test a failed removal.
+  Object? removeClosedDmError;
+
+  @override
+  Future<void> removeClosedDm(int chatId) async {
+    _call('removeClosedDm', chatId);
+    final error = removeClosedDmError;
+    if (error != null) throw error;
+    dmChats = [
+      for (final c in dmChats)
+        if (c.chatId != chatId) c,
+    ];
+    emit(const CoreEvent.chatsChanged());
+  }
+
   @override
   Future<void> closeGroup(int chatId) async {
     _call('closeGroup', chatId);

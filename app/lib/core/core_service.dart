@@ -387,6 +387,12 @@ abstract class CoreService {
   /// Admin: closes the named group [chatId]; it becomes read-only.
   Future<void> closeGroup(int chatId);
 
+  /// Removes the closed DM [chatId] from this user's devices: the core tells the
+  /// server, then deletes the chat and its messages (message-deletion: Remove a
+  /// closed DM). Throws if it is not a closed DM or the server cannot be
+  /// reached; nothing is deleted then.
+  Future<void> removeClosedDm(int chatId);
+
   /// The member devices of the named group [chatId].
   Future<List<MemberDevice>> groupMembers(int chatId);
 

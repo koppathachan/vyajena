@@ -524,6 +524,14 @@ impl Core {
         forward(self.client.close_group(ChatId(chat_id)).await)
     }
 
+    /// Removes the closed DM `chat_id` (its peer was removed from the server):
+    /// tells the server, then deletes the chat and its messages here; the
+    /// user's other devices follow on their next connect. `NoSuchChat` unless it
+    /// is a closed DM; nothing is deleted if the server call fails.
+    pub async fn remove_closed_dm(&self, chat_id: i64) -> Result<(), CoreError> {
+        forward(self.client.remove_closed_dm(ChatId(chat_id)).await)
+    }
+
     /// The member devices of the named group `chat_id`.
     pub fn group_members(&self, chat_id: i64) -> Result<Vec<MemberDevice>, CoreError> {
         Ok(forward(self.client.group_members(ChatId(chat_id)))?
