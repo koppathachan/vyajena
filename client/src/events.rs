@@ -281,8 +281,11 @@ pub struct Message {
     /// Whether a mention names this device's user or everyone, and another
     /// user sent it.
     pub mentions_me: bool,
-    /// What it answers, if it is a reply (message-content: Replies).
-    pub reply: Option<Reply>,
+    /// What it answers, if it is a reply (message-content: Replies). Boxed so a
+    /// reply's quote payload (text, or a voice duration / picture ThumbHash)
+    /// does not bloat every `Message`, which rides in each `Event`/`Received`
+    /// (clippy `large_enum_variant`).
+    pub reply: Option<Box<Reply>>,
     /// The sender's clock when it was sent.
     pub sent_at: Option<SystemTime>,
     /// When the server accepted it; `None` while sending.
