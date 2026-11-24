@@ -304,6 +304,9 @@ void main() {
     );
     // The original is still there (a swipe never dismisses).
     expect(find.text('dinner at 8?'), findsNWidgets(2));
+    // The keyboard stays up: the swipe moves focus to the composer so the
+    // reply can be typed straight away (notif-reliability-and-swipe-fixes).
+    expect(tester.widget<TextField>(composer).focusNode?.hasFocus, isTrue);
 
     await tester.enterText(composer, 'yes');
     await tap(tester, find.byTooltip('Send'));
