@@ -411,10 +411,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
       onTap: () => _open(chat),
     );
     if (!(closed && chat.kind is ChatKindInfo_Dm)) return tile;
-    // TODO(delete-messages): the swipe removes a closed DM through
-    // `Dms.RemoveClosedDm` (message-deletion: Remove a closed DM). That RPC
-    // is not built yet, so the swipe only shows the affordance and says so;
-    // it never hides or deletes anything.
+    // message-deletion: Remove a closed DM. The swipe never deletes by itself:
+    // it asks first (a delete is never a bare swipe).
     return Dismissible(
       key: ValueKey('dismiss-${chat.chatId}'),
       direction: DismissDirection.endToStart,
@@ -427,14 +425,54 @@ class _ChatListScreenState extends State<ChatListScreen> {
           color: Theme.of(context).colorScheme.onErrorContainer,
         ),
       ),
+      // Always false: the row leaves through the reload that follows the core's
+      // `ChatsChanged`, not through the Dismissible.
       confirmDismiss: (_) async {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text(removeClosedDmSoonText)));
+        await _removeClosedDm(chat);
         return false;
       },
       child: tile,
     );
+  }
+
+  Future<void> _removeClosedDm(ChatSummary chat) async {
+    final peer = switch (chat.kind) {
+      ChatKindInfo_Dm(:final peer) => _names.short(peer),
+      _ => 'this chat',
+    };
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialog) => AlertDialog(
+        key: const Key('remove-closed-dm-dialog'),
+        title: const Text('Remove this chat?'),
+        content: Text(
+          'The chat with $peer and its messages are deleted from this device '
+          'and your other devices. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            key: const Key('remove-closed-dm-cancel'),
+            onPressed: () => Navigator.of(dialog).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            key: const Key('remove-closed-dm-confirm'),
+            onPressed: () => Navigator.of(dialog).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.core.removeClosedDm(chat.chatId);
+      if (mounted) await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
   }
 
   @override
@@ -462,6 +500,3 @@ class _ChatListScreenState extends State<ChatListScreen> {
     ),
   );
 }
-
-/// What the swipe on a closed DM says until `delete-messages` ships.
-const removeClosedDmSoonText = 'Removing a closed chat is coming soon.';

@@ -1484,6 +1484,21 @@ pub struct CreateDmResponse {
     #[prost(bytes = "vec", tag = "2")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
 }
+/// message-deletion: Removed-conversation sync. Records `group_id` in the
+/// caller's user's private removed set (conversation ids only, never content),
+/// which the server sends to each of that user's devices on every connect as
+/// `ServerFrame.conversation_removed`. Idempotent. The server rejects the call
+/// with `PERMISSION_DENIED` unless `group_id` is a DM that is closed and that the
+/// caller's user belonged to (an open DM, the lobby, a named group, an unknown
+/// id and another user's DM all get it). Nothing reaches the removed peer or any
+/// other user.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveClosedDmRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveClosedDmResponse {}
 /// Generated client implementations.
 pub mod dms_client {
     #![allow(
@@ -1586,6 +1601,32 @@ pub mod dms_client {
             let path = http::uri::PathAndQuery::from_static("/vyajena.v1.Dms/CreateDm");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("vyajena.v1.Dms", "CreateDm"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// message-deletion: Remove a closed DM; Removed-conversation sync
+        /// (change `remove-closed-dm`).
+        pub async fn remove_closed_dm(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveClosedDmRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveClosedDmResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Dms/RemoveClosedDm",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Dms", "RemoveClosedDm"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -1981,7 +2022,7 @@ pub mod client_frame {
 /// A frame from the server to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10")]
+    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -2011,6 +2052,9 @@ pub mod server_frame {
         /// multi-group: Closing a named group (change `lobby-multi-group`).
         #[prost(message, tag = "10")]
         GroupClosed(super::GroupClosed),
+        /// message-deletion: Removed-conversation sync (change `remove-closed-dm`).
+        #[prost(message, tag = "11")]
+        ConversationRemoved(super::ConversationRemoved),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2311,6 +2355,16 @@ pub struct DmClosed {
     pub group_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub closed_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// message-deletion: Removed-conversation sync. The caller's user removed this
+/// closed DM on one of their devices (`Dms.RemoveClosedDm`). Sent on every connect,
+/// one per entry of that user's private removed set, to that user's devices alone.
+/// It is a set, not a queue: there is no `Ack`. A device deletes the DM locally only
+/// if it has it and it is closed; otherwise it ignores the frame.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ConversationRemoved {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// multi-group: Closing a named group. Sent to each member device of a closed
 /// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.

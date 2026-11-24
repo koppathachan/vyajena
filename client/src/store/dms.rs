@@ -235,6 +235,34 @@ impl Store {
         Ok(())
     }
 
+    /// message-deletion: Remove a closed DM. Deletes the closed DM `group_id`
+    /// (never a named group or an open DM): its stored messages, its read mark
+    /// and its row. Returns whether it was removed.
+    pub fn remove_closed_dm(&self, group_id: &[u8]) -> Result<bool, StoreError> {
+        self.transaction(|| -> Result<bool, StoreError> {
+            self.db.with(|conn| {
+                let chat: Option<i64> = conn
+                    .query_row(
+                        "SELECT chat_id FROM dm_groups
+                         WHERE group_id = ?1 AND kind = 'dm' AND closed_at IS NOT NULL",
+                        params![group_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let Some(chat) = chat else {
+                    return Ok(false);
+                };
+                for table in ["messages", "chat_reads", "dm_groups"] {
+                    conn.execute(
+                        &format!("DELETE FROM {table} WHERE chat_id = ?1"),
+                        params![chat],
+                    )?;
+                }
+                Ok(true)
+            })
+        })
+    }
+
     /// The bookkeeping of `group_id`: the main group's or a joined DM's.
     pub fn group_for(&self, group_id: &[u8]) -> Result<Option<GroupRow>, StoreError> {
         if let Some(main) = self.group()?

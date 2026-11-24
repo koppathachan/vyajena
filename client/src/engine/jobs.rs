@@ -109,6 +109,12 @@ pub(crate) enum Job {
         group_id: Vec<u8>,
         reply: Option<Reply>,
     },
+    /// message-deletion: Remove a closed DM. `Dms.RemoveClosedDm`, then the
+    /// local delete.
+    RemoveClosedDm {
+        group_id: Vec<u8>,
+        reply: Option<Reply>,
+    },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -239,6 +245,7 @@ impl Job {
                 format!("ng_remove|{}|{user}", hex(group_id))
             }
             Job::CloseGroup { group_id, .. } => format!("ng_close|{}", hex(group_id)),
+            Job::RemoveClosedDm { group_id, .. } => format!("dm_remove|{}", hex(group_id)),
         }
     }
 
@@ -315,7 +322,8 @@ impl Job {
             | Job::CreateNamedGroup { reply, .. }
             | Job::AddToGroup { reply, .. }
             | Job::RemoveFromGroup { reply, .. }
-            | Job::CloseGroup { reply, .. } => reply.take(),
+            | Job::CloseGroup { reply, .. }
+            | Job::RemoveClosedDm { reply, .. } => reply.take(),
             _ => None,
         }
     }
@@ -377,6 +385,15 @@ impl Engine {
             Job::CloseGroup { ref group_id, .. } => {
                 let group_id = group_id.clone();
                 let result = self.close_named_group(&group_id).await;
+                match result {
+                    Ok(()) => job.succeed(),
+                    Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::RemoveClosedDm { ref group_id, .. } => {
+                let group_id = group_id.clone();
+                let result = self.remove_closed_dm(&group_id).await;
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
@@ -948,6 +965,7 @@ impl Engine {
             Job::CreateGroup { .. }
             | Job::CreateNamedGroup { .. }
             | Job::CloseGroup { .. }
+            | Job::RemoveClosedDm { .. }
             | Job::UploadKeyPackages { .. }
             | Job::RequestReadd { .. }
             | Job::OpenDm { .. } => Ok(Prepared::Nothing),
@@ -1070,6 +1088,36 @@ impl Engine {
             .await
             .map_err(NetError::from)?;
         tracing::info!("closed a named group");
+        Ok(())
+    }
+
+    /// message-deletion: Remove a closed DM. The server first, so the removal
+    /// reaches this user's other devices; only then the local delete.
+    async fn remove_closed_dm(&mut self, group_id: &[u8]) -> Result<(), ClientError> {
+        let session = self.session().map_err(ClientError::from)?;
+        session
+            .conn()
+            .dms()
+            .remove_closed_dm(session.request(pb::RemoveClosedDmRequest {
+                group_id: group_id.to_vec(),
+            })?)
+            .await
+            .map_err(NetError::from)?;
+        self.apply_removed(group_id)?;
+        tracing::info!("removed a closed DM");
+        Ok(())
+    }
+
+    /// Deletes the closed DM `group_id` locally (idempotent; a chat that is
+    /// open, a group or unknown is left alone).
+    pub(crate) fn apply_removed(
+        &mut self,
+        group_id: &[u8],
+    ) -> Result<(), crate::store::StoreError> {
+        if self.store().remove_closed_dm(group_id)? {
+            self.dms.remove(group_id);
+            self.emit(crate::events::Event::ChatsChanged);
+        }
         Ok(())
     }
 

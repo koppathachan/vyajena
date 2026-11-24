@@ -142,6 +142,67 @@ impl Dms for DmsService {
             })),
         }
     }
+
+    async fn remove_closed_dm(
+        &self,
+        request: Request<pb::RemoveClosedDmRequest>,
+    ) -> Result<Response<pb::RemoveClosedDmResponse>, Status> {
+        let caller = caller(&request)?.clone();
+        let group_id = request.into_inner().group_id;
+        let allowed = self
+            .state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                if !is_closed_dm_of(&tx, &group_id, &caller.username)? {
+                    return Ok(false);
+                }
+                tx.execute(
+                    "INSERT INTO removed_conversations (username, group_id) VALUES (?1, ?2)
+                     ON CONFLICT DO NOTHING",
+                    params![caller.username, group_id],
+                )?;
+                tx.commit()?;
+                Ok(true)
+            })
+            .await?;
+        if !allowed {
+            return Err(Status::permission_denied("not a closed DM of yours"));
+        }
+        tracing::info!("a closed DM was removed by one of its users");
+        Ok(Response::new(pb::RemoveClosedDmResponse {}))
+    }
+}
+
+/// Whether `group_id` is a closed DM that `username` belonged to.
+fn is_closed_dm_of(conn: &Connection, group_id: &[u8], username: &str) -> Result<bool, StoreError> {
+    Ok(group::row(conn, group_id)?.is_some_and(|row| {
+        matches!(&row.kind, group::GroupKind::Dm { users, closed_at: Some(_) }
+            if users.0 == username || users.1 == username)
+    }))
+}
+
+/// message-deletion: Removed-conversation sync. The `ConversationRemoved`
+/// frames of `username`'s private set, sent on every connect.
+pub(crate) fn removed_frames(
+    conn: &Connection,
+    username: &str,
+) -> Result<Vec<pb::ServerFrame>, StoreError> {
+    let mut stmt = conn.prepare(
+        "SELECT group_id FROM removed_conversations WHERE username = ?1 ORDER BY group_id",
+    )?;
+    let rows = stmt.query_map(params![username], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut frames = Vec::new();
+    for group_id in rows {
+        frames.push(pb::ServerFrame {
+            frame: Some(pb::server_frame::Frame::ConversationRemoved(
+                pb::ConversationRemoved {
+                    group_id: group_id?,
+                },
+            )),
+        });
+    }
+    Ok(frames)
 }
 
 /// direct-messages: DM closed on user removal. Closes every open DM of

@@ -185,6 +185,12 @@ abstract class Core implements RustOpaqueInterface {
   /// invite). Call [`Core::start`] next.
   Future<UserRef> register({required String inviteText});
 
+  /// Removes the closed DM `chat_id` (its peer was removed from the server):
+  /// tells the server, then deletes the chat and its messages here; the
+  /// user's other devices follow on their next connect. `NoSuchChat` unless it
+  /// is a closed DM; nothing is deleted if the server call fails.
+  Future<void> removeClosedDm({required PlatformInt64 chatId});
+
   /// Admin: removes `user` from the named group `chat_id` (not from the lobby).
   Future<void> removeFromGroup({
     required PlatformInt64 chatId,

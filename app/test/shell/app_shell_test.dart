@@ -115,8 +115,9 @@ void main() {
   });
 
   // spec: app-shell/chats-list
-  testWidgets('a closed DM is greyed at the bottom with a swipe-to-remove '
-      'affordance that does nothing yet', (tester) async {
+  testWidgets('a closed DM is greyed at the bottom of the list', (
+    tester,
+  ) async {
     final core = aliceInGroup()
       ..groupChats = [g.group(100, 'Weekend')]
       ..dmChats = [dmWithBob(closed: true)];
@@ -126,13 +127,67 @@ void main() {
         .map((t) => (t.title as Text).data)
         .toList();
     expect(rows.last, 'Bobby (bob)');
-    final dismiss = find.byKey(const ValueKey('dismiss-1'));
-    expect(dismiss, findsOneWidget);
-    await tester.drag(dismiss, const Offset(-600, 0));
+  });
+
+  Future<void> swipeClosedDm(WidgetTester tester) async {
+    await tester.drag(
+      find.byKey(const ValueKey('dismiss-1')),
+      const Offset(-600, 0),
+    );
     await settle(tester);
-    // Not removed: delete-messages owns the removal.
+  }
+
+  FakeCoreService closedDmCore() => aliceInGroup()
+    ..groupChats = [g.group(100, 'Weekend')]
+    ..dmChats = [dmWithBob(closed: true)];
+
+  // spec: app-ui/remove-a-closed-dm-from-the-list
+  testWidgets('swiping a closed DM asks first; cancel keeps it', (
+    tester,
+  ) async {
+    final core = closedDmCore();
+    await openHome(tester, core);
+    await swipeClosedDm(tester);
+    // Never a bare swipe: nothing is removed before the user confirms.
+    expect(find.byKey(const Key('remove-closed-dm-dialog')), findsOneWidget);
+    expect(core.calls, isNot(contains('removeClosedDm')));
+    await tap(tester, find.byKey(const Key('remove-closed-dm-cancel')));
     expect(find.byKey(const ValueKey('chat-1')), findsOneWidget);
-    expect(find.text('Removing a closed chat is coming soon.'), findsOneWidget);
+    expect(core.calls, isNot(contains('removeClosedDm')));
+  });
+
+  // spec: app-ui/remove-a-closed-dm-from-the-list
+  testWidgets('confirming removes the closed DM and its row', (tester) async {
+    final core = closedDmCore();
+    await openHome(tester, core);
+    await swipeClosedDm(tester);
+    await tap(tester, find.byKey(const Key('remove-closed-dm-confirm')));
+    expect(core.args['removeClosedDm'], 1);
+    expect(find.byKey(const ValueKey('chat-1')), findsNothing);
+    // The group row is untouched.
+    expect(find.byKey(const ValueKey('chat-100')), findsOneWidget);
+    expect(find.text('Removing a closed chat is coming soon.'), findsNothing);
+  });
+
+  // spec: app-ui/remove-a-closed-dm-from-the-list
+  testWidgets('a failed removal keeps the row and says why', (tester) async {
+    final core = closedDmCore()..removeClosedDmError = StateError('boom');
+    await openHome(tester, core);
+    await swipeClosedDm(tester);
+    await tap(tester, find.byKey(const Key('remove-closed-dm-confirm')));
+    expect(find.byKey(const ValueKey('chat-1')), findsOneWidget);
+    expect(find.textContaining('boom'), findsOneWidget);
+  });
+
+  // spec: app-ui/remove-a-closed-dm-from-the-list
+  testWidgets('no Remove swipe on an open DM or a group', (tester) async {
+    final core = aliceInGroup()
+      ..groupChats = [g.group(100, 'Weekend')]
+      ..dmChats = [dmWithBob()];
+    await openHome(tester, core);
+    expect(find.byKey(const ValueKey('dismiss-1')), findsNothing);
+    expect(find.byKey(const ValueKey('dismiss-100')), findsNothing);
+    expect(find.byKey(const ValueKey('dismiss-0')), findsNothing);
   });
 
   // spec: app-shell/conversation-screen
