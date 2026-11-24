@@ -2,11 +2,15 @@
 # Runs the app's integration test (flutter-app task 6.2, design D6/D7) on one
 # iOS Simulator or Android emulator:
 #
-#   app/integration_test/run.sh <device id> [chat|images]   # flutter devices lists them
+#   app/integration_test/run.sh <device id> [chat|images|closeddm]   # flutter devices lists them
 #
 # chat (the default) is chat_test.dart with bridge/tests/app_peer.rs; images is
 # images_test.dart with bridge/tests/app_peer_images.rs (the server gets a picture
 # store in its temp folder).
+#
+# closeddm is closed_dm_test.dart with bridge/tests/app_peer_closed_dm.rs
+# (change `remove-closed-dm`): the script also checks the server log for the
+# Dms.RemoveClosedDm call.
 #
 # 1. starts a temp server (cargo's debug/server) on a free port with its data in
 #    a temp folder: never server/local.toml, so the owner's invite is safe;
@@ -23,12 +27,13 @@
 # architecture and works.
 set -euo pipefail
 
-device="${1:?usage: $0 <device id> [chat|images]}"
+device="${1:?usage: $0 <device id> [chat|images|closeddm]}"
 scenario="${2:-chat}"
 case "$scenario" in
   chat) peer_test=app_peer app_test=chat_test.dart ;;
   images) peer_test=app_peer_images app_test=images_test.dart ;;
-  *) echo "usage: $0 <device id> [chat|images]" >&2; exit 1 ;;
+  closeddm) peer_test=app_peer_closed_dm app_test=closed_dm_test.dart ;;
+  *) echo "usage: $0 <device id> [chat|images|closeddm]" >&2; exit 1 ;;
 esac
 app_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$app_dir/.." && pwd)"
@@ -107,7 +112,13 @@ status=0
 (cd "$app_dir" && flutter test "integration_test/$app_test" -d "$device" \
   --dart-define="VYAJENA_INVITE=$(cat "$work/invite.txt")") || status=$?
 
-if [[ $status -eq 0 ]] && ! wait_for "the peer to finish" 30 test -e "$work/done"; then
+if [[ $scenario == closeddm ]]; then
+  # The server saw the removal call (its log line carries no ids).
+  if [[ $status -eq 0 ]] && ! grep -q 'a closed DM was removed' "$work/server.log"; then
+    echo "the server never logged Dms.RemoveClosedDm" >&2
+    status=1
+  fi
+elif [[ $status -eq 0 ]] && ! wait_for "the peer to finish" 30 test -e "$work/done"; then
   status=1
 fi
 if [[ $status -ne 0 ]]; then

@@ -116,3 +116,46 @@ async fn the_read_mark_is_the_newest_read_message() {
     bob.core.mark_chat_read(0).check("read");
     assert_eq!(bob.core.chat_read_mark(0).check("read mark"), two_at_bob.id);
 }
+
+// spec: app-ui/remove-a-closed-dm-from-the-list
+// spec: message-deletion/remove-a-closed-dm
+#[tokio::test(flavor = "multi_thread")]
+async fn a_closed_dm_is_removed_through_the_bridge() {
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
+    let mut alice = device::member_of_group(&admin, "alice").await;
+    let _bob = device::member_of_group(&admin, "bob").await;
+    alice
+        .wait_until("alice sees bob", |c| {
+            c.members()
+                .is_ok_and(|m| m.iter().any(|d| d.user == user("bob")))
+        })
+        .await;
+    let chat = alice.core.open_dm(user("bob")).await.check("open DM");
+    let id = alice
+        .core
+        .send_message_in(chat, "hi bob".into(), vec![], None)
+        .check("send");
+    wait_accepted(&mut alice, id).await;
+
+    // Open: refused.
+    let open = alice.core.remove_closed_dm(chat).await;
+    assert_eq!(open.err().map(|e| e.kind), Some(CoreErrorKind::NoSuchChat));
+
+    admin
+        .core
+        .remove_user(user("bob"))
+        .await
+        .check("remove bob");
+    alice
+        .wait_until("the DM closed", |c| {
+            c.chats().is_ok_and(|chats| {
+                chats
+                    .iter()
+                    .any(|chat| matches!(chat.kind, ChatKindInfo::Dm { closed: true, .. }))
+            })
+        })
+        .await;
+    alice.core.remove_closed_dm(chat).await.check("remove");
+    assert_eq!(alice.core.chats().check("chats").len(), 1);
+}
