@@ -1364,6 +1364,9 @@ impl Client {
             height: image.height,
             thumbhash: image.thumbhash,
         };
+        // Drop the old failed message so its bubble does not linger beside the
+        // resend (local only; it was never accepted).
+        self.shared.store.delete_failed_own(id)?;
         self.queue_encoded(chat, encoded, image.caption.as_deref(), &image.mentions)
             .await
     }
@@ -1476,6 +1479,10 @@ impl Client {
             duration_ms: audio.duration_ms,
             waveform: audio.waveform,
         };
+        // Drop the old failed message so its bubble does not linger beside the
+        // resend (it was never accepted; local only). A sending/accepted one is
+        // left untouched.
+        self.shared.store.delete_failed_own(id)?;
         // A resent voice message keeps what the original answered, if anything.
         self.queue_encoded_audio(chat, encoded, reply).await
     }

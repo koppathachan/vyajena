@@ -271,6 +271,23 @@ impl Store {
         )
     }
 
+    /// Deletes a local own message that is in the `failed` state, if it is one
+    /// (used when resending a failed media message as a new one, so the old
+    /// failed bubble does not linger beside the resend). Returns whether a row
+    /// was removed. Only a `failed` row is touched, never a sending or accepted
+    /// one. The message was never accepted by the server, so this is local
+    /// only.
+    pub fn delete_failed_own(&self, id: MessageId) -> Result<bool, StoreError> {
+        let removed = self.db.with(|conn| {
+            conn.execute(
+                "DELETE FROM messages
+                 WHERE local_id = ?1 AND outgoing = 1 AND status = 'failed'",
+                params![id.0],
+            )
+        })?;
+        Ok(removed > 0)
+    }
+
     /// Marks an own message failed with `reason` (client-runtime: Send
     /// status).
     pub fn mark_failed(&self, id: MessageId, reason: &str) -> Result<(), StoreError> {
