@@ -279,6 +279,7 @@ impl Keys for KeysService {
         let admin = self.state.config.admin_username.clone();
         let server_id = self.state.config.server_id.clone();
         let keys = self.state.keys.clone();
+        let limits = self.state.config.limits;
         let refused_seq = request.refused_welcome_seq;
         let reason = request.reason.clone();
         let device_id = caller.device_id;
@@ -331,6 +332,7 @@ impl Keys for KeysService {
                     server_id: &server_id,
                     keys: &keys,
                     now,
+                    limits,
                 };
                 let notify = messaging::mark_inactive(&tx, &ctx, &caller.device_id)?;
                 inactivity::mark_returned(&tx, &caller.device_id, now)?;

@@ -19,8 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use protocol::blob_store::{
-    BLOB_ID_LEN, BLOB_TTL, MAX_BLOB_BYTES, MAX_BLOB_STORE_BYTES, MAX_CONCURRENT_UPLOADS,
-    MAX_UPLOAD_REQUEST_BYTES, MAX_UPLOADS_PER_DEVICE_PER_HOUR,
+    BLOB_ID_LEN, MAX_BLOB_BYTES, MAX_CONCURRENT_UPLOADS, MAX_UPLOAD_REQUEST_BYTES,
 };
 use sha2::{Digest, Sha256};
 use tokio::task::JoinHandle;
@@ -37,9 +36,6 @@ use crate::store::StoreError;
 
 pub use backend::{BackendError, BlobId, BlobStore, FilesystemStore};
 use meta::BlobRow;
-
-/// How often the server deletes expired blobs on its own.
-pub const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
 
 /// The backend `config` names, or `None` when the blob store is not
 /// configured (blob-store: Blob storage and graceful degradation).
@@ -94,8 +90,8 @@ fn not_a_member() -> Status {
     Status::permission_denied("this device is not a member of that group")
 }
 
-fn ttl_millis() -> i64 {
-    i64::try_from(BLOB_TTL.as_millis()).unwrap_or(i64::MAX)
+fn ttl_millis(blob_ttl: Duration) -> i64 {
+    i64::try_from(blob_ttl.as_millis()).unwrap_or(i64::MAX)
 }
 
 /// What an upload does after the first look at the database.
@@ -154,11 +150,13 @@ impl Blobs for BlobsService {
             size: i64::try_from(request.ciphertext.len()).unwrap_or(i64::MAX),
             sha256: Sha256::digest(&request.ciphertext).to_vec(),
             uploaded_at: now_ms,
-            expires_at: now_ms.saturating_add(ttl_millis()),
+            expires_at: now_ms.saturating_add(ttl_millis(self.state.config.limits.blob_ttl)),
         };
 
         let size = row.size;
         let first = row.clone();
+        let max_blob_store_bytes = self.state.config.limits.max_blob_store_bytes;
+        let max_uploads_per_hour = self.state.config.limits.max_uploads_per_device_per_hour;
         let decision = self
             .state
             .store
@@ -178,11 +176,11 @@ impl Blobs for BlobsService {
                         // Upload limits: the live total and this device's hour.
                         let hour_ago = now_ms.saturating_sub(3_600_000);
                         if meta::live_bytes(conn, now_ms)?.saturating_add(first.size.unsigned_abs())
-                            > MAX_BLOB_STORE_BYTES
+                            > max_blob_store_bytes
                         {
                             Ok(Decision::Limited("the blob store is full"))
                         } else if meta::uploads_since(conn, &first.uploader_device_id, hour_ago)?
-                            >= MAX_UPLOADS_PER_DEVICE_PER_HOUR
+                            >= max_uploads_per_hour
                         {
                             Ok(Decision::Limited("too many uploads from this device"))
                         } else {
@@ -339,7 +337,7 @@ async fn delete_blob(state: &State, backend: &Arc<dyn BlobStore>, blob_id_bytes:
 }
 
 /// Deletes the blobs whose 7 days are up (blob-store: Expiry and ack-delete),
-/// at the clock's current time. Run on its own every [`SWEEP_INTERVAL`], and
+/// at the clock's current time. Run on its own every `sweep_interval`, and
 /// by tests after moving the clock.
 pub async fn sweep(state: &State) -> Result<(), StoreError> {
     let Some(backend) = state.blobs.clone() else {
@@ -366,7 +364,7 @@ pub fn background(state: &State) -> Vec<JoinHandle<()>> {
     }
     let sweeper = state.clone();
     vec![tokio::spawn(async move {
-        let mut every = tokio::time::interval(SWEEP_INTERVAL);
+        let mut every = tokio::time::interval(sweeper.config.limits.sweep_interval);
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             every.tick().await;

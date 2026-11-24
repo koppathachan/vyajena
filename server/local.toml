@@ -15,3 +15,27 @@ listen_address = "127.0.0.1:8443"
 public_address = "127.0.0.1:8443"
 database_path = ".server-local/server.sqlite"
 key_dir = ".server-local/keys"
+
+# Optional operator-tunable limits. Every field defaults to the built-in value,
+# so an absent [limits] table (or an absent field) keeps today's behaviour.
+# Durations are whole seconds; changes apply on restart. Uncomment to override.
+# [limits]
+# inactivity_timeout = 604800            # 7 days: idle before a device is removed.
+#                                        #   raise (e.g. 2592000 = 30 days) so a
+#                                        #   backgrounded phone is not dropped; the
+#                                        #   trade-off is inactive leaves linger in
+#                                        #   the MLS tree. Raise queue_entry_ttl too.
+# queue_entry_ttl = 604800               # 7 days: a returning device only gets
+#                                        #   messages newer than this; raise with
+#                                        #   inactivity_timeout, at the cost of storage.
+# queue_cap = 1000                       # per-device queue before marked inactive.
+# stream_idle_timeout = 90               # seconds idle before a stream is reaped.
+# invite_ttl = 604800                    # 7 days.
+# blob_ttl = 604800                      # 7 days.
+# challenge_ttl = 60                     # seconds an auth challenge is valid.
+# dedup_min_retention = 604800           # 7 days; keep >= queue_entry_ttl.
+# wake_ping_min_interval = 60            # min seconds between wake pushes per device.
+# catch_up_max = 5                       # bounded catch-up push attempts per backlog.
+# sweep_interval = 60                    # seconds between periodic sweeps.
+# max_blob_store_bytes = 1073741824      # 1 GiB blob-store ceiling.
+# max_uploads_per_device_per_hour = 60

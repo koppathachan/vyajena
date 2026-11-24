@@ -1,11 +1,10 @@
 //! device-identity: Invites. Invite rows: single use, bound to a username,
 //! expiring [`INVITE_TTL`] after creation.
 
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use protocol::device_identity::INVITE_TTL;
 use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::runtime::clock::{from_unix_millis, unix_millis};
@@ -42,13 +41,14 @@ pub fn create(
     tx: &Transaction<'_>,
     username: &str,
     now: SystemTime,
+    invite_ttl: Duration,
     bootstrap: bool,
 ) -> Result<Invite, StoreError> {
     let invite = Invite {
         code: new_invite_code()?,
         username: username.to_owned(),
         created_at: now,
-        expires_at: now + INVITE_TTL,
+        expires_at: now + invite_ttl,
         bootstrap,
     };
     tx.execute(

@@ -174,6 +174,7 @@ impl Server {
         )
         .await?;
         log_bootstrap(&config, &bootstrap);
+        log_config(&config);
 
         let listener = TcpListener::bind(config.listen_address)
             .await
@@ -339,4 +340,34 @@ fn log_bootstrap(config: &Config, bootstrap: &Bootstrap) {
         ),
         Bootstrap::NotNeeded => {}
     }
+}
+
+/// Logs the effective, non-secret configuration at startup (server-runtime:
+/// Effective configuration is logged at startup), so an operator can see what
+/// is in force. Never logs keys, key-file contents or message content.
+fn log_config(config: &Config) {
+    let l = &config.limits;
+    tracing::info!(
+        server_id = %config.server_id,
+        admin_username = %config.admin_username,
+        // Not `listen_address`: the real bound address is logged separately as
+        // that field, and the test harness scrapes it; avoid the collision.
+        config_listen_address = %config.listen_address,
+        public_address = %config.public_address,
+        blob_store = config.blob_store.is_some(),
+        inactivity_timeout_secs = l.inactivity_timeout.as_secs(),
+        queue_entry_ttl_secs = l.queue_entry_ttl.as_secs(),
+        queue_cap = l.queue_cap as u64,
+        stream_idle_timeout_secs = l.stream_idle_timeout.as_secs(),
+        invite_ttl_secs = l.invite_ttl.as_secs(),
+        blob_ttl_secs = l.blob_ttl.as_secs(),
+        challenge_ttl_secs = l.challenge_ttl.as_secs(),
+        dedup_min_retention_secs = l.dedup_min_retention.as_secs(),
+        wake_ping_min_interval_secs = l.wake_ping_min_interval.as_secs(),
+        catch_up_max = l.catch_up_max as u64,
+        sweep_interval_secs = l.sweep_interval.as_secs(),
+        max_blob_store_bytes = l.max_blob_store_bytes,
+        max_uploads_per_device_per_hour = l.max_uploads_per_device_per_hour as u64,
+        "effective configuration"
+    );
 }

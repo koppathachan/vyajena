@@ -65,6 +65,7 @@ impl Admin for AdminService {
             return Err(Status::invalid_argument(format!("username {problem}")));
         }
         let now = self.state.clock.now();
+        let invite_ttl = self.state.config.limits.invite_ttl;
         let invite = self
             .state
             .store
@@ -83,7 +84,7 @@ impl Admin for AdminService {
                 if let Some(existing) = invites::usable_for_username(&tx, &username, now)? {
                     return Ok(Ok(existing));
                 }
-                let invite = invites::create(&tx, &username, now, false)?;
+                let invite = invites::create(&tx, &username, now, invite_ttl, false)?;
                 tx.commit()?;
                 Ok(Ok(invite))
             })
