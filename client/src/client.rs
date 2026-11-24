@@ -23,7 +23,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
     self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
-    MessageId, Profile, PushPlatform, PushToken, UserId,
+    MessageId, Profile, PushPlatform, PushToken, ReplyOriginalKind, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -933,16 +933,33 @@ impl Client {
             .store
             .message(id)?
             .ok_or(ClientError::NoSuchMessage)?;
-        let quote = match crate::messaging::decode(&stored.content).body {
-            Decoded::Text(text) => text.text,
-            // Replying to a picture quotes its caption, if it has one.
-            Decoded::Image(image) => image.caption.unwrap_or_default(),
-            // A voice message has no text to quote.
-            Decoded::Audio(_) | Decoded::Unsupported => String::new(),
-            Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
-                return Err(ClientError::NoSuchMessage);
-            }
-        };
+        // The quote text plus what the original was, so a receiver without the
+        // original renders the right preview (message-content: Reply quote
+        // describes the original's kind): a text excerpt, a picture's caption +
+        // ThumbHash (for a thumbnail), or a voice duration.
+        let (quote, original_kind, original_duration_ms, original_thumbhash) =
+            match crate::messaging::decode(&stored.content).body {
+                Decoded::Text(text) => (text.text, ReplyOriginalKind::Text, 0, Vec::new()),
+                // Replying to a picture quotes its caption (if any) and carries
+                // its ThumbHash so the quote shows a thumbnail.
+                Decoded::Image(image) => (
+                    image.caption.unwrap_or_default(),
+                    ReplyOriginalKind::Image,
+                    0,
+                    image.thumbhash,
+                ),
+                // A voice message has no text to quote; carry its duration.
+                Decoded::Audio(audio) => (
+                    String::new(),
+                    ReplyOriginalKind::Audio,
+                    audio.duration_ms,
+                    Vec::new(),
+                ),
+                Decoded::Unsupported => (String::new(), ReplyOriginalKind::Text, 0, Vec::new()),
+                Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
+                    return Err(ClientError::NoSuchMessage);
+                }
+            };
         let user =
             crate::messaging::parse_user(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
         Ok(crate::messaging::ReplyTo {
@@ -950,6 +967,9 @@ impl Client {
             device: stored.sender_device,
             msg_id: stored.msg_id,
             quote,
+            original_kind,
+            original_duration_ms,
+            original_thumbhash,
         })
     }
 
@@ -1391,8 +1411,12 @@ impl Client {
     // are the image ones) ---
 
     /// Sends a recorded voice message to the main group: [`Client::send_audio_in`].
-    pub async fn send_audio(&self, wav: &[u8]) -> Result<MessageId, ClientError> {
-        self.send_audio_in(ChatId::MAIN, wav).await
+    pub async fn send_audio(
+        &self,
+        wav: &[u8],
+        reply_to: Option<MessageId>,
+    ) -> Result<MessageId, ClientError> {
+        self.send_audio_in(ChatId::MAIN, wav, reply_to).await
     }
 
     /// Sends a voice message to chat `chat`. `wav` is the file the recorder wrote
@@ -1403,14 +1427,22 @@ impl Client {
     /// The message is stored and queued at once, like an image, connected or
     /// not; the outbox uploads the blob and then sends it (client-runtime: Blob
     /// crypto and send order). It shows as sending until then.
-    pub async fn send_audio_in(&self, chat: ChatId, wav: &[u8]) -> Result<MessageId, ClientError> {
+    pub async fn send_audio_in(
+        &self,
+        chat: ChatId,
+        wav: &[u8],
+        reply_to: Option<MessageId>,
+    ) -> Result<MessageId, ClientError> {
         self.account()?;
         self.check_can_queue(chat)?;
+        // Resolve the answered message before the slow encode, so a bad
+        // reply-to fails fast and stores nothing (message-content: Voice replies).
+        let reply = reply_to.map(|id| self.reply_ref(id)).transpose()?;
         let wav = wav.to_vec();
         let encoded =
             blocking(move || Ok(crate::media::audio::encode(&wav).map_err(MediaError::from)?))
                 .await?;
-        self.queue_encoded_audio(chat, encoded).await
+        self.queue_encoded_audio(chat, encoded, reply).await
     }
 
     /// Resends the clip of the own voice message `id` as a new message with a
@@ -1437,13 +1469,15 @@ impl Client {
             .cached_audio_path(&audio.blob_id)
             .await?
             .ok_or(ClientError::MediaNotOnDevice)?;
+        let reply = audio.reply.clone();
         let ogg = blocking(move || Ok(std::fs::read(path).map_err(MediaError::from)?)).await?;
         let encoded = crate::media::EncodedAudio {
             ogg,
             duration_ms: audio.duration_ms,
             waveform: audio.waveform,
         };
-        self.queue_encoded_audio(chat, encoded).await
+        // A resent voice message keeps what the original answered, if anything.
+        self.queue_encoded_audio(chat, encoded, reply).await
     }
 
     /// Caches `audio`, then stores its message as waiting for its blob and wakes
@@ -1452,6 +1486,7 @@ impl Client {
         &self,
         chat: ChatId,
         audio: crate::media::EncodedAudio,
+        reply: Option<crate::messaging::ReplyTo>,
     ) -> Result<MessageId, ClientError> {
         use protocol::blob_store::{BLOB_NONCE_LEN, BLOB_TAG_LEN};
         let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
@@ -1462,6 +1497,7 @@ impl Client {
             blob_size: (audio.ogg.len() + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64,
             duration_ms: audio.duration_ms,
             waveform: audio.waveform,
+            reply,
         };
         let encoded = crate::messaging::encode_audio(&content, self.now()).map_err(too_long)?;
         // The sender cannot decrypt its own message, so it keeps the clip; the

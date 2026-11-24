@@ -13,6 +13,8 @@
 //
 // app-ui: Play a voice message. A voice message is a bubble with a play button
 // and the waveform (audio_bubble.dart).
+import 'dart:typed_data';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -241,16 +243,72 @@ class MessageTile extends StatelessWidget {
               replyTo ?? reply.to.username,
               style: text.labelSmall?.copyWith(color: scheme.primary),
             ),
-            Text(
-              reply.quote.isEmpty ? unsupportedText : reply.quote,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
-            ),
+            _quoteBody(context, reply),
           ],
         ),
       ),
     );
+  }
+
+  /// The quoted original's preview, driven by its kind so it renders even when
+  /// this device does not hold the original (message-content: Reply quote
+  /// describes the original's kind): a voice original as a mic glyph and the
+  /// duration, a captionless picture as a picture glyph, and text as its quote.
+  Widget _quoteBody(BuildContext context, ReplyQuote reply) {
+    final scheme = Theme.of(context).colorScheme;
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
+    switch (reply.kind) {
+      case ReplyKind.audio:
+        final length = clipLengthText(Duration(milliseconds: reply.durationMs));
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mic, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text('$voiceQuote · $length', style: style),
+          ],
+        );
+      case ReplyKind.image:
+        final c = core;
+        final blur = (reply.thumbhash.isEmpty || c == null)
+            ? null
+            : c.thumbhashPreview(Uint8List.fromList(reply.thumbhash));
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (blur != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Image.memory(
+                  blur,
+                  width: 28,
+                  height: 28,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Icon(Icons.photo, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                reply.quote.isEmpty ? pictureQuote : reply.quote,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+          ],
+        );
+      case ReplyKind.text:
+        return Text(
+          reply.quote.isEmpty ? unsupportedText : reply.quote,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        );
+    }
   }
 
   @override

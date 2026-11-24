@@ -68,6 +68,11 @@ message Image {
 // "needs a newer app version" placeholder. Only the Rust core reads it; the server
 // never sees it, and `blob_key` never leaves the encrypted `Content`. There is no
 // caption in this version.
+//
+// message-content: Voice replies (change `voice-replies`). A voice message may
+// answer another message: `reply_to` is set then, of the same `ReplyTo` shape a
+// text reply uses. A client that predates the field ignores it (an unknown field)
+// and still plays the voice message.
 message Audio {
   // The random id the ciphertext is stored under on the server, 16 bytes
   // (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
@@ -85,6 +90,21 @@ message Audio {
   // spaced over its length, at most `protocol::audio::MAX_AUDIO_WAVEFORM_BYTES`
   // bytes. The bubble draws it as bar heights before the clip downloads.
   bytes waveform = 5;
+  // Set when this voice message answers another one (message-content: Voice
+  // replies). Same shape as `Text.reply_to`.
+  ReplyTo reply_to = 6;
+}
+
+// message-content: Reply quote describes the original's kind (change
+// `voice-replies`). What the answered message was, so a receiver that does not
+// hold the original still renders the right preview (a text excerpt, a picture,
+// or a voice glyph). `ORIGINAL_KIND_UNSPECIFIED` is what an older sender leaves
+// and is treated as a text quote.
+enum OriginalKind {
+  ORIGINAL_KIND_UNSPECIFIED = 0;
+  ORIGINAL_KIND_TEXT = 1;
+  ORIGINAL_KIND_IMAGE = 2;
+  ORIGINAL_KIND_AUDIO = 3;
 }
 
 // message-content: Text only. UTF-8 text, optional mentions and one optional
@@ -136,8 +156,21 @@ message ReplyTo {
   // The original's text with whitespace folded to single spaces, at most
   // `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, the last one "…" when
   // cut.
-  // Receivers cut a longer quote to the limit.
+  // Receivers cut a longer quote to the limit. Empty for a voice original (and a
+  // captionless picture); `original_kind` then says what to render.
   string quote = 3;
+  // What the answered message was (message-content: Reply quote describes the
+  // original's kind), so a receiver without the original renders the right
+  // preview. An older sender leaves `ORIGINAL_KIND_UNSPECIFIED`, read as a text
+  // quote.
+  OriginalKind original_kind = 4;
+  // For a voice original, its length in milliseconds (0 otherwise), so a
+  // voice-reply preview shows the duration without holding the original.
+  uint32 original_duration_ms = 5;
+  // For a picture original, its ThumbHash (empty otherwise), so an image-reply
+  // preview shows a thumbnail without holding the original. At most
+  // `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes.
+  bytes original_thumbhash = 6;
 }
 
 // message-content: Group settings travel encrypted. The group name and settings,

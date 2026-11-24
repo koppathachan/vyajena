@@ -77,6 +77,12 @@ impl Admin for AdminService {
                         "a user with this username exists",
                     )));
                 }
+                // At most one pending invite per username: if one is still
+                // usable, return it instead of minting a duplicate
+                // (device-identity: At most one pending invite per username).
+                if let Some(existing) = invites::usable_for_username(&tx, &username, now)? {
+                    return Ok(Ok(existing));
+                }
                 let invite = invites::create(&tx, &username, now, false)?;
                 tx.commit()?;
                 Ok(Ok(invite))

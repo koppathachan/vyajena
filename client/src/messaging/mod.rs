@@ -17,7 +17,8 @@ use prost::Message as _;
 
 use crate::engine::EngineError;
 use crate::events::{
-    DeviceId, MediaState, Mention, MentionTarget, Message, MessageBody, Reply, SendStatus, UserId,
+    DeviceId, MediaState, Mention, MentionTarget, Message, MessageBody, Reply, ReplyOriginalKind,
+    SendStatus, UserId,
 };
 use crate::identity::certificate::{from_timestamp, timestamp};
 use crate::media::{BlobId, BlobKey};
@@ -49,7 +50,8 @@ pub struct TextContent {
     pub reply: Option<ReplyTo>,
 }
 
-/// A `ReplyTo`, decoded (message-content: Replies).
+/// A `ReplyTo`, decoded (message-content: Replies; Reply quote describes the
+/// original's kind).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplyTo {
     /// The user who sent the original.
@@ -58,8 +60,15 @@ pub struct ReplyTo {
     pub device: DeviceId,
     /// The original envelope's `msg_id`.
     pub msg_id: [u8; 16],
-    /// The quote, cut to `MAX_REPLY_QUOTE_CHARS`.
+    /// The quote, cut to `MAX_REPLY_QUOTE_CHARS` (empty for a voice original).
     pub quote: String,
+    /// What the original was, so a receiver without it renders the right preview.
+    pub original_kind: ReplyOriginalKind,
+    /// For a voice original, its length in milliseconds (0 otherwise).
+    pub original_duration_ms: u32,
+    /// For a picture original, its ThumbHash (empty otherwise), so an image
+    /// reply shows a thumbnail without holding the original.
+    pub original_thumbhash: Vec<u8>,
 }
 
 /// An `Image` body, decoded and checked (message-content: Image messages). It
@@ -98,6 +107,9 @@ pub struct AudioContent {
     pub duration_ms: u32,
     /// The amplitude peaks, one byte each.
     pub waveform: Vec<u8>,
+    /// What this voice message answers, if it is a reply (message-content:
+    /// Voice replies).
+    pub reply: Option<ReplyTo>,
 }
 
 /// What a `Content` says, decoded.
@@ -253,20 +265,63 @@ fn decode_audio(audio: pb::Audio) -> Option<AudioContent> {
         blob_size: audio.blob_size,
         duration_ms: audio.duration_ms,
         waveform: audio.waveform,
+        reply: audio.reply_to.and_then(reply_from_pb),
     })
+}
+
+/// A decoded `ReplyTo` from the wire, or `None` if its reference is malformed
+/// (message-content: Replies; Reply quote describes the original's kind).
+fn reply_from_pb(reply: pb::ReplyTo) -> Option<ReplyTo> {
+    let sender = reply.sender?;
+    Some(ReplyTo {
+        user: UserId::from_pb(sender.user_id.as_ref()?),
+        device: DeviceId::try_from(sender.device_id.as_slice()).ok()?,
+        msg_id: <[u8; 16]>::try_from(reply.msg_id.as_slice()).ok()?,
+        quote: protocol::message_content::reply_quote(&reply.quote),
+        original_kind: kind_from_pb(reply.original_kind),
+        original_duration_ms: reply.original_duration_ms,
+        original_thumbhash: reply.original_thumbhash,
+    })
+}
+
+/// The wire form of a `ReplyTo` (message-content: Replies; Reply quote describes
+/// the original's kind). `quote` is cut to the limit here.
+fn reply_to_pb(reply: &ReplyTo) -> pb::ReplyTo {
+    pb::ReplyTo {
+        sender: Some(pb::DeviceRef {
+            user_id: Some(reply.user.to_pb()),
+            device_id: reply.device.to_vec(),
+        }),
+        msg_id: reply.msg_id.to_vec(),
+        quote: protocol::message_content::reply_quote(&reply.quote),
+        original_kind: pb_original_kind(reply.original_kind) as i32,
+        original_duration_ms: reply.original_duration_ms,
+        original_thumbhash: reply.original_thumbhash.clone(),
+    }
+}
+
+/// The wire enum for an original's kind.
+fn pb_original_kind(kind: ReplyOriginalKind) -> pb::OriginalKind {
+    match kind {
+        ReplyOriginalKind::Text => pb::OriginalKind::Text,
+        ReplyOriginalKind::Image => pb::OriginalKind::Image,
+        ReplyOriginalKind::Audio => pb::OriginalKind::Audio,
+    }
+}
+
+/// The original's kind from the wire; `UNSPECIFIED` and any unknown value read
+/// as text, so an older sender's text reply renders as before.
+fn kind_from_pb(value: i32) -> ReplyOriginalKind {
+    match pb::OriginalKind::try_from(value) {
+        Ok(pb::OriginalKind::Image) => ReplyOriginalKind::Image,
+        Ok(pb::OriginalKind::Audio) => ReplyOriginalKind::Audio,
+        _ => ReplyOriginalKind::Text,
+    }
 }
 
 fn decode_text(text: pb::Text) -> TextContent {
     let mentions = mentions_from_pb(&text.mentions);
-    let reply = text.reply_to.and_then(|reply| {
-        let sender = reply.sender?;
-        Some(ReplyTo {
-            user: UserId::from_pb(sender.user_id.as_ref()?),
-            device: DeviceId::try_from(sender.device_id.as_slice()).ok()?,
-            msg_id: <[u8; 16]>::try_from(reply.msg_id.as_slice()).ok()?,
-            quote: protocol::message_content::reply_quote(&reply.quote),
-        })
-    });
+    let reply = text.reply_to.and_then(reply_from_pb);
     let mentions = valid_mentions(&text.text, mentions);
     TextContent {
         text: text.text,
@@ -347,14 +402,7 @@ pub fn encode_message(
         return Err(ContentError::InvalidMention);
     }
     let mentions = mentions_to_pb(mentions)?;
-    let reply_to = reply.map(|reply| pb::ReplyTo {
-        sender: Some(pb::DeviceRef {
-            user_id: Some(reply.user.to_pb()),
-            device_id: reply.device.to_vec(),
-        }),
-        msg_id: reply.msg_id.to_vec(),
-        quote: protocol::message_content::reply_quote(&reply.quote),
-    });
+    let reply_to = reply.map(reply_to_pb);
     encode(
         Body::Text(pb::Text {
             text: text.to_owned(),
@@ -399,6 +447,7 @@ pub fn encode_audio(audio: &AudioContent, sent_at: SystemTime) -> Result<Vec<u8>
             blob_size: audio.blob_size,
             duration_ms: audio.duration_ms,
             waveform: audio.waveform.clone(),
+            reply_to: audio.reply.as_ref().map(reply_to_pb),
         }),
         sent_at,
     )
@@ -436,22 +485,33 @@ pub(crate) fn parse_user(text: &str) -> Option<UserId> {
     Some(UserId::new(username, server_id))
 }
 
+/// The UI `Reply` for a decoded `ReplyTo`, with the original looked up in
+/// `store` (client-runtime: Reply lookup) and the original's kind/duration
+/// carried for the preview (message-content: Reply quote describes the
+/// original's kind).
+fn event_reply(store: &Store, reply: ReplyTo) -> Reply {
+    Reply {
+        original: store
+            .chat_message_by_ref(&reply.device, &reply.msg_id)
+            .unwrap_or_else(|error| {
+                tracing::warn!(%error, "cannot look up a reply's original");
+                None
+            }),
+        to: reply.user,
+        quote: reply.quote,
+        kind: reply.original_kind,
+        duration_ms: reply.original_duration_ms,
+        thumbhash: reply.original_thumbhash,
+    }
+}
+
 /// The body, mentions and reply of a chat message, with the reply's
 /// original looked up in `store` (client-runtime: Reply lookup); `None` for
 /// profile and group-settings bodies.
 fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>, Option<Reply>)> {
     match body {
         Decoded::Text(content) => {
-            let reply = content.reply.map(|reply| Reply {
-                original: store
-                    .chat_message_by_ref(&reply.device, &reply.msg_id)
-                    .unwrap_or_else(|error| {
-                        tracing::warn!(%error, "cannot look up a reply's original");
-                        None
-                    }),
-                to: reply.user,
-                quote: reply.quote,
-            });
+            let reply = content.reply.map(|reply| event_reply(store, reply));
             Some((MessageBody::Text(content.text), content.mentions, reply))
         }
         Decoded::Image(image) => {
@@ -460,7 +520,10 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
         }
         Decoded::Audio(audio) => {
             let body = audio_body(store, &audio);
-            Some((MessageBody::Audio(Box::new(body)), Vec::new(), None))
+            // A voice message may itself answer another message (message-content:
+            // Voice replies).
+            let reply = audio.reply.map(|reply| event_reply(store, reply));
+            Some((MessageBody::Audio(Box::new(body)), Vec::new(), reply))
         }
         Decoded::Unsupported => Some((MessageBody::Unsupported, Vec::new(), None)),
         Decoded::Profile(_) | Decoded::GroupSettings { .. } => None,

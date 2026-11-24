@@ -84,7 +84,7 @@ async fn a_recording_goes_in_as_wav_and_a_clip_path_comes_out() {
 
     let id = alice
         .core
-        .send_audio(recording(6_000))
+        .send_audio(recording(6_000), None)
         .await
         .check("send_audio");
     alice
@@ -125,12 +125,15 @@ async fn a_recording_that_is_too_long_or_not_audio_has_its_own_errors() {
     let server = TestServer::start().await;
     let (alice, _bob) = alice_and_bob(&server).await;
 
-    let too_long = alice.core.send_audio(recording(125_000)).await;
+    let too_long = alice.core.send_audio(recording(125_000), None).await;
     assert_eq!(
         too_long.err().map(|e| e.kind),
         Some(CoreErrorKind::AudioTooLong)
     );
-    let not_audio = alice.core.send_audio(b"not a recording".to_vec()).await;
+    let not_audio = alice
+        .core
+        .send_audio(b"not a recording".to_vec(), None)
+        .await;
     assert_eq!(
         not_audio.err().map(|e| e.kind),
         Some(CoreErrorKind::AudioUnsupported)
@@ -145,7 +148,7 @@ async fn an_expired_clip_is_its_own_error_and_state_and_the_sender_resends() {
     let (alice, mut bob) = alice_and_bob(&server).await;
     let id = alice
         .core
-        .send_audio(recording(2_000))
+        .send_audio(recording(2_000), None)
         .await
         .check("send_audio");
     let received = wait_audio(&mut bob).await;

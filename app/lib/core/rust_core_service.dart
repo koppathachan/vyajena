@@ -144,8 +144,8 @@ class RustCoreService extends CoreService {
       (await _c.resendImage(id: id)).toInt();
 
   @override
-  Future<int> sendAudio(Uint8List wav, {int chatId = 0}) async =>
-      (await _c.sendAudioIn(chatId: chatId, wav: wav)).toInt();
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async =>
+      (await _c.sendAudioIn(chatId: chatId, wav: wav, replyTo: replyTo)).toInt();
 
   @override
   Future<String> downloadAudio(int id) => _c.downloadAudio(id: id);

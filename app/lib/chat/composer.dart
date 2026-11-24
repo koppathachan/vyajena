@@ -33,7 +33,14 @@ import 'voice_plugins.dart';
 
 /// The reply the composer is writing: who and what it answers.
 class ReplyDraft {
-  const ReplyDraft({required this.id, required this.name, required this.quote});
+  const ReplyDraft({
+    required this.id,
+    required this.name,
+    required this.quote,
+    this.kind = ReplyKind.text,
+    this.durationMs = 0,
+    this.thumbhash = const [],
+  });
 
   /// The original's local id.
   final int id;
@@ -41,8 +48,19 @@ class ReplyDraft {
   /// How to show its sender.
   final String name;
 
-  /// Its text, cut for the bar.
+  /// Its text, cut for the bar (empty for a voice original).
   final String quote;
+
+  /// What the original was, so the bar previews a voice or picture original
+  /// (message-content: Reply quote describes the original's kind).
+  final ReplyKind kind;
+
+  /// For a voice original, its length in milliseconds (0 otherwise).
+  final int durationMs;
+
+  /// For a picture original, its ThumbHash bytes (empty otherwise), decoded to
+  /// a blurred thumbnail in the reply bar.
+  final List<int> thumbhash;
 }
 
 /// What the composer says about text that does not fit.
@@ -100,7 +118,7 @@ class Composer extends StatefulWidget {
 
   /// Sends a recorded voice message: the WAV file's bytes, which the core
   /// encodes. No microphone button when unset.
-  final Future<void> Function(Uint8List wav)? sendAudio;
+  final Future<void> Function(Uint8List wav, {int? replyTo})? sendAudio;
 
   /// A recording began: the chat stops any clip that is playing.
   final VoidCallback? onRecordingStarted;
@@ -223,12 +241,7 @@ class _ComposerState extends State<Composer> {
                   'Replying to ${reply.name}',
                   style: text.labelSmall?.copyWith(color: scheme.primary),
                 ),
-                Text(
-                  reply.quote,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: text.bodySmall,
-                ),
+                _replyPreview(context, reply),
               ],
             ),
           ),
@@ -240,6 +253,57 @@ class _ComposerState extends State<Composer> {
         ],
       ),
     );
+  }
+
+  /// The one-line preview of what a reply answers: a mic glyph and the duration
+  /// for a voice original, the quoted text otherwise (message-content: Reply
+  /// quote describes the original's kind).
+  Widget _replyPreview(BuildContext context, ReplyDraft reply) {
+    final style = Theme.of(context).textTheme.bodySmall;
+    switch (reply.kind) {
+      case ReplyKind.audio:
+        final length = clipLengthText(Duration(milliseconds: reply.durationMs));
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.mic, size: 16),
+            const SizedBox(width: 4),
+            Text('Voice message · $length', style: style),
+          ],
+        );
+      case ReplyKind.image:
+        final blur = reply.thumbhash.isEmpty
+            ? null
+            : widget.core.thumbhashPreview(Uint8List.fromList(reply.thumbhash));
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (blur != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: Image.memory(blur, width: 20, height: 20, fit: BoxFit.cover),
+              )
+            else
+              const Icon(Icons.photo, size: 16),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                reply.quote.isEmpty ? 'Picture' : reply.quote,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+          ],
+        );
+      case ReplyKind.text:
+        return Text(
+          reply.quote,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        );
+    }
   }
 
   @override
@@ -393,7 +457,9 @@ class _ComposerState extends State<Composer> {
       _sending = true;
     });
     try {
-      await sendAudio(await clip.read());
+      // Carry the pending reply, if any, so the voice message answers it
+      // (message-content: Voice replies). The parent clears the reply bar.
+      await sendAudio(await clip.read(), replyTo: widget.reply?.id);
       await _deleteClip();
     } catch (error) {
       // The preview stays, so the clip can be sent again or deleted.
@@ -539,13 +605,11 @@ class _ComposerState extends State<Composer> {
     ),
   );
 
-  /// Whether the last button is the microphone: nothing typed or picked, and
-  /// not answering a message (a voice message carries no reply).
+  /// Whether the last button is the microphone: nothing typed or picked. A
+  /// reply may be pending — a voice message can answer one (message-content:
+  /// Voice replies), so the mic stays while the text field is empty.
   bool get _micShown =>
-      widget.sendAudio != null &&
-      _text.text.isEmpty &&
-      _picture == null &&
-      widget.reply == null;
+      widget.sendAudio != null && _text.text.isEmpty && _picture == null;
 
   Widget _field(BuildContext context, bool removed) {
     if (_clip != null && !removed) return _previewRow(context);

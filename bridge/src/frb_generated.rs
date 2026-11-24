@@ -2675,6 +2675,7 @@ fn wire__crate__api__core__Core_send_audio_impl(
                 flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
             >>::sse_decode(&mut deserializer);
             let api_wav = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_reply_to = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::CoreError>(
@@ -2696,8 +2697,12 @@ fn wire__crate__api__core__Core_send_audio_impl(
                             }
                         }
                         let api_that_guard = api_that_guard.unwrap();
-                        let output_ok =
-                            crate::api::core::Core::send_audio(&*api_that_guard, api_wav).await?;
+                        let output_ok = crate::api::core::Core::send_audio(
+                            &*api_that_guard,
+                            api_wav,
+                            api_reply_to,
+                        )
+                        .await?;
                         Ok(output_ok)
                     })()
                     .await,
@@ -2733,6 +2738,7 @@ fn wire__crate__api__core__Core_send_audio_in_impl(
             >>::sse_decode(&mut deserializer);
             let api_chat_id = <i64>::sse_decode(&mut deserializer);
             let api_wav = <Vec<u8>>::sse_decode(&mut deserializer);
+            let api_reply_to = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::CoreError>(
@@ -2758,6 +2764,7 @@ fn wire__crate__api__core__Core_send_audio_in_impl(
                             &*api_that_guard,
                             api_chat_id,
                             api_wav,
+                            api_reply_to,
                         )
                         .await?;
                         Ok(output_ok)
@@ -4289,15 +4296,34 @@ impl SseDecode for crate::api::types::ReaddAnswer {
     }
 }
 
+impl SseDecode for crate::api::types::ReplyKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::ReplyKind::Text,
+            1 => crate::api::types::ReplyKind::Image,
+            2 => crate::api::types::ReplyKind::Audio,
+            _ => unreachable!("Invalid variant for ReplyKind: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::types::ReplyQuote {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_to = <crate::api::types::UserRef>::sse_decode(deserializer);
         let mut var_quote = <String>::sse_decode(deserializer);
+        let mut var_kind = <crate::api::types::ReplyKind>::sse_decode(deserializer);
+        let mut var_durationMs = <u32>::sse_decode(deserializer);
+        let mut var_thumbhash = <Vec<u8>>::sse_decode(deserializer);
         let mut var_originalId = <Option<i64>>::sse_decode(deserializer);
         return crate::api::types::ReplyQuote {
             to: var_to,
             quote: var_quote,
+            kind: var_kind,
+            duration_ms: var_durationMs,
+            thumbhash: var_thumbhash,
             original_id: var_originalId,
         };
     }
@@ -5045,11 +5071,33 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ReaddAnswer>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::ReplyKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Text => 0.into_dart(),
+            Self::Image => 1.into_dart(),
+            Self::Audio => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::types::ReplyKind {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ReplyKind>
+    for crate::api::types::ReplyKind
+{
+    fn into_into_dart(self) -> crate::api::types::ReplyKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::types::ReplyQuote {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
             self.to.into_into_dart().into_dart(),
             self.quote.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.duration_ms.into_into_dart().into_dart(),
+            self.thumbhash.into_into_dart().into_dart(),
             self.original_id.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -5735,11 +5783,31 @@ impl SseEncode for crate::api::types::ReaddAnswer {
     }
 }
 
+impl SseEncode for crate::api::types::ReplyKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::types::ReplyKind::Text => 0,
+                crate::api::types::ReplyKind::Image => 1,
+                crate::api::types::ReplyKind::Audio => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::types::ReplyQuote {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <crate::api::types::UserRef>::sse_encode(self.to, serializer);
         <String>::sse_encode(self.quote, serializer);
+        <crate::api::types::ReplyKind>::sse_encode(self.kind, serializer);
+        <u32>::sse_encode(self.duration_ms, serializer);
+        <Vec<u8>>::sse_encode(self.thumbhash, serializer);
         <Option<i64>>::sse_encode(self.original_id, serializer);
     }
 }

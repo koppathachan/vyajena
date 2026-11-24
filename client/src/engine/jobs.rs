@@ -1261,6 +1261,14 @@ impl Engine {
             .await;
         if let Err(status) = created {
             let _ = group.delete(self.store().mls().storage());
+            // The server already holds a lobby (e.g. a linked admin device that
+            // has not synced yet raced an auto-create): report it as
+            // AlreadyInGroup so the caller can treat it as benign and wait to be
+            // synced in, not as a network error (app-ui: The lobby appears
+            // without a manual create step).
+            if status.code() == tonic::Code::AlreadyExists {
+                return Err(ClientError::AlreadyInGroup);
+            }
             return Err(NetError::from(status).into());
         }
         self.store()

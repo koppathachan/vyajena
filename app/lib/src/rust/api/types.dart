@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
@@ -629,21 +629,61 @@ enum ReaddAnswer {
   limitReached,
 }
 
-/// What a reply answers (message-content: Replies).
+/// What the answered message was, so the reply preview renders correctly even
+/// without the original (message-content: Reply quote describes the original's
+/// kind).
+enum ReplyKind {
+  /// A text message: show the quoted text.
+  text,
+
+  /// A picture: show a picture preview (its caption is the quote, if any).
+  image,
+
+  /// A voice message: show a mic glyph and the duration.
+  audio,
+}
+
+/// What a reply answers (message-content: Replies; Reply quote describes the
+/// original's kind).
 class ReplyQuote {
   /// The user who sent the original.
   final UserRef to;
 
-  /// The quote of the original, at most 100 characters, only to be shown.
+  /// The quote of the original, at most 100 characters, only to be shown
+  /// (empty for a voice original; `kind` then says what to render).
   final String quote;
+
+  /// What the original was, for the preview.
+  final ReplyKind kind;
+
+  /// For a voice original, its length in milliseconds (0 otherwise).
+  final int durationMs;
+
+  /// For a picture original, its ThumbHash (empty otherwise): the app decodes
+  /// it to a blurred thumbnail for the quote, the same blur the image bubble
+  /// shows, so it works without holding the original.
+  final Uint8List thumbhash;
 
   /// The original's local id when this device has it (tap to jump).
   final PlatformInt64? originalId;
 
-  const ReplyQuote({required this.to, required this.quote, this.originalId});
+  const ReplyQuote({
+    required this.to,
+    required this.quote,
+    required this.kind,
+    required this.durationMs,
+    required this.thumbhash,
+    this.originalId,
+  });
 
   @override
-  int get hashCode => to.hashCode ^ quote.hashCode ^ originalId.hashCode;
+  int get hashCode =>
+      to.hashCode ^
+      quote.hashCode ^
+      kind.hashCode ^
+      durationMs.hashCode ^
+      thumbhash.hashCode ^
+      originalId.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -652,6 +692,9 @@ class ReplyQuote {
           runtimeType == other.runtimeType &&
           to == other.to &&
           quote == other.quote &&
+          kind == other.kind &&
+          durationMs == other.durationMs &&
+          thumbhash == other.thumbhash &&
           originalId == other.originalId;
 }
 

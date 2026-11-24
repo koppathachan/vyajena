@@ -1193,6 +1193,11 @@ pub struct Image {
 /// "needs a newer app version" placeholder. Only the Rust core reads it; the server
 /// never sees it, and `blob_key` never leaves the encrypted `Content`. There is no
 /// caption in this version.
+///
+/// message-content: Voice replies (change `voice-replies`). A voice message may
+/// answer another message: `reply_to` is set then, of the same `ReplyTo` shape a
+/// text reply uses. A client that predates the field ignores it (an unknown field)
+/// and still plays the voice message.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct Audio {
     /// The random id the ciphertext is stored under on the server, 16 bytes
@@ -1216,6 +1221,10 @@ pub struct Audio {
     /// bytes. The bubble draws it as bar heights before the clip downloads.
     #[prost(bytes = "vec", tag = "5")]
     pub waveform: ::prost::alloc::vec::Vec<u8>,
+    /// Set when this voice message answers another one (message-content: Voice
+    /// replies). Same shape as `Text.reply_to`.
+    #[prost(message, optional, tag = "6")]
+    pub reply_to: ::core::option::Option<ReplyTo>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich
@@ -1282,9 +1291,25 @@ pub struct ReplyTo {
     /// The original's text with whitespace folded to single spaces, at most
     /// `MAX_REPLY_QUOTE_CHARS` (100) Unicode scalar values, the last one "…" when
     /// cut.
-    /// Receivers cut a longer quote to the limit.
+    /// Receivers cut a longer quote to the limit. Empty for a voice original (and a
+    /// captionless picture); `original_kind` then says what to render.
     #[prost(string, tag = "3")]
     pub quote: ::prost::alloc::string::String,
+    /// What the answered message was (message-content: Reply quote describes the
+    /// original's kind), so a receiver without the original renders the right
+    /// preview. An older sender leaves `ORIGINAL_KIND_UNSPECIFIED`, read as a text
+    /// quote.
+    #[prost(enumeration = "OriginalKind", tag = "4")]
+    pub original_kind: i32,
+    /// For a voice original, its length in milliseconds (0 otherwise), so a
+    /// voice-reply preview shows the duration without holding the original.
+    #[prost(uint32, tag = "5")]
+    pub original_duration_ms: u32,
+    /// For a picture original, its ThumbHash (empty otherwise), so an image-reply
+    /// preview shows a thumbnail without holding the original. At most
+    /// `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes.
+    #[prost(bytes = "vec", tag = "6")]
+    pub original_thumbhash: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Group settings travel encrypted. The group name and settings,
 /// which the server never sees (group-membership: Membership state on the server).
@@ -1307,6 +1332,43 @@ pub struct Profile {
     /// A short "about" text.
     #[prost(string, optional, tag = "2")]
     pub about: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// message-content: Reply quote describes the original's kind (change
+/// `voice-replies`). What the answered message was, so a receiver that does not
+/// hold the original still renders the right preview (a text excerpt, a picture,
+/// or a voice glyph). `ORIGINAL_KIND_UNSPECIFIED` is what an older sender leaves
+/// and is treated as a text quote.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum OriginalKind {
+    Unspecified = 0,
+    Text = 1,
+    Image = 2,
+    Audio = 3,
+}
+impl OriginalKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ORIGINAL_KIND_UNSPECIFIED",
+            Self::Text => "ORIGINAL_KIND_TEXT",
+            Self::Image => "ORIGINAL_KIND_IMAGE",
+            Self::Audio => "ORIGINAL_KIND_AUDIO",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ORIGINAL_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "ORIGINAL_KIND_TEXT" => Some(Self::Text),
+            "ORIGINAL_KIND_IMAGE" => Some(Self::Image),
+            "ORIGINAL_KIND_AUDIO" => Some(Self::Audio),
+            _ => None,
+        }
+    }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetServerInfoRequest {}

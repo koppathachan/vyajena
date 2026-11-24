@@ -96,7 +96,7 @@ async fn alice_sends_a_voice_message_and_bob_and_the_admin_play_it() {
 
     let id = alice
         .client
-        .send_audio(&recording(20_000))
+        .send_audio(&recording(20_000), None)
         .await
         .check("send_audio");
     wait_accepted(&mut alice, id).await;
@@ -166,7 +166,7 @@ async fn a_voice_message_sent_offline_waits_in_the_outbox_and_its_blob_goes_up_f
 
     let id = alice
         .client
-        .send_audio(&recording(3_000))
+        .send_audio(&recording(3_000), None)
         .await
         .check("send_audio offline");
     let after = alice.client.send_text("and a line after it").check("send");
@@ -207,7 +207,7 @@ async fn a_queued_voice_message_whose_clip_is_gone_fails_and_the_chat_goes_on() 
     server.wait_offline_recorded(&alice.device_id()).await;
     let id = alice
         .client
-        .send_audio(&recording(2_000))
+        .send_audio(&recording(2_000), None)
         .await
         .check("send_audio offline");
     std::fs::remove_dir_all(alice.data_dir().join("media")).check("clear the cache");
@@ -240,13 +240,13 @@ async fn a_recording_that_is_too_long_or_not_audio_sends_nothing() {
 
     let too_long = alice
         .client
-        .send_audio(&recording(u64::from(MAX_AUDIO_DURATION_MS) + 5_000))
+        .send_audio(&recording(u64::from(MAX_AUDIO_DURATION_MS) + 5_000), None)
         .await;
     assert!(
         matches!(too_long, Err(ClientError::Media(_))),
         "{too_long:?}"
     );
-    let not_audio = alice.client.send_audio(b"hello").await;
+    let not_audio = alice.client.send_audio(b"hello", None).await;
     assert!(
         matches!(not_audio, Err(ClientError::Media(_))),
         "{not_audio:?}"
@@ -263,7 +263,7 @@ async fn an_expired_voice_message_shows_as_expired_and_the_sender_can_resend_it(
     let (_admin, mut alice, mut bob) = chat(&server).await;
     let id = alice
         .client
-        .send_audio(&recording(4_000))
+        .send_audio(&recording(4_000), None)
         .await
         .check("send_audio");
     wait_accepted(&mut alice, id).await;
@@ -334,7 +334,7 @@ async fn the_server_sees_ciphertext_and_wakes_bob_like_for_any_message() {
 
     let id = alice
         .client
-        .send_audio(&recording(5_000))
+        .send_audio(&recording(5_000), None)
         .await
         .check("send_audio");
     wait_accepted(&mut alice, id).await;

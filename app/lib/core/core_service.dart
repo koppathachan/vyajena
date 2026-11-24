@@ -273,7 +273,7 @@ abstract class CoreService {
   /// returns its local id. Throws [CoreError] with [CoreErrorKind.audioTooLong]
   /// for a clip over two minutes. Like an image it is queued at once,
   /// connected or not.
-  Future<int> sendAudio(Uint8List wav, {int chatId = 0});
+  Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo});
 
   /// The path of voice message [id]'s clip, an OGG/Opus file in the core's media
   /// cache for a player to open: from the cache on this device, else downloaded

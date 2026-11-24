@@ -70,16 +70,32 @@ fn payload_bytes(text: &str, prefix: &str) -> Result<Vec<u8>, CoreError> {
         .iter()
         .find(|(p, _)| *p == prefix)
         .map_or("a payload", |(_, name)| name);
-    if let Some(rest) = text.strip_prefix(prefix) {
+    // The prefix is matched case-insensitively so a typed invite whose leading
+    // letter the keyboard capitalized (`Vyajena-invite:`) still parses. Only
+    // the prefix is case-folded; the base64url payload after it stays exact.
+    if let Some(rest) = strip_prefix_ci(text, prefix) {
         return from_text(rest).map_err(invalid);
     }
-    if let Some((_, other)) = ALL.iter().find(|(p, _)| text.starts_with(p)) {
+    if let Some((_, other)) = ALL.iter().find(|(p, _)| starts_with_ci(text, p)) {
         return Err(CoreError::new(
             CoreErrorKind::InvalidPayload,
             format!("this is {other}, not {expected}"),
         ));
     }
     from_text(text).map_err(invalid)
+}
+
+/// Whether `text` starts with `prefix`, ignoring ASCII case in the prefix. The
+/// prefixes are ASCII, so an ASCII-case compare is enough.
+fn starts_with_ci(text: &str, prefix: &str) -> bool {
+    text.len() >= prefix.len()
+        && text.as_bytes()[..prefix.len()].eq_ignore_ascii_case(prefix.as_bytes())
+}
+
+/// `text` with `prefix` removed if it is there (ignoring ASCII case in the
+/// prefix only); `None` otherwise.
+fn strip_prefix_ci<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    starts_with_ci(text, prefix).then(|| &text[prefix.len()..])
 }
 
 pub(crate) fn invalid(error: PayloadError) -> CoreError {

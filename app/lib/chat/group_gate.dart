@@ -6,7 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../admin/create_group_screen.dart';
+import '../app/errors.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import '../shell/home_shell.dart';
@@ -38,6 +38,29 @@ const readdLimitText =
 String reasonText(BuildContext context, Refusal refusal) =>
     'Reason: ${refusal.reason} (${timeText(context, refusal.atMs)})';
 
+/// What the admin's first device shows while the lobby is being set up
+/// automatically (app-ui: The lobby appears without a manual create step).
+const settingUpText = 'Setting up the lobby…';
+
+/// What the admin sees if the automatic lobby creation failed for a real
+/// reason (not a benign "already exists" race): the reason, and a retry.
+const createFailedText = "The lobby couldn't be created.";
+
+/// Where the admin's first device is in setting up the lobby.
+enum _LobbySetup {
+  /// Not started: the device is the admin's and has no lobby yet.
+  none,
+
+  /// `Admin.CreateGroup` is in flight.
+  creating,
+
+  /// The server already has a lobby (a linked admin device): wait to be synced.
+  waiting,
+
+  /// Creation failed for a real reason: show the error and a retry.
+  failed,
+}
+
 /// Create the group, wait to be added, or chat.
 class GroupGate extends StatefulWidget {
   const GroupGate({super.key, required this.core, required this.chat});
@@ -54,6 +77,8 @@ class GroupGate extends StatefulWidget {
 class _GroupGateState extends State<GroupGate> {
   bool? _admin;
   bool? _inGroup;
+  _LobbySetup _setup = _LobbySetup.none;
+  String? _createError;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -83,6 +108,46 @@ class _GroupGateState extends State<GroupGate> {
       _admin = admin;
       _inGroup = inGroup;
     });
+    // The admin's first device creates the lobby on its own, with no manual
+    // "Create the group" step (app-ui: The lobby appears without a manual
+    // create step). Fire once, unless a real failure is showing its retry.
+    if (admin && !inGroup && _setup == _LobbySetup.none) {
+      _autoCreateLobby();
+    }
+  }
+
+  /// Creates the lobby automatically on the admin's first device. A benign
+  /// "already in a group" answer (a linked admin device racing a lobby that
+  /// already exists) leaves the device waiting to be synced in; any other
+  /// error shows a retry.
+  Future<void> _autoCreateLobby() async {
+    setState(() {
+      _setup = _LobbySetup.creating;
+      _createError = null;
+    });
+    try {
+      await widget.core.createGroup();
+      // The lobby exists now; re-check flips to the chat.
+      if (mounted) await _check();
+    } on CoreError catch (error) {
+      if (!mounted) return;
+      if (error.kind == CoreErrorKind.alreadyInGroup) {
+        // Benign: the server already has the lobby. Wait to be synced in; the
+        // event listener re-checks on JoinedGroup/Rejoined/MembersChanged.
+        setState(() => _setup = _LobbySetup.waiting);
+        return;
+      }
+      setState(() {
+        _setup = _LobbySetup.failed;
+        _createError = errorText(error);
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _setup = _LobbySetup.failed;
+        _createError = errorText(error);
+      });
+    }
   }
 
   @override
@@ -97,7 +162,59 @@ class _GroupGateState extends State<GroupGate> {
     if (inGroup) {
       return HomeShell(core: widget.core, chat: widget.chat, admin: admin);
     }
-    if (admin) return CreateGroupScreen(core: widget.core, onCreated: _check);
+    if (admin && _setup == _LobbySetup.failed) {
+      return Scaffold(
+        appBar: shellAppBar(widget.core),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              key: const Key('lobby-create-failed'),
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  createFailedText,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                if (_createError case final error?) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: _autoCreateLobby,
+                  child: const Text('Try again'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    // The admin's first device while the lobby is being created automatically.
+    if (admin && _setup != _LobbySetup.waiting) {
+      return Scaffold(
+        appBar: shellAppBar(widget.core),
+        body: const Center(
+          child: Column(
+            key: Key('lobby-setting-up'),
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text(settingUpText, textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
+    // A member, or the admin's linked device waiting to be synced into the
+    // existing lobby, waits to be added.
     return Scaffold(
       appBar: shellAppBar(widget.core),
       body: Center(

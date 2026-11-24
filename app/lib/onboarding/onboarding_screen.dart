@@ -79,6 +79,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             controller: _invite,
             minLines: 2,
             maxLines: 4,
+            // An invite is a case-sensitive base64url payload after a fixed
+            // prefix: the keyboard must not capitalize or "correct" it, or a
+            // typed invite fails to parse (the core also strips the prefix
+            // case-insensitively as a backstop).
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
             decoration: const InputDecoration(
               border: OutlineInputBorder(),
               labelText: 'Invite',
