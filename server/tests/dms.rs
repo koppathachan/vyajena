@@ -456,6 +456,149 @@ async fn the_admin_has_no_call_on_other_peoples_dms() {
     assert_ne!(rejected.reason, 0);
 }
 
+/// Bob is removed from the server: the Alice–Bob DM closes.
+async fn close_dm_by_removing_bob(w: &mut World) {
+    w.conn
+        .admin()
+        .remove_user(authed(
+            w.admin.token(),
+            pb::RemoveUserRequest {
+                user_id: Some(w.bob.pb_user_id()),
+            },
+        ))
+        .await
+        .check("RemoveUser");
+    let closed = next_dm_closed(&mut w.laptop_stream).await;
+    assert_eq!(closed.group_id, DM_ID);
+}
+
+async fn remove_closed_dm(
+    w: &World,
+    caller: &TestDevice,
+    group_id: &[u8],
+) -> Result<(), tonic::Status> {
+    w.conn
+        .dms()
+        .remove_closed_dm(authed(
+            caller.token(),
+            pb::RemoveClosedDmRequest {
+                group_id: group_id.to_vec(),
+            },
+        ))
+        .await
+        .map(|_| ())
+}
+
+/// The next `ConversationRemoved` frame; other frames before it are skipped.
+async fn next_removed(stream: &mut Stream) -> pb::ConversationRemoved {
+    loop {
+        if let Out::ConversationRemoved(removed) = stream.next().await {
+            return removed;
+        }
+    }
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test]
+async fn a_removed_closed_dm_reaches_the_users_other_devices_on_connect() {
+    let mut w = v2_world().await;
+    open_dm(&mut w).await;
+    add_bob_to_dm(&mut w).await;
+    close_dm_by_removing_bob(&mut w).await;
+
+    remove_closed_dm(&w, &w.laptop, DM_ID)
+        .await
+        .check("RemoveClosedDm");
+
+    // Every connect names it again: a set, not a queue (no ack).
+    for _ in 0..2 {
+        w.laptop_stream = reconnect(&w.conn, &mut w.laptop).await;
+        assert_eq!(next_removed(&mut w.laptop_stream).await.group_id, DM_ID);
+    }
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test]
+async fn only_the_users_own_set_is_sent_and_it_holds_ids_only() {
+    let mut w = v2_world().await;
+    open_dm(&mut w).await;
+    add_bob_to_dm(&mut w).await;
+    close_dm_by_removing_bob(&mut w).await;
+    remove_closed_dm(&w, &w.laptop, DM_ID)
+        .await
+        .check("RemoveClosedDm");
+
+    // The admin hears nothing of Alice's set.
+    w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
+    w.admin_stream.assert_quiet().await;
+
+    // The server holds only (username, group id).
+    let columns: Vec<String> = w
+        .server
+        .query(|db| {
+            let mut stmt =
+                db.prepare("SELECT name FROM pragma_table_info('removed_conversations')")?;
+            stmt.query_map([], |r| r.get(0))?.collect()
+        })
+        .await;
+    assert_eq!(columns, ["username", "group_id"]);
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test]
+async fn removing_twice_is_idempotent() {
+    let mut w = v2_world().await;
+    open_dm(&mut w).await;
+    add_bob_to_dm(&mut w).await;
+    close_dm_by_removing_bob(&mut w).await;
+    for _ in 0..2 {
+        remove_closed_dm(&w, &w.laptop, DM_ID)
+            .await
+            .check("RemoveClosedDm");
+    }
+    let rows: i64 = w
+        .server
+        .query(|db| {
+            db.query_row("SELECT count(*) FROM removed_conversations", [], |r| {
+                r.get(0)
+            })
+        })
+        .await;
+    assert_eq!(rows, 1);
+}
+
+// spec: message-deletion/removed-conversation-sync
+#[tokio::test]
+async fn only_a_closed_dm_of_the_caller_can_be_removed() {
+    let mut w = v2_world().await;
+    open_dm(&mut w).await;
+    add_bob_to_dm(&mut w).await;
+
+    // Still open: refused.
+    let open = remove_closed_dm(&w, &w.laptop, DM_ID).await.unwrap_err();
+    assert_eq!(open.code(), Code::PermissionDenied);
+
+    close_dm_by_removing_bob(&mut w).await;
+
+    // Not a member of it (the admin), and an unknown id.
+    let admin = remove_closed_dm(&w, &w.admin, DM_ID).await.unwrap_err();
+    assert_eq!(admin.code(), Code::PermissionDenied);
+    let unknown = remove_closed_dm(&w, &w.laptop, b"no-such-conversation")
+        .await
+        .unwrap_err();
+    assert_eq!(unknown.code(), Code::PermissionDenied);
+
+    let rows: i64 = w
+        .server
+        .query(|db| {
+            db.query_row("SELECT count(*) FROM removed_conversations", [], |r| {
+                r.get(0)
+            })
+        })
+        .await;
+    assert_eq!(rows, 0);
+}
+
 /// The next `DmClosed` frame; other frames before it are skipped.
 async fn next_dm_closed(stream: &mut Stream) -> pb::DmClosed {
     loop {

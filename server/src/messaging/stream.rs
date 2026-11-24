@@ -386,6 +386,8 @@ fn connect_info(
         }
         // direct-messages: DM closed on user removal, until acknowledged.
         frames.extend(dms::closed_notices(conn, &device_id)?);
+        // message-deletion: Removed-conversation sync. The caller's user's own set.
+        frames.extend(dms::removed_frames(conn, &caller.username)?);
     }
     // key-directory: Replenishment signal, for a count that dropped while
     // the device was away.
