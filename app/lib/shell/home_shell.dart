@@ -17,6 +17,10 @@ import 'avatars.dart';
 /// The tabs, in bar order.
 enum ShellTab { chats, contacts, profile }
 
+/// The green of the Profile avatar's presence dot while this device is
+/// connected. Offline (the default) uses the theme's `error` colour instead.
+const _presenceOnline = Color(0xFF34C759);
+
 /// The app's home once this device is in the group.
 class HomeShell extends StatefulWidget {
   const HomeShell({
@@ -76,25 +80,54 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final me = widget.core.user.value;
     final avatarName = _ownName.isEmpty ? (me?.username ?? '?') : _ownName;
-    Widget avatar({required bool selected}) => DecoratedBox(
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected
-              ? Theme.of(context).colorScheme.primary
-              : Colors.transparent,
-          width: 2,
+    Widget avatar({required bool selected}) => Stack(
+      clipBehavior: Clip.none,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.transparent,
+              width: 2,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(1),
+            child: NameAvatar(
+              key: const Key('profile-avatar'),
+              name: avatarName,
+              seed: me?.username,
+              radius: 13,
+            ),
+          ),
         ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(1),
-        child: NameAvatar(
-          key: const Key('profile-avatar'),
-          name: avatarName,
-          seed: me?.username,
-          radius: 13,
+        // This device's own online/offline presence: green while connected,
+        // the error colour otherwise (offline is the default). Only the
+        // Profile tab shows it; other NameAvatars are unchanged.
+        Positioned(
+          right: -1,
+          bottom: -1,
+          child: ValueListenableBuilder<ConnectionStatus>(
+            valueListenable: widget.core.connection,
+            builder: (context, status, _) {
+              final scheme = Theme.of(context).colorScheme;
+              final online = status == ConnectionStatus.connected;
+              return Container(
+                key: const Key('profile-presence-dot'),
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: online ? _presenceOnline : scheme.error,
+                  border: Border.all(color: scheme.surface, width: 1.5),
+                ),
+              );
+            },
+          ),
         ),
-      ),
+      ],
     );
     return Scaffold(
       body: IndexedStack(

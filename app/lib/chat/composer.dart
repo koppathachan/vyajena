@@ -181,6 +181,10 @@ class _ComposerState extends State<Composer> {
   /// working), so the sheet shows progress and a second tap is ignored.
   bool _segmenting = false;
 
+  /// A pick is in flight: the composer shows a placeholder at once so choosing
+  /// a picture feels immediate even while the platform prepares its bytes.
+  bool _attaching = false;
+
   // Voice recording (app-ui: Record a voice message).
   VoiceRecorder? _recorder;
   bool _held = false;
@@ -513,7 +517,7 @@ class _ComposerState extends State<Composer> {
   /// files and files join the sheet as `video-messages` and later changes
   /// ship, and stay out of it until then.
   Future<void> _openAttachments() async {
-    if (_sending) return;
+    if (_sending || _attaching) return;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -653,18 +657,52 @@ class _ComposerState extends State<Composer> {
 
   Future<void> _attach() async {
     final pick = widget.pickImage;
-    if (pick == null || _sending) return;
+    if (pick == null || _sending || _attaching) return;
+    // Show the placeholder before awaiting the pick, so the preview area fills
+    // the instant the user chooses rather than after the bytes are ready.
+    setState(() {
+      _attaching = true;
+      _error = null;
+    });
     try {
       final picked = await pick();
-      if (picked != null && mounted) {
-        setState(() {
-          _picture = picked;
-          _error = null;
-        });
-      }
+      if (picked != null && mounted) setState(() => _picture = picked);
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _attaching = false);
     }
+  }
+
+  /// The placeholder shown while a pick is in flight, in the same place the
+  /// picture preview will take, so choosing a picture feels immediate.
+  Widget _attachingBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('picture-attaching'),
+      margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 56,
+              height: 56,
+              color: scheme.surfaceContainerHighest,
+              child: const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(child: Text('Adding picture…')),
+        ],
+      ),
+    );
   }
 
   Widget _pictureBar(BuildContext context, Uint8List picture) {
@@ -754,7 +792,9 @@ class _ComposerState extends State<Composer> {
         _picker(context),
         if (widget.reply case final ReplyDraft reply when !removed)
           _replyBar(context, reply),
-        if (_picture case final Uint8List picture when !removed)
+        if (_attaching && !removed)
+          _attachingBar(context)
+        else if (_picture case final Uint8List picture when !removed)
           _pictureBar(context, picture),
         if (_sticker case final Cutout sticker when !removed)
           _stickerBar(context, sticker),
@@ -785,7 +825,9 @@ class _ComposerState extends State<Composer> {
               IconButton(
                 key: const Key('attach-image'),
                 tooltip: 'Attach',
-                onPressed: _sending || removed ? null : _openAttachments,
+                onPressed: _sending || _attaching || removed
+                    ? null
+                    : _openAttachments,
                 icon: const Icon(Icons.attach_file),
               ),
             Expanded(
