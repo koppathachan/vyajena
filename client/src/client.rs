@@ -1226,8 +1226,7 @@ impl Client {
     ) -> Result<(), ClientError> {
         let (scope, group_id) = match target {
             MuteTarget::Conversation(chat) => {
-                let group_id = self.group_id_of(chat)?.ok_or(ClientError::NoSuchChat)?;
-                (pb::MuteScope::Conversation, group_id)
+                (pb::MuteScope::Conversation, self.group_id_of(chat)?)
             }
             MuteTarget::Global => (pb::MuteScope::Global, Vec::new()),
         };
@@ -1262,20 +1261,12 @@ impl Client {
         if self.shared.store.muted_all()? {
             return Ok(true);
         }
-        match self.group_id_of(chat)? {
-            Some(group_id) => Ok(self.shared.store.is_conversation_muted(&group_id)?),
-            None => Ok(false),
+        match self.group_id_of(chat) {
+            Ok(group_id) => Ok(self.shared.store.is_conversation_muted(&group_id)?),
+            // An unknown or not-yet-joined conversation cannot be muted.
+            Err(ClientError::NoSuchChat | ClientError::NoGroup) => Ok(false),
+            Err(error) => Err(error),
         }
-    }
-
-    /// The MLS group id of `chat`: the main group for [`ChatId::MAIN`], else the
-    /// DM or named group's. `None` for an unknown chat or an unjoined lobby.
-    fn group_id_of(&self, chat: ChatId) -> Result<Option<Vec<u8>>, ClientError> {
-        let store = &self.shared.store;
-        if chat.is_main() {
-            return Ok(store.group()?.map(|row| row.group_id));
-        }
-        Ok(store.dm_by_chat(chat.0)?.map(|dm| dm.group_id))
     }
 
     /// The chat `group_id` belongs to, or `None` for an unknown group.
