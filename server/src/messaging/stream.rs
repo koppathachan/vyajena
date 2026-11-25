@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use protocol::device_identity::DeviceId;
 use protocol::key_directory::KEY_PACKAGES_LOW_WATER_MARK;
-use protocol::wire_transport::{STREAM_IDLE_TIMEOUT, SUPPORTED_PROTOCOL_VERSIONS};
+use protocol::wire_transport::SUPPORTED_PROTOCOL_VERSIONS;
 use tokio::sync::{mpsc, watch};
 use tonic::{Status, Streaming};
 
@@ -196,12 +196,14 @@ impl Session {
                 let keys = self.state.keys.clone();
                 let server_id = self.state.config.server_id.clone();
                 let now = self.state.clock.now();
+                let limits = self.state.config.limits;
                 self.store(move |conn| {
                     let tx = conn.transaction()?;
                     let ctx = Context {
                         server_id: &server_id,
                         keys: &keys,
                         now,
+                        limits,
                     };
                     let outcome = write::submit(&tx, &ctx, &caller, &envelope, kind)?;
                     if matches!(outcome, Outcome::Accepted { .. }) {
@@ -263,7 +265,7 @@ impl Session {
             .clock
             .now()
             .duration_since(last_frame)
-            .is_ok_and(|idle| idle >= STREAM_IDLE_TIMEOUT)
+            .is_ok_and(|idle| idle >= self.state.config.limits.stream_idle_timeout)
     }
 }
 

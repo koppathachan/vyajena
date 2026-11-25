@@ -66,6 +66,7 @@ pub async fn ensure_bootstrap_invite(
     let admin = config.admin_username.clone();
     let server_id = config.server_id.clone();
     let relay_address = config.public_address.clone();
+    let invite_ttl = config.limits.invite_ttl;
     store
         .call(move |conn| {
             let tx = conn.transaction()?;
@@ -78,7 +79,7 @@ pub async fn ensure_bootstrap_invite(
                     expires_at: pending.expires_at,
                 });
             }
-            let invite = invites::create(&tx, &admin, now, true)?;
+            let invite = invites::create(&tx, &admin, now, invite_ttl, true)?;
             tx.commit()?;
             let payload = pb::InvitePayload {
                 relay_address,

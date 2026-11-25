@@ -6,8 +6,8 @@ use std::time::SystemTime;
 use protocol::device_identity::DeviceId;
 use protocol::device_identity::{PushTokenKind, push_token_problem};
 use protocol::wire_transport::{
-    CHALLENGE_NONCE_LEN, CHALLENGE_TTL, MAX_APPLICATION_CIPHERTEXT_BYTES,
-    MAX_HANDSHAKE_ENVELOPE_BYTES, SUPPORTED_PROTOCOL_VERSIONS, verify_auth_signature,
+    CHALLENGE_NONCE_LEN, MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES,
+    SUPPORTED_PROTOCOL_VERSIONS, verify_auth_signature,
 };
 use rusqlite::{OptionalExtension, Transaction, params};
 use tonic::{Request, Response, Status};
@@ -146,7 +146,7 @@ impl Devices for DevicesService {
         let mut nonce = [0u8; CHALLENGE_NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Status::internal("no randomness"))?;
         let now = self.state.clock.now();
-        let expires_at = now + CHALLENGE_TTL;
+        let expires_at = now + self.state.config.limits.challenge_ttl;
         self.state
             .store
             .call(move |conn| {

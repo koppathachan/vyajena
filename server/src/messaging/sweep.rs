@@ -7,8 +7,6 @@
 use std::time::{Duration, SystemTime};
 
 use protocol::device_identity::DeviceId;
-use protocol::group_membership::INACTIVITY_TIMEOUT;
-use protocol::message_delivery::{CATCH_UP_MAX, DEDUP_MIN_RETENTION, QUEUE_ENTRY_TTL};
 use rusqlite::Transaction;
 
 use super::log;
@@ -44,7 +42,8 @@ fn sweep_in(
     }
     let mut notify = Vec::new();
     let mut gaps = Vec::new();
-    let stale = inactivity::stale_members(conn, before(now, INACTIVITY_TIMEOUT), connected)?;
+    let stale =
+        inactivity::stale_members(conn, before(now, ctx.limits.inactivity_timeout), connected)?;
     for device_id in &stale {
         notify.extend(write::mark_inactive(conn, ctx, device_id)?);
     }
@@ -57,14 +56,14 @@ fn sweep_in(
         notify.extend(write::reissue_removes(conn, ctx, &mut state)?);
         state.save(conn)?;
     }
-    for device_id in log::expire(conn, before(now, QUEUE_ENTRY_TTL))? {
+    for device_id in log::expire(conn, before(now, ctx.limits.queue_entry_ttl))? {
         if connected.contains(&device_id) {
             for (group_id, at) in log::gaps(conn, &device_id)? {
                 gaps.push((device_id, at, group_id));
             }
         }
     }
-    log::dedup_prune(conn, before(now, DEDUP_MIN_RETENTION))?;
+    log::dedup_prune(conn, before(now, ctx.limits.dedup_min_retention))?;
     log::collect_garbage(conn)?;
     // notification-reliability: Sweep catch-up wake ping (D2) with the durable
     // attempt counter (D5). First reset the counter for devices that have
@@ -81,7 +80,7 @@ fn sweep_in(
         if records::push_token(conn, &device_id)?.is_none() {
             continue;
         }
-        if log::catchup_attempts(conn, &device_id)? >= CATCH_UP_MAX {
+        if log::catchup_attempts(conn, &device_id)? >= ctx.limits.catch_up_max {
             continue;
         }
         log::bump_catchup(conn, &device_id)?;
@@ -106,6 +105,7 @@ pub async fn sweep(state: &State) -> Result<(), StoreError> {
     let now = state.clock.now();
     let keys = state.keys.clone();
     let server_id = state.config.server_id.clone();
+    let limits = state.config.limits;
     let swept = state
         .store
         .call(move |conn| {
@@ -114,6 +114,7 @@ pub async fn sweep(state: &State) -> Result<(), StoreError> {
                 server_id: &server_id,
                 keys: &keys,
                 now,
+                limits,
             };
             let swept = sweep_in(&tx, &ctx, &connected)?;
             tx.commit()?;

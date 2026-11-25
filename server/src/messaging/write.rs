@@ -21,7 +21,7 @@ use openmls::prelude::tls_codec::Deserialize as _;
 use openmls::prelude::{ContentType, MlsMessageBodyIn, MlsMessageIn, ProtocolMessage};
 use prost::Message as _;
 use protocol::device_identity::DeviceId;
-use protocol::message_delivery::{MSG_ID_LEN, QUEUE_CAP};
+use protocol::message_delivery::MSG_ID_LEN;
 use protocol::wire_transport::{MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES};
 use rusqlite::Transaction;
 use sha2::{Digest, Sha256};
@@ -41,6 +41,8 @@ pub(crate) struct Context<'a> {
     pub server_id: &'a str,
     pub keys: &'a ServerKeys,
     pub now: SystemTime,
+    /// The effective, operator-tunable limits (server-runtime: Configuration).
+    pub limits: crate::runtime::config::Limits,
 }
 
 /// The result for one client envelope.
@@ -299,7 +301,7 @@ pub(crate) fn submit(
             // the send; that device is marked inactive instead.
             let mut full = Vec::new();
             for recipient in &recipients {
-                if log::application_queue_len(conn, recipient)? >= QUEUE_CAP {
+                if log::application_queue_len(conn, recipient)? >= ctx.limits.queue_cap {
                     full.push(*recipient);
                 } else {
                     log::insert_delivery(conn, recipient, server_seq, false)?;

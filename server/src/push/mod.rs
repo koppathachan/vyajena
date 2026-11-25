@@ -225,11 +225,11 @@ impl PingLimiter {
     /// Whether `device_id` may be pinged at `now`; if so, records the ping.
     /// A ping inside the interval is dropped, not deferred: the earlier ping
     /// already woke the app, which fetches everything when it connects.
-    pub fn take(&self, device_id: &DeviceId, now: SystemTime) -> bool {
+    pub fn take(&self, device_id: &DeviceId, now: SystemTime, min_interval: Duration) -> bool {
         let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
         let allowed = last.get(device_id).is_none_or(|at| {
             now.duration_since(*at)
-                .is_ok_and(|since| since >= WAKE_PING_MIN_INTERVAL)
+                .is_ok_and(|since| since >= min_interval)
         });
         if allowed {
             last.insert(*device_id, now);

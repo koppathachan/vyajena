@@ -12,10 +12,39 @@
 //! [blob_store]                           # optional: without it, images are off
 //! backend = "filesystem"
 //! path = "/mnt/vyajena-blobs"            # a stable path, the same on every start
+//!
+//! [limits]                               # optional: every field defaults to the
+//!                                        # built-in value, so an absent table or
+//!                                        # field keeps today's behaviour. Durations
+//!                                        # are whole seconds; applied on restart.
+//! inactivity_timeout = 604800            # 7 days: idle before a device is removed.
+//!                                        #   raise (e.g. 2592000 = 30 days) so a
+//!                                        #   backgrounded phone is not dropped; the
+//!                                        #   trade-off is inactive leaves linger in
+//!                                        #   the MLS tree. See also queue_entry_ttl.
+//! queue_entry_ttl = 604800               # 7 days: a returning device only gets
+//!                                        #   messages newer than this; raise it with
+//!                                        #   inactivity_timeout to keep more, at the
+//!                                        #   cost of server storage.
+//! queue_cap = 1000                       # per-device queue before marked inactive.
+//! stream_idle_timeout = 90               # seconds idle before a stream is reaped.
+//! invite_ttl = 604800                    # 7 days.
+//! blob_ttl = 604800                      # 7 days.
+//! challenge_ttl = 60                     # seconds an auth challenge is valid.
+//! dedup_min_retention = 604800           # 7 days; keep >= queue_entry_ttl.
+//! wake_ping_min_interval = 60            # min seconds between wake pushes per device.
+//! catch_up_max = 5                       # bounded catch-up push attempts per backlog.
+//! sweep_interval = 60                    # seconds between periodic sweeps.
+//! max_blob_store_bytes = 1073741824      # 1 GiB blob-store ceiling.
+//! max_uploads_per_device_per_hour = 60
 //! ```
+//!
+//! The effective configuration (all limits and the non-secret base settings) is
+//! logged once at startup, so the operator can see what is in force.
 
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// The server's settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +65,66 @@ pub struct Config {
     /// Where encrypted image blobs are kept; `None` turns images off
     /// (blob-store: Pluggable storage backend).
     pub blob_store: Option<BlobStoreConfig>,
+    /// Operator-tunable, server-enforced limits (server-runtime: Configuration).
+    /// Every field defaults to the built-in value, so an absent `[limits]`
+    /// table keeps today's behaviour.
+    pub limits: Limits,
+}
+
+/// The server-enforced, operator-tunable limits. Each field defaults to the
+/// built-in constant; `[limits]` in the TOML overrides individual values,
+/// applied on restart. Client-side timings are not configurable here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Idle before a member device is removed (`INACTIVITY_TIMEOUT`).
+    pub inactivity_timeout: Duration,
+    /// How long an undelivered queued entry is kept (`QUEUE_ENTRY_TTL`).
+    pub queue_entry_ttl: Duration,
+    /// Per-device queue length before the device is marked inactive (`QUEUE_CAP`).
+    pub queue_cap: usize,
+    /// Idle before a `Connect` stream is reaped (`STREAM_IDLE_TIMEOUT`).
+    pub stream_idle_timeout: Duration,
+    /// How long a created invite is usable (`INVITE_TTL`).
+    pub invite_ttl: Duration,
+    /// How long a stored blob is kept (`BLOB_TTL`).
+    pub blob_ttl: Duration,
+    /// Auth challenge validity (`CHALLENGE_TTL`).
+    pub challenge_ttl: Duration,
+    /// Minimum retention of dedup records (`DEDUP_MIN_RETENTION`).
+    pub dedup_min_retention: Duration,
+    /// Minimum interval between wake pushes to one device (`WAKE_PING_MIN_INTERVAL`).
+    pub wake_ping_min_interval: Duration,
+    /// Bounded catch-up push attempts for one backlog (`CATCH_UP_MAX`).
+    pub catch_up_max: u32,
+    /// How often the periodic sweep runs (`SWEEP_INTERVAL`, server-local).
+    pub sweep_interval: Duration,
+    /// Blob-store disk ceiling in bytes (`MAX_BLOB_STORE_BYTES`).
+    pub max_blob_store_bytes: u64,
+    /// Blob uploads allowed per device per hour (`MAX_UPLOADS_PER_DEVICE_PER_HOUR`).
+    pub max_uploads_per_device_per_hour: u32,
+}
+
+/// The default sweep interval (server-local; no `protocol` const).
+const DEFAULT_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            inactivity_timeout: protocol::group_membership::INACTIVITY_TIMEOUT,
+            queue_entry_ttl: protocol::message_delivery::QUEUE_ENTRY_TTL,
+            queue_cap: protocol::message_delivery::QUEUE_CAP,
+            stream_idle_timeout: protocol::wire_transport::STREAM_IDLE_TIMEOUT,
+            invite_ttl: protocol::device_identity::INVITE_TTL,
+            blob_ttl: protocol::blob_store::BLOB_TTL,
+            challenge_ttl: protocol::wire_transport::CHALLENGE_TTL,
+            dedup_min_retention: protocol::message_delivery::DEDUP_MIN_RETENTION,
+            wake_ping_min_interval: protocol::message_delivery::WAKE_PING_MIN_INTERVAL,
+            catch_up_max: protocol::message_delivery::CATCH_UP_MAX,
+            sweep_interval: DEFAULT_SWEEP_INTERVAL,
+            max_blob_store_bytes: protocol::blob_store::MAX_BLOB_STORE_BYTES,
+            max_uploads_per_device_per_hour: protocol::blob_store::MAX_UPLOADS_PER_DEVICE_PER_HOUR,
+        }
+    }
 }
 
 /// Which blob-store backend holds the ciphertext, and where.
@@ -68,6 +157,8 @@ pub mod field {
     pub const BLOB_STORE_BACKEND: &str = "blob_store.backend";
     /// `blob_store.path`
     pub const BLOB_STORE_PATH: &str = "blob_store.path";
+    /// `[limits]`
+    pub const LIMITS: &str = "limits";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -77,6 +168,24 @@ pub mod field {
         DATABASE_PATH,
         KEY_DIR,
         BLOB_STORE,
+        LIMITS,
+    ];
+
+    /// The known fields inside the `[limits]` table.
+    pub(super) const LIMITS_FIELDS: &[&str] = &[
+        "inactivity_timeout",
+        "queue_entry_ttl",
+        "queue_cap",
+        "stream_idle_timeout",
+        "invite_ttl",
+        "blob_ttl",
+        "challenge_ttl",
+        "dedup_min_retention",
+        "wake_ping_min_interval",
+        "catch_up_max",
+        "sweep_interval",
+        "max_blob_store_bytes",
+        "max_uploads_per_device_per_hour",
     ];
 }
 
@@ -170,6 +279,7 @@ impl Config {
         let database_path = base.join(required_str(&table, field::DATABASE_PATH)?);
         let key_dir = base.join(required_str(&table, field::KEY_DIR)?);
         let blob_store = blob_store(&table, base)?;
+        let limits = limits(&table)?;
 
         Ok(Self {
             server_id,
@@ -179,6 +289,7 @@ impl Config {
             database_path,
             key_dir,
             blob_store,
+            limits,
         })
     }
 
@@ -226,6 +337,103 @@ fn blob_store(table: &toml::Table, base: &Path) -> Result<Option<BlobStoreConfig
             reason: format!("{other:?} is not a known backend (only \"filesystem\")"),
         }),
     }
+}
+
+/// The `[limits]` table. Every field is optional and defaults to the built-in
+/// value; durations are whole seconds, counts and byte sizes are integers. A
+/// present field must be a positive integer within sane bounds.
+fn limits(table: &toml::Table) -> Result<Limits, ConfigError> {
+    let mut limits = Limits::default();
+    let Some(value) = table.get(field::LIMITS) else {
+        return Ok(limits);
+    };
+    let toml::Value::Table(sub) = value else {
+        return Err(ConfigError::Invalid {
+            field: field::LIMITS,
+            reason: format!("must be a table, found {}", value.type_str()),
+        });
+    };
+    if let Some(unknown) = sub
+        .keys()
+        .find(|k| !field::LIMITS_FIELDS.contains(&k.as_str()))
+    {
+        return Err(ConfigError::Unknown {
+            field: format!("{}.{unknown}", field::LIMITS),
+        });
+    }
+
+    if let Some(n) = pos_int(sub, "inactivity_timeout")? {
+        limits.inactivity_timeout = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "queue_entry_ttl")? {
+        limits.queue_entry_ttl = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "queue_cap")? {
+        limits.queue_cap = usize::try_from(n).unwrap_or(usize::MAX);
+    }
+    if let Some(n) = pos_int(sub, "stream_idle_timeout")? {
+        limits.stream_idle_timeout = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "invite_ttl")? {
+        limits.invite_ttl = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "blob_ttl")? {
+        limits.blob_ttl = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "challenge_ttl")? {
+        limits.challenge_ttl = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "dedup_min_retention")? {
+        limits.dedup_min_retention = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "wake_ping_min_interval")? {
+        limits.wake_ping_min_interval = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "catch_up_max")? {
+        limits.catch_up_max = bounded_u32("catch_up_max", n)?;
+    }
+    if let Some(n) = pos_int(sub, "sweep_interval")? {
+        limits.sweep_interval = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "max_blob_store_bytes")? {
+        let min = protocol::blob_store::MAX_BLOB_BYTES as u64;
+        if n < min {
+            return Err(ConfigError::Invalid {
+                field: "max_blob_store_bytes",
+                reason: format!("must be at least one blob ({min} bytes)"),
+            });
+        }
+        limits.max_blob_store_bytes = n;
+    }
+    if let Some(n) = pos_int(sub, "max_uploads_per_device_per_hour")? {
+        limits.max_uploads_per_device_per_hour = bounded_u32("max_uploads_per_device_per_hour", n)?;
+    }
+    Ok(limits)
+}
+
+/// An optional positive integer from a `[limits]` sub-field, erroring (naming
+/// the field) if present but not a positive integer.
+fn pos_int(sub: &toml::Table, name: &'static str) -> Result<Option<u64>, ConfigError> {
+    match sub.get(name) {
+        None => Ok(None),
+        Some(toml::Value::Integer(n)) if *n > 0 => Ok(Some(*n as u64)),
+        Some(toml::Value::Integer(_)) => Err(ConfigError::Invalid {
+            field: name,
+            reason: "must be a positive integer".into(),
+        }),
+        Some(other) => Err(ConfigError::Invalid {
+            field: name,
+            reason: format!("must be a positive integer, found {}", other.type_str()),
+        }),
+    }
+}
+
+/// A positive integer that must fit in a `u32`.
+fn bounded_u32(name: &'static str, n: u64) -> Result<u32, ConfigError> {
+    u32::try_from(n).map_err(|_| ConfigError::Invalid {
+        field: name,
+        reason: format!("must be at most {}", u32::MAX),
+    })
 }
 
 fn optional_str(table: &toml::Table, field: &'static str) -> Result<Option<String>, ConfigError> {

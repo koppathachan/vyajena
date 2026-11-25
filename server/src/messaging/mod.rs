@@ -103,7 +103,11 @@ pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
             if state.hub.is_connected(&device_id) {
                 continue;
             }
-            if state.hub.pings().take(&device_id, state.clock.now()) {
+            if state.hub.pings().take(
+                &device_id,
+                state.clock.now(),
+                state.config.limits.wake_ping_min_interval,
+            ) {
                 let sent = token.token.clone();
                 if state.push.wake(device_id, token).await == WakeOutcome::TokenInvalid {
                     clear_invalid_token(&state, device_id, sent).await;
@@ -190,7 +194,7 @@ pub fn background(state: &State) -> Vec<JoinHandle<()>> {
 
     let sweeper = state.clone();
     tasks.push(tokio::spawn(async move {
-        let mut every = tokio::time::interval(SWEEP_INTERVAL);
+        let mut every = tokio::time::interval(sweeper.config.limits.sweep_interval);
         every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             every.tick().await;

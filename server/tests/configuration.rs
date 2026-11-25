@@ -274,3 +274,62 @@ fn a_bad_blob_store_names_the_field() {
         }
     }
 }
+
+// spec: server-runtime/configuration
+#[test]
+fn limits_default_to_the_built_in_values() {
+    // No [limits] table: every limit is the built-in default.
+    let config = parse(&support::config_text()).check("parse");
+    assert_eq!(
+        config.limits,
+        server::runtime::config::Limits::default(),
+        "an absent [limits] table must keep the defaults"
+    );
+    assert_eq!(
+        config.limits.inactivity_timeout,
+        Duration::from_secs(7 * 24 * 60 * 60)
+    );
+    assert_eq!(config.limits.queue_cap, 1000);
+}
+
+// spec: server-runtime/configuration
+#[test]
+fn a_tuned_limit_is_applied_and_others_keep_defaults() {
+    let text = format!(
+        "{}\n[limits]\ninactivity_timeout = 2592000\n",
+        support::config_text()
+    );
+    let config = parse(&text).check("parse");
+    // The set value takes effect (30 days)...
+    assert_eq!(
+        config.limits.inactivity_timeout,
+        Duration::from_secs(2_592_000)
+    );
+    // ...and every unset limit keeps its default.
+    let defaults = server::runtime::config::Limits::default();
+    assert_eq!(config.limits.queue_entry_ttl, defaults.queue_entry_ttl);
+    assert_eq!(config.limits.queue_cap, defaults.queue_cap);
+}
+
+// spec: server-runtime/configuration
+#[test]
+fn a_bad_limit_names_the_field() {
+    let cases = [
+        ("[limits]\nqueue_cap = 0", "queue_cap"),
+        ("[limits]\ninactivity_timeout = -1", "inactivity_timeout"),
+        (
+            "[limits]\nwake_ping_min_interval = \"x\"",
+            "wake_ping_min_interval",
+        ),
+        ("[limits]\nmax_blob_store_bytes = 1", "max_blob_store_bytes"),
+        ("[limits]\nbogus = 1", "limits.bogus"),
+        ("limits = 5", "limits"),
+    ];
+    for (table, field) in cases {
+        let text = format!("{}\n{table}\n", support::config_text());
+        match parse(&text) {
+            Err(error) => assert_eq!(error.field(), Some(field), "for {table}: {error}"),
+            Ok(_) => panic!("config accepted: {table}"),
+        }
+    }
+}
