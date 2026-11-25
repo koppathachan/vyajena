@@ -121,6 +121,12 @@ pub(crate) struct Shared {
     /// Whether it lists protocol version 3, so knows named groups (change
     /// `lobby-multi-group`).
     pub(crate) server_knows_named_groups: std::sync::atomic::AtomicBool,
+    /// The maximum blob ciphertext size the server last advertised in
+    /// `ServerInfo.Limits.max_video_blob_bytes` (video-messages: Config-driven
+    /// limit). Refreshed on every connect; 0 until the first one, when the core
+    /// falls back to [`protocol::video::DEFAULT_MAX_VIDEO_BYTES`]. The core
+    /// refuses a video whose encrypted blob would exceed it.
+    pub(crate) max_video_blob_bytes: std::sync::atomic::AtomicU64,
     /// The decrypted images this device keeps (client-runtime: Image download
     /// and cache).
     pub(crate) media: crate::media::MediaCache,
@@ -724,6 +730,14 @@ impl Engine {
         );
         self.shared.server_knows_dms.store(
             protocol::wire_transport::server_knows_dms(&info.supported_protocol_versions),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        // video-messages: Config-driven limit. Remember the advertised blob cap
+        // so a video send can refuse an over-limit clip without a round trip. An
+        // older server leaves `limits` or the field unset (0); the core then uses
+        // the protocol default.
+        self.shared.max_video_blob_bytes.store(
+            info.limits.as_ref().map_or(0, |l| l.max_video_blob_bytes),
             std::sync::atomic::Ordering::Relaxed,
         );
         // wire-transport: Session resume. A token kept from the last connection

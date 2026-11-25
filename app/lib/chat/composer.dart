@@ -96,6 +96,7 @@ class Composer extends StatefulWidget {
     this.pickImage,
     this.sendImage,
     this.sendAudio,
+    this.onSendVideo,
     this.onRecordingStarted,
   });
 
@@ -119,6 +120,12 @@ class Composer extends StatefulWidget {
   /// Sends a recorded voice message: the WAV file's bytes, which the core
   /// encodes. No microphone button when unset.
   final Future<void> Function(Uint8List wav, {int? replyTo})? sendAudio;
+
+  /// Runs the whole send-a-video flow (record or gallery-pick, trim, native
+  /// normalize, then hand to the core). Owned by the chat screen so the
+  /// composer stays free of the camera, picker and native plugin. No "Video"
+  /// entry in the attachment sheet when unset (app-ui: Send a video).
+  final Future<void> Function()? onSendVideo;
 
   /// A recording began: the chat stops any clip that is playing.
   final VoidCallback? onRecordingStarted;
@@ -146,6 +153,10 @@ class _ComposerState extends State<Composer> {
 
   /// The picked picture waiting to be sent, whose caption is the text.
   Uint8List? _picture;
+
+  /// A pick is in flight: the composer shows a placeholder at once so choosing
+  /// a picture feels immediate even while the platform prepares its bytes.
+  bool _attaching = false;
 
   // Voice recording (app-ui: Record a voice message).
   VoiceRecorder? _recorder;
@@ -474,7 +485,7 @@ class _ComposerState extends State<Composer> {
   /// files and files join the sheet as `video-messages` and later changes
   /// ship, and stay out of it until then.
   Future<void> _openAttachments() async {
-    if (_sending) return;
+    if (_sending || _attaching) return;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -482,33 +493,89 @@ class _ComposerState extends State<Composer> {
           key: const Key('attachment-sheet'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              key: const Key('attach-photo'),
-              leading: const Icon(Icons.image_outlined),
-              title: const Text('Photo'),
-              onTap: () => Navigator.of(sheet).pop('photo'),
-            ),
+            if (widget.pickImage != null)
+              ListTile(
+                key: const Key('attach-photo'),
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('Photo'),
+                onTap: () => Navigator.of(sheet).pop('photo'),
+              ),
+            if (widget.onSendVideo != null)
+              ListTile(
+                key: const Key('attach-video'),
+                leading: const Icon(Icons.videocam_outlined),
+                title: const Text('Video'),
+                onTap: () => Navigator.of(sheet).pop('video'),
+              ),
           ],
         ),
       ),
     );
-    if (choice == 'photo') await _attach();
+    if (choice == 'photo') {
+      await _attach();
+    } else if (choice == 'video') {
+      await _sendVideo();
+    }
+  }
+
+  Future<void> _sendVideo() async {
+    final send = widget.onSendVideo;
+    if (send == null || _sending) return;
+    try {
+      await send();
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    }
   }
 
   Future<void> _attach() async {
     final pick = widget.pickImage;
-    if (pick == null || _sending) return;
+    if (pick == null || _sending || _attaching) return;
+    // Show the placeholder before awaiting the pick, so the preview area fills
+    // the instant the user chooses rather than after the bytes are ready.
+    setState(() {
+      _attaching = true;
+      _error = null;
+    });
     try {
       final picked = await pick();
-      if (picked != null && mounted) {
-        setState(() {
-          _picture = picked;
-          _error = null;
-        });
-      }
+      if (picked != null && mounted) setState(() => _picture = picked);
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _attaching = false);
     }
+  }
+
+  /// The placeholder shown while a pick is in flight, in the same place the
+  /// picture preview will take, so choosing a picture feels immediate.
+  Widget _attachingBar(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('picture-attaching'),
+      margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              width: 56,
+              height: 56,
+              color: scheme.surfaceContainerHighest,
+              child: const Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(child: Text('Adding picture…')),
+        ],
+      ),
+    );
   }
 
   Widget _pictureBar(BuildContext context, Uint8List picture) {
@@ -598,7 +665,9 @@ class _ComposerState extends State<Composer> {
         _picker(context),
         if (widget.reply case final ReplyDraft reply when !removed)
           _replyBar(context, reply),
-        if (_picture case final Uint8List picture when !removed)
+        if (_attaching && !removed)
+          _attachingBar(context)
+        else if (_picture case final Uint8List picture when !removed)
           _pictureBar(context, picture),
         _field(context, removed),
       ],
@@ -621,12 +690,15 @@ class _ComposerState extends State<Composer> {
           if (_recording)
             Expanded(child: _recordingInfo(context))
           else ...[
-            // A picture goes as its own message, not as a reply.
-            if (widget.pickImage != null && widget.reply == null)
+            // A picture or video goes as its own message, not as a reply.
+            if ((widget.pickImage != null || widget.onSendVideo != null) &&
+                widget.reply == null)
               IconButton(
                 key: const Key('attach-image'),
                 tooltip: 'Attach',
-                onPressed: _sending || removed ? null : _openAttachments,
+                onPressed: _sending || _attaching || removed
+                    ? null
+                    : _openAttachments,
                 icon: const Icon(Icons.attach_file),
               ),
             Expanded(

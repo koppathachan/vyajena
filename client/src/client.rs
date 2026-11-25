@@ -196,6 +196,17 @@ pub enum ClientError {
     /// This device no longer has the picture to resend.
     #[error("the picture is not on this device any more")]
     MediaNotOnDevice,
+    /// A video is longer than the 30-second cap (video-messages: Config-driven
+    /// limit); the client enforces duration, which the server never sees.
+    #[error("the video is longer than the limit")]
+    VideoTooLong,
+    /// A video's encrypted blob is over the server's advertised maximum blob size
+    /// (video-messages: Config-driven limit).
+    #[error("the video is larger than the server accepts")]
+    VideoTooLarge,
+    /// The bytes handed in are not an MP4 clip (video-messages: Video messages).
+    #[error("this is not an MP4 video the app can send")]
+    NotAVideo,
     /// No stored chat message has that id (client-runtime: Reply lookup).
     #[error("no such message")]
     NoSuchMessage,
@@ -332,6 +343,7 @@ impl Client {
                 session: Mutex::new(None),
                 server_knows_dms: std::sync::atomic::AtomicBool::new(false),
                 server_knows_named_groups: std::sync::atomic::AtomicBool::new(false),
+                max_video_blob_bytes: std::sync::atomic::AtomicU64::new(0),
                 media,
             }),
             stream: Some(stream),
@@ -1012,7 +1024,12 @@ impl Client {
                     audio.duration_ms,
                     Vec::new(),
                 ),
-                Decoded::Unsupported => (String::new(), ReplyOriginalKind::Text, 0, Vec::new()),
+                // Replying to a video is not a distinct reply kind (the
+                // OriginalKind enum has none for video); carry no quote, like an
+                // unsupported body.
+                Decoded::Video(_) | Decoded::Unsupported => {
+                    (String::new(), ReplyOriginalKind::Text, 0, Vec::new())
+                }
                 Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
                     return Err(ClientError::NoSuchMessage);
                 }
@@ -1577,6 +1594,246 @@ impl Client {
                 Err(error)
             }
         }
+    }
+
+    // --- Video messages (message-content: Video messages; video-messages:
+    // Video normalization in a native plugin). The core does the blob crypto
+    // only; the already-normalized H.264/MP4 arrives from the app's native
+    // plugin. The blob send order, download, cache, ack-delete, expiry and
+    // resend are the image/audio ones. ---
+
+    /// The advertised maximum blob size to enforce a video against
+    /// (video-messages: Config-driven limit): what the server last advertised, or
+    /// the protocol default before the first connect.
+    fn max_video_blob_bytes(&self) -> u64 {
+        let advertised = self
+            .shared
+            .max_video_blob_bytes
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if advertised == 0 {
+            protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64
+        } else {
+            advertised
+        }
+    }
+
+    /// Sends a normalized video to the main group: [`Client::send_video_in`].
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video(
+        &self,
+        mp4: &[u8],
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: &[u8],
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<MessageId, ClientError> {
+        self.send_video_in(
+            ChatId::MAIN,
+            mp4,
+            duration_ms,
+            width,
+            height,
+            first_frame_rgba,
+            frame_width,
+            frame_height,
+        )
+        .await
+    }
+
+    /// Sends a video to chat `chat`. `mp4` is the already-normalized clip the
+    /// native plugin produced (H.264/MP4 + AAC at the 480p/~1 Mbps target, trimmed
+    /// to ≤ 30 s); the core does not transcode (video-messages: Video
+    /// normalization in a native plugin). `first_frame_rgba` is the clip's first
+    /// frame as RGBA (`frame_width` x `frame_height`), from which the core
+    /// computes the body's ThumbHash — pass an empty slice to send no blur.
+    ///
+    /// The core refuses a clip longer than 30 s ([`ClientError::VideoTooLong`]),
+    /// one whose encrypted blob would exceed the server's advertised maximum blob
+    /// size ([`ClientError::VideoTooLarge`]), and bytes that are not an MP4
+    /// ([`ClientError::NotAVideo`]). Otherwise it encrypts the clip under a fresh
+    /// key, keeps it in its media cache, and queues the message; the outbox
+    /// uploads the blob and only then sends it (client-runtime: Blob crypto and
+    /// send order), so a receiver never sees a video whose blob is missing. It
+    /// shows as sending until then. Video is allowed in the lobby, named groups
+    /// and DMs, like an image.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video_in(
+        &self,
+        chat: ChatId,
+        mp4: &[u8],
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: &[u8],
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<MessageId, ClientError> {
+        self.account()?;
+        self.check_can_queue(chat)?;
+        if duration_ms == 0 || duration_ms > protocol::video::MAX_VIDEO_DURATION_MS {
+            return Err(ClientError::VideoTooLong);
+        }
+        if width == 0 || height == 0 || !crate::media::video::looks_like_mp4(mp4) {
+            return Err(ClientError::NotAVideo);
+        }
+        if protocol::video::blob_size(mp4.len()) > self.max_video_blob_bytes() {
+            return Err(ClientError::VideoTooLarge);
+        }
+        let thumbhash =
+            crate::media::video::first_frame_thumbhash(first_frame_rgba, frame_width, frame_height)
+                .unwrap_or_default();
+        self.queue_encoded_video(chat, mp4.to_vec(), duration_ms, width, height, thumbhash)
+            .await
+    }
+
+    /// Resends the clip of the own video message `id` as a new message with a
+    /// fresh blob, key and `msg_id`, from the clip this device kept
+    /// (client-runtime: Expired media). Fails with
+    /// [`ClientError::MediaNotOnDevice`] when the clip is no longer cached.
+    pub async fn resend_video(&self, id: MessageId) -> Result<MessageId, ClientError> {
+        use crate::messaging::Decoded;
+        self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Video(video) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if !stored.outgoing {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let chat = ChatId(stored.chat);
+        self.check_can_queue(chat)?;
+        // The advertised cap may have dropped since the first send; refuse a
+        // resend the server would now reject.
+        if video.blob_size > self.max_video_blob_bytes() {
+            return Err(ClientError::VideoTooLarge);
+        }
+        let path = self
+            .cached_video_path(&video.blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)?;
+        let mp4 = blocking(move || Ok(std::fs::read(path).map_err(MediaError::from)?)).await?;
+        // The resend keeps the original's ThumbHash and dimensions.
+        self.queue_encoded_video(
+            chat,
+            mp4,
+            video.duration_ms,
+            video.width,
+            video.height,
+            video.thumbhash,
+        )
+        .await
+    }
+
+    /// Caches `mp4`, then stores its message as waiting for its blob and wakes the
+    /// outbox, which uploads the blob and sends the message.
+    async fn queue_encoded_video(
+        &self,
+        chat: ChatId,
+        mp4: Vec<u8>,
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        thumbhash: Vec<u8>,
+    ) -> Result<MessageId, ClientError> {
+        let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
+        let content = crate::messaging::VideoContent {
+            blob_id,
+            blob_key,
+            blob_size: protocol::video::blob_size(mp4.len()),
+            duration_ms,
+            width,
+            height,
+            thumbhash,
+        };
+        let encoded = crate::messaging::encode_video(&content, self.now()).map_err(too_long)?;
+        // The sender cannot decrypt its own message, so it keeps the clip; the
+        // outbox encrypts and uploads it from here.
+        self.cache_blob(crate::media::MediaKind::Video, &blob_id, mp4, true)
+            .await?;
+        match self.queue_content_with(chat.0, &encoded, true) {
+            Ok(id) => Ok(id),
+            Err(error) => {
+                let store = Arc::clone(&self.shared.store);
+                let cache = self.shared.media.clone();
+                let _ = blocking(move || Ok(cache.remove(&store, &blob_id)?)).await;
+                Err(error)
+            }
+        }
+    }
+
+    /// The clip of video message `id` as the path of an MP4 file in this device's
+    /// media cache, for a player to open: from the cache if it is there, else
+    /// downloaded, decrypted and cached, and the blob acked so the server can
+    /// delete it once everyone has it. The file stays in the core's media
+    /// directory; Dart never copies it. Fails with [`ClientError::MediaExpired`]
+    /// when the server no longer has it, and with [`ClientError::Offline`] when it
+    /// must download and is not connected.
+    pub async fn download_video(&self, id: MessageId) -> Result<std::path::PathBuf, ClientError> {
+        use crate::messaging::Decoded;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        let Decoded::Video(video) = crate::messaging::decode(&stored.content).body else {
+            return Err(ClientError::NoSuchMessage);
+        };
+        if let Some(path) = self.cached_video_path(&video.blob_id).await? {
+            return Ok(path);
+        }
+        if self.shared.store.is_media_expired(&video.blob_id)? {
+            return Err(ClientError::MediaExpired);
+        }
+        let blob = self.fetch_blob(ChatId(stored.chat), &video.blob_id).await?;
+        let (key, blob_id) = (video.blob_key, video.blob_id);
+        let mp4 = blocking(move || {
+            let mp4 =
+                crate::media::crypto::decrypt(&key, &blob_id, &blob).map_err(MediaError::from)?;
+            // Only a clip the core recognizes as MP4 is cached and played.
+            if !crate::media::video::looks_like_mp4(&mp4) {
+                return Err(ClientError::NotAVideo);
+            }
+            Ok(mp4)
+        })
+        .await?;
+        self.cache_blob(crate::media::MediaKind::Video, &blob_id, mp4, false)
+            .await?;
+        self.ack_blob(ChatId(stored.chat), &blob_id).await;
+        self.cached_video_path(&blob_id)
+            .await?
+            .ok_or(ClientError::MediaNotOnDevice)
+    }
+
+    /// The path of video message `id`'s clip if this device has it cached; never
+    /// touches the network.
+    pub async fn cached_video(
+        &self,
+        id: MessageId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        use crate::messaging::Decoded;
+        let Some(stored) = self.shared.store.message(id)? else {
+            return Ok(None);
+        };
+        let Decoded::Video(video) = crate::messaging::decode(&stored.content).body else {
+            return Ok(None);
+        };
+        self.cached_video_path(&video.blob_id).await
+    }
+
+    async fn cached_video_path(
+        &self,
+        blob_id: &crate::media::BlobId,
+    ) -> Result<Option<std::path::PathBuf>, ClientError> {
+        let store = Arc::clone(&self.shared.store);
+        let cache = self.shared.media.clone();
+        let (blob_id, now) = (*blob_id, self.now());
+        blocking(move || Ok(cache.get_path(&store, &blob_id, now)?)).await
     }
 
     /// The clip of voice message `id` as the path of an OGG/Opus file in this

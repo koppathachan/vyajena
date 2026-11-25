@@ -65,4 +65,61 @@ async fn server_info_advertises_both_size_limits() {
         limits.max_handshake_envelope_bytes as usize,
         MAX_HANDSHAKE_ENVELOPE_BYTES
     );
+    // video-messages: the configured blob cap, the video default with no config.
+    assert_eq!(
+        limits.max_video_blob_bytes,
+        protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64
+    );
+}
+
+// spec: wire-transport/size-limits
+#[tokio::test]
+async fn server_info_advertises_the_configured_video_blob_cap() {
+    // The operator raises max_video_blob_bytes; GetServerInfo advertises the new
+    // value (video-messages: Config-driven limit, "Operator raises the limit").
+    let cap = protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64 + 1_000_000;
+    let extra = format!("[limits]\n{} = {cap}\n", protocol::video::CONFIG_KEY);
+    let server =
+        TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
+    let conn = server.connect().await;
+    let limits = conn
+        .devices()
+        .get_server_info(pb::GetServerInfoRequest {})
+        .await
+        .check("GetServerInfo")
+        .into_inner()
+        .server_info
+        .check("server_info")
+        .limits
+        .check("limits");
+    assert_eq!(limits.max_video_blob_bytes, cap);
+}
+
+// spec: video-messages/config-driven-limit
+#[tokio::test]
+async fn a_config_above_the_ceiling_is_advertised_clamped() {
+    // "Config beyond the ceiling": the server clamps to MAX_VIDEO_BYTES and
+    // advertises the clamped value, rather than refusing to start.
+    let extra = format!(
+        "[limits]\n{} = {}\n",
+        protocol::video::CONFIG_KEY,
+        protocol::video::MAX_VIDEO_BYTES as u64 + 10_000_000
+    );
+    let server =
+        TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
+    let conn = server.connect().await;
+    let limits = conn
+        .devices()
+        .get_server_info(pb::GetServerInfoRequest {})
+        .await
+        .check("GetServerInfo")
+        .into_inner()
+        .server_info
+        .check("server_info")
+        .limits
+        .check("limits");
+    assert_eq!(
+        limits.max_video_blob_bytes,
+        protocol::video::MAX_VIDEO_BYTES as u64
+    );
 }

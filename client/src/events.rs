@@ -127,6 +127,27 @@ pub struct AudioBody {
     pub state: MediaState,
 }
 
+/// A video message, as the UI sees it (message-content: Video messages). The
+/// blob key is not here: it never leaves the core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoBody {
+    /// The blob's id, which names the clip to [`crate::Client::download_video`]
+    /// callers and keys the cache.
+    pub blob_id: [u8; protocol::blob_store::BLOB_ID_LEN],
+    /// Pixel width of the clip, for the bubble's aspect ratio.
+    pub width: u32,
+    /// Pixel height of the clip, for the bubble's aspect ratio.
+    pub height: u32,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The first-frame ThumbHash blur shown until the clip is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The blob's size on the server, in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaState,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -139,6 +160,9 @@ pub enum MessageBody {
     Image(Box<ImageBody>),
     /// A voice message (message-content: Audio messages). Boxed like an image.
     Audio(Box<AudioBody>),
+    /// A short video message (message-content: Video messages). Boxed like an
+    /// image.
+    Video(Box<VideoBody>),
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,

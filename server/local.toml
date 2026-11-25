@@ -39,3 +39,10 @@ key_dir = ".server-local/keys"
 # sweep_interval = 60                    # seconds between periodic sweeps.
 # max_blob_store_bytes = 1073741824      # 1 GiB blob-store ceiling.
 # max_uploads_per_device_per_hour = 60
+# max_video_blob_bytes = 5242880         # the one maximum blob ciphertext size,
+#                                        #   enforced on every upload and advertised
+#                                        #   to clients (video-messages). Clamped to
+#                                        #   [image cap, 8 MiB]; default 5 MiB. A
+#                                        #   30 s 480p clip is about 4 MB. Raise to
+#                                        #   allow longer/larger clips; edit +
+#                                        #   restart, no rebuild.

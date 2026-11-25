@@ -92,6 +92,9 @@ impl Devices for DevicesService {
                 limits: Some(pb::Limits {
                     max_application_ciphertext_bytes: as_u32(MAX_APPLICATION_CIPHERTEXT_BYTES),
                     max_handshake_envelope_bytes: as_u32(MAX_HANDSHAKE_ENVELOPE_BYTES),
+                    // video-messages: Config-driven limit. The one configured blob
+                    // cap, so clients refuse a video whose encrypted blob exceeds it.
+                    max_video_blob_bytes: self.state.config.limits.max_video_blob_bytes,
                 }),
                 external_sender: Some(pb::ExternalSender {
                     signature_public_key: self.state.keys.external_sender_public_key().to_vec(),

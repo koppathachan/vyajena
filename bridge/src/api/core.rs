@@ -424,6 +424,96 @@ impl Core {
         Ok(forward(self.client.resend_audio(MessageId(id)).await)?.0)
     }
 
+    /// Sends a video to the main group; returns its local id.
+    /// [`Core::send_video_in`] in the main group.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video(
+        &self,
+        mp4: Vec<u8>,
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: Vec<u8>,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<i64, CoreError> {
+        self.send_video_in(
+            0,
+            mp4,
+            duration_ms,
+            width,
+            height,
+            first_frame_rgba,
+            frame_width,
+            frame_height,
+        )
+        .await
+    }
+
+    /// Sends a video to chat `chat_id`; returns its local id. `mp4` is the
+    /// already-normalized clip the app's native plugin produced (H.264/MP4 at the
+    /// 480p/~1 Mbps target, ≤ 30 s); the core does only the blob crypto
+    /// (video-messages: Video normalization in a native plugin).
+    /// `first_frame_rgba` (RGBA, `frame_width` x `frame_height`) is the first
+    /// frame the core turns into the body's ThumbHash — pass an empty list for no
+    /// blur. The core refuses a clip over 30 s with
+    /// [`CoreErrorKind::VideoTooLong`], one whose encrypted blob exceeds the
+    /// server's advertised cap with [`CoreErrorKind::VideoTooLarge`], and
+    /// non-MP4 bytes with [`CoreErrorKind::NotAVideo`]; otherwise it queues the
+    /// message at once, connected or not, and uploads then sends it like an image.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video_in(
+        &self,
+        chat_id: i64,
+        mp4: Vec<u8>,
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: Vec<u8>,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<i64, CoreError> {
+        Ok(forward(
+            self.client
+                .send_video_in(
+                    ChatId(chat_id),
+                    &mp4,
+                    duration_ms,
+                    width,
+                    height,
+                    &first_frame_rgba,
+                    frame_width,
+                    frame_height,
+                )
+                .await,
+        )?
+        .0)
+    }
+
+    /// The path of video message `id`'s clip, an MP4 file in the core's media
+    /// cache for a player to open: from the cache, else downloaded, decrypted and
+    /// cached (client-runtime: Image download and cache). Dart never copies or
+    /// keeps the file. Fails with [`CoreErrorKind::MediaExpired`] when the server
+    /// no longer has it.
+    pub async fn download_video(&self, id: i64) -> Result<String, CoreError> {
+        Ok(path_text(forward(
+            self.client.download_video(MessageId(id)).await,
+        )?))
+    }
+
+    /// The path of video message `id`'s clip if this device has it cached; never
+    /// uses the network.
+    pub async fn cached_video(&self, id: i64) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.cached_video(MessageId(id)).await)?.map(path_text))
+    }
+
+    /// Resends the clip of the own video message `id` as a new message with a new
+    /// blob, when the first one expired (client-runtime: Expired media); returns
+    /// the new message's local id.
+    pub async fn resend_video(&self, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.resend_video(MessageId(id)).await)?.0)
+    }
+
     /// The local ids of messages whose mention of this user is not seen yet,
     /// in chat order (client-runtime: Unseen mentions).
     pub fn unseen_mentions(&self) -> Result<Vec<i64>, CoreError> {

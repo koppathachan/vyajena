@@ -25,6 +25,7 @@ import 'image_bubble.dart';
 import 'links.dart';
 import 'mentions.dart';
 import 'time_text.dart';
+import 'video_bubble.dart';
 import 'voice_playback.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -56,6 +57,12 @@ const resendPictureLabel = 'Resend picture';
 /// What the long-press sheet's entry for sending a voice message again says.
 const resendVoiceLabel = 'Resend voice message';
 
+/// What the long-press sheet's entry for sending a video again says.
+const resendVideoLabel = 'Resend video';
+
+/// What a reply to a video quotes.
+const videoQuote = 'Video';
+
 /// One message row.
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -70,6 +77,7 @@ class MessageTile extends StatelessWidget {
     this.core,
     this.onResendImage,
     this.onResendAudio,
+    this.onResendVideo,
     this.playback,
     this.showSender = true,
   });
@@ -109,6 +117,9 @@ class MessageTile extends StatelessWidget {
   /// voice message").
   final VoidCallback? onResendAudio;
 
+  /// Resends an own video as a new message (long-press → "Resend video").
+  final VoidCallback? onResendVideo;
+
   /// The chat's one player, which a voice message plays through.
   final VoicePlayback? playback;
 
@@ -125,6 +136,9 @@ class MessageTile extends StatelessWidget {
         : null;
     final resendVoice = message.outgoing && message.body is ChatBody_Audio
         ? onResendAudio
+        : null;
+    final resendVideo = message.outgoing && message.body is ChatBody_Video
+        ? onResendVideo
         : null;
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -151,6 +165,13 @@ class MessageTile extends StatelessWidget {
                 title: const Text(resendVoiceLabel),
                 onTap: () => Navigator.of(context).pop('resend-voice'),
               ),
+            if (resendVideo != null)
+              ListTile(
+                key: const Key('resend-video'),
+                leading: const Icon(Icons.refresh),
+                title: const Text(resendVideoLabel),
+                onTap: () => Navigator.of(context).pop('resend-video'),
+              ),
           ],
         ),
       ),
@@ -162,6 +183,8 @@ class MessageTile extends StatelessWidget {
         resend?.call();
       case 'resend-voice':
         resendVoice?.call();
+      case 'resend-video':
+        resendVideo?.call();
     }
   }
 
@@ -222,6 +245,17 @@ class MessageTile extends StatelessWidget {
       messageId: message.id,
       audio: audio,
       playback: playback,
+    );
+  }
+
+  Widget _video(BuildContext context, VideoView video) {
+    final core = this.core;
+    if (core == null) return const Text('Video');
+    return VideoBubble(
+      key: ValueKey('video-${message.id}'),
+      core: core,
+      messageId: message.id,
+      video: video,
     );
   }
 
@@ -325,6 +359,7 @@ class MessageTile extends StatelessWidget {
       ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Audio(:final audio) => _audio(context, audio),
+      ChatBody_Video(:final video) => _video(context, video),
       ChatBody_Unsupported() => Text(
         unsupportedText,
         style: TextStyle(
@@ -345,23 +380,7 @@ class MessageTile extends StatelessWidget {
     // it is given (an Align, say) would stretch the bubble across the
     // screen (design D1).
     final content = own
-        ? Wrap(
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            spacing: 8,
-            children: [
-              body,
-              if (status != null)
-                Text(
-                  statusText(status),
-                  style: text.labelSmall?.copyWith(
-                    color: status is SendState_Failed
-                        ? scheme.error
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
-          )
+        ? body
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -398,17 +417,43 @@ class MessageTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   content,
-                  if (sentMs != null) ...[
+                  if (sentMs != null || status != null) ...[
                     const SizedBox(height: 2),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        clockText(context, sentMs),
-                        key: ValueKey('time-${message.id}'),
-                        style: text.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                    // The time and the delivery tick sit on one right-aligned
+                    // line below the body. A MainAxisSize.max Row forwards its
+                    // intrinsic width, so the bubble widens to keep both on the
+                    // line; the status is Flexible so a long failure reason
+                    // wraps rather than overflowing the bubble.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (sentMs != null)
+                          Text(
+                            clockText(context, sentMs),
+                            key: ValueKey('time-${message.id}'),
+                            style: text.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        if (sentMs != null && status != null)
+                          const SizedBox(width: 6),
+                        if (status != null)
+                          Flexible(
+                            child: Text(
+                              statusText(status),
+                              style: text.labelSmall?.copyWith(
+                                color: status is SendState_Failed
+                                    ? scheme.error
+                                    : scheme.onSurfaceVariant.withValues(
+                                        alpha: 0.6,
+                                      ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ],

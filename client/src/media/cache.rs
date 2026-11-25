@@ -36,15 +36,18 @@ pub enum MediaKind {
     Image,
     /// An OGG/Opus voice message.
     Audio,
+    /// An MP4 (H.264 + AAC) video message (video-messages).
+    Video,
 }
 
 impl MediaKind {
-    const ALL: [Self; 2] = [Self::Image, Self::Audio];
+    const ALL: [Self; 3] = [Self::Image, Self::Audio, Self::Video];
 
     fn extension(self) -> &'static str {
         match self {
             Self::Image => "webp",
             Self::Audio => "opus",
+            Self::Video => "mp4",
         }
     }
 }

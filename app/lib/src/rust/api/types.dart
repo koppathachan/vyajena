@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
@@ -70,6 +70,12 @@ sealed class ChatBody with _$ChatBody {
     /// The clip. Boxed like an image: a message is carried in every event.
     required AudioView audio,
   }) = ChatBody_Audio;
+
+  /// A video message.
+  const factory ChatBody.video({
+    /// The clip. Boxed like an image: a message is carried in every event.
+    required VideoView video,
+  }) = ChatBody_Video;
 
   /// A body this version does not know: shown as a placeholder saying the
   /// app needs an update (app-ui: Chat screen).
@@ -750,4 +756,56 @@ class UserRef {
           runtimeType == other.runtimeType &&
           username == other.username &&
           serverId == other.serverId;
+}
+
+/// A video message (message-content: Video messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+class VideoView {
+  /// Pixel width of the clip, for the bubble's aspect ratio.
+  final int width;
+
+  /// Pixel height of the clip, for the bubble's aspect ratio.
+  final int height;
+
+  /// The clip's length in milliseconds.
+  final int durationMs;
+
+  /// The first-frame ThumbHash blur to draw until the clip is downloaded.
+  final Uint8List thumbhash;
+
+  /// The clip's size on the server in bytes, to show before downloading.
+  final BigInt size;
+
+  /// Where the clip is.
+  final MediaStatus state;
+
+  const VideoView({
+    required this.width,
+    required this.height,
+    required this.durationMs,
+    required this.thumbhash,
+    required this.size,
+    required this.state,
+  });
+
+  @override
+  int get hashCode =>
+      width.hashCode ^
+      height.hashCode ^
+      durationMs.hashCode ^
+      thumbhash.hashCode ^
+      size.hashCode ^
+      state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VideoView &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          durationMs == other.durationMs &&
+          thumbhash == other.thumbhash &&
+          size == other.size &&
+          state == other.state;
 }

@@ -22,6 +22,7 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'video_plugins.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
 
@@ -273,6 +274,64 @@ class _ChatScreenState extends State<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _model.resendImage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Picks a source (record or gallery), normalizes the clip through the native
+  /// plugin and sends it (app-ui: Send a video). Owned here so the composer
+  /// stays free of the camera, picker and plugin.
+  Future<void> _sendVideo() async {
+    final source = VideoScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('video-source-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('video-record'),
+              leading: const Icon(Icons.videocam),
+              title: const Text('Record'),
+              onTap: () => Navigator.of(sheet).pop('record'),
+            ),
+            ListTile(
+              key: const Key('video-gallery'),
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(sheet).pop('gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    try {
+      final clip = choice == 'record'
+          ? await source.record()
+          : await source.pick();
+      if (clip == null) return;
+      await _model.sendVideo(
+        clip.mp4,
+        durationMs: clip.durationMs,
+        width: clip.width,
+        height: clip.height,
+        firstFrameRgba: clip.firstFrameRgba,
+        frameWidth: clip.frameWidth,
+        frameHeight: clip.frameHeight,
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  Future<void> _resendVideo(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendVideo(message.id);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }
@@ -531,6 +590,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                   core: widget.core,
                                   onResendImage: () => _resendImage(message),
                                   onResendAudio: () => _resendAudio(message),
+                                  onResendVideo: () => _resendVideo(message),
                                   playback: _playback,
                                   onReply: widget.core.removed.value
                                       ? null
@@ -620,6 +680,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
                 sendAudio: _sendAudio,
+                onSendVideo: _sendVideo,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,

@@ -80,6 +80,14 @@ pub enum CoreErrorKind {
     AudioUnsupported,
     /// The voice message is longer than two minutes.
     AudioTooLong,
+    /// The video is longer than the 30-second cap (video-messages).
+    VideoTooLong,
+    /// The video's encrypted blob is over the server's advertised maximum blob
+    /// size (video-messages: Config-driven limit).
+    VideoTooLarge,
+    /// The bytes handed in are not an MP4 video the app can send
+    /// (video-messages).
+    NotAVideo,
     /// The server no longer has the picture or voice message (client-runtime:
     /// Expired media).
     MediaExpired,
