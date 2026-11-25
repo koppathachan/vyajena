@@ -45,6 +45,13 @@
 - [x] 3.4 Assert there is no network path: a test/inventory check that no RPC performs
   admin reset. Tests `admin-recovery/reset-needs-genuine-host-access-never-a-network-endpoint`
   (no-rpc-can-reset-the-admin)
+- [x] 3.5 (owner decision 2026-11-25, D9) Re-seed the admin-owned system lobby in the
+  same transaction: drop its state (queued envelopes + deliveries, OpenMLS public
+  state, member rows, pending server Removes, gap notices) and delete the `mls_groups`
+  row, and clear `was_member` on its member devices so non-revoked members are
+  re-announced as waiting; leave DMs and named groups alone; no-op when no lobby exists.
+  Tests `admin-recovery/break-glass-re-seeds-the-admin-s-lobby`
+  (reset-re-seeds-the-lobby-and-re-announces-members)
 
 ## 4. Core / client — re-trust gate
 
@@ -63,6 +70,13 @@
 - [x] 5.1 Expose the pending-re-trust state and an acknowledge action in
   `bridge/src/api/`; `cd app && flutter_rust_bridge_codegen generate`; bridge
   end-to-end test: admin re-key surfaces pending re-trust, acknowledge flips to trusted
+- [x] 5.2 (owner decision 2026-11-25, D9) Bridge end-to-end test of the whole admin
+  recovery: admin creates the lobby with a member, operator `admin-reset` re-seeds it,
+  the server restarts and re-mints the bootstrap invite, the recovered admin registers
+  with a fresh key and re-creates the lobby, re-adds the member, and the member's client
+  rejoins from the Welcome and sees the admin re-trust prompt, cleared by acknowledge.
+  Tests `admin-recovery/break-glass-re-seeds-the-admin-s-lobby`
+  (admin-re-key-re-seeds-the-lobby-and-the-member-rejoins)
 
 ## 6. App
 

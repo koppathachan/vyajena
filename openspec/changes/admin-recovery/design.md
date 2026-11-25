@@ -106,9 +106,11 @@ to the owner (OQ1); the spec allows it as optional and does not require it.
 `server-deployment: Scripted reset` wipes the entire server (new TLS pin, empty
 database, every device re-joins). That is the wrong tool for a locked-out admin: it
 throws away every other user, every group and the server identity. `admin-reset`
-changes exactly one user (the admin) and leaves the TLS pin, server keys, all other
-users, groups, DMs and stored envelopes untouched, so members keep working and only
-re-trust the admin's key. Two different operations; the spec keeps them separate.
+changes exactly one account — the admin's — and re-seeds the admin-owned system lobby
+(D9), leaving the TLS pin, the server keys, every other user's account, every named
+group and every DM untouched. Members keep their accounts and their DMs and named
+groups; they rejoin the fresh lobby automatically and re-trust the admin's new key.
+Two different operations; the spec keeps them separate.
 
 ### D5. Re-bootstrap gates on an ACTIVE admin, not an empty database.
 The minimal change to make the removed admin recoverable: `ensure_bootstrap_invite`
@@ -184,6 +186,37 @@ Consequences for recovery:
   break-glass is the net, and why same-key off-device backup of the identity key
   (deferred `trust-verification` Part A) is the real fix for the single point of failure.
 
+### D9. Break-glass re-seeds the admin's lobby (owner decision, 2026-11-25).
+The first cut reset the admin's *account* but left the system lobby's MLS state intact,
+and that is not enough: the lobby's only committer is the admin, so a recovered admin's
+new device had no way back in. Its new leaf was never added (the old revoked admin
+device still held the only commit authority, and the stale old leaf plus members blocked
+a fresh group), leaving the new device stuck "waiting to be added" while the lobby still
+listed the old devices. The gap is a spec gap too: nothing said **who re-adds the admin
+when no higher admin exists**. The owner's answer (2026-11-25): the break-glass must also
+reset the server's group record for the admin's lobby, so the re-keyed admin re-seeds it
+from scratch.
+
+So `admin-reset` now, in the same transaction, drops the lobby's server state — queued
+envelopes + deliveries, OpenMLS public state, member rows, pending server Removes, gap
+notices — and deletes the `mls_groups` row (it cannot merely `closed_at` it: the system
+`kind` forbids that, and `exists`/`main_row` ignore `closed_at`, so the row must go for
+`CreateGroup` to run). It clears `was_member` on every former member device, so the
+server re-announces each non-revoked member as waiting (the existing automatic-add path)
+and the recovered admin re-adds it with a fresh Welcome on the member's unchanged
+identity key; the member's client rejoins via the normal `on_welcome` path and, seeing
+the admin's new key, shows the re-trust prompt (D6). The deletes reuse the exact set and
+order of `dms::drop_group_state` (deliveries before envelopes; the `mls_groups` children
+before the row), so the foreign keys stay satisfied.
+
+**History trade-off (accepted).** The recovered admin's new device loses pre-reset lobby
+history — but that history lived in the lost identity device's key material and is
+unrecoverable regardless, so nothing recoverable is thrown away. Members keep their own
+local history; only the server-queued, now-undeliverable old-epoch traffic is dropped.
+This is the right trade for a break-glass. DMs and named groups are deliberately left
+alone (they are not admin-seeded lobbies); the admin's re-participation in those is out
+of scope here and noted as a follow-up.
+
 ## Security notes
 
 - **Authority stays on the box.** The only way to re-seat the admin is to run a local
@@ -196,8 +229,10 @@ Consequences for recovery:
 - **Old devices stay revoked.** The admin's pre-reset devices are revoked by the
   command and by the removed-user re-key path, so a lost/compromised old admin device
   gains nothing from the recovery.
-- **Blast radius is one user.** Unlike the whole-server scripted reset, `admin-reset`
-  cannot be used to wipe other users or the server identity.
+- **Blast radius is one account plus the lobby.** Unlike the whole-server scripted
+  reset, `admin-reset` cannot be used to wipe other users' accounts, their DMs or named
+  groups, or the server identity. It resets the admin account and re-seeds the shared
+  lobby (D9); members rejoin automatically and keep their accounts, DMs and named groups.
 
 ## Alternatives rejected
 

@@ -6,10 +6,11 @@ subcommand that returns a locked-out admin to a re-bootstrappable state. Its
 authority SHALL be host access to the server's data directory: it SHALL load the
 given config, open that database directly, and SHALL refuse to run if it cannot open
 the configured database. In one transaction it SHALL mark the configured admin user
-removed (set `users.removed_at`), revoke the admin's existing devices, and revoke the
-admin's unused invites. It SHALL NOT mint an invite, start a listener, or change any
-other user, group, DM, the TLS or server keys, or any stored envelope. The operator
-enforces this (it runs only with host access).
+removed (set `users.removed_at`), revoke the admin's existing devices, revoke the
+admin's unused invites, and re-seed the admin-owned system lobby (see "Break-glass
+re-seeds the admin's lobby"). It SHALL NOT mint an invite, start a listener, or change
+any other user's account, any DM, any named group, or the TLS or server keys. The
+operator enforces this (it runs only with host access).
 
 #### Scenario: Operator runs the reset on the box
 - **WHEN** the operator runs `server admin-reset --config server.toml` on the host,
@@ -17,11 +18,13 @@ enforces this (it runs only with host access).
 - **THEN** the admin user is marked removed, the admin's devices and unused invites
   are revoked, and the command mints no invite
 
-#### Scenario: Blast radius is one user
+#### Scenario: Only the admin account and its lobby are touched
 - **WHEN** the operator runs `admin-reset` on a server that also has `alice@chat` and
-  `bob@chat` and a named group
-- **THEN** only the admin user is changed; `alice@chat`, `bob@chat`, the group, all
-  DMs, the TLS pin and the server keys are left exactly as they were
+  `bob@chat`, a named group and DMs
+- **THEN** the admin's account is reset (removed, its devices and unused invites
+  revoked) and the system lobby is re-seeded for re-creation; `alice@chat` and
+  `bob@chat` keep their accounts and devices, every DM and named group, the TLS pin
+  and the server keys are left exactly as they were
 
 #### Scenario: No host access, no reset
 - **WHEN** `admin-reset` is run where it cannot open the configured database (wrong
@@ -67,6 +70,35 @@ server enforces this.
   recovery
 - **THEN** it fails with `PERMISSION_DENIED`, because the reset revoked it and its old
   identity key is no longer the pinned one
+
+### Requirement: Break-glass re-seeds the admin's lobby
+The reset SHALL re-seed the admin-owned system lobby in the same transaction, because
+the lobby's only committer is the admin: once the reset revokes the admin's devices, a
+recovered admin's new device could neither rejoin nor re-key the existing lobby, and
+the stale old leaf would block a fresh one. It SHALL drop the lobby's server state —
+its queued envelopes and their deliveries, the OpenMLS public state, the member rows,
+the server's pending Removes and the gap notices — and delete the lobby's `mls_groups`
+row, so the recovered admin's first `Admin.CreateGroup` seeds a fresh lobby at epoch 0
+unobstructed by the old revoked admin leaf or any stale member leaf. It SHALL mark
+every lobby member's device as waiting for its first add again (clear `was_member`), so
+the server re-announces each non-revoked member (group-membership: Automatic add of new
+users) and the recovered admin re-adds it with a fresh Welcome on the member's existing
+identity key. Pre-reset lobby history is lost for the recovered admin's new device
+(history on the lost device is unrecoverable regardless); members keep their own local
+history. The reset SHALL NOT touch DMs or named groups. When no lobby exists yet, the
+re-seed SHALL be a no-op. The server enforces this.
+
+#### Scenario: Recovered admin re-creates the lobby
+- **WHEN** after `admin-reset` the recovered admin registers a new device and calls
+  `Admin.CreateGroup`
+- **THEN** no existing system lobby blocks it, and the server seeds a fresh lobby at
+  epoch 0 with the new admin device as the only member
+
+#### Scenario: Members are re-announced and rejoin
+- **WHEN** the recovered admin's device re-creates the lobby
+- **THEN** each non-revoked former member is announced as waiting, the admin re-adds
+  it, and the member's client rejoins from the Welcome and shows the admin re-trust
+  prompt (admin-recovery: Admin re-key forces peer re-trust)
 
 ### Requirement: Admin re-key forces peer re-trust
 Each member's client SHALL present a clear safety-number-changed prompt naming the

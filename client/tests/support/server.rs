@@ -177,6 +177,11 @@ impl TestServer {
         )
         .await
         .check("server restart");
+        // A re-minted bootstrap invite (e.g. after an admin reset) replaces the
+        // stored payload, so a test can re-register the admin from it.
+        if let Bootstrap::Created(invite) = server.bootstrap() {
+            self.bootstrap = invite.payload.encode_to_vec();
+        }
         self.addr = server.local_addr();
         self.relay.retarget(self.addr);
         self.state = server.state().clone();

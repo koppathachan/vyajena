@@ -325,3 +325,136 @@ fn no_rpc_can_reset_the_admin() {
     }
     assert!(rpc_lines > 0, "the inventory check found no RPCs to scan");
 }
+
+// spec: admin-recovery/break-glass-re-seeds-the-admin-s-lobby
+#[tokio::test]
+async fn reset_re_seeds_the_lobby_and_re_announces_members() {
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_admin, admin_device) = bootstrap_admin(&server, &conn).await;
+    let (_alice, alice_device) = invite_user(&conn, &admin_device, "alice").await;
+
+    let group_id = b"system-group-id-".to_vec();
+    let admin_id = admin_device.device_id.to_vec();
+    let alice_id = alice_device.device_id.to_vec();
+
+    // Seed a live system lobby: both devices as members, plus the per-group
+    // state a running lobby carries (public state, an envelope and its
+    // delivery, a pending server Remove, a gap notice). alice has an uploaded
+    // KeyPackage so the reset can re-announce her as waiting. (The MLS
+    // specifics of a re-seed are exercised end to end in the bridge test; this
+    // test checks the reset's own SQL.)
+    {
+        let (g, admin, alice) = (group_id.clone(), admin_id.clone(), alice_id.clone());
+        server
+            .query(move |conn| {
+                conn.execute(
+                    "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+                     VALUES (?1, 'system', 3, 0, 0)",
+                    params![g],
+                )?;
+                conn.execute(
+                    "INSERT INTO mls_public_state (group_id, key, value) VALUES (?1, ?2, ?3)",
+                    params![g, b"state-key".to_vec(), b"state-value".to_vec()],
+                )?;
+                conn.execute(
+                    "INSERT INTO mls_members (group_id, leaf_index, device_id) VALUES (?1, 0, ?2)",
+                    params![g, admin],
+                )?;
+                conn.execute(
+                    "INSERT INTO mls_members (group_id, leaf_index, device_id) VALUES (?1, 1, ?2)",
+                    params![g, alice],
+                )?;
+                conn.execute(
+                    "UPDATE devices SET was_member = 1 WHERE device_id IN (?1, ?2)",
+                    params![admin, alice],
+                )?;
+                conn.execute(
+                    "INSERT INTO envelopes
+                        (server_seq, msg_id, kind, epoch, ciphertext, accepted_at, group_id)
+                     VALUES (?1, ?2, 1, 3, ?3, 0, ?4)",
+                    params![42_i64, vec![1u8; 16], b"ciphertext".to_vec(), g],
+                )?;
+                conn.execute(
+                    "INSERT INTO deliveries (device_id, server_seq, welcome) VALUES (?1, ?2, 0)",
+                    params![alice, 42_i64],
+                )?;
+                conn.execute(
+                    "INSERT INTO pi_removes (device_id, group_id, proposed_epoch) VALUES (?1, ?2, 3)",
+                    params![alice, g],
+                )?;
+                conn.execute(
+                    "INSERT INTO gaps (device_id, group_id, newest_expired_at) VALUES (?1, ?2, 0)",
+                    params![alice, g],
+                )?;
+                conn.execute(
+                    "INSERT INTO key_packages (device_id, key_package, last_resort, uploaded_at)
+                     VALUES (?1, ?2, 1, 0)",
+                    params![alice, b"alice-key-package".to_vec()],
+                )?;
+                Ok(())
+            })
+            .await;
+    }
+
+    let report = admin_reset::reset_admin(
+        &server.state.store,
+        &server.state.config,
+        server.clock_now(),
+    )
+    .await
+    .check("admin reset");
+    assert!(report.lobby_reseeded, "the lobby was re-seeded");
+    assert_eq!(
+        report.members_to_rejoin, 1,
+        "only alice rejoins; the admin's device was revoked"
+    );
+
+    // The lobby row and everything scoped to it are gone, so the recovered
+    // admin's next CreateGroup seeds a fresh one.
+    let g = group_id.clone();
+    let counts = server
+        .query(move |conn| {
+            let scoped = |sql: &str| conn.query_row(sql, params![g], |row| row.get::<_, i64>(0));
+            Ok((
+                conn.query_row(
+                    "SELECT count(*) FROM mls_groups WHERE kind = 'system'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )?,
+                scoped("SELECT count(*) FROM mls_members WHERE group_id = ?1")?,
+                scoped("SELECT count(*) FROM mls_public_state WHERE group_id = ?1")?,
+                scoped("SELECT count(*) FROM pi_removes WHERE group_id = ?1")?,
+                scoped("SELECT count(*) FROM gaps WHERE group_id = ?1")?,
+                scoped("SELECT count(*) FROM envelopes WHERE group_id = ?1")?,
+                conn.query_row(
+                    "SELECT count(*) FROM deliveries WHERE server_seq = 42",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )?,
+            ))
+        })
+        .await;
+    assert_eq!(
+        counts,
+        (0, 0, 0, 0, 0, 0, 0),
+        "no system lobby state remains (groups, members, public state, \
+         pi_removes, gaps, envelopes, deliveries)"
+    );
+
+    // alice is re-announced as waiting (non-revoked, with a KeyPackage), so the
+    // recovered admin re-adds her with a fresh Welcome.
+    let waiting = server
+        .query(|conn| {
+            Ok(server::membership::joins::waiting(conn)
+                .expect("waiting query")
+                .into_iter()
+                .map(|(_, username)| username)
+                .collect::<Vec<_>>())
+        })
+        .await;
+    assert!(
+        waiting.iter().any(|username| username == "alice"),
+        "alice waits to be re-added, got {waiting:?}"
+    );
+}

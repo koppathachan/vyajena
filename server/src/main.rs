@@ -107,15 +107,19 @@ fn admin_reset(config: PathBuf, passphrase: Option<String>) -> Result<()> {
                 admin = %report.admin,
                 devices_revoked = report.devices_revoked,
                 invites_revoked = report.invites_revoked,
+                lobby_reseeded = report.lobby_reseeded,
+                members_to_rejoin = report.members_to_rejoin,
                 "admin reset: the admin is removed and re-bootstrappable"
             );
             // OQ2 (operator guidance only, no behaviour change): the next start
-            // re-mints one bootstrap invite, and after the admin re-registers
-            // every member sees a "safety number changed" re-trust prompt.
+            // re-mints one bootstrap invite; after the admin re-registers and
+            // re-creates the lobby, the members are re-added with a fresh
+            // Welcome and every member sees a "safety number changed" re-trust
+            // prompt.
             tracing::info!(
                 "restart the server to re-mint the admin's bootstrap invite; after the admin \
-                 re-registers, every member will be asked to re-trust the admin's new safety \
-                 number, so warn them out of band"
+                 re-registers and re-creates the lobby, every member is re-added and will be \
+                 asked to re-trust the admin's new safety number, so warn them out of band"
             );
             Ok::<(), anyhow::Error>(())
         })
