@@ -23,10 +23,13 @@ message Content {
     Profile profile = 4;
     // message-content: Image messages (change `media-blobs`).
     Image image = 5;
-    // message-content: Audio messages (change `audio-messages`). The next free
-    // field after this one is 7 for the change that follows; `delete-messages`
-    // takes it, so the two never collide.
+    // message-content: Audio messages (change `audio-messages`).
     Audio audio = 6;
+    // Field 7 is reserved for `delete-messages`' `Delete` body (coordinated
+    // across the pending media/delete changes; `buf breaking` catches a clash).
+    // message-content: Video messages (change `video-messages`). Field 8 is the
+    // one video takes; `audio-calls` takes the next free number after it.
+    Video video = 8;
   }
 }
 
@@ -93,6 +96,43 @@ message Audio {
   // Set when this voice message answers another one (message-content: Voice
   // replies). Same shape as `Text.reply_to`.
   ReplyTo reply_to = 6;
+}
+
+// message-content: Video messages (change `video-messages`). One short video
+// message: an MP4 clip (H.264 video + AAC audio), stored as an encrypted blob on
+// the server (blob-store) exactly as an image or voice message is. This body is
+// what a receiver needs to lay out the bubble at the clip's aspect ratio and show
+// a first-frame blur with a play overlay and the duration before anything
+// downloads, and to fetch and decrypt the clip on tap. A client that predates it
+// decodes the body as unset and shows the "needs a newer app version"
+// placeholder. Only the Rust core reads it; the server never sees it, and
+// `blob_key` never leaves the encrypted `Content`. The container and codecs are
+// fixed (MP4/H.264/AAC), as WebP is fixed for images, so there is no
+// container/codec field, and there is exactly one clip and no separate poster
+// blob.
+message Video {
+  // The random id the ciphertext is stored under on the server, 16 bytes
+  // (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+  bytes blob_id = 1;
+  // The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+  // (`protocol::blob_store::BLOB_KEY_LEN`).
+  bytes blob_key = 2;
+  // The blob ciphertext's size in bytes, at most the server's advertised
+  // `Limits.max_video_blob_bytes`, itself bounded by
+  // `protocol::video::MAX_VIDEO_BYTES`.
+  uint64 blob_size = 3;
+  // The clip's length in milliseconds, at least 1 and at most
+  // `protocol::video::MAX_VIDEO_DURATION_MS` (30 000). The server never sees it;
+  // the client enforces the 30-second cap.
+  uint32 duration_ms = 4;
+  // The clip's pixel size, so the bubble lays out at the right aspect ratio
+  // before the clip downloads. Both are at least 1.
+  uint32 width = 5;
+  uint32 height = 6;
+  // A ThumbHash of the first frame, shown as a blur until the clip is
+  // downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes. The
+  // video analogue of the image ThumbHash; there is no separate poster blob.
+  bytes thumbhash = 7;
 }
 
 // message-content: Reply quote describes the original's kind (change
