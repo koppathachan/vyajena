@@ -52,6 +52,14 @@
   re-announced as waiting; leave DMs and named groups alone; no-op when no lobby exists.
   Tests `admin-recovery/break-glass-re-seeds-the-admin-s-lobby`
   (reset-re-seeds-the-lobby-and-re-announces-members)
+- [x] 3.6 (test-selfhost race, 2026-11-25, D9) Flush the waiting-devices announce at
+  `Admin.CreateGroup`: after seeding the lobby, re-send the waiting notices to the
+  admin's member devices (`joins::waiting_notices`), so the re-seeded members are
+  re-added without a manual admin reconnect (the connect-time announce fires before the
+  group exists and is missed). Idempotent: never announces a device already in the
+  lobby. Tests `admin-recovery/break-glass-re-seeds-the-admin-s-lobby`
+  (create-group-flush-announces-waiting-but-not-already-added-members, and the bridge
+  e2e now re-adds without a reconnect)
 
 ## 4. Core / client — re-trust gate
 

@@ -146,13 +146,12 @@ async fn admin_re_key_re_seeds_the_lobby_and_the_member_rejoins() {
         .await
         .check("re-create the lobby");
 
-    // The recovered admin re-adds alice; alice rejoins from the fresh Welcome.
-    new_admin
-        .core
-        .add_user(user("alice"))
-        .await
-        .check("re-add alice");
-
+    // No manual add and NO admin reconnect here: the recovered admin connected
+    // before the lobby existed, so the connect-time waiting announce was missed.
+    // `Admin.CreateGroup` must flush the waiting notices so the admin re-adds the
+    // re-announced member on its own. Without that flush alice would sit waiting
+    // forever and the `IdentityKeyChanged` wait below would time out.
+    //
     // Alice sees the admin's safety number change and must re-trust: her client
     // pins the new key to keep decrypting, but marks the admin pending re-trust
     // and never silently accepts the change.

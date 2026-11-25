@@ -209,6 +209,18 @@ the admin's new key, shows the re-trust prompt (D6). The deletes reuse the exact
 order of `dms::drop_group_state` (deliveries before envelopes; the `mls_groups` children
 before the row), so the foreign keys stay satisfied.
 
+**Flush the waiting announce at CreateGroup (test-selfhost race, 2026-11-25).** The
+server only announces waiting devices to an admin device *when that device connects*.
+The recovered admin connects before it creates the lobby, so the connect-time announce
+fires with nothing waiting and is missed — the re-seeded members then sit "waiting"
+until the admin app is force-relaunched (test-selfhost found bob and carol stuck this
+way). Owner fix: `Admin.CreateGroup` now, right after seeding the lobby, re-sends the
+waiting notices to the admin's member devices (`joins::waiting_notices`, the same
+`joins::waiting` machinery the connect path uses), so the re-announced members are
+re-added without a manual reconnect. It is idempotent — `joins::waiting` excludes any
+device already in the lobby, so an ordinary first-ever `CreateGroup` (no waiting
+members) sends nothing and an already-added member is never re-notified.
+
 **History trade-off (accepted).** The recovered admin's new device loses pre-reset lobby
 history — but that history lived in the lost identity device's key material and is
 unrecoverable regardless, so nothing recoverable is thrown away. Members keep their own

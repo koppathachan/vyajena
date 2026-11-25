@@ -83,7 +83,11 @@ unobstructed by the old revoked admin leaf or any stale member leaf. It SHALL ma
 every lobby member's device as waiting for its first add again (clear `was_member`), so
 the server re-announces each non-revoked member (group-membership: Automatic add of new
 users) and the recovered admin re-adds it with a fresh Welcome on the member's existing
-identity key. Pre-reset lobby history is lost for the recovered admin's new device
+identity key. The server SHALL surface these waiting members to the admin when the admin
+re-creates the lobby (`Admin.CreateGroup`), not only when an admin device connects, so
+recovery does not depend on a manual admin reconnect; this re-announcement SHALL be
+idempotent and never announce a device that is already a lobby member. Pre-reset lobby
+history is lost for the recovered admin's new device
 (history on the lost device is unrecoverable regardless); members keep their own local
 history. The reset SHALL NOT touch DMs or named groups. When no lobby exists yet, the
 re-seed SHALL be a no-op. The server enforces this.
@@ -99,6 +103,13 @@ re-seed SHALL be a no-op. The server enforces this.
 - **THEN** each non-revoked former member is announced as waiting, the admin re-adds
   it, and the member's client rejoins from the Welcome and shows the admin re-trust
   prompt (admin-recovery: Admin re-key forces peer re-trust)
+
+#### Scenario: Members surface without an admin reconnect
+- **WHEN** the recovered admin's device connected before the lobby existed and then
+  calls `Admin.CreateGroup`, so the connect-time waiting announce was missed
+- **THEN** `CreateGroup` re-announces the waiting members to the admin, which re-adds
+  them without any manual admin reconnect, and a member already in the lobby is not
+  announced again
 
 ### Requirement: Admin re-key forces peer re-trust
 Each member's client SHALL present a clear safety-number-changed prompt naming the

@@ -155,22 +155,41 @@ impl Admin for AdminService {
         let caller = admin(&request)?;
         let request = request.into_inner();
         let admin_user_id = self.state.config.admin_user_id();
+        let admin_username = self.state.config.admin_username.clone();
+        let server_id = self.state.config.server_id.clone();
         let server = membership::external_sender(&self.state.config.server_id, &self.state.keys);
         let now = self.state.clock.now();
-        self.state
+        let notices = self
+            .state
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
                 match GroupState::create(&tx, &caller, &admin_user_id, &server, &request, now) {
-                    Ok(_) => {
+                    Ok(state) => {
+                        // admin-recovery: Break-glass re-seeds the admin's lobby.
+                        // Surface the members the re-seed re-announced as waiting
+                        // to the admin now: the admin connected before this group
+                        // existed, so the connect-time announce was missed and
+                        // nothing else re-sends it. Idempotent (joins::waiting
+                        // skips devices already in the lobby), so this is a no-op
+                        // on an ordinary first-ever CreateGroup.
+                        let notices = membership::joins::waiting_notices(
+                            &tx,
+                            state.group_id(),
+                            &admin_username,
+                            &server_id,
+                        )?;
                         tx.commit()?;
-                        Ok(Ok(()))
+                        Ok(Ok(notices))
                     }
                     Err(membership::CreateGroupError::Store(error)) => Err(error),
                     Err(error) => Ok(Err(Status::from(error))),
                 }
             })
             .await??;
+        for (device_id, notice) in notices {
+            self.state.hub.send_frame(&device_id, notice);
+        }
         tracing::info!("created the group at epoch 0");
         Ok(Response::new(pb::CreateGroupResponse {}))
     }

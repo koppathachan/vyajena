@@ -458,3 +458,86 @@ async fn reset_re_seeds_the_lobby_and_re_announces_members() {
         "alice waits to be re-added, got {waiting:?}"
     );
 }
+
+// spec: admin-recovery/break-glass-re-seeds-the-admin-s-lobby
+#[tokio::test]
+async fn create_group_flush_announces_waiting_but_not_already_added_members() {
+    let server = TestServer::start().await;
+    let conn = server.connect().await;
+    let (_admin, admin_device) = bootstrap_admin(&server, &conn).await;
+    let (_alice, alice_device) = invite_user(&conn, &admin_device, "alice").await;
+    let (_bob, bob_device) = invite_user(&conn, &admin_device, "bob").await;
+
+    let group_id = b"system-group-id-".to_vec();
+    let admin_id = admin_device.device_id.to_vec();
+    let alice_id = alice_device.device_id.to_vec();
+    let bob_id = bob_device.device_id.to_vec();
+
+    // A lobby with the admin and alice as members; bob is re-announced as
+    // waiting (was_member cleared, a KeyPackage uploaded) but not yet a leaf.
+    {
+        let (g, admin, alice, bob) = (
+            group_id.clone(),
+            admin_id.clone(),
+            alice_id.clone(),
+            bob_id.clone(),
+        );
+        server
+            .query(move |conn| {
+                conn.execute(
+                    "INSERT INTO mls_groups (group_id, kind, epoch, pi_sender_index, created_at)
+                     VALUES (?1, 'system', 0, 0, 0)",
+                    params![g],
+                )?;
+                conn.execute(
+                    "INSERT INTO mls_members (group_id, leaf_index, device_id) VALUES (?1, 0, ?2)",
+                    params![g, admin],
+                )?;
+                conn.execute(
+                    "INSERT INTO mls_members (group_id, leaf_index, device_id) VALUES (?1, 1, ?2)",
+                    params![g, alice],
+                )?;
+                conn.execute(
+                    "UPDATE devices SET was_member = 1 WHERE device_id IN (?1, ?2)",
+                    params![admin, alice],
+                )?;
+                conn.execute(
+                    "INSERT INTO key_packages (device_id, key_package, last_resort, uploaded_at)
+                     VALUES (?1, ?2, 1, 0)",
+                    params![bob, b"bob-key-package".to_vec()],
+                )?;
+                Ok(())
+            })
+            .await;
+    }
+
+    // The flush the CreateGroup handler runs: for each admin member device, a
+    // JoinNotice per waiting device. Bob is announced; alice (already a leaf)
+    // and the admin (itself a member) are not.
+    let g = group_id.clone();
+    let notices: Vec<(Vec<u8>, Vec<u8>)> = server
+        .query(move |conn| {
+            Ok(
+                server::membership::joins::waiting_notices(conn, &g, "akhil", "chat")
+                    .expect("waiting notices")
+                    .into_iter()
+                    .map(|(recipient, frame)| {
+                        let announced = match frame.frame {
+                            Some(server::pb::server_frame::Frame::JoinNotice(n)) => {
+                                n.device.expect("device").device_id
+                            }
+                            other => panic!("expected a JoinNotice, got {other:?}"),
+                        };
+                        (recipient.to_vec(), announced)
+                    })
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .await;
+
+    assert_eq!(
+        notices,
+        vec![(admin_id.clone(), bob_id.clone())],
+        "exactly one notice: bob announced to the admin device; alice (a leaf) is not"
+    );
+}
