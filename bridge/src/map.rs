@@ -12,7 +12,7 @@ use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
     ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
-    ReplyKind, ReplyQuote, SendState, UserRef,
+    ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -163,6 +163,23 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                         waveform: audio.waveform,
                         size: audio.size,
                         state: match audio.state {
+                            client::MediaState::Available => MediaStatus::Available,
+                            client::MediaState::Expired => MediaStatus::Expired,
+                            _ => MediaStatus::NotDownloaded,
+                        },
+                    }),
+                }
+            }
+            MessageBody::Video(video) => {
+                let video = *video;
+                ChatBody::Video {
+                    video: Box::new(VideoView {
+                        width: video.width,
+                        height: video.height,
+                        duration_ms: video.duration_ms,
+                        thumbhash: video.thumbhash,
+                        size: video.size,
+                        state: match video.state {
                             client::MediaState::Available => MediaStatus::Available,
                             client::MediaState::Expired => MediaStatus::Expired,
                             _ => MediaStatus::NotDownloaded,
@@ -326,6 +343,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::GroupsUnavailable => K::GroupsUnavailable,
         ClientError::MediaExpired => K::MediaExpired,
         ClientError::MediaNotOnDevice => K::MediaNotOnDevice,
+        ClientError::VideoTooLong => K::VideoTooLong,
+        ClientError::VideoTooLarge => K::VideoTooLarge,
+        ClientError::NotAVideo => K::NotAVideo,
         ClientError::Media(client::media::MediaError::Image(image)) => match image {
             client::media::ImageError::TooLarge => K::ImageTooLarge,
             _ => K::ImageUnsupported,

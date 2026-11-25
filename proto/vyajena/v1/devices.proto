@@ -91,6 +91,15 @@ message Limits {
   // the encoded `Envelope` as the client sends it, so a `COMMIT`'s `welcome`
   // counts toward it.
   uint32 max_handshake_envelope_bytes = 2;
+  // video-messages: Config-driven limit. The server's configured maximum blob
+  // ciphertext size in bytes, read from its config at startup and clamped to
+  // `[the image cap, protocol::video::MAX_VIDEO_BYTES]`. It is the one cap the
+  // server enforces on every `Blobs.UploadBlob` (the server sees only
+  // ciphertext bytes and cannot tell a video blob from an image blob). Clients
+  // read it and refuse a video whose encrypted blob would exceed it; they
+  // enforce the 30-second duration themselves, since the server never sees
+  // duration. An older client ignores this field.
+  uint64 max_video_blob_bytes = 3;
 }
 
 // An MLS ExternalSender (RFC 9420 section 12.1.8.1), split into its two parts.

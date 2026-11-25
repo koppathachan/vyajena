@@ -636,6 +636,36 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Sends the already-normalized clip [mp4] as a video message (app-ui: Send a
+  /// video); returns once the core stored it.
+  Future<void> sendVideo(
+    Uint8List mp4, {
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async {
+    _lastId = await core.sendVideo(
+      mp4,
+      chatId: chatId,
+      durationMs: durationMs,
+      width: width,
+      height: height,
+      firstFrameRgba: firstFrameRgba,
+      frameWidth: frameWidth,
+      frameHeight: frameHeight,
+    );
+    await _reload();
+  }
+
+  /// Sends the clip of own video message [id] again, as a new message.
+  Future<void> resendVideo(int id) async {
+    _lastId = await core.resendVideo(id);
+    await _reload();
+  }
+
   /// The user has seen this chat up to its newest message (the unread mark
   /// in the chat list).
   Future<void> markRead() async {
