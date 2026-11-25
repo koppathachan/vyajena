@@ -19,7 +19,7 @@
 
 ## 3. Core
 
-- [ ] 3.1 `Client::set_mute_pref(target, muted)` (RPC; keep a local mute set);
+- [x] 3.1 `Client::set_mute_pref(target, muted)` (RPC; keep a local mute set);
       apply `mute_prefs` snapshot; suppress the local in-app notification/badge
       for a muted conversation; expose the mute set to the app; tests
       `notification-prefs/mute-a-conversation`,
@@ -27,7 +27,7 @@
 
 ## 4. Bridge
 
-- [ ] 4.1 `set_mute_pref` + a mute-set accessor; `flutter_rust_bridge_codegen
+- [x] 4.1 `set_mute_pref` + a mute-set accessor; `flutter_rust_bridge_codegen
       generate`; bridge test
 
 ## 5. App

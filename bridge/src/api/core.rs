@@ -5,7 +5,7 @@
 //! one runtime per app process, spike 1.3) or its thread pool.
 
 use client::keystore::{KeyStoreConfig, open_key_store};
-use client::{ChatId, Client, ClientConfig, EventStream, MessageId};
+use client::{ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget};
 use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
@@ -558,6 +558,35 @@ impl Core {
     /// is a closed DM; nothing is deleted if the server call fails.
     pub async fn remove_closed_dm(&self, chat_id: i64) -> Result<(), CoreError> {
         forward(self.client.remove_closed_dm(ChatId(chat_id)).await)
+    }
+
+    /// Mutes or unmutes the conversation `chat_id` (notification-prefs: Mute a
+    /// conversation): tells the server, then records it here and on the user's
+    /// other devices. A muted conversation raises no wake push and no in-app
+    /// notification while its messages still arrive. Fails (leaving it unmuted)
+    /// if the server does not support it or is unreachable.
+    pub async fn set_conversation_muted(
+        &self,
+        chat_id: i64,
+        muted: bool,
+    ) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .set_mute_pref(MuteTarget::Conversation(ChatId(chat_id)), muted)
+                .await,
+        )
+    }
+
+    /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
+    /// while on, every conversation is silenced, overriding the per-conversation
+    /// mutes.
+    pub async fn set_app_muted(&self, muted: bool) -> Result<(), CoreError> {
+        forward(self.client.set_mute_pref(MuteTarget::Global, muted).await)
+    }
+
+    /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+    pub fn app_muted(&self) -> Result<bool, CoreError> {
+        Ok(forward(self.client.mute_prefs())?.muted_all)
     }
 
     /// The member devices of the named group `chat_id`.

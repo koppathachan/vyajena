@@ -48,6 +48,9 @@ abstract class Core implements RustOpaqueInterface {
   /// unset before this device is in the group.
   Future<UserRef?> adminUser();
 
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+  Future<bool> appMuted();
+
   /// Identity device: approves a link request text and returns the
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
@@ -292,6 +295,21 @@ abstract class Core implements RustOpaqueInterface {
   /// Sends a text message; returns its local id. Its status arrives as
   /// [`CoreEvent::SendStatus`].
   Future<PlatformInt64> sendText({required String text});
+
+  /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
+  /// while on, every conversation is silenced, overriding the per-conversation
+  /// mutes.
+  Future<void> setAppMuted({required bool muted});
+
+  /// Mutes or unmutes the conversation `chat_id` (notification-prefs: Mute a
+  /// conversation): tells the server, then records it here and on the user's
+  /// other devices. A muted conversation raises no wake push and no in-app
+  /// notification while its messages still arrive. Fails (leaving it unmuted)
+  /// if the server does not support it or is unreachable.
+  Future<void> setConversationMuted({
+    required PlatformInt64 chatId,
+    required bool muted,
+  });
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});

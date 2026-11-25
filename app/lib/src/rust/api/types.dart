@@ -219,12 +219,17 @@ class ChatSummary {
   /// When its newest message was stored.
   final PlatformInt64? lastMessageAtMs;
 
+  /// This conversation is individually muted (notification-prefs: Mute a
+  /// conversation); whole-app mute is shown globally via [`Core::app_muted`].
+  final bool muted;
+
   const ChatSummary({
     required this.chatId,
     required this.kind,
     required this.unread,
     required this.unseenMentions,
     this.lastMessageAtMs,
+    required this.muted,
   });
 
   @override
@@ -233,7 +238,8 @@ class ChatSummary {
       kind.hashCode ^
       unread.hashCode ^
       unseenMentions.hashCode ^
-      lastMessageAtMs.hashCode;
+      lastMessageAtMs.hashCode ^
+      muted.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -244,7 +250,8 @@ class ChatSummary {
           kind == other.kind &&
           unread == other.unread &&
           unseenMentions == other.unseenMentions &&
-          lastMessageAtMs == other.lastMessageAtMs;
+          lastMessageAtMs == other.lastMessageAtMs &&
+          muted == other.muted;
 }
 
 /// The connection to the server.
@@ -315,6 +322,11 @@ sealed class CoreEvent with _$CoreEvent {
   /// The chat list changed: a DM was opened, joined, got its peer's first
   /// device, or was closed (change `dms`).
   const factory CoreEvent.chatsChanged() = CoreEvent_ChatsChanged;
+
+  /// The user's mute set changed (notification-prefs: Mute preference sync): a
+  /// snapshot was adopted from the server, or this device's own mute/unmute
+  /// took effect. The app re-reads the chats' `muted` flags and `app_muted`.
+  const factory CoreEvent.mutePrefsChanged() = CoreEvent_MutePrefsChanged;
 
   /// This device was removed for inactivity; messages since then were not
   /// kept for it.
