@@ -4,15 +4,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use client::net::NetError;
 use client::{
-    ClientError, ConnectionState, DeviceId, Event, Member, Mention, Message, MessageBody,
+    ClientError, ConnectionState, DeviceId, Event, Member, Mention, Message, MessageBody, Presence,
     ReaddOutcome, SendStatus, UserId,
 };
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
-    ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
-    ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
+    ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, PresenceStatus,
+    ReaddAnswer, ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -319,8 +319,24 @@ pub(crate) fn event(event: Event) -> CoreEvent {
                 _ => ConnectionStatus::Disconnected,
             },
         },
+        Event::PresenceChanged { user: u } => CoreEvent::PresenceChanged {
+            user: u.as_ref().map(user),
+        },
         _ => CoreEvent::Other,
     }
+}
+
+/// A known flag as the app's tri-state (manual-presence).
+pub(crate) fn presence(p: Presence) -> PresenceStatus {
+    match p {
+        Presence::Online => PresenceStatus::Online,
+        Presence::Offline => PresenceStatus::Offline,
+    }
+}
+
+/// An optional flag as the app's tri-state: `None` becomes `Unknown` (no dot).
+pub(crate) fn presence_opt(p: Option<Presence>) -> PresenceStatus {
+    p.map_or(PresenceStatus::Unknown, presence)
 }
 
 pub(crate) fn error(error: ClientError) -> CoreError {

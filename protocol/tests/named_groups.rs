@@ -106,8 +106,8 @@ fn a_member_cannot_moderate_a_named_group() {
 // spec: wire-transport/protocol-version-negotiation
 #[test]
 fn version_3_with_a_new_server_and_2_with_an_old_one() {
-    assert_eq!(PROTOCOL_VERSION, 3);
-    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, [1, 2, 3]);
+    assert_eq!(PROTOCOL_VERSION, 4);
+    assert_eq!(SUPPORTED_PROTOCOL_VERSIONS, [1, 2, 3, 4]);
     assert_eq!(negotiate_protocol_version(&[1, 2, 3]), Some(3));
     assert_eq!(negotiate_protocol_version(&[1, 2]), Some(2));
     assert!(server_knows_named_groups(&[1, 2, 3]));

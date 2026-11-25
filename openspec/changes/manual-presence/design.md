@@ -54,15 +54,17 @@
   (you are not advertised to people you share nothing with) and reuses routing the
   server already does.
 
-### D2. Default flag before the user sets one *(OPEN — owner)*
+### D2. Default flag before the user sets one *(RESOLVED — owner: Offline)*
 
-- **Proposed:** **Online (green)** on first launch and for any user who has never
-  set the flag — reachable by default, Discord-style.
-- **Alternative (flagged):** **Offline (red)** — private by default; the user opts
-  in to being shown green.
-- Whichever is chosen, it is the value the server stores at `Devices.Register` and
-  the value a snapshot reports for a user who never changed it. The spec states the
-  behaviour and marks the chosen constant as owner-set.
+- **Resolved: Offline (red)** — private by default; the user opts in to being
+  shown green. The owner chose the "private by default" alternative over the
+  originally proposed Online default: presence is a self-declared "I'm around"
+  signal, so a user who has never touched the toggle should not be advertised as
+  online. (Recorded here because the spec is written to a `protocol/` default
+  constant, now set to Offline.)
+- It is the value the server stores at `Devices.Register` and the value a snapshot
+  reports for a user who never changed it. The spec states the behaviour and marks
+  the chosen constant (`protocol::presence::DEFAULT_PRESENCE`) as owner-set.
 
 ### D3. Per **user**, not per device
 
@@ -114,13 +116,23 @@
   client bug; the server may store it but need not, and this is not part of the
   contract. This is the same forward-compat gate `GroupClosed` uses for v3.
 
-### D8. UI — the profile-tab avatar is the switch
+### D8. UI — a sliding toggle on the Profile screen *(REVISED — owner)*
 
-- The bottom-nav **profile tab** avatar (oval shadow, from `app-shell`) accepts a
-  **horizontal swipe**: swipe **right → Online (green ring)**, swipe **left →
-  Offline (red ring)**. The ring/shadow colour always reflects the user's current
-  flag; a short label/haptic confirms the change. (Direction mapping is a thin
-  detail; right-for-on reads as "forward/positive" — adjust on owner feedback.)
+- **Revised from the originally specced avatar swipe to a sliding toggle (a
+  `Switch`) on the Profile screen.** The owner, on seeing the first cut, asked for
+  an explicit, discoverable **slider** the user flips on/off — the same affordance
+  as the existing "Mute all notifications" switch on the Profile tab — rather than a
+  hidden horizontal swipe on the bottom-nav avatar. A swipe is easy to trigger by
+  accident and gives no visible control; a labelled slide toggle makes "appear
+  online" a deliberate, legible choice. The core behaviour (manual, server-visible,
+  shown to others, Offline by default) is unchanged — only the gesture moved.
+- The **Profile tab** carries a **"Appear online"** `SwitchListTile`: on → the core
+  sends `SetPresence{ ONLINE }`, off → `SetPresence{ OFFLINE }`. The switch value
+  always reflects the user's current manual flag.
+- The bottom-nav **profile-tab avatar** keeps a small presence dot, now driven by
+  the user's **manual** flag (green when Online, red when Offline) — **not** by the
+  connection, replacing the connection-driven dot that an earlier change (#40) had
+  put there.
 - A small **green/red dot or ring** decorates avatars in **chat-list rows, the
   Contacts tab, and conversation headers** for every user whose flag the viewer may
   see (D1). A user whose flag is unknown (e.g. an older peer, or before the first

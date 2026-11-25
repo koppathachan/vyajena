@@ -30,5 +30,7 @@ String eventLabel(CoreEvent event) => switch (event) {
   CoreEvent_CommitRefused() => 'commit-refused',
   CoreEvent_ReaddRequested() => 'readd-requested',
   CoreEvent_Connection(:final status) => 'connection ${status.name}',
+  CoreEvent_PresenceChanged(:final user) =>
+    'presence-changed ${user == null ? 'self' : '${user.username}@${user.serverId}'}',
   CoreEvent_Other() => 'other',
 };

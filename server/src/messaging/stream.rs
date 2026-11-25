@@ -57,6 +57,9 @@ struct Session {
     out: Outgoing,
     /// The highest `server_seq` sent on this stream.
     sent_up_to: u64,
+    /// The `Hello.protocol_version` this stream negotiated (manual-presence:
+    /// presence frames are gated to version 4+).
+    protocol_version: u32,
 }
 
 impl Session {
@@ -115,10 +118,11 @@ impl Session {
         let admin = self.state.config.admin_username.clone();
         let now = self.state.clock.now();
         let server_id = self.state.config.server_id.clone();
+        let protocol_version = self.protocol_version;
         let info = self
             .store(move |conn| {
                 let tx = conn.transaction()?;
-                let info = connect_info(&tx, &caller, &admin, &server_id, now)?;
+                let info = connect_info(&tx, &caller, &admin, &server_id, protocol_version, now)?;
                 tx.commit()?;
                 Ok(info)
             })
@@ -155,8 +159,38 @@ impl Session {
                 .await),
             Some(In::Ack(ack)) => self.on_ack(ack).await,
             Some(In::Envelope(envelope)) => self.on_envelope(envelope).await,
+            Some(In::SetPresence(set)) => self.on_set_presence(set).await,
             None => Ok(()),
         }
+    }
+
+    /// manual-presence: Setting your status; Broadcasting a status change. Stores
+    /// the caller's user's manual flag (ignoring `UNSPECIFIED`), then sends a
+    /// `PresenceUpdate` to every connected v4+ device of every other user who
+    /// shares a conversation with the caller (D1). The server sets the flag from
+    /// nothing but this frame and never derives it from any other signal.
+    async fn on_set_presence(&mut self, set: pb::SetPresence) -> Result<(), Ended> {
+        let Some(status) = protocol::presence::Presence::from_wire(set.status) else {
+            // UNSPECIFIED or an unknown value: the server stores nothing.
+            return Ok(());
+        };
+        let username = self.caller.username.clone();
+        let server_id = self.state.config.server_id.clone();
+        let now = self.state.clock.now();
+        let stored = self
+            .store(move |conn| crate::presence::set(conn, &username, status, now))
+            .await?;
+        // The set of other users who may see this change (D1).
+        let username = self.caller.username.clone();
+        let co_members = self
+            .store(move |conn| crate::presence::co_member_usernames(conn, &username))
+            .await?;
+        if !co_members.is_empty() {
+            let frame = crate::presence::update_frame(&self.caller.username, &server_id, stored);
+            self.state.hub.broadcast_presence(&co_members, &frame);
+        }
+        tracing::info!(status = set.status, "set a manual presence flag");
+        Ok(())
     }
 
     /// message-delivery: Acknowledgement. Cumulative, and never beyond what
@@ -319,6 +353,7 @@ fn connect_info(
     caller: &Caller,
     admin: &str,
     server_id: &str,
+    protocol_version: u32,
     now: std::time::SystemTime,
 ) -> Result<ConnectInfo, StoreError> {
     let device_id = caller.device_id;
@@ -395,6 +430,17 @@ fn connect_info(
         // user's own mute set, after the close notices and the removed set.
         frames.push(crate::prefs::mute_frame(conn, &caller.username)?);
     }
+    // manual-presence: Status snapshot on connect (D1, D7). One `PresenceUpdate`
+    // per user this user may see, before live traffic, so every visible avatar's
+    // dot renders at once. Only a stream that negotiated version 4+ receives it;
+    // an older client would ignore the unknown frame anyway.
+    if protocol_version >= protocol::wire_transport::PRESENCE_MIN_PROTOCOL_VERSION {
+        frames.extend(crate::presence::snapshot_frames(
+            conn,
+            &caller.username,
+            server_id,
+        )?);
+    }
     // key-directory: Replenishment signal, for a count that dropped while
     // the device was away.
     let remaining = records::one_time_key_packages(conn, &device_id)?;
@@ -422,6 +468,7 @@ pub(crate) async fn run(
         caller,
         out,
         sent_up_to: 0,
+        protocol_version: 0,
     };
     let mut tick = tokio::time::interval(IDLE_CHECK_INTERVAL);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -448,7 +495,9 @@ pub(crate) async fn run(
     match hello {
         Ok(Some(pb::ClientFrame {
             frame: Some(In::Hello(hello)),
-        })) if SUPPORTED_PROTOCOL_VERSIONS.contains(&hello.protocol_version) => {}
+        })) if SUPPORTED_PROTOCOL_VERSIONS.contains(&hello.protocol_version) => {
+            session.protocol_version = hello.protocol_version;
+        }
         Ok(Some(pb::ClientFrame {
             frame: Some(In::Hello(hello)),
         })) => {
@@ -471,10 +520,11 @@ pub(crate) async fn run(
     last_frame = session.state.clock.now();
 
     let device_id = session.caller.device_id;
-    let (stream_id, mut events, reopens) = session
-        .state
-        .hub
-        .register(device_id, &session.caller.username);
+    let (stream_id, mut events, reopens) = session.state.hub.register(
+        device_id,
+        &session.caller.username,
+        session.protocol_version,
+    );
     // relay-privacy-logging: Connection metrics — one event per stream open,
     // the device id redacted.
     tracing::info!(

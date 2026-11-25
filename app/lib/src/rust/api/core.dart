@@ -201,6 +201,10 @@ abstract class Core implements RustOpaqueInterface {
   /// One message by local id.
   Future<ChatMessage?> message({required PlatformInt64 id});
 
+  /// This user's own manual presence flag (manual-presence: Manual status,
+  /// never inferred).
+  Future<PresenceStatus> myPresence();
+
   /// Whether the server knows named groups: the app offers "Create group"
   /// only then.
   Future<bool> namedGroupsAvailable();
@@ -215,6 +219,11 @@ abstract class Core implements RustOpaqueInterface {
 
   /// The open DM with `user`, opened first if there is none; its chat id.
   Future<PlatformInt64> openDm({required UserRef user});
+
+  /// The manual presence flag this device last learned for `user`, or `Unknown`
+  /// when it has learned none — the app then shows no dot (manual-presence:
+  /// Presence indicator on avatars).
+  Future<PresenceStatus> presenceOf({required UserRef user});
 
   /// `user`'s profile.
   Future<ProfileInfo> profile({required UserRef user});
@@ -407,6 +416,12 @@ abstract class Core implements RustOpaqueInterface {
     required PlatformInt64 chatId,
     required bool muted,
   });
+
+  /// manual-presence: Setting your status. Sets this user's own manual flag —
+  /// `true` for Online, `false` for Offline — recording it on this device and
+  /// sending it to the server (now if connected, else on the next connect). The
+  /// server distributes it to everyone who shares a conversation with this user.
+  Future<void> setPresence({required bool online});
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});

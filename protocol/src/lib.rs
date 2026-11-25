@@ -19,6 +19,7 @@ pub mod message_content;
 pub mod message_deletion;
 pub mod message_delivery;
 pub mod photo_sticker;
+pub mod presence;
 pub mod video;
 pub mod wire_transport;
 

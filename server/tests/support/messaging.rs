@@ -91,6 +91,10 @@ pub struct Stream {
     /// notification-prefs: Mute preference sync) so tests about other frames
     /// see the same sequence as before (read with [`Stream::mute_prefs`]).
     mutes: VecDeque<pb::MutePrefs>,
+    /// `PresenceUpdate` frames, kept apart (the connect snapshot and live
+    /// changes, manual-presence) so tests about other frames see the same
+    /// sequence (read with [`Stream::presence_update`]).
+    presences: VecDeque<pb::PresenceUpdate>,
 }
 
 impl Stream {
@@ -115,15 +119,21 @@ impl Stream {
             stash: VecDeque::new(),
             joins: VecDeque::new(),
             mutes: VecDeque::new(),
+            presences: VecDeque::new(),
         })
     }
 
     /// Opens `device`'s stream and says Hello with the supported version.
     pub async fn open(conn: &Conn, device: &TestDevice) -> Self {
+        Self::open_version(conn, device, PROTOCOL_VERSION).await
+    }
+
+    /// Opens `device`'s stream and says Hello with `protocol_version` (so a test
+    /// can pose as an older client, manual-presence: Old client is not sent
+    /// presence).
+    pub async fn open_version(conn: &Conn, device: &TestDevice, protocol_version: u32) -> Self {
         let hello = pb::ClientFrame {
-            frame: Some(In::Hello(pb::Hello {
-                protocol_version: PROTOCOL_VERSION,
-            })),
+            frame: Some(In::Hello(pb::Hello { protocol_version })),
         };
         Self::open_with(conn, device.token(), Some(hello))
             .await
@@ -146,6 +156,9 @@ impl Stream {
                 Ok(Some(pb::ServerFrame {
                     frame: Some(Out::MutePrefs(prefs)),
                 })) => self.mutes.push_back(prefs),
+                Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::PresenceUpdate(update)),
+                })) => self.presences.push_back(update),
                 other => return Ok(other),
             }
         }
@@ -202,6 +215,69 @@ impl Stream {
     /// Drops the `MutePrefs` snapshots received so far.
     pub fn forget_mute_prefs(&mut self) {
         self.mutes.clear();
+    }
+
+    /// Sends a `SetPresence` with the given `PresenceStatus` wire value
+    /// (manual-presence: Setting your status).
+    pub async fn send_presence(&self, status: i32) {
+        self.send(In::SetPresence(pb::SetPresence { status })).await;
+    }
+
+    /// The next `PresenceUpdate` (manual-presence); other frames before it are
+    /// kept for [`Stream::next`].
+    pub async fn presence_update(&mut self) -> pb::PresenceUpdate {
+        let mut skipped = VecDeque::new();
+        let found = loop {
+            if let Some(update) = self.presences.pop_front() {
+                break update;
+            }
+            match tokio::time::timeout(WAIT, self.rx.message()).await {
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::PresenceUpdate(update)),
+                }))) => break update,
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::JoinNotice(notice)),
+                }))) => self.joins.push_back(notice),
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::MutePrefs(prefs)),
+                }))) => self.mutes.push_back(prefs),
+                Ok(Ok(Some(pb::ServerFrame { frame: Some(frame) }))) => skipped.push_back(frame),
+                other => panic!("expected a PresenceUpdate, got {other:?}"),
+            }
+        };
+        self.stash.extend(skipped);
+        found
+    }
+
+    /// Drops the `PresenceUpdate` frames received so far.
+    pub fn forget_presence_updates(&mut self) {
+        self.presences.clear();
+    }
+
+    /// The `PresenceUpdate` frames set aside so far, drained (for the connect
+    /// snapshot, manual-presence: Status snapshot on connect).
+    pub fn drain_presence_updates(&mut self) -> Vec<pb::PresenceUpdate> {
+        self.presences.drain(..).collect()
+    }
+
+    /// Asserts no `PresenceUpdate` arrives for a short while (other frames are
+    /// kept for [`Stream::next`]).
+    pub async fn assert_no_presence_update(&mut self) {
+        assert!(
+            self.presences.is_empty(),
+            "unexpected presence updates: {:?}",
+            self.presences
+        );
+        let deadline = tokio::time::Instant::now() + QUIET;
+        while let Ok(message) = tokio::time::timeout_at(deadline, self.rx.message()).await {
+            match message {
+                Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::PresenceUpdate(update)),
+                })) => panic!("expected no PresenceUpdate, got {update:?}"),
+                Ok(Some(pb::ServerFrame { frame: Some(frame) })) => self.stash.push_back(frame),
+                other => panic!("the stream ended: {other:?}"),
+            }
+        }
     }
 
     /// Asserts no `JoinNotice` arrives for a short while (other frames are

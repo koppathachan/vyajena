@@ -606,8 +606,12 @@ class _ChatScreenState extends State<ChatScreen> {
         appBar: _appBar(
           title: peer == null ? _model.title : peerName,
           subtitle: _subtitle(peer),
-          avatar: NameAvatar(
+          // manual-presence: Presence indicator on avatars. A DM header shows
+          // the peer's presence dot; the lobby and named groups show none.
+          avatar: PresenceAvatar(
             key: const Key('conversation-avatar'),
+            core: widget.core,
+            user: peer,
             name: peer == null ? _model.title : peerName,
             seed: peer?.username ?? 'group-${_model.chatId}',
             radius: 18,

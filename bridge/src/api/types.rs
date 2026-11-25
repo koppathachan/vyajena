@@ -321,6 +321,19 @@ pub enum ReaddAnswer {
     LimitReached,
 }
 
+/// A user's manual presence flag as the app shows it (manual-presence, change
+/// `manual-presence`). `Unknown` means this device has learned no flag for the
+/// user, and the app draws no dot rather than guessing a colour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PresenceStatus {
+    /// The user chose to appear online (green).
+    Online,
+    /// The user chose to appear offline (red).
+    Offline,
+    /// No flag known for this user; show no dot.
+    Unknown,
+}
+
 /// Which push service a token is for (device-identity: Push token
 /// registration).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -437,6 +450,14 @@ pub enum CoreEvent {
     Connection {
         /// The new state.
         status: ConnectionStatus,
+    },
+    /// A manual presence flag changed (manual-presence: change `manual-presence`):
+    /// `user` is unset when this device's own flag changed, and set to the peer
+    /// whose flag was updated otherwise. The app re-reads `my_presence` or
+    /// `presence_of`.
+    PresenceChanged {
+        /// The peer whose flag changed, or unset for this user's own flag.
+        user: Option<UserRef>,
     },
     /// An event this bridge version does not know yet.
     Other,

@@ -65,11 +65,10 @@ void main() {
     );
   });
 
-  // spec: app-shell/bottom-navigation
-  testWidgets('the Profile avatar carries this device\'s presence dot: the '
-      'error colour offline, green when connected, and nowhere else', (
-    tester,
-  ) async {
+  // spec: presence/toggle-your-status-on-the-profile-screen
+  testWidgets('the Profile avatar carries this user\'s MANUAL presence dot: '
+      'red offline (the default), green online, driven by the chosen flag not '
+      'the connection', (tester) async {
     final core = aliceWithEverything();
     await openHome(tester, core);
     final scheme = Theme.of(
@@ -82,26 +81,31 @@ void main() {
     BoxDecoration deco() =>
         tester.widget<Container>(dot).decoration! as BoxDecoration;
 
-    // Offline is the default state, so the dot starts in the error colour.
+    // Offline is the first-launch default, so the dot starts in the error
+    // colour.
     expect(dot, findsOneWidget);
     expect(deco().color, scheme.error);
 
-    // Connected turns it green (not the error colour).
+    // Connecting does NOT turn it green: presence is manual, not derived from
+    // the connection.
     core.emit(const CoreEvent.connection(status: ConnectionStatus.connected));
-    await settle(tester);
-    expect(deco().color, isNot(scheme.error));
-    expect(deco().color, const Color(0xFF34C759));
-
-    // Back offline turns it red again.
-    core.emit(
-      const CoreEvent.connection(status: ConnectionStatus.disconnected),
-    );
     await settle(tester);
     expect(deco().color, scheme.error);
 
-    // Only the Profile avatar has a dot; the chat-list and contact avatars
-    // (also NameAvatars) carry none.
+    // The user manually going Online turns it green.
+    await core.setMyPresence(true);
+    await settle(tester);
+    expect(deco().color, const Color(0xFF34C759));
+
+    // The user manually going Offline turns it red again.
+    await core.setMyPresence(false);
+    await settle(tester);
+    expect(deco().color, scheme.error);
+
+    // No peer presence is known in this fixture, so only the Profile avatar
+    // has a dot (the chat-list and contact avatars carry none).
     expect(find.byKey(const Key('profile-presence-dot')), findsOneWidget);
+    expect(find.byKey(const Key('presence-dot')), findsNothing);
   });
 
   // spec: app-shell/bottom-navigation

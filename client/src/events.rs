@@ -503,6 +503,43 @@ pub enum Event {
     /// mute/unmute took effect. The UI re-reads [`crate::Client::mute_prefs`]
     /// and the chats' `muted` flags.
     MutePrefsChanged,
+    /// A manual presence flag changed (manual-presence: change `manual-presence`).
+    /// `user` is `None` when this device's own flag changed (the user toggled it),
+    /// and `Some(user)` when a `PresenceUpdate` for that peer was applied. The UI
+    /// re-reads [`crate::Client::my_presence`] or [`crate::Client::presence_of`].
+    PresenceChanged {
+        /// The peer whose flag changed, or `None` for this user's own flag.
+        user: Option<UserId>,
+    },
+}
+
+/// A user's manual presence flag (manual-presence: Manual status, never
+/// inferred). Exactly two values for the MVP; a peer whose flag is unknown is
+/// represented by `None`, not a third value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Presence {
+    /// The user chose to appear online (shown green).
+    Online,
+    /// The user chose to appear offline (shown red).
+    Offline,
+}
+
+impl Presence {
+    /// From the shared protocol flag.
+    pub(crate) fn from_protocol(p: protocol::presence::Presence) -> Self {
+        match p {
+            protocol::presence::Presence::Online => Presence::Online,
+            protocol::presence::Presence::Offline => Presence::Offline,
+        }
+    }
+
+    /// To the shared protocol flag.
+    pub(crate) fn to_protocol(self) -> protocol::presence::Presence {
+        match self {
+            Presence::Online => protocol::presence::Presence::Online,
+            Presence::Offline => protocol::presence::Presence::Offline,
+        }
+    }
 }
 
 /// The server's answer to `Keys.RequestReadd` (group-membership: Re-add after an

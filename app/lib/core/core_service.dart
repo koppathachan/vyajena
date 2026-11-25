@@ -43,6 +43,13 @@ abstract class CoreService {
   );
   final ValueNotifier<UserRef?> _user = ValueNotifier(null);
   final ValueNotifier<bool> _removed = ValueNotifier(false);
+
+  /// This user's own manual presence flag (manual-presence, change
+  /// `manual-presence`). Offline is the first-launch default; kept in step with
+  /// the core via [setMyPresence] and `PresenceChanged` events.
+  final ValueNotifier<PresenceStatus> _myPresence = ValueNotifier(
+    PresenceStatus.offline,
+  );
   final StreamController<CoreEvent> _events =
       StreamController<CoreEvent>.broadcast();
   final List<Future<void> Function()> _beforeStart = [];
@@ -64,6 +71,11 @@ abstract class CoreService {
   /// chat, "Bob is removed").
   ValueListenable<bool> get removed => _removed;
 
+  /// This user's own manual presence flag, for the Profile toggle and the
+  /// profile-tab avatar dot (manual-presence: Toggle your status on the Profile
+  /// screen).
+  ValueListenable<PresenceStatus> get myPresence => _myPresence;
+
   /// Every core event, in the core's order.
   Stream<CoreEvent> get events => _events.stream;
 
@@ -82,11 +94,33 @@ abstract class CoreService {
       _state.value = _user.value == null
           ? CoreState.unregistered
           : CoreState.ready;
-      if (_user.value != null) await start();
+      if (_user.value != null) {
+        await _refreshMyPresence();
+        await start();
+      }
     } catch (error) {
       _openError = error;
       _state.value = CoreState.failed;
     }
+  }
+
+  /// Re-reads this user's own presence flag from the core into [myPresence].
+  Future<void> _refreshMyPresence() async {
+    try {
+      _myPresence.value = await loadMyPresence();
+    } on Object {
+      // Leave the last known value; the dot is not critical.
+    }
+  }
+
+  /// Sets this user's own manual presence flag (manual-presence: Setting your
+  /// status): updates [myPresence] at once and tells the core, which sends it to
+  /// the server now if connected, or on the next connect.
+  Future<void> setMyPresence(bool online) async {
+    _myPresence.value = online
+        ? PresenceStatus.online
+        : PresenceStatus.offline;
+    await setPresence(online);
   }
 
   /// Starts (or restarts) the engine: connect, catch up, stay connected.
@@ -136,6 +170,11 @@ abstract class CoreService {
       _connection.value = status;
     }
     if (event is CoreEvent_Removed) _removed.value = true;
+    // manual-presence: keep the own-presence flag in step with a change from
+    // this or another of the user's devices.
+    if (event case CoreEvent_PresenceChanged(:final user) when user == null) {
+      unawaited(_refreshMyPresence());
+    }
     _events.add(event);
   }
 
@@ -147,6 +186,7 @@ abstract class CoreService {
     _connection.dispose();
     _user.dispose();
     _removed.dispose();
+    _myPresence.dispose();
   }
 
   // --- Implemented by the real core and the fake ---
@@ -486,6 +526,21 @@ abstract class CoreService {
 
   /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
   Future<bool> appMuted();
+
+  // --- Presence (manual-presence; change `manual-presence`) ---
+
+  /// Sets this user's own manual presence flag (manual-presence: Setting your
+  /// status). Prefer [setMyPresence], which also updates [myPresence] at once.
+  Future<void> setPresence(bool online);
+
+  /// This user's own manual presence flag from the core (manual-presence: Manual
+  /// status, never inferred).
+  Future<PresenceStatus> loadMyPresence();
+
+  /// The manual presence flag this device last learned for [user], or
+  /// [PresenceStatus.unknown] when none is known — the app then shows no dot
+  /// (manual-presence: Presence indicator on avatars).
+  Future<PresenceStatus> presenceOf(UserRef user);
 
   /// The member devices of the named group [chatId].
   Future<List<MemberDevice>> groupMembers(int chatId);

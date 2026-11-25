@@ -640,8 +640,10 @@ class ChatModel extends ChangeNotifier {
         _reloadMembers();
       case CoreEvent_Connection() ||
           CoreEvent_MutePrefsChanged() ||
+          CoreEvent_PresenceChanged() ||
           CoreEvent_Other():
-        // The chat screen tracks mute state through its own subscription.
+        // Mute state and presence dots are tracked by their own widgets'
+        // subscriptions (the conversation header's PresenceAvatar).
         break;
     }
   }

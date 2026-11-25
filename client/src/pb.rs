@@ -2187,7 +2187,7 @@ pub mod keys_client {
 /// A frame from the device to the server.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClientFrame {
-    #[prost(oneof = "client_frame::Frame", tags = "1, 2, 3, 4")]
+    #[prost(oneof = "client_frame::Frame", tags = "1, 2, 3, 4, 5")]
     pub frame: ::core::option::Option<client_frame::Frame>,
 }
 /// Nested message and enum types in `ClientFrame`.
@@ -2203,6 +2203,11 @@ pub mod client_frame {
         Ack(super::Ack),
         #[prost(message, tag = "4")]
         Heartbeat(super::Heartbeat),
+        /// manual-presence: Setting your status (change `manual-presence`). The user
+        /// sets their own manual online/offline flag; may be sent any time after
+        /// `Hello`.
+        #[prost(message, tag = "5")]
+        SetPresence(super::SetPresence),
     }
 }
 /// A frame from the server to the device.
@@ -2210,7 +2215,7 @@ pub mod client_frame {
 pub struct ServerFrame {
     #[prost(
         oneof = "server_frame::Frame",
-        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13"
     )]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
@@ -2247,6 +2252,11 @@ pub mod server_frame {
         /// notification-prefs: Mute preference sync (change `mute-notifications`).
         #[prost(message, tag = "12")]
         MutePrefs(super::MutePrefs),
+        /// manual-presence: Broadcasting a status change; Status snapshot on connect
+        /// (change `manual-presence`). The current manual flag of a user the viewer
+        /// may see. Sent only to streams that negotiated protocol version 4+.
+        #[prost(message, tag = "13")]
+        PresenceUpdate(super::PresenceUpdate),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2614,6 +2624,67 @@ pub struct GroupClosed {
     pub group_id: ::prost::alloc::vec::Vec<u8>,
     #[prost(message, optional, tag = "2")]
     pub closed_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// manual-presence: Setting your status. A device sets its user's manual flag by
+/// sending this on the `Connect` stream. The server records it against the
+/// authenticated device's user and stamps `updated_at` itself; it ignores a
+/// `SetPresence` carrying `PRESENCE_STATUS_UNSPECIFIED`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetPresence {
+    #[prost(enumeration = "PresenceStatus", tag = "1")]
+    pub status: i32,
+}
+/// manual-presence: Broadcasting a status change; Status snapshot on connect. The
+/// server tells a device about a user's current manual flag — on a live change,
+/// and once per visible user before live traffic on connect. It is state, not a
+/// queued message: there is no `Ack`, and the client keeps only the latest value
+/// per user, applying this one only when `updated_at` is newer than the one it
+/// holds (manual-presence: Latest value wins).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PresenceUpdate {
+    /// The user whose flag this is (presence is per user, not per device).
+    #[prost(message, optional, tag = "1")]
+    pub user: ::core::option::Option<UserId>,
+    #[prost(enumeration = "PresenceStatus", tag = "2")]
+    pub status: i32,
+    /// When the server accepted the `SetPresence` that set it (server-stamped).
+    #[prost(message, optional, tag = "3")]
+    pub updated_at: ::core::option::Option<::prost_types::Timestamp>,
+}
+/// manual-presence: Manual status, never inferred (change `manual-presence`). A
+/// user's self-set presence flag. Exactly Online or Offline for the MVP; the
+/// server stores it per user and never derives it from connection, heartbeats,
+/// reads or any activity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PresenceStatus {
+    Unspecified = 0,
+    /// The user chose to appear online (shown green).
+    Online = 1,
+    /// The user chose to appear offline (shown red). The first-launch default.
+    Offline = 2,
+}
+impl PresenceStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "PRESENCE_STATUS_UNSPECIFIED",
+            Self::Online => "PRESENCE_STATUS_ONLINE",
+            Self::Offline => "PRESENCE_STATUS_OFFLINE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "PRESENCE_STATUS_UNSPECIFIED" => Some(Self::Unspecified),
+            "PRESENCE_STATUS_ONLINE" => Some(Self::Online),
+            "PRESENCE_STATUS_OFFLINE" => Some(Self::Offline),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod messaging_client {

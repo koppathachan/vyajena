@@ -342,6 +342,15 @@ class RustCoreService extends CoreService {
   Future<bool> appMuted() => _c.appMuted();
 
   @override
+  Future<void> setPresence(bool online) => _c.setPresence(online: online);
+
+  @override
+  Future<PresenceStatus> loadMyPresence() => _c.myPresence();
+
+  @override
+  Future<PresenceStatus> presenceOf(UserRef user) => _c.presenceOf(user: user);
+
+  @override
   Future<List<MemberDevice>> groupMembers(int chatId) =>
       _c.groupMembers(chatId: chatId);
 

@@ -4,7 +4,7 @@
 //! entries are stored, to hand it a notice, or to close it (an older stream
 //! of the same device, a revoked device).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 
@@ -29,6 +29,10 @@ pub(crate) enum Event {
 struct Registered {
     id: u64,
     username: String,
+    /// The `Hello.protocol_version` this stream negotiated, so presence frames
+    /// reach only v4+ streams (manual-presence: Broadcasting a status change,
+    /// D7).
+    protocol_version: u32,
     events: mpsc::UnboundedSender<Event>,
 }
 
@@ -70,6 +74,7 @@ impl Hub {
         &self,
         device_id: DeviceId,
         username: &str,
+        protocol_version: u32,
     ) -> (u64, mpsc::UnboundedReceiver<Event>, u64) {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (events, receiver) = mpsc::unbounded_channel();
@@ -78,6 +83,7 @@ impl Hub {
             Registered {
                 id,
                 username: username.to_owned(),
+                protocol_version,
                 events,
             },
         );
@@ -130,6 +136,23 @@ impl Hub {
     /// Hands `frame` to `device_id`'s stream; false if it has none.
     pub(crate) fn send_frame(&self, device_id: &DeviceId, frame: pb::ServerFrame) -> bool {
         self.send(device_id, Event::Frame(Box::new(frame)))
+    }
+
+    /// manual-presence: Broadcasting a status change (D1, D7). Hands `frame` to
+    /// every connected stream whose user is in `usernames` and that negotiated
+    /// protocol version 4 or above. A v1–v3 stream is skipped (it would ignore
+    /// the unknown frame anyway).
+    pub(crate) fn broadcast_presence(&self, usernames: &BTreeSet<String>, frame: &pb::ServerFrame) {
+        for registered in self.streams().values() {
+            if registered.protocol_version
+                >= protocol::wire_transport::PRESENCE_MIN_PROTOCOL_VERSION
+                && usernames.contains(&registered.username)
+            {
+                let _ = registered
+                    .events
+                    .send(Event::Frame(Box::new(frame.clone())));
+            }
+        }
     }
 
     /// Ends `device_id`'s stream, if open, with `status`.
