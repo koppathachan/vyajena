@@ -32,7 +32,7 @@
 
 ## 5. App
 
-- [ ] 5.1 Mute/unmute on a conversation (overflow menu + chat-row long-press) and
+- [x] 5.1 Mute/unmute on a conversation (overflow menu + chat-row long-press) and
       a global "mute all" in the Profile tab; mute icon on muted rows; whole-app
       mute shown as overriding; widget tests
       `app-ui/mute-a-conversation-from-the-chat-list`,

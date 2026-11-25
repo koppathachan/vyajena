@@ -1219,11 +1219,7 @@ impl Client {
     /// locally if the server call fails (an old server answers `UNIMPLEMENTED`,
     /// surfaced as [`ClientError`], and the conversation stays unmuted).
     /// [`ClientError::NoSuchChat`] for an unknown conversation.
-    pub async fn set_mute_pref(
-        &self,
-        target: MuteTarget,
-        muted: bool,
-    ) -> Result<(), ClientError> {
+    pub async fn set_mute_pref(&self, target: MuteTarget, muted: bool) -> Result<(), ClientError> {
         let (scope, group_id) = match target {
             MuteTarget::Conversation(chat) => {
                 (pb::MuteScope::Conversation, self.group_id_of(chat)?)

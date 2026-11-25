@@ -565,11 +565,7 @@ impl Core {
     /// other devices. A muted conversation raises no wake push and no in-app
     /// notification while its messages still arrive. Fails (leaving it unmuted)
     /// if the server does not support it or is unreachable.
-    pub async fn set_conversation_muted(
-        &self,
-        chat_id: i64,
-        muted: bool,
-    ) -> Result<(), CoreError> {
+    pub async fn set_conversation_muted(&self, chat_id: i64, muted: bool) -> Result<(), CoreError> {
         forward(
             self.client
                 .set_mute_pref(MuteTarget::Conversation(ChatId(chat_id)), muted)

@@ -54,6 +54,10 @@ async fn mute_a_conversation_and_the_whole_app_through_the_bridge() {
     // Whole-app mute.
     alice.core.set_app_muted(true).await.check("mute all");
     assert!(alice.core.app_muted().check("app muted?"));
-    alice.core.set_app_muted(false).await.check("clear mute all");
+    alice
+        .core
+        .set_app_muted(false)
+        .await
+        .check("clear mute all");
     assert!(!alice.core.app_muted().check("app muted?"));
 }

@@ -40,11 +40,7 @@ impl Store {
 
     /// Records this device's own mute/unmute of one conversation, after the
     /// server accepted it. Idempotent.
-    pub fn set_conversation_muted(
-        &self,
-        group_id: &[u8],
-        muted: bool,
-    ) -> Result<(), StoreError> {
+    pub fn set_conversation_muted(&self, group_id: &[u8], muted: bool) -> Result<(), StoreError> {
         self.db.with(|conn| {
             if muted {
                 conn.execute(

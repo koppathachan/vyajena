@@ -12,9 +12,7 @@ use std::time::Duration;
 use support::Check;
 use support::clients::TestDevice;
 use support::harness::{Conn, TestServer, authed};
-use support::messaging::{
-    GROUP_ID, World, offline, receive, reconnect, say, wait_offline, world,
-};
+use support::messaging::{GROUP_ID, World, offline, receive, reconnect, say, wait_offline, world};
 use support::pb;
 use tonic::Code;
 
@@ -152,9 +150,7 @@ async fn muting_twice_is_idempotent() {
     }
     let rows: i64 = w
         .server
-        .query(|db| {
-            db.query_row("SELECT count(*) FROM muted_conversations", [], |r| r.get(0))
-        })
+        .query(|db| db.query_row("SELECT count(*) FROM muted_conversations", [], |r| r.get(0)))
         .await;
     assert_eq!(rows, 1);
 }
@@ -180,9 +176,7 @@ async fn only_a_conversation_you_are_in_can_be_muted() {
     // Nothing was recorded.
     let rows: i64 = w
         .server
-        .query(|db| {
-            db.query_row("SELECT count(*) FROM muted_conversations", [], |r| r.get(0))
-        })
+        .query(|db| db.query_row("SELECT count(*) FROM muted_conversations", [], |r| r.get(0)))
         .await;
     assert_eq!(rows, 0);
 
