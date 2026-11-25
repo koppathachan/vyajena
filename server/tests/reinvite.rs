@@ -27,10 +27,11 @@ async fn identity_key(server: &TestServer, username: &'static str) -> Vec<u8> {
 async fn device_counts(server: &TestServer, username: &'static str) -> (i64, i64) {
     server
         .query(move |conn| {
-            let total =
-                conn.query_row("SELECT count(*) FROM devices WHERE username = ?1", params![
-                    username
-                ], |r| r.get(0))?;
+            let total = conn.query_row(
+                "SELECT count(*) FROM devices WHERE username = ?1",
+                params![username],
+                |r| r.get(0),
+            )?;
             let revoked = conn.query_row(
                 "SELECT count(*) FROM devices WHERE username = ?1 AND revoked_at IS NOT NULL",
                 params![username],
@@ -103,9 +104,7 @@ async fn re_invite_re_keys_the_user_and_revokes_prior_devices() {
     assert_eq!(revoked, 1, "the one prior device is revoked");
 
     // The surviving old device is kicked: it can no longer authenticate.
-    let old = old_phone
-        .try_authenticate_with(&conn, &conn.exporter)
-        .await;
+    let old = old_phone.try_authenticate_with(&conn, &conn.exporter).await;
     assert_eq!(
         old.err().map(|s| s.code()),
         Some(Code::PermissionDenied),

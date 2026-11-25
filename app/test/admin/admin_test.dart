@@ -142,4 +142,72 @@ void main() {
     expect(core.args['removeUser'], bob);
     expect(find.text('Nobody else is in the group'), findsOneWidget);
   });
+
+  FakeCoreService adminWithBob() =>
+      adminCore()
+        ..memberDevices = const [
+          MemberDevice(user: akhil, device: '01'),
+          MemberDevice(user: bob, device: '03'),
+        ];
+
+  // spec: app-ui/re-invite-action
+  testWidgets('the admin re-invites a member who lost their phone: the confirm '
+      'warns and calls nothing until confirmed', (tester) async {
+    final core = adminWithBob();
+    await openApp(tester, core);
+    await menu(tester, 'Remove a user');
+    await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
+    // The confirm names Bob and warns it resets his devices and loses history.
+    expect(find.text('Re-invite bob?'), findsOneWidget);
+    expect(find.textContaining('resets their devices'), findsOneWidget);
+    expect(find.textContaining('lose'), findsOneWidget);
+    // Nothing is minted before the admin confirms.
+    expect(core.calls, isNot(contains('createInvite')));
+  });
+
+  // spec: app-ui/re-invite-action
+  testWidgets('confirming the re-invite calls CreateInvite and shows a '
+      'shareable code', (tester) async {
+    final shared = recordShares(tester);
+    final core = adminWithBob();
+    await openApp(tester, core);
+    await menu(tester, 'Remove a user');
+    await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
+    await tap(tester, find.widgetWithText(FilledButton, 'Re-invite'));
+    // CreateInvite is called for the same username, with no remove first.
+    expect(core.calls, contains('createInvite'));
+    expect(core.args['createInvite'], 'bob');
+    expect(core.calls, isNot(contains('removeUser')));
+    // The shareable invite text is shown with a Share button.
+    expect(find.text('vyajena-invite:bob'), findsOneWidget);
+    await tap(tester, find.widgetWithText(FilledButton, 'Share'));
+    expect(shared, ['vyajena-invite:bob']);
+  });
+
+  // spec: app-ui/re-invite-action
+  testWidgets('cancelling the re-invite changes nothing', (tester) async {
+    final core = adminWithBob();
+    await openApp(tester, core);
+    await menu(tester, 'Remove a user');
+    await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
+    await tap(tester, find.widgetWithText(TextButton, 'Cancel'));
+    expect(core.calls, isNot(contains('createInvite')));
+    expect(core.calls, isNot(contains('removeUser')));
+    // Bob is still listed, untouched.
+    expect(find.text('bob'), findsOneWidget);
+  });
+
+  // spec: app-ui/re-invite-action
+  testWidgets('a non-admin sees no re-invite action', (tester) async {
+    final core = FakeCoreService(storedUser: bob)
+      ..memberDevices = const [
+        MemberDevice(user: akhil, device: '01'),
+        MemberDevice(user: bob, device: '03'),
+      ];
+    await openApp(tester, core);
+    // No admin members screen to reach, so no Re-invite anywhere.
+    await tap(tester, find.byTooltip('Menu'));
+    expect(find.text('Remove a user'), findsNothing);
+    expect(find.text('Re-invite'), findsNothing);
+  });
 }

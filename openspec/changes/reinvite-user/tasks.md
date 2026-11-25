@@ -14,7 +14,7 @@
 
 ## 1. Proto and shared rules
 
-- [ ] 1.1 Proto-first check (design D6): confirm **no** `.proto` change is needed —
+- [x] 1.1 Proto-first check (design D6): confirm **no** `.proto` change is needed —
   `CreateInviteRequest { username }` and `RegisterRequest` already carry everything. No
   `buf lint` / `buf breaking` / `cargo run -p pbgen` and no `PROTOCOL_VERSION` bump. If
   implementation finds a proto change is unavoidable, stop and revise this change
@@ -22,11 +22,11 @@
 
 ## 2. Spikes
 
-- [ ] 2.1 S1: prove the present-user re-key branch in `register()` plus revoking the
+- [x] 2.1 S1: prove the present-user re-key branch in `register()` plus revoking the
   user's active devices in the **same transaction** leaves no window with two valid
   identity keys and no `insert_device` collision (fresh `device_id`,
   `server/src/devices/mod.rs:52`). Result → design.md
-- [ ] 2.2 S2: prove no orphaned leaf — the admin's combined Remove(old leaf)+Add(new
+- [x] 2.2 S2: prove no orphaned leaf — the admin's combined Remove(old leaf)+Add(new
   leaf) on the `JoinNotice` re-add (Welcome in the same `COMMIT`) leaves the lobby and a
   named group with exactly the new device's leaf, with a member offline during the re-key
   catching up cleanly; confirm the admin client recognises the stale leaves via the
@@ -34,11 +34,11 @@
 
 ## 3. Server
 
-- [ ] 3.1 `Admin.create_invite` (`server/src/admin/mod.rs:58-104`): allow a present,
+- [x] 3.1 `Admin.create_invite` (`server/src/admin/mod.rs:58-104`): allow a present,
   non-removed username (drop the `ALREADY_EXISTS` guard for that case; keep the "at most
   one usable invite per username" idempotence and the removed-user case). Tests
   `device-identity/re-inviting-an-existing-user` (admin-can-re-invite-a-present-user)
-- [ ] 3.2 `register()` (`server/src/devices/mod.rs:379-440`): add a `Some(user) if
+- [x] 3.2 `register()` (`server/src/devices/mod.rs:379-440`): add a `Some(user) if
   !user.removed` branch that re-keys (`UPDATE users SET identity_public_key = ?`),
   keeps the same `user_id`, and revokes every prior device via `auth::revoke_device`
   over `records::active_devices`; return the revoked device ids. The async `register`
@@ -47,25 +47,25 @@
   validation and the cert `username@server_id` check ahead of the branch. Tests
   `device-identity/re-inviting-an-existing-user` (re-invite-re-keys-the-user-and-revokes-prior-devices,
   a-re-invite-is-single-use, existing-user-without-a-valid-invite-cannot-re-key)
-- [ ] 3.3 No new server eviction code (owner decision D5): eviction is admin-driven
+- [x] 3.3 No new server eviction code (owner decision D5): eviction is admin-driven
   (task 4.3). Confirm the re-keyed new device qualifies for a `JoinNotice` after the
   re-key revokes the old devices (the `WAITING` query's "user has no non-revoked member
   device" clause is satisfied); regression test `group-membership/automatic-add-of-new-users`
 
 ## 4. Core / client
 
-- [ ] 4.1 Confirm no core change is needed for the reinstalled device: a fresh install
+- [x] 4.1 Confirm no core change is needed for the reinstalled device: a fresh install
   has no account, so `register()` runs as a new signup against the server's re-key
   branch; `register()` and the key store are unchanged. Add an end-to-end core test:
   reinstall (no account) → register with a re-invite → onboarded as the same user id
   with a fresh identity key. Covers `device-identity/re-inviting-an-existing-user`
-- [ ] 4.2 Confirm the peer side needs no new code: a re-keyed user is a changed identity
+- [x] 4.2 Confirm the peer side needs no new code: a re-keyed user is a changed identity
   key handled by the existing `key-directory: Clients verify the identity chain` path
   (design D4). Add/extend a test that a re-invited user triggers the non-silent re-trust
   prompt and that a non-admin add of the re-keyed device is rejected. Tests
   `reinvite-user/re-invite-changes-the-user-s-identity-key-for-peers`
   (members-see-a-re-trust-prompt-after-a-re-invite, non-admin-cannot-slip-in-the-re-keyed-device)
-- [ ] 4.3 Admin-driven eviction (`client/src/engine/`): when the admin device processes
+- [x] 4.3 Admin-driven eviction (`client/src/engine/`): when the admin device processes
   a `JoinNotice` for a device whose user it already has leaves for under a now-changed
   identity key, it SHALL commit the Add of the new device **together with** the Remove of
   that user's stale leaves (those not verifying against the new pinned key), Welcome in
@@ -75,7 +75,7 @@
 
 ## 5. App (design D8)
 
-- [ ] 5.1 Admin members screen: add a one-tap "Re-invite `<name>`" action (admin devices
+- [x] 5.1 Admin members screen: add a one-tap "Re-invite `<name>`" action (admin devices
   only) alongside Remove that, after a confirm dialog warning it resets the person's
   devices and that they keep the username but lose on-device history, calls
   `Admin.CreateInvite` with the same username and shows the shareable invite text. Widget

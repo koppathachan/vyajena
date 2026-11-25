@@ -118,6 +118,19 @@ revoked-user leaves today — the admin app drives those), and the owner's steer
 the admin is the actor. Keeping eviction in the admin client means **no new server
 eviction code** — the whole server change is the re-key branch plus the device revoke.
 
+**Where the eviction lives (implementation).** The admin client folds the stale-leaf
+Removes into the same commit as the Add, in the add jobs that run after a re-key:
+`Job::AddNew` and `Job::AddUser` for the lobby (the `JoinNotice` auto-add, and the
+post-re-trust re-add that `accept_identity_key` queues), and `Job::AddToGroup` for a
+named group the admin re-adds the user to. Each computes the stale leaves with
+`membership::stale_leaves` — the user's leaves whose certificate no longer verifies
+against the new pinned identity key — and adds them to the commit's `removes`; it is a
+no-op for an ordinary add of a user with no stale leaves. A brand-new re-keyed device is
+in no named group's `WAITING` set (it is a fresh `device_id` that was never a member), so
+there is no named-group auto-`JoinNotice` for it; the admin re-adds to named groups
+explicitly through `Job::AddToGroup`, which is why the eviction rides there. DM re-key is
+scoped out (D below), so `Job::AddToDm` is left unchanged.
+
 **DMs** are deliberately not covered normatively (D below): the lobby/named-group path
 above is the scope.
 

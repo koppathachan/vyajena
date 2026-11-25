@@ -120,6 +120,25 @@ pub fn leaves_of_user(group: &MlsGroup, user: &UserId) -> Vec<(LeafNodeIndex, De
         .collect()
 }
 
+/// Leaves of `user` whose certificate no longer verifies against
+/// `identity_key` — the stale old leaves a re-key left behind (reinvite-user:
+/// Re-key evicts the user's old group leaves). After a re-invite re-keys a
+/// present user, the server revokes their old devices but those leaves still
+/// sit in the tree, signed by the user's *old* identity key; once the admin
+/// has pinned the new key they no longer verify, which is exactly how the
+/// admin recognises them. Leaves already pending removal are excluded. Pass
+/// the user's current (new) pinned identity key.
+pub fn stale_leaves(group: &MlsGroup, user: &UserId, identity_key: &[u8]) -> Vec<LeafNodeIndex> {
+    let pending = pending_removals(group);
+    members(group)
+        .into_iter()
+        .filter(|(_, claim)| claim.user() == user)
+        .filter(|(_, claim)| certificate::verify(&claim.certificate, identity_key).is_err())
+        .map(|(leaf, _)| LeafNodeIndex::new(leaf))
+        .filter(|leaf| !pending.contains(leaf))
+        .collect()
+}
+
 /// The encryption key of `device`'s current leaf, if it is a member: a
 /// re-add replaces it, so a device that sees a different key than when it
 /// got the rejoin notice knows someone else re-added it (group-membership:

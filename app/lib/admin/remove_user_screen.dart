@@ -1,8 +1,12 @@
-// app-ui: Admin screens. Remove a user from the group and the server.
+// app-ui: Admin screens. Remove a user from the group and the server, or
+// re-invite an existing user who lost their phone (reinvite-user: Re-invite
+// action) — one tap re-keys them under the same username, no remove first.
 import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
 import '../app/names.dart';
+import '../app/shell_app_bar.dart';
+import '../app/text_box.dart';
 import '../core/core_service.dart';
 import '../members/members_screen.dart';
 
@@ -79,6 +83,75 @@ class _RemoveUserScreenState extends State<RemoveUserScreen> {
     }
   }
 
+  /// reinvite-user: Re-invite action. Re-onboard an existing user under the
+  /// same username in one step — the confirm warns it resets their devices,
+  /// then `Admin.CreateInvite` mints a fresh invite to share. No remove first.
+  Future<void> _reinvite(MemberUser member) async {
+    final name = _names.of(member.user);
+    final sure = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Re-invite $name?'),
+        content: Text(
+          'Use this if $name lost their phone or reinstalled the app. It '
+          'resets their devices: any device they still have is logged out. '
+          'They keep the same username (${userText(member.user)}) but lose '
+          'their on-device history. Send them the new invite to join again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Re-invite'),
+          ),
+        ],
+      ),
+    );
+    if (sure != true) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final invite = await widget.core.createInvite(member.user.username);
+      final text = invite.text;
+      if (mounted && text != null) {
+        await showDialog<void>(
+          context: context,
+          builder: (context) => AlertDialog(
+            key: const Key('reinvite-code'),
+            title: Text('Invite for $name'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Send this to $name. It works once. When they join on a '
+                  'fresh device, this phone adds them back.',
+                ),
+                const SizedBox(height: 8),
+                ShareableText(text: text),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Done'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final users = _users;
@@ -105,9 +178,20 @@ class _RemoveUserScreenState extends State<RemoveUserScreen> {
                       leading: const Icon(Icons.person_outline),
                       title: Text(_names.of(m.user)),
                       subtitle: Text(devicesText(m.devices.length)),
-                      trailing: TextButton(
-                        onPressed: _busy ? null : () => _remove(m),
-                        child: const Text('Remove'),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          TextButton(
+                            key: ValueKey('reinvite-${m.user.username}'),
+                            onPressed: _busy ? null : () => _reinvite(m),
+                            child: const Text('Re-invite'),
+                          ),
+                          TextButton(
+                            key: ValueKey('remove-${m.user.username}'),
+                            onPressed: _busy ? null : () => _remove(m),
+                            child: const Text('Remove'),
+                          ),
+                        ],
                       ),
                     ),
                 ],
