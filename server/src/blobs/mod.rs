@@ -18,9 +18,7 @@ pub mod meta;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::blob_store::{
-    BLOB_ID_LEN, MAX_BLOB_BYTES, MAX_CONCURRENT_UPLOADS, MAX_UPLOAD_REQUEST_BYTES,
-};
+use protocol::blob_store::{BLOB_ID_LEN, MAX_CONCURRENT_UPLOADS};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
@@ -47,13 +45,17 @@ pub fn backend_for(config: &Config) -> Option<Arc<dyn BlobStore>> {
 
 /// The gRPC service.
 pub fn service(state: &State) -> BlobsServer<BlobsService> {
+    // The decode limit is sized from the configured maximum blob size
+    // (video-messages: Config-driven limit), so a legitimately video-sized blob
+    // is not refused before it is buffered, while a request over that cap and
+    // its ids is (blob-store: Upload limits).
+    let max_request =
+        protocol::video::max_upload_request_bytes(state.config.limits.max_video_blob_bytes);
     BlobsServer::new(BlobsService {
         state: state.clone(),
         uploads: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_UPLOADS)),
     })
-    // A request over the blob and its ids is refused before it is buffered
-    // (blob-store: Upload limits).
-    .max_decoding_message_size(MAX_UPLOAD_REQUEST_BYTES)
+    .max_decoding_message_size(max_request)
 }
 
 /// Implements `vyajena.v1.Blobs`.
@@ -131,9 +133,13 @@ impl Blobs for BlobsService {
         if request.ciphertext.is_empty() {
             return Err(Status::invalid_argument("a blob is not empty"));
         }
-        if request.ciphertext.len() > MAX_BLOB_BYTES {
+        // One cap for every blob, read from config at startup and clamped into
+        // the protocol bound (video-messages: Config-driven limit). The server
+        // sees only ciphertext bytes and cannot tell a video blob from an image.
+        let max_blob = self.state.config.limits.max_video_blob_bytes;
+        if request.ciphertext.len() as u64 > max_blob {
             return Err(Status::invalid_argument(format!(
-                "a blob is at most {MAX_BLOB_BYTES} bytes"
+                "a blob is at most {max_blob} bytes"
             )));
         }
         // At most MAX_CONCURRENT_UPLOADS at once: each is buffered whole.

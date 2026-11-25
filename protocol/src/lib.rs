@@ -17,6 +17,7 @@ pub mod group_membership;
 pub mod key_directory;
 pub mod message_content;
 pub mod message_delivery;
+pub mod video;
 pub mod wire_transport;
 
 /// Seconds in a day, for the day-based durations.

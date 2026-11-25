@@ -60,6 +60,10 @@ abstract class Core implements RustOpaqueInterface {
   /// uses the network.
   Future<Uint8List?> cachedImage({required PlatformInt64 id});
 
+  /// The path of video message `id`'s clip if this device has it cached; never
+  /// uses the network.
+  Future<String?> cachedVideo({required PlatformInt64 id});
+
   /// The read mark of chat `chat_id`: the local id of the newest message
   /// read last, or 0 when it was never read. The app reads it when a chat
   /// opens to place the "New messages" divider (app-ui: Unread divider).
@@ -114,6 +118,13 @@ abstract class Core implements RustOpaqueInterface {
   /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
   /// the server no longer has it.
   Future<Uint8List> downloadImage({required PlatformInt64 id});
+
+  /// The path of video message `id`'s clip, an MP4 file in the core's media
+  /// cache for a player to open: from the cache, else downloaded, decrypted and
+  /// cached (client-runtime: Image download and cache). Dart never copies or
+  /// keeps the file. Fails with [`CoreErrorKind::MediaExpired`] when the server
+  /// no longer has it.
+  Future<String> downloadVideo({required PlatformInt64 id});
 
   /// The group's epoch on this device, once in the group.
   Future<BigInt?> epoch();
@@ -227,6 +238,11 @@ abstract class Core implements RustOpaqueInterface {
   /// media); returns the new message's local id.
   Future<PlatformInt64> resendImage({required PlatformInt64 id});
 
+  /// Resends the clip of the own video message `id` as a new message with a new
+  /// blob, when the first one expired (client-runtime: Expired media); returns
+  /// the new message's local id.
+  Future<PlatformInt64> resendVideo({required PlatformInt64 id});
+
   /// Revokes another device of this user (hex id).
   Future<void> revokeDevice({required String device});
 
@@ -292,6 +308,40 @@ abstract class Core implements RustOpaqueInterface {
   /// Sends a text message; returns its local id. Its status arrives as
   /// [`CoreEvent::SendStatus`].
   Future<PlatformInt64> sendText({required String text});
+
+  /// Sends a video to the main group; returns its local id.
+  /// [`Core::send_video_in`] in the main group.
+  Future<PlatformInt64> sendVideo({
+    required List<int> mp4,
+    required int durationMs,
+    required int width,
+    required int height,
+    required List<int> firstFrameRgba,
+    required int frameWidth,
+    required int frameHeight,
+  });
+
+  /// Sends a video to chat `chat_id`; returns its local id. `mp4` is the
+  /// already-normalized clip the app's native plugin produced (H.264/MP4 at the
+  /// 480p/~1 Mbps target, ≤ 30 s); the core does only the blob crypto
+  /// (video-messages: Video normalization in a native plugin).
+  /// `first_frame_rgba` (RGBA, `frame_width` x `frame_height`) is the first
+  /// frame the core turns into the body's ThumbHash — pass an empty list for no
+  /// blur. The core refuses a clip over 30 s with
+  /// [`CoreErrorKind::VideoTooLong`], one whose encrypted blob exceeds the
+  /// server's advertised cap with [`CoreErrorKind::VideoTooLarge`], and
+  /// non-MP4 bytes with [`CoreErrorKind::NotAVideo`]; otherwise it queues the
+  /// message at once, connected or not, and uploads then sends it like an image.
+  Future<PlatformInt64> sendVideoIn({
+    required PlatformInt64 chatId,
+    required List<int> mp4,
+    required int durationMs,
+    required int width,
+    required int height,
+    required List<int> firstFrameRgba,
+    required int frameWidth,
+    required int frameHeight,
+  });
 
   /// Sets this user's display name and "about" text for every member.
   Future<PlatformInt64> setProfile({String? displayName, String? about});
