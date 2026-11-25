@@ -1,6 +1,7 @@
 // app-ui: Chat screen.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/chat/message_tile.dart';
 import 'package:vyajena/core/core_service.dart';
 
@@ -94,21 +95,29 @@ void main() {
     expect(mine.right, closeTo(screen.width, 1));
     expect(mine.width, lessThan(screen.width / 3));
     expect(theirs.left, closeTo(0, 1));
-    // No "bob" label; the ✓ sits in the bubble, on the line of the text.
+    // No "bob" label; the ✓ sits in the bubble footer, sharing one line
+    // with the timestamp below the text (not on the text's line).
     expect(
       find.descendant(of: tile('hi'), matching: find.text('Bob (bob)')),
       findsNothing,
     );
     final check = find.descendant(of: tile('hi'), matching: find.text('✓'));
     expect(check, findsOneWidget);
+    final time = find.byKey(ValueKey('time-$id'));
+    expect(time, findsOneWidget);
+    // Tick and time share a horizontal line (their boxes overlap vertically;
+    // the ✓ glyph box is taller than the small time text, so centers differ).
+    final checkRect = tester.getRect(check);
+    final timeRect = tester.getRect(time);
+    expect(checkRect.top, lessThan(timeRect.bottom));
+    expect(timeRect.top, lessThan(checkRect.bottom));
+    // That line sits below the message text.
     expect(
-      tester.getCenter(check).dy,
-      closeTo(tester.getCenter(find.text('hi')).dy, 4),
+      timeRect.top,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.text('hi')).dy - 1),
     );
-    expect(
-      tester.getTopLeft(check).dx,
-      greaterThan(tester.getTopRight(find.text('hi')).dx),
-    );
+    // The tick trails the time on that line.
+    expect(checkRect.left, greaterThan(timeRect.right));
     // Other users' messages keep their sender.
     expect(
       find.descendant(
@@ -309,5 +318,33 @@ void main() {
       find.text('A message from Bob (bob) could not be read.'),
       findsOneWidget,
     );
+  });
+
+  // spec: app-ui/out-of-sync-re-sync-affordance
+  testWidgets('the out-of-sync banner and Re-sync action appear on OutOfSync '
+      'and Re-sync calls through to the core', (tester) async {
+    final core = await aliceInChat(tester);
+    final id = await send(tester, core, 'hi');
+
+    core.emit(const CoreEvent.outOfSync(chatId: 0));
+    await settle(tester);
+    expect(find.byKey(const Key('out-of-sync')), findsOneWidget);
+    expect(find.text(outOfSyncText), findsOneWidget);
+
+    // The held message is shown as out of sync, not a silent ⏳ and not failed.
+    core.setStatus(id, const SendState.outOfSync());
+    await settle(tester);
+    expect(
+      find.descendant(of: tile('hi'), matching: find.text('⟳ out of sync')),
+      findsOneWidget,
+    );
+
+    await tap(tester, find.byKey(const Key('re-sync')));
+    expect(core.calls, contains('requestResync'));
+
+    // Re-syncing clears the banner.
+    core.emit(const CoreEvent.rejoined());
+    await settle(tester);
+    expect(find.byKey(const Key('out-of-sync')), findsNothing);
   });
 }

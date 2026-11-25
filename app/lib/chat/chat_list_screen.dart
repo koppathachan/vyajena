@@ -404,34 +404,35 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
     };
     // notification-prefs: Mute a conversation. A muted row shows a bell-off
-    // marker, unless whole-app mute is on (then the banner conveys it, per row
+    // marker, unless whole-app mute is on (then the banner conveys it, per-row
     // markers would be misleading).
     final showMuteMarker = chat.muted && !_appMuted;
+    final titleText = Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: closed ? TextStyle(color: disabled) : null,
+    );
     final tile = ListTile(
       key: key,
       leading: avatar,
       enabled: true,
-      title: Row(
-        children: [
-          if (showMuteMarker) ...[
-            Icon(
-              Icons.notifications_off_outlined,
-              key: ValueKey('chat-muted-${chat.chatId}'),
-              size: 16,
-              color: disabled,
-            ),
-            const SizedBox(width: 4),
-          ],
-          Flexible(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: closed ? TextStyle(color: disabled) : null,
-            ),
-          ),
-        ],
-      ),
+      // Keep a plain Text title when there is no marker, so the row reads the
+      // same as before (tests and layout).
+      title: showMuteMarker
+          ? Row(
+              children: [
+                Icon(
+                  Icons.notifications_off_outlined,
+                  key: ValueKey('chat-muted-${chat.chatId}'),
+                  size: 16,
+                  color: disabled,
+                ),
+                const SizedBox(width: 4),
+                Flexible(child: titleText),
+              ],
+            )
+          : titleText,
       subtitle: _subtitle(chat, closedText),
       trailing: _trailing(chat),
       onTap: () => _open(chat),

@@ -92,6 +92,12 @@ pub struct TestServer {
 
 /// The server's config: any free local port, invites naming the relay.
 fn config(dir: &std::path::Path, relay: SocketAddr) -> Config {
+    config_with(dir, relay, "")
+}
+
+/// [`config`] plus extra TOML appended (e.g. a `[limits]` table), for a test that
+/// needs a specific `max_video_blob_bytes` (video-messages: Config-driven limit).
+fn config_with(dir: &std::path::Path, relay: SocketAddr, extra: &str) -> Config {
     let text = format!(
         r#"
 server_id = "{SERVER_ID}"
@@ -104,6 +110,7 @@ key_dir = "keys"
 [blob_store]
 backend = "filesystem"
 path = "blobs"
+{extra}
 "#
     );
     Config::from_toml(&text, dir).check("test config")
@@ -120,6 +127,20 @@ async fn serve(server: Server) -> oneshot::Sender<()> {
 impl TestServer {
     /// Starts a fresh server whose admin is `akhil@chat`.
     pub async fn start() -> Self {
+        Self::start_inner("").await
+    }
+
+    /// [`TestServer::start`] with the server's maximum blob size pinned to `cap`
+    /// bytes (video-messages: Config-driven limit), so a test can exercise the
+    /// advertised video size cap without multi-megabyte clips.
+    pub async fn start_with_video_cap(cap: u64) -> Self {
+        // The config key is `protocol::video::CONFIG_KEY`, written as a literal
+        // because this support file is shared with the bridge tests, which do not
+        // depend on the `protocol` crate.
+        Self::start_inner(&format!("[limits]\nmax_video_blob_bytes = {cap}\n")).await
+    }
+
+    async fn start_inner(extra_config: &str) -> Self {
         super::init_logging();
         let dir = tempfile::tempdir().check("temp dir");
         // The drive the blobs are on, mounted.
@@ -130,7 +151,7 @@ impl TestServer {
         let relay = Relay::start(([127, 0, 0, 1], 0).into()).await;
         let pushes = Pushes::default();
         let server = Server::start_with_push(
-            config(dir.path(), relay.addr),
+            config_with(dir.path(), relay.addr, extra_config),
             Arc::new(clock.clone()),
             Arc::new(pushes.clone()),
         )

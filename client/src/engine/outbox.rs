@@ -183,6 +183,9 @@ impl Engine {
                 epoch: sent_epoch,
                 kind: Kind::Application as i32,
                 ciphertext,
+                // message-deletion: a Delete carries its server-visible target,
+                // so the server retracts the target's undelivered copies.
+                deletes: crate::messaging::delete_target(&message.content),
                 ..Default::default()
             };
             self.send(Out::Envelope(envelope)).await?;
@@ -340,14 +343,15 @@ impl Engine {
         Ok(true)
     }
 
-    /// An own profile or group settings the server accepted applies here too
-    /// (the user's other devices apply it when they receive it).
-    fn apply_own(&self, id: MessageId) -> Result<(), EngineError> {
+    /// An own profile, group settings or delete the server accepted applies
+    /// here too (the user's other devices apply it when they receive it).
+    fn apply_own(&mut self, id: MessageId) -> Result<(), EngineError> {
         let Some(stored) = self.store().message(id)? else {
             return Ok(());
         };
         let now = self.now();
         match crate::messaging::decode(&stored.content).body {
+            Decoded::Delete(del) => self.apply_own_delete(&stored, del)?,
             Decoded::Profile(profile) => {
                 let user = self.user();
                 let stored = self.store().profile(&user.to_string())?;
@@ -374,5 +378,89 @@ impl Engine {
             _ => {}
         }
         Ok(())
+    }
+
+    /// message-deletion: applies this device's own accepted delete — marks the
+    /// target a tombstone (keeping the original for a DM reveal, dropping it for
+    /// the lobby or a named group), emits the tombstone, and purges the blob of
+    /// a deleted media message at once with `Blobs.DeleteBlob` (Deleting media
+    /// and replies).
+    fn apply_own_delete(
+        &mut self,
+        stored: &StoredMessage,
+        del: crate::messaging::DeleteContent,
+    ) -> Result<(), EngineError> {
+        let is_group = if stored.chat == crate::store::MAIN_CHAT {
+            true
+        } else {
+            self.store()
+                .dm_by_chat(stored.chat)?
+                .map(|dm| dm.named)
+                .unwrap_or(false)
+        };
+        let by_admin = is_group
+            && (del.target_user != self.user() || del.target_device != self.account.device_id);
+        // Capture the target's blob before its plaintext may be replaced.
+        let target_blob = match self
+            .store()
+            .chat_message_by_ref(&del.target_device, &del.target_msg_id)?
+        {
+            Some(target_id) => self
+                .store()
+                .message(target_id)?
+                .and_then(|m| blob_of(&m.content)),
+            None => None,
+        };
+        let replacement = is_group.then(|| stored.content.clone());
+        let tombstone_id = match self.store().mark_deleted_by_ref(
+            &del.target_device,
+            &del.target_msg_id,
+            by_admin,
+            replacement.as_deref(),
+        )? {
+            Some(target_id) => {
+                self.store().hide_message(stored.id)?;
+                target_id
+            }
+            None => {
+                self.store().mark_delete_tombstone(stored.id, by_admin)?;
+                stored.id
+            }
+        };
+        let own_user = self.user();
+        if let Some(message) = self
+            .store()
+            .message(tombstone_id)?
+            .and_then(|stored| crate::messaging::to_message(self.store(), &stored, &own_user))
+        {
+            self.emit(Event::Message(message));
+        }
+        // message-deletion: Deleting media and replies. Purge the one stored
+        // blob at once; a no-op when it already expired.
+        if let Some(blob_id) = target_blob
+            && let Some(group_id) = self.group_id_of_chat(stored.chat)?
+        {
+            self.push_job(Job::PurgeBlob { group_id, blob_id });
+        }
+        Ok(())
+    }
+
+    /// The group id of chat `chat`: the main group, or a DM/named group's.
+    fn group_id_of_chat(&self, chat: i64) -> Result<Option<Vec<u8>>, EngineError> {
+        if chat == crate::store::MAIN_CHAT {
+            Ok(self.store().group()?.map(|row| row.group_id))
+        } else {
+            Ok(self.store().dm_by_chat(chat)?.map(|dm| dm.group_id))
+        }
+    }
+}
+
+/// The blob id of an image or voice message, for a media delete to purge.
+fn blob_of(content: &[u8]) -> Option<Vec<u8>> {
+    match crate::messaging::decode(content).body {
+        Decoded::Image(image) => Some(image.blob_id.to_vec()),
+        Decoded::Audio(audio) => Some(audio.blob_id.to_vec()),
+        Decoded::Video(video) => Some(video.blob_id.to_vec()),
+        _ => None,
     }
 }

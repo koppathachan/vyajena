@@ -91,11 +91,16 @@ pub struct StoredMessage {
     /// The chat it is in: 0 is the main group, else a DM's chat id (change
     /// `dms`).
     pub chat: i64,
+    /// message-deletion: this message was deleted and shows as a tombstone.
+    pub deleted: bool,
+    /// message-deletion: an admin deleted another user's message in a group, so
+    /// the tombstone reads "by the admin".
+    pub deleted_by_admin: bool,
 }
 
 const COLUMNS: &str = "local_id, sender_user, sender_device, msg_id, outgoing, content, \
                        created_at, server_seq, accepted_at, status, failure, sent_epoch, \
-                       ciphertext, chat_id";
+                       ciphertext, chat_id, deleted, deleted_by_admin";
 
 /// The `kind` column for an encoded `Content`: `profile` and `settings`
 /// bodies change state; Text, unknown bodies and anything that does not
@@ -141,6 +146,8 @@ struct RawRow {
     sent_epoch: Option<i64>,
     ciphertext: Option<Vec<u8>>,
     chat: i64,
+    deleted: bool,
+    deleted_by_admin: bool,
 }
 
 fn raw(row: &Row<'_>) -> rusqlite::Result<RawRow> {
@@ -159,6 +166,8 @@ fn raw(row: &Row<'_>) -> rusqlite::Result<RawRow> {
         sent_epoch: row.get(11)?,
         ciphertext: row.get(12)?,
         chat: row.get(13)?,
+        deleted: row.get(14)?,
+        deleted_by_admin: row.get(15)?,
     })
 }
 
@@ -186,6 +195,8 @@ fn decode(row: RawRow) -> Result<StoredMessage, StoreError> {
         sent_epoch: to_u64(row.sent_epoch, "sent_epoch")?,
         ciphertext: row.ciphertext,
         chat: row.chat,
+        deleted: row.deleted,
+        deleted_by_admin: row.deleted_by_admin,
     })
 }
 
@@ -411,7 +422,8 @@ impl Store {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut newest_first = self.query(
             &format!(
-                "SELECT {COLUMNS} FROM messages WHERE kind = 'chat' AND chat_id = ?2
+                "SELECT {COLUMNS} FROM messages
+                 WHERE kind = 'chat' AND hidden = 0 AND chat_id = ?2
                  ORDER BY server_seq IS NULL DESC, server_seq DESC, local_id DESC
                  LIMIT ?1"
             ),
@@ -438,6 +450,90 @@ impl Store {
             .optional()
         })?;
         Ok(id.map(MessageId))
+    }
+
+    /// message-deletion: Tombstone, not erasure. Marks the stored chat message
+    /// `(sender_device, msg_id)` a tombstone: `deleted = 1`, with
+    /// `deleted_by_admin` set when an admin deleted another user's message, and
+    /// — for a lobby or named-group delete — its plaintext replaced by
+    /// `replacement` (the Delete body) so there is nothing to reveal. For a DM
+    /// the original is kept (`replacement` `None`) so the receiver may reveal it.
+    /// Returns the target's local id if this device holds it, else `None`.
+    pub fn mark_deleted_by_ref(
+        &self,
+        sender_device: &DeviceId,
+        msg_id: &[u8; MSG_ID_LEN],
+        by_admin: bool,
+        replacement: Option<&[u8]>,
+    ) -> Result<Option<MessageId>, StoreError> {
+        self.db.with(|conn| {
+            let changed = match replacement {
+                Some(content) => conn.execute(
+                    "UPDATE messages SET deleted = 1, deleted_by_admin = ?3, content = ?4
+                     WHERE sender_device = ?1 AND msg_id = ?2 AND kind = 'chat'",
+                    params![sender_device, msg_id, by_admin, content],
+                )?,
+                None => conn.execute(
+                    "UPDATE messages SET deleted = 1, deleted_by_admin = ?3
+                     WHERE sender_device = ?1 AND msg_id = ?2 AND kind = 'chat'",
+                    params![sender_device, msg_id, by_admin],
+                )?,
+            };
+            if changed == 0 {
+                return Ok(None);
+            }
+            let id: i64 = conn.query_row(
+                "SELECT local_id FROM messages WHERE sender_device = ?1 AND msg_id = ?2",
+                params![sender_device, msg_id],
+                |row| row.get(0),
+            )?;
+            Ok(Some(MessageId(id)))
+        })
+    }
+
+    /// message-deletion: marks the stored delete message `id` itself a tombstone
+    /// (`deleted = 1`), for a delete whose target this device never received; the
+    /// row keeps its Delete body, so there is nothing to reveal.
+    pub fn mark_delete_tombstone(&self, id: MessageId, by_admin: bool) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.execute(
+                "UPDATE messages SET deleted = 1, deleted_by_admin = ?2 WHERE local_id = ?1",
+                params![id.0, by_admin],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// message-deletion: hides the stored delete message `id`, whose target row
+    /// carries the tombstone instead, so it is kept for dedup but not shown.
+    pub fn hide_message(&self, id: MessageId) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            conn.execute(
+                "UPDATE messages SET hidden = 1 WHERE local_id = ?1",
+                params![id.0],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// message-deletion: Deleting media and replies. Whether the stored chat
+    /// message `(sender_device, msg_id)` is a tombstone, for a reply that quotes
+    /// it to show a "deleted message" quote instead of the stored snapshot.
+    pub fn is_deleted_ref(
+        &self,
+        sender_device: &DeviceId,
+        msg_id: &[u8; MSG_ID_LEN],
+    ) -> Result<bool, StoreError> {
+        let deleted: Option<bool> = self.db.with(|conn| {
+            conn.query_row(
+                "SELECT deleted FROM messages
+                 WHERE sender_device = ?1 AND msg_id = ?2 AND kind = 'chat'",
+                params![sender_device, msg_id],
+                |row| row.get(0),
+            )
+            .optional()
+        })?;
+        Ok(deleted.unwrap_or(false))
     }
 
     /// The messages whose mention of this device's user is not seen yet, in

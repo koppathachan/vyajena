@@ -94,7 +94,10 @@ async fn unknown_revoked_or_expired_invite_creates_nothing() {
         .code;
     server.clock.advance(INVITE_TTL + Duration::from_secs(1));
     let result = register(&conn, &expiring, &bob, &device).await;
-    assert_eq!(result.err().map(|s| s.code()), Some(Code::PermissionDenied));
+    // group-resync: an otherwise-valid invite that only expired gets a distinct
+    // DEADLINE_EXCEEDED, so the app can say it expired (app-ui: Invite expiry is
+    // surfaced); unknown and revoked invites stay PERMISSION_DENIED.
+    assert_eq!(result.err().map(|s| s.code()), Some(Code::DeadlineExceeded));
 
     assert_eq!(counts(&server).await, (1, 1));
 }

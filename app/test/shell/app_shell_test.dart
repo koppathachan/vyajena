@@ -66,6 +66,45 @@ void main() {
   });
 
   // spec: app-shell/bottom-navigation
+  testWidgets('the Profile avatar carries this device\'s presence dot: the '
+      'error colour offline, green when connected, and nowhere else', (
+    tester,
+  ) async {
+    final core = aliceWithEverything();
+    await openHome(tester, core);
+    final scheme = Theme.of(
+      tester.element(find.byKey(const Key('bottom-nav'))),
+    ).colorScheme;
+    final dot = find.descendant(
+      of: profileTab,
+      matching: find.byKey(const Key('profile-presence-dot')),
+    );
+    BoxDecoration deco() =>
+        tester.widget<Container>(dot).decoration! as BoxDecoration;
+
+    // Offline is the default state, so the dot starts in the error colour.
+    expect(dot, findsOneWidget);
+    expect(deco().color, scheme.error);
+
+    // Connected turns it green (not the error colour).
+    core.emit(const CoreEvent.connection(status: ConnectionStatus.connected));
+    await settle(tester);
+    expect(deco().color, isNot(scheme.error));
+    expect(deco().color, const Color(0xFF34C759));
+
+    // Back offline turns it red again.
+    core.emit(
+      const CoreEvent.connection(status: ConnectionStatus.disconnected),
+    );
+    await settle(tester);
+    expect(deco().color, scheme.error);
+
+    // Only the Profile avatar has a dot; the chat-list and contact avatars
+    // (also NameAvatars) carry none.
+    expect(find.byKey(const Key('profile-presence-dot')), findsOneWidget);
+  });
+
+  // spec: app-shell/bottom-navigation
   testWidgets('tapping the avatar tab opens profile, settings and server info; '
       'tab state survives switching', (tester) async {
     tall(tester);

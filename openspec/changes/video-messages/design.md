@@ -112,6 +112,34 @@ flowchart LR
   confirm the camera can be forced to H.264/MP4 on iOS. Record the result in this
   design.
 
+  **S1 result (implementation, 2026-11-23):** the contract and both plugins are in
+  place and the Dart→core→bridge path is covered by tests; **on-device
+  verification is still pending** (built and run in a headless CI worktree with no
+  iOS/Android device).
+  - **Contract (`chat.vyajena/video` MethodChannel):** `normalize({path,
+    maxDurationMs}) → {path, durationMs, width, height, frameRgba, frameWidth,
+    frameHeight}`. The native side writes the normalized MP4 to the app's temp and
+    returns its path plus the first frame as a small RGBA buffer (long edge ≤ 160
+    px); the core turns that frame into the body's ThumbHash, so ThumbHash math
+    stays in the core. Dart reads the bytes, hands them to `Core.sendVideo`, and
+    deletes the temp file (`app/lib/chat/video_plugins.dart`).
+  - **iOS (`AppDelegate.swift` `VideoNormalize`):** `AVAssetExportSession` with
+    `AVAssetExportPreset640x480` → MP4 (`.mp4`, H.264 + AAC), `timeRange` trimmed
+    to the 30 s cap; first frame via `AVAssetImageGenerator`. Forcing the camera to
+    H.264 is deferred to `image_picker`'s capture plus the export, which always
+    re-encodes to H.264 regardless of a HEVC recording — so an HEVC capture is
+    normalized rather than rejected. Needs a device to confirm the preset meets the
+    480p/~1 Mbps target closely enough and the first-frame orientation.
+  - **Android (`VideoNormalize.kt`):** `MediaMetadataRetriever` for the metadata and
+    first frame; a `MediaExtractor` → `MediaCodec` (decode) → `MediaCodec` (H.264
+    encode, 854-long-edge, 1 Mbps) → `MediaMuxer` pipeline, trimmed to the cap. The
+    decoder-surface → encoder-surface **GL blit** is the one piece left for
+    on-device work (the codec/extractor/muxer wiring and the metadata/first-frame
+    path are complete); this is flagged in the file.
+  - **Core fallback:** if the plugin returns no ThumbHash, the body carries none and
+    the bubble shows a neutral placeholder; a plugin error surfaces to the UI
+    (`CoreErrorKind.notAVideo` / a plugin message), nothing is sent.
+
 ## Risks / Trade-offs
 
 - **The native-plugin bend** moves a transform out of the core; mitigated by keeping

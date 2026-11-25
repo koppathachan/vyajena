@@ -10,11 +10,12 @@ pub mod audio;
 pub mod cache;
 pub mod crypto;
 pub mod encode;
+pub mod video;
 
 pub use audio::{AudioError, EncodedAudio};
 pub use cache::{DEFAULT_CACHE_BYTES, MediaCache, MediaKind};
 pub use crypto::{BlobId, BlobKey, CryptoError};
-pub use encode::{EncodedImage, ImageError};
+pub use encode::{EncodedImage, ImageError, RgbaCutout, SegmentationSource};
 
 use crate::store::StoreError;
 

@@ -12,7 +12,7 @@ use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
     ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
-    ReplyKind, ReplyQuote, SendState, UserRef,
+    ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -55,6 +55,10 @@ fn status(status: SendStatus) -> SendState {
         SendStatus::Sending => SendState::Sending,
         SendStatus::Accepted => SendState::Accepted,
         SendStatus::Failed { reason } => SendState::Failed { reason },
+        SendStatus::OutOfSync => SendState::OutOfSync,
+        // A future status this bridge version does not know: treat as still
+        // sending rather than a false terminal state.
+        _ => SendState::Sending,
     }
 }
 
@@ -135,6 +139,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
             duration_ms: reply.duration_ms,
             thumbhash: reply.thumbhash,
             original_id: reply.original.map(|id| id.0),
+            original_deleted: reply.original_deleted,
         }),
         body: match message.body {
             MessageBody::Text(text) => ChatBody::Text { text },
@@ -170,6 +175,30 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                     }),
                 }
             }
+            MessageBody::Video(video) => {
+                let video = *video;
+                ChatBody::Video {
+                    video: Box::new(VideoView {
+                        width: video.width,
+                        height: video.height,
+                        duration_ms: video.duration_ms,
+                        thumbhash: video.thumbhash,
+                        size: video.size,
+                        state: match video.state {
+                            client::MediaState::Available => MediaStatus::Available,
+                            client::MediaState::Expired => MediaStatus::Expired,
+                            _ => MediaStatus::NotDownloaded,
+                        },
+                    }),
+                }
+            }
+            MessageBody::Deleted {
+                by_admin,
+                revealable,
+            } => ChatBody::Deleted {
+                by_admin,
+                revealable,
+            },
             _ => ChatBody::Unsupported,
         },
         sent_at_ms: message.sent_at.map(millis),
@@ -257,6 +286,7 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             missed_since_ms: millis(missed_since),
         },
         Event::Rejoined => CoreEvent::Rejoined,
+        Event::OutOfSync { chat } => CoreEvent::OutOfSync { chat_id: chat.0 },
         Event::IdentityKeyChanged { user: u } => CoreEvent::IdentityKeyChanged { user: user(&u) },
         Event::ServerIdentityError => CoreEvent::ServerIdentityError,
         Event::Removed => CoreEvent::Removed,
@@ -299,6 +329,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::KeyStore(_) => K::KeyStore,
         ClientError::Store(_) => K::Storage,
         ClientError::Net(NetError::ServerIdentity) => K::ServerIdentity,
+        // An expired invite gets a distinct kind so the app can explain it
+        // (app-ui: Invite expiry is surfaced).
+        ClientError::InviteExpired => K::InviteExpired,
         ClientError::Net(NetError::Rpc(_)) => K::Refused,
         ClientError::Net(_) => K::Network,
         ClientError::Payload(_) => K::InvalidPayload,
@@ -328,6 +361,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::GroupsUnavailable => K::GroupsUnavailable,
         ClientError::MediaExpired => K::MediaExpired,
         ClientError::MediaNotOnDevice => K::MediaNotOnDevice,
+        ClientError::VideoTooLong => K::VideoTooLong,
+        ClientError::VideoTooLarge => K::VideoTooLarge,
+        ClientError::NotAVideo => K::NotAVideo,
         ClientError::Media(client::media::MediaError::Image(image)) => match image {
             client::media::ImageError::TooLarge => K::ImageTooLarge,
             _ => K::ImageUnsupported,

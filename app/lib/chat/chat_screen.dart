@@ -23,11 +23,18 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'sticker_plugins.dart';
+import 'video_plugins.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
 
 /// The banner of a closed named group (app-ui: Named group screen).
 const groupClosedText = 'This group was closed';
+
+/// The in-chat banner when a chat is out of sync: this device fell behind the
+/// group's epoch and could not re-sync on its own (app-ui: Out-of-sync re-sync
+/// affordance). The held message is kept, not lost.
+const outOfSyncText = 'This chat is out of sync';
 
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
@@ -67,6 +74,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final _list = GlobalKey();
   final Map<int, GlobalKey> _tiles = {};
+  /// Deleted DM messages the user revealed, shown in place (message-deletion:
+  /// Receiver may reveal in a DM).
+  final Map<int, ChatMessage> _revealed = {};
   ReplyDraft? _reply;
 
   /// The chat's one voice player: one clip plays at a time, and it stops when
@@ -295,6 +305,8 @@ class _ChatScreenState extends State<ChatScreen> {
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
 
+  Future<void> _sendSticker(Cutout cutout) => _model.sendSticker(cutout);
+
   Future<void> _sendAudio(Uint8List wav, {int? replyTo}) async {
     await _model.sendAudio(wav, replyTo: replyTo);
     if (mounted) setState(() => _reply = null);
@@ -313,6 +325,95 @@ class _ChatScreenState extends State<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _model.resendImage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  Future<void> _deleteMessage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.deleteMessage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Picks a source (record or gallery), normalizes the clip through the native
+  /// plugin and sends it (app-ui: Send a video). Owned here so the composer
+  /// stays free of the camera, picker and plugin.
+  Future<void> _sendVideo() async {
+    final source = VideoScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('video-source-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('video-record'),
+              leading: const Icon(Icons.videocam),
+              title: const Text('Record'),
+              onTap: () => Navigator.of(sheet).pop('record'),
+            ),
+            ListTile(
+              key: const Key('video-gallery'),
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(sheet).pop('gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    try {
+      final clip = choice == 'record'
+          ? await source.record()
+          : await source.pick();
+      if (clip == null) return;
+      await _model.sendVideo(
+        clip.mp4,
+        durationMs: clip.durationMs,
+        width: clip.width,
+        height: clip.height,
+        firstFrameRgba: clip.firstFrameRgba,
+        frameWidth: clip.frameWidth,
+        frameHeight: clip.frameHeight,
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Whether this device may delete [message] (message-deletion: Who may
+  /// delete): an admin in the lobby or a named group (`isGroup`), or the user's
+  /// own message in a DM. Never a tombstone, and never once this device is
+  /// removed.
+  bool _canDelete(ChatMessage message, bool isGroup) {
+    if (widget.core.removed.value || message.body is ChatBody_Deleted) {
+      return false;
+    }
+    return isGroup ? widget.admin : message.ownUser;
+  }
+
+  /// Reveals the original of a DM tombstone and shows it in place.
+  Future<void> _reveal(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final original = await _model.reveal(message.id);
+      if (mounted) setState(() => _revealed[message.id] = original);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  Future<void> _resendVideo(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendVideo(message.id);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }
@@ -575,10 +676,19 @@ class _ChatScreenState extends State<ChatScreen> {
                                   core: widget.core,
                                   onResendImage: () => _resendImage(message),
                                   onResendAudio: () => _resendAudio(message),
+                                  onResendVideo: () => _resendVideo(message),
                                   playback: _playback,
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
+                                  onDelete:
+                                      _canDelete(message, peer == null)
+                                      ? () => _deleteMessage(message)
+                                      : null,
+                                  onReveal: message.body is ChatBody_Deleted
+                                      ? () => _reveal(message)
+                                      : null,
+                                  revealed: _revealed[message.id],
                                   onQuoteTap: switch (message.reply) {
                                     final ReplyQuote r => () => _openOriginal(
                                       r,
@@ -628,6 +738,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 actions: const [SizedBox.shrink()],
               )
             else ...[
+              if (_model.outOfSync)
+                MaterialBanner(
+                  key: const Key('out-of-sync'),
+                  content: const Text(outOfSyncText),
+                  actions: [
+                    TextButton(
+                      key: const Key('re-sync'),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await widget.core.requestResync();
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Re-syncing…')),
+                        );
+                      },
+                      child: const Text('Re-sync'),
+                    ),
+                  ],
+                ),
               if (_model.waiting)
                 Padding(
                   key: const Key('dm-waiting'),
@@ -645,7 +773,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
+                segmenter: SegmenterScope.of(context),
+                sendSticker: _sendSticker,
                 sendAudio: _sendAudio,
+                onSendVideo: _sendVideo,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,

@@ -63,8 +63,15 @@ pub(crate) enum Job {
     UploadKeyPackages { remaining: Option<u32> },
     /// group-membership: Re-add after an unusable Welcome. Ask the server to be
     /// added again, with fresh KeyPackages: after refusing the Welcome at
-    /// `refused_seq`, or (`0`) at start with no group.
-    RequestReadd { refused_seq: u64, reason: String },
+    /// `refused_seq`, or (`0`) at start with no group. `wedged` is set when the
+    /// device still holds the group locally but is wedged behind its epoch
+    /// (group-membership: Orphaned device self-recovery): the ask is made even
+    /// though it holds group state.
+    RequestReadd {
+        refused_seq: u64,
+        reason: String,
+        wedged: bool,
+    },
     /// direct-messages: Opening a DM with `peer`.
     OpenDm { peer: UserId, reply: Option<Reply> },
     /// direct-messages: DM members kept complete. Add `device` of `user` to
@@ -125,6 +132,11 @@ pub(crate) enum Job {
         muted: bool,
         reply: Option<Reply>,
     },
+    /// message-deletion: Deleting media and replies. Purge the one stored blob
+    /// of a deleted media message with `Blobs.DeleteBlob`, after this device's
+    /// own delete was accepted. Best effort: a lost purge leaves the blob its
+    /// 7 days.
+    PurgeBlob { group_id: Vec<u8>, blob_id: Vec<u8> },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -259,6 +271,7 @@ impl Job {
             Job::SetMutePref {
                 scope, group_id, ..
             } => format!("mute|{}|{}", scope.as_str_name(), hex(group_id)),
+            Job::PurgeBlob { group_id, .. } => format!("purge_blob|{}", hex(group_id)),
         }
     }
 
@@ -428,11 +441,18 @@ impl Engine {
                 }
                 Ok(())
             }
+            Job::PurgeBlob { group_id, blob_id } => {
+                if let Err(error) = self.purge_blob(&group_id, &blob_id).await {
+                    tracing::warn!(%error, "could not purge a deleted blob");
+                }
+                Ok(())
+            }
             Job::RequestReadd {
                 refused_seq,
                 reason,
+                wedged,
             } => {
-                if let Err(error) = self.request_readd(refused_seq, &reason).await {
+                if let Err(error) = self.request_readd(refused_seq, &reason, wedged).await {
                     tracing::warn!(%error, "asking to be added again failed");
                     if matches!(
                         error,
@@ -441,6 +461,7 @@ impl Engine {
                         self.push_job(Job::RequestReadd {
                             refused_seq,
                             reason,
+                            wedged,
                         });
                     }
                 }
@@ -997,6 +1018,7 @@ impl Engine {
             | Job::SetMutePref { .. }
             | Job::UploadKeyPackages { .. }
             | Job::RequestReadd { .. }
+            | Job::PurgeBlob { .. }
             | Job::OpenDm { .. } => Ok(Prepared::Nothing),
         }
     }
@@ -1147,6 +1169,24 @@ impl Engine {
         }
         self.emit(crate::events::Event::MutePrefsChanged);
         tracing::info!(scope = scope.as_str_name(), muted, "set a mute preference");
+        Ok(())
+    }
+
+    /// message-deletion: Deleting media and replies. Purges the one stored blob
+    /// of a deleted media message with `Blobs.DeleteBlob`; a no-op on the server
+    /// when the blob already expired or was deleted.
+    async fn purge_blob(&self, group_id: &[u8], blob_id: &[u8]) -> Result<(), ClientError> {
+        let session = self.session().map_err(ClientError::from)?;
+        session
+            .conn()
+            .blobs()
+            .delete_blob(session.request(pb::DeleteBlobRequest {
+                group_id: group_id.to_vec(),
+                blob_id: blob_id.to_vec(),
+            })?)
+            .await
+            .map_err(NetError::from)?;
+        tracing::info!("purged a deleted blob");
         Ok(())
     }
 
@@ -1383,9 +1423,16 @@ impl Engine {
     /// group-membership: Re-add after an unusable Welcome. Asks the server with
     /// fresh KeyPackages, which replace the device's stored ones only if the
     /// Server answers `ASKED` (welcome-recovery design D2, D3).
-    async fn request_readd(&mut self, refused_seq: u64, reason: &str) -> Result<(), ClientError> {
-        if refused_seq == 0 && self.store().group()?.is_some() {
-            // Joined since the ask was queued.
+    async fn request_readd(
+        &mut self,
+        refused_seq: u64,
+        reason: &str,
+        wedged: bool,
+    ) -> Result<(), ClientError> {
+        if refused_seq == 0 && !wedged && self.store().group()?.is_some() {
+            // Joined since the ask was queued. A wedged device holds a *stale*
+            // group, so it asks even though it has group state
+            // (group-membership: Orphaned device self-recovery).
             return Ok(());
         }
         let session = self.session().map_err(ClientError::from)?;

@@ -92,6 +92,9 @@ impl Devices for DevicesService {
                 limits: Some(pb::Limits {
                     max_application_ciphertext_bytes: as_u32(MAX_APPLICATION_CIPHERTEXT_BYTES),
                     max_handshake_envelope_bytes: as_u32(MAX_HANDSHAKE_ENVELOPE_BYTES),
+                    // video-messages: Config-driven limit. The one configured blob
+                    // cap, so clients refuse a video whose encrypted blob exceeds it.
+                    max_video_blob_bytes: self.state.config.limits.max_video_blob_bytes,
                 }),
                 external_sender: Some(pb::ExternalSender {
                     signature_public_key: self.state.keys.external_sender_public_key().to_vec(),
@@ -394,9 +397,18 @@ fn register(
         .map_err(StoreError::from)?;
     let username = match invite {
         Some((username, expires_at, None, None)) if now < from_unix_millis(expires_at) => username,
+        // group-resync: an otherwise-valid invite that has only expired gets a
+        // distinct status, so the app can say "this invite has expired — ask
+        // for a fresh one" instead of a generic failure (app-ui: Invite expiry
+        // is surfaced). An invite is valid for `invite_ttl` (7 days default).
+        Some((_, _, None, None)) => {
+            return Err(Status::deadline_exceeded(
+                "the invite has expired; ask for a fresh one",
+            ));
+        }
         _ => {
             return Err(Status::permission_denied(
-                "the invite is unknown, used, revoked or expired",
+                "the invite is unknown, used or revoked",
             ));
         }
     };

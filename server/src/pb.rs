@@ -830,6 +830,23 @@ pub struct AckBlobRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AckBlobResponse {}
+/// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+/// copy of `blob_id` immediately when its media message is deleted. The server
+/// authorises it with the same authority as the message delete (message-deletion:
+/// Who may delete): an admin device of `group_id` in the lobby or a named group,
+/// or the device that uploaded the blob in a DM; it rejects an unauthorised call
+/// with `PERMISSION_DENIED`, purging nothing. A call for an expired,
+/// already-deleted or unknown blob succeeds as a no-op; a later `DownloadBlob`
+/// answers `NOT_FOUND`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobResponse {}
 /// Generated server implementations.
 pub mod blobs_server {
     #![allow(
@@ -865,6 +882,16 @@ pub mod blobs_server {
             &self,
             request: tonic::Request<super::AckBlobRequest>,
         ) -> std::result::Result<tonic::Response<super::AckBlobResponse>, tonic::Status>;
+        /// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+        /// copy at once when a media message is deleted, authorised with the same
+        /// authority as the message delete.
+        async fn delete_blob(
+            &self,
+            request: tonic::Request<super::DeleteBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteBlobResponse>,
+            tonic::Status,
+        >;
     }
     /// buf:lint:ignore SERVICE_SUFFIX
     /// Service name as used in the specs and design D2.
@@ -1075,6 +1102,49 @@ pub mod blobs_server {
                     };
                     Box::pin(fut)
                 }
+                "/vyajena.v1.Blobs/DeleteBlob" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteBlobSvc<T: Blobs>(pub Arc<T>);
+                    impl<T: Blobs> tonic::server::UnaryService<super::DeleteBlobRequest>
+                    for DeleteBlobSvc<T> {
+                        type Response = super::DeleteBlobResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteBlobRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Blobs>::delete_blob(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteBlobSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 _ => {
                     Box::pin(async move {
                         let mut response = http::Response::new(
@@ -1124,7 +1194,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -1140,12 +1210,38 @@ pub mod content {
         /// message-content: Image messages (change `media-blobs`).
         #[prost(message, tag = "5")]
         Image(super::Image),
-        /// message-content: Audio messages (change `audio-messages`). The next free
-        /// field after this one is 7 for the change that follows; `delete-messages`
-        /// takes it, so the two never collide.
+        /// message-content: Audio messages (change `audio-messages`).
         #[prost(message, tag = "6")]
         Audio(super::Audio),
+        /// message-deletion: Delete a message (change `delete-messages`).
+        #[prost(message, tag = "7")]
+        Delete(super::Delete),
+        /// message-content: Video messages (change `video-messages`). Field 8 is the
+        /// one video takes; `audio-calls` takes the next free number after it.
+        #[prost(message, tag = "8")]
+        Video(super::Video),
     }
+}
+/// message-deletion: Who may delete; Tombstone, not erasure. A superseding
+/// message that deletes another one, naming the target message's original
+/// sender device and `msg_id`, the same way a `ReplyTo` names a reply's target.
+/// It is the encrypted, MLS-authenticated statement that the target is deleted;
+/// a receiving client honours it only when the delete's own MLS sender is
+/// authorised (an admin device in the lobby or a named group, or the target's
+/// original sender in a DM). It supersedes, never erasing history: the original
+/// row stays and the client shows a tombstone. A client that predates this body
+/// decodes it as unset and shows the "needs a newer app version" placeholder.
+/// Only the Rust core reads it; the server never sees it (the retract is driven
+/// by the plaintext `Envelope.deletes`).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Delete {
+    /// The device that sent the message being deleted, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Image messages. One static image, stored as an encrypted blob
 /// on the server (blob-store). This body is what a receiver needs to show a blurred
@@ -1225,6 +1321,50 @@ pub struct Audio {
     /// replies). Same shape as `Text.reply_to`.
     #[prost(message, optional, tag = "6")]
     pub reply_to: ::core::option::Option<ReplyTo>,
+}
+/// message-content: Video messages (change `video-messages`). One short video
+/// message: an MP4 clip (H.264 video + AAC audio), stored as an encrypted blob on
+/// the server (blob-store) exactly as an image or voice message is. This body is
+/// what a receiver needs to lay out the bubble at the clip's aspect ratio and show
+/// a first-frame blur with a play overlay and the duration before anything
+/// downloads, and to fetch and decrypt the clip on tap. A client that predates it
+/// decodes the body as unset and shows the "needs a newer app version"
+/// placeholder. Only the Rust core reads it; the server never sees it, and
+/// `blob_key` never leaves the encrypted `Content`. The container and codecs are
+/// fixed (MP4/H.264/AAC), as WebP is fixed for images, so there is no
+/// container/codec field, and there is exactly one clip and no separate poster
+/// blob.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Video {
+    /// The random id the ciphertext is stored under on the server, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most the server's advertised
+    /// `Limits.max_video_blob_bytes`, itself bounded by
+    /// `protocol::video::MAX_VIDEO_BYTES`.
+    #[prost(uint64, tag = "3")]
+    pub blob_size: u64,
+    /// The clip's length in milliseconds, at least 1 and at most
+    /// `protocol::video::MAX_VIDEO_DURATION_MS` (30 000). The server never sees it;
+    /// the client enforces the 30-second cap.
+    #[prost(uint32, tag = "4")]
+    pub duration_ms: u32,
+    /// The clip's pixel size, so the bubble lays out at the right aspect ratio
+    /// before the clip downloads. Both are at least 1.
+    #[prost(uint32, tag = "5")]
+    pub width: u32,
+    #[prost(uint32, tag = "6")]
+    pub height: u32,
+    /// A ThumbHash of the first frame, shown as a blur until the clip is
+    /// downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes. The
+    /// video analogue of the image ThumbHash; there is no separate poster blob.
+    #[prost(bytes = "vec", tag = "7")]
+    pub thumbhash: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich
@@ -1410,6 +1550,16 @@ pub struct Limits {
     /// counts toward it.
     #[prost(uint32, tag = "2")]
     pub max_handshake_envelope_bytes: u32,
+    /// video-messages: Config-driven limit. The server's configured maximum blob
+    /// ciphertext size in bytes, read from its config at startup and clamped to
+    /// `\[the image cap, protocol::video::MAX_VIDEO_BYTES\]`. It is the one cap the
+    /// server enforces on every `Blobs.UploadBlob` (the server sees only
+    /// ciphertext bytes and cannot tell a video blob from an image blob). Clients
+    /// read it and refuse a video whose encrypted blob would exceed it; they
+    /// enforce the 30-second duration themselves, since the server never sees
+    /// duration. An older client ignores this field.
+    #[prost(uint64, tag = "3")]
+    pub max_video_blob_bytes: u64,
 }
 /// An MLS ExternalSender (RFC 9420 section 12.1.8.1), split into its two parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -3081,6 +3231,17 @@ pub struct Envelope {
     /// on every other kind, and on every envelope the server sends.
     #[prost(message, optional, tag = "10")]
     pub welcome: ::core::option::Option<WelcomeBundle>,
+    /// message-deletion: Deletion retracts undelivered copies (change
+    /// `delete-messages`). Set by the deleting client on the `APPLICATION`
+    /// envelope that carries a `Content.Delete`, naming in server-visible metadata
+    /// the message the delete targets. The server reads it (it never reads the
+    /// encrypted `Content`), authorises the delete (message-deletion: Who may
+    /// delete) and drops the target's still-queued copies before delivering the
+    /// Delete envelope. Unset on every other envelope. A server that predates this
+    /// field ignores it, so the delete still tombstones everywhere but retracts
+    /// nothing.
+    #[prost(message, optional, tag = "11")]
+    pub deletes: ::core::option::Option<DeleteTarget>,
     /// The device that authenticated the sending stream, regardless of anything
     /// the client put here (message-delivery: Envelope). Unset when the server itself
     /// is the sender, as for its external Remove proposals.
@@ -3150,6 +3311,24 @@ pub mod envelope {
             }
         }
     }
+}
+/// message-deletion: Deletion retracts undelivered copies. The target a
+/// `Content.Delete` deletes, in server-visible plaintext on the carrying
+/// `APPLICATION` envelope, so the server can authorise the delete and drop the
+/// target's undelivered copies without reading content. The client sets the same
+/// target inside the encrypted `Content.Delete`; clients trust only that
+/// encrypted copy, so a server cannot forge a delete on any device by setting
+/// this field — it can only drop queue entries, which it already controls
+/// (design D2).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteTarget {
+    /// The device that sent the deleted message, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
 /// creates, sent inside that `COMMIT` envelope.

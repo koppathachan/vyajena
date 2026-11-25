@@ -391,6 +391,43 @@ void main() {
     expect(noticeTexts(tester), ['bob added a device']);
   });
 
+  // spec: group-membership/admin-is-told-when-a-member-goes-inactive
+  testWidgets('the admin is told when a member goes inactive and when they '
+      'return', (tester) async {
+    final core = FakeCoreService(storedUser: akhil)
+      ..admin = true
+      ..memberDevices = group();
+    await openApp(tester, core);
+    // The server's inactivity Remove of Bob's phone, committed by the admin.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: const [],
+        removed: [dev(bob, 'b1')],
+        by: akhil,
+        automatic: [dev(bob, 'b1')],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), [
+      'bob went inactive and was removed from the group.',
+    ]);
+
+    // Bob comes back and the admin's phone re-adds him.
+    core.emit(
+      CoreEvent.membersChanged(
+        added: [dev(bob, 'b1')],
+        removed: const [],
+        by: akhil,
+        automatic: [dev(bob, 'b1')],
+      ),
+    );
+    await settle(tester);
+    expect(noticeTexts(tester), [
+      'bob went inactive and was removed from the group.',
+      'bob came back and was re-added to the group.',
+    ]);
+  });
+
   // spec: app-ui/notices-in-the-chat
   testWidgets('no membership notice for the commit that added this device', (
     tester,

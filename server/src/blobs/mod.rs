@@ -18,15 +18,15 @@ pub mod meta;
 use std::sync::Arc;
 use std::time::Duration;
 
-use protocol::blob_store::{
-    BLOB_ID_LEN, MAX_BLOB_BYTES, MAX_CONCURRENT_UPLOADS, MAX_UPLOAD_REQUEST_BYTES,
-};
+use protocol::blob_store::{BLOB_ID_LEN, MAX_CONCURRENT_UPLOADS};
+use protocol::message_deletion::{DeleteAuthority, may_delete};
 use sha2::{Digest, Sha256};
 use tokio::task::JoinHandle;
 use tonic::{Request, Response, Status};
 
 use crate::auth::caller;
 use crate::membership::GroupState;
+use crate::membership::group::{self, GroupKind};
 use crate::pb;
 use crate::pb::blobs_server::{Blobs, BlobsServer};
 use crate::runtime::clock::{from_unix_millis, to_timestamp, unix_millis};
@@ -47,13 +47,17 @@ pub fn backend_for(config: &Config) -> Option<Arc<dyn BlobStore>> {
 
 /// The gRPC service.
 pub fn service(state: &State) -> BlobsServer<BlobsService> {
+    // The decode limit is sized from the configured maximum blob size
+    // (video-messages: Config-driven limit), so a legitimately video-sized blob
+    // is not refused before it is buffered, while a request over that cap and
+    // its ids is (blob-store: Upload limits).
+    let max_request =
+        protocol::video::max_upload_request_bytes(state.config.limits.max_video_blob_bytes);
     BlobsServer::new(BlobsService {
         state: state.clone(),
         uploads: Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_UPLOADS)),
     })
-    // A request over the blob and its ids is refused before it is buffered
-    // (blob-store: Upload limits).
-    .max_decoding_message_size(MAX_UPLOAD_REQUEST_BYTES)
+    .max_decoding_message_size(max_request)
 }
 
 /// Implements `vyajena.v1.Blobs`.
@@ -131,9 +135,13 @@ impl Blobs for BlobsService {
         if request.ciphertext.is_empty() {
             return Err(Status::invalid_argument("a blob is not empty"));
         }
-        if request.ciphertext.len() > MAX_BLOB_BYTES {
+        // One cap for every blob, read from config at startup and clamped into
+        // the protocol bound (video-messages: Config-driven limit). The server
+        // sees only ciphertext bytes and cannot tell a video blob from an image.
+        let max_blob = self.state.config.limits.max_video_blob_bytes;
+        if request.ciphertext.len() as u64 > max_blob {
             return Err(Status::invalid_argument(format!(
-                "a blob is at most {MAX_BLOB_BYTES} bytes"
+                "a blob is at most {max_blob} bytes"
             )));
         }
         // At most MAX_CONCURRENT_UPLOADS at once: each is buffered whole.
@@ -313,6 +321,63 @@ impl Blobs for BlobsService {
             delete_blob(&self.state, &backend, &request.blob_id).await;
         }
         Ok(Response::new(pb::AckBlobResponse {}))
+    }
+
+    // blob-store: Delete a blob (change `delete-messages`).
+    async fn delete_blob(
+        &self,
+        request: Request<pb::DeleteBlobRequest>,
+    ) -> Result<Response<pb::DeleteBlobResponse>, Status> {
+        let caller = caller(&request)?.clone();
+        let request = request.into_inner();
+        let backend = self.backend().await?;
+        let id = blob_id(&request.blob_id)?;
+        let now_ms = unix_millis(self.state.clock.now());
+        let group_id = request.group_id;
+        let device = caller.device_id.to_vec();
+        let is_admin = caller.is_admin;
+        // Authorise with the same authority as the message delete
+        // (message-deletion: Who may delete): an admin device of the group in
+        // the lobby or a named group, or the device that uploaded the blob in a
+        // DM. A blob that is gone (expired, already deleted or unknown) has
+        // nothing to purge, so an authorised call is a no-op; an unauthorised
+        // one keeps it.
+        let present = self
+            .state
+            .store
+            .call(move |conn| {
+                let Some(row) = group::row(conn, &group_id)? else {
+                    return Ok(Err(not_a_member()));
+                };
+                if !is_member(conn, &group_id, &device)? {
+                    return Ok(Err(not_a_member()));
+                }
+                let authority = match row.kind {
+                    GroupKind::System | GroupKind::Named { .. } => DeleteAuthority::Group,
+                    GroupKind::Dm { .. } => DeleteAuthority::Dm,
+                };
+                // A blob that is gone (expired, already deleted or unknown) has
+                // nothing to purge: an authorised-or-not member's call is a safe
+                // no-op. A live blob is purged only by an admin of the group or
+                // its uploader in a DM; anyone else is refused and it is kept.
+                let Some(blob) = meta::find(conn, &id)?
+                    .filter(|blob| blob.group_id == group_id && !blob.expired(now_ms))
+                else {
+                    return Ok(Ok(false));
+                };
+                let is_uploader = blob.uploader_device_id == device;
+                if !may_delete(authority, is_admin, is_uploader) {
+                    return Ok(Err(Status::permission_denied(
+                        "this device may not delete that blob",
+                    )));
+                }
+                Ok(Ok(true))
+            })
+            .await??;
+        if present {
+            delete_blob(&self.state, &backend, &request.blob_id).await;
+        }
+        Ok(Response::new(pb::DeleteBlobResponse {}))
     }
 }
 
