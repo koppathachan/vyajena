@@ -237,6 +237,35 @@ pub(crate) fn ack(
     Ok(())
 }
 
+/// message-deletion: Deletion retracts undelivered copies. Drops the still-queued
+/// `APPLICATION` copies of the target message `(target_sender, target_msg_id)`
+/// for every device that has not yet acked them — the delivery rows left for the
+/// target's `server_seq` — and then removes the envelope if nobody needs it any
+/// more. A device that already acked (or is the sender) has no such row and is
+/// untouched; a target that expired or never existed has no dedup record, so
+/// this is a safe no-op (design D4, spike S1). The target's `server_seq` comes
+/// from the dedup table, so it is found even after the queue entries expired.
+pub(crate) fn retract_undelivered(
+    conn: &Connection,
+    target_sender: &DeviceId,
+    target_msg_id: &[u8],
+) -> Result<(), StoreError> {
+    let Some(target) = dedup_lookup(conn, target_sender, target_msg_id)? else {
+        return Ok(());
+    };
+    let seq = i64_of(target.server_seq);
+    conn.execute(
+        "DELETE FROM deliveries WHERE server_seq = ?1 AND welcome = 0",
+        params![seq],
+    )?;
+    conn.execute(
+        "DELETE FROM envelopes WHERE server_seq = ?1
+           AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.server_seq = ?1)",
+        params![seq],
+    )?;
+    Ok(())
+}
+
 /// Deletes envelopes no device still has to receive.
 pub(crate) fn collect_garbage(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(
@@ -335,6 +364,10 @@ pub(crate) fn pending(
                 kind,
                 ciphertext,
                 welcome: None,
+                // The retract target travels in server-visible plaintext only
+                // inbound; clients honour the encrypted `Content.Delete`, so
+                // delivered envelopes carry no `deletes`.
+                deletes: None,
                 sender,
                 server_seq: seq,
                 accepted_at: Some(to_timestamp(from_unix_millis(at))),

@@ -638,6 +638,19 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Deletes the message [id] in this chat for everyone (message-deletion:
+  /// Who may delete). Throws if this device may not delete it; the tombstone
+  /// arrives as a message event.
+  Future<void> deleteMessage(int id) async {
+    await core.deleteMessage(chatId, id);
+    await _reload();
+  }
+
+  /// The original of the deleted DM message [id], if this device still holds it
+  /// (message-deletion: Receiver may reveal in a DM).
+  Future<ChatMessage> reveal(int id) => core.reveal(chatId, id);
+
+
   /// Sends the recording [wav] as a voice message (app-ui: Record a voice
   /// message); returns once the core stored it.
   Future<void> sendAudio(Uint8List wav, {int? replyTo}) async {

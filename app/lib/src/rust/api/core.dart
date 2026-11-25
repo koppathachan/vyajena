@@ -106,6 +106,15 @@ abstract class Core implements RustOpaqueInterface {
     required List<UserRef> members,
   });
 
+  /// message-deletion: Who may delete. Deletes the stored chat message `id`
+  /// in chat `chat_id` for everyone: an admin may delete any message in the
+  /// lobby or a named group, and in a DM a user may delete their own. Returns
+  /// the local id of the queued delete.
+  Future<PlatformInt64> deleteMessage({
+    required PlatformInt64 chatId,
+    required PlatformInt64 id,
+  });
+
   /// This device's id (hex), once registered or linked.
   Future<String?> deviceId();
 
@@ -251,6 +260,13 @@ abstract class Core implements RustOpaqueInterface {
   /// blob, when the first one expired (client-runtime: Expired media); returns
   /// the new message's local id.
   Future<PlatformInt64> resendVideo({required PlatformInt64 id});
+
+  /// message-deletion: Receiver may reveal in a DM. The original of the deleted
+  /// DM message `id` in chat `chat_id`, if this device still holds it.
+  Future<ChatMessage> reveal({
+    required PlatformInt64 chatId,
+    required PlatformInt64 id,
+  });
 
   /// Revokes another device of this user (hex id).
   Future<void> revokeDevice({required String device});

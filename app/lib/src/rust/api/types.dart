@@ -78,6 +78,19 @@ sealed class ChatBody with _$ChatBody {
     required VideoView video,
   }) = ChatBody_Video;
 
+  /// A deleted message, shown as a tombstone "This message was deleted"
+  /// (message-deletion: Tombstone, not erasure).
+  const factory ChatBody.deleted({
+    /// An admin deleted another user's message in the lobby or a named
+    /// group: the tombstone reads "by the admin".
+    required bool byAdmin,
+
+    /// A DM tombstone whose original this device still holds: the app offers
+    /// Reveal (message-deletion: Receiver may reveal in a DM). Always
+    /// `false` in the lobby and named groups.
+    required bool revealable,
+  }) = ChatBody_Deleted;
+
   /// A body this version does not know: shown as a placeholder saying the
   /// app needs an update (app-ui: Chat screen).
   const factory ChatBody.unsupported() = ChatBody_Unsupported;
@@ -674,6 +687,11 @@ class ReplyQuote {
   /// The original's local id when this device has it (tap to jump).
   final PlatformInt64? originalId;
 
+  /// The original was deleted and this device holds the delete, so the quote
+  /// shows "deleted message" instead of the snapshot (message-deletion:
+  /// Deleting media and replies).
+  final bool originalDeleted;
+
   const ReplyQuote({
     required this.to,
     required this.quote,
@@ -681,6 +699,7 @@ class ReplyQuote {
     required this.durationMs,
     required this.thumbhash,
     this.originalId,
+    required this.originalDeleted,
   });
 
   @override
@@ -690,7 +709,8 @@ class ReplyQuote {
       kind.hashCode ^
       durationMs.hashCode ^
       thumbhash.hashCode ^
-      originalId.hashCode;
+      originalId.hashCode ^
+      originalDeleted.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -702,7 +722,8 @@ class ReplyQuote {
           kind == other.kind &&
           durationMs == other.durationMs &&
           thumbhash == other.thumbhash &&
-          originalId == other.originalId;
+          originalId == other.originalId &&
+          originalDeleted == other.originalDeleted;
 }
 
 @freezed
