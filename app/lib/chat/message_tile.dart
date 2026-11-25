@@ -25,6 +25,7 @@ import 'image_bubble.dart';
 import 'links.dart';
 import 'mentions.dart';
 import 'time_text.dart';
+import 'video_bubble.dart';
 import 'voice_playback.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -52,6 +53,12 @@ const resendPictureLabel = 'Resend picture';
 
 /// What the long-press sheet's entry for sending a voice message again says.
 const resendVoiceLabel = 'Resend voice message';
+
+/// What the long-press sheet's entry for sending a video again says.
+const resendVideoLabel = 'Resend video';
+
+/// What a reply to a video quotes.
+const videoQuote = 'Video';
 
 /// What the long-press sheet's Delete entry says (message-deletion).
 const deleteLabel = 'Delete';
@@ -85,6 +92,7 @@ class MessageTile extends StatelessWidget {
     this.core,
     this.onResendImage,
     this.onResendAudio,
+    this.onResendVideo,
     this.onDelete,
     this.onReveal,
     this.revealed,
@@ -127,6 +135,9 @@ class MessageTile extends StatelessWidget {
   /// voice message").
   final VoidCallback? onResendAudio;
 
+  /// Resends an own video as a new message (long-press → "Resend video").
+  final VoidCallback? onResendVideo;
+
   /// Deletes this message (long-press → Delete), when this device may: an admin
   /// device in the lobby or a named group (any message), or the user's own
   /// message in a DM. The sheet shows Delete only when this is set
@@ -158,6 +169,9 @@ class MessageTile extends StatelessWidget {
     final resendVoice = message.outgoing && message.body is ChatBody_Audio
         ? onResendAudio
         : null;
+    final resendVideo = message.outgoing && message.body is ChatBody_Video
+        ? onResendVideo
+        : null;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (context) => SafeArea(
@@ -183,6 +197,13 @@ class MessageTile extends StatelessWidget {
                 title: const Text(resendVoiceLabel),
                 onTap: () => Navigator.of(context).pop('resend-voice'),
               ),
+            if (resendVideo != null)
+              ListTile(
+                key: const Key('resend-video'),
+                leading: const Icon(Icons.refresh),
+                title: const Text(resendVideoLabel),
+                onTap: () => Navigator.of(context).pop('resend-video'),
+              ),
             if (onDelete != null)
               ListTile(
                 key: const Key('delete'),
@@ -201,6 +222,8 @@ class MessageTile extends StatelessWidget {
         resend?.call();
       case 'resend-voice':
         resendVoice?.call();
+      case 'resend-video':
+        resendVideo?.call();
       case 'delete':
         onDelete?.call();
     }
@@ -298,6 +321,17 @@ class MessageTile extends StatelessWidget {
       messageId: message.id,
       audio: audio,
       playback: playback,
+    );
+  }
+
+  Widget _video(BuildContext context, VideoView video) {
+    final core = this.core;
+    if (core == null) return const Text('Video');
+    return VideoBubble(
+      key: ValueKey('video-${message.id}'),
+      core: core,
+      messageId: message.id,
+      video: video,
     );
   }
 
@@ -413,6 +447,7 @@ class MessageTile extends StatelessWidget {
       ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Audio(:final audio) => _audio(context, audio),
+      ChatBody_Video(:final video) => _video(context, video),
       ChatBody_Deleted(:final byAdmin, :final revealable) => _tombstone(
         context,
         byAdmin,

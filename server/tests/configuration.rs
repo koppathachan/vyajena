@@ -135,6 +135,40 @@ fn unknown_fields_are_refused_by_name() {
     assert!(matches!(error, Some(ConfigError::Unknown { .. })));
 }
 
+// spec: video-messages/config-driven-limit
+#[test]
+fn max_video_blob_bytes_is_clamped_into_the_protocol_bound() {
+    let parse_cap = |value: u64| {
+        parse(&format!(
+            "{}\n[limits]\n{} = {value}\n",
+            support::config_text(),
+            protocol::video::CONFIG_KEY
+        ))
+        .ok()
+        .map(|c| c.limits.max_video_blob_bytes)
+    };
+    // In range: used as is.
+    let in_range = 6 * 1024 * 1024;
+    assert_eq!(parse_cap(in_range), Some(in_range));
+    // Below the image cap: raised to it (the one cap also governs images).
+    assert_eq!(
+        parse_cap(1),
+        Some(protocol::blob_store::MAX_BLOB_BYTES as u64)
+    );
+    // Above the ceiling: clamped down, not rejected (so a generous config starts).
+    assert_eq!(
+        parse_cap(protocol::video::MAX_VIDEO_BYTES as u64 + 1),
+        Some(protocol::video::MAX_VIDEO_BYTES as u64)
+    );
+    // Absent: the default.
+    assert_eq!(
+        parse(&support::config_text())
+            .ok()
+            .map(|c| c.limits.max_video_blob_bytes),
+        Some(protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64)
+    );
+}
+
 // spec: server-runtime/configuration
 #[test]
 fn broken_toml_is_refused() {

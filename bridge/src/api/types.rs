@@ -57,6 +57,24 @@ pub struct AudioView {
     pub state: MediaStatus,
 }
 
+/// A video message (message-content: Video messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoView {
+    /// Pixel width of the clip, for the bubble's aspect ratio.
+    pub width: u32,
+    /// Pixel height of the clip, for the bubble's aspect ratio.
+    pub height: u32,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The first-frame ThumbHash blur to draw until the clip is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The clip's size on the server in bytes, to show before downloading.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaStatus,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatBody {
@@ -75,6 +93,11 @@ pub enum ChatBody {
     Audio {
         /// The clip. Boxed like an image: a message is carried in every event.
         audio: Box<AudioView>,
+    },
+    /// A video message.
+    Video {
+        /// The clip. Boxed like an image: a message is carried in every event.
+        video: Box<VideoView>,
     },
     /// A deleted message, shown as a tombstone "This message was deleted"
     /// (message-deletion: Tombstone, not erasure).

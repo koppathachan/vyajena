@@ -460,6 +460,7 @@ fn blob_of(content: &[u8]) -> Option<Vec<u8>> {
     match crate::messaging::decode(content).body {
         Decoded::Image(image) => Some(image.blob_id.to_vec()),
         Decoded::Audio(audio) => Some(audio.blob_id.to_vec()),
+        Decoded::Video(video) => Some(video.blob_id.to_vec()),
         _ => None,
     }
 }

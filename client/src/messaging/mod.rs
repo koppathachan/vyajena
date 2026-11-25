@@ -124,6 +124,26 @@ pub struct DeleteContent {
     pub target_msg_id: [u8; 16],
 }
 
+/// A `Video` body, decoded and checked (message-content: Video messages). It
+/// keeps the blob key; the UI's [`crate::VideoBody`] does not.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoContent {
+    /// The blob's id.
+    pub blob_id: BlobId,
+    /// The blob's key.
+    pub blob_key: BlobKey,
+    /// The blob's size on the server.
+    pub blob_size: u64,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// Pixel width.
+    pub width: u32,
+    /// Pixel height.
+    pub height: u32,
+    /// The first-frame ThumbHash blur.
+    pub thumbhash: Vec<u8>,
+}
+
 /// What a `Content` says, decoded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decoded {
@@ -133,6 +153,8 @@ pub enum Decoded {
     Image(ImageContent),
     /// A voice message.
     Audio(AudioContent),
+    /// A video message.
+    Video(VideoContent),
     /// A delete of another message (message-deletion).
     Delete(DeleteContent),
     /// `GroupSettings`: the group's name.
@@ -182,6 +204,10 @@ pub fn decode(content: &[u8]) -> DecodedContent {
         // Likewise a voice message that is not well formed.
         Some(Body::Audio(audio)) => {
             decode_audio(audio).map_or(Decoded::Unsupported, Decoded::Audio)
+        }
+        // Likewise a video message that is not well formed.
+        Some(Body::Video(video)) => {
+            decode_video(video).map_or(Decoded::Unsupported, Decoded::Video)
         }
         // A delete whose target reference is not well formed is shown as a
         // message this version cannot read, never dropped.
@@ -312,6 +338,34 @@ pub fn encode_delete(delete: &DeleteContent, sent_at: SystemTime) -> Result<Vec<
         }),
         sent_at,
     )
+}
+
+/// A `Video` body, if it is well formed: a 16-byte id, a 32-byte key, a blob size
+/// within the ceiling, a duration from 1 ms to the 30-second cap, a non-zero
+/// pixel size and a ThumbHash within its limit (message-content: Video messages).
+/// The ceiling here is [`protocol::video::MAX_VIDEO_BYTES`]; the live per-server
+/// cap is advertised and enforced at send time.
+fn decode_video(video: pb::Video) -> Option<VideoContent> {
+    use protocol::blob_store::MAX_THUMBHASH_BYTES;
+    use protocol::video::{MAX_VIDEO_BYTES, MAX_VIDEO_DURATION_MS};
+    if !(1..=MAX_VIDEO_DURATION_MS).contains(&video.duration_ms)
+        || video.width == 0
+        || video.height == 0
+        || video.thumbhash.len() > MAX_THUMBHASH_BYTES
+        || video.blob_size == 0
+        || video.blob_size > MAX_VIDEO_BYTES as u64
+    {
+        return None;
+    }
+    Some(VideoContent {
+        blob_id: BlobId::try_from(video.blob_id.as_slice()).ok()?,
+        blob_key: BlobKey::try_from(video.blob_key.as_slice()).ok()?,
+        blob_size: video.blob_size,
+        duration_ms: video.duration_ms,
+        width: video.width,
+        height: video.height,
+        thumbhash: video.thumbhash,
+    })
 }
 
 /// A decoded `ReplyTo` from the wire, or `None` if its reference is malformed
@@ -498,6 +552,23 @@ pub fn encode_audio(audio: &AudioContent, sent_at: SystemTime) -> Result<Vec<u8>
     )
 }
 
+/// A `Video` body (message-content: Video messages). Fails with
+/// [`ContentError::TooLong`] if it would encrypt to more than the ciphertext cap.
+pub fn encode_video(video: &VideoContent, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
+    encode(
+        Body::Video(pb::Video {
+            blob_id: video.blob_id.to_vec(),
+            blob_key: video.blob_key.to_vec(),
+            blob_size: video.blob_size,
+            duration_ms: video.duration_ms,
+            width: video.width,
+            height: video.height,
+            thumbhash: video.thumbhash.clone(),
+        }),
+        sent_at,
+    )
+}
+
 /// A `Profile` body for this device's own user (message-content: User-owned
 /// profiles).
 pub fn encode_profile(profile: &ProfileRow, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
@@ -594,6 +665,10 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
             let reply = audio.reply.map(|reply| event_reply(store, reply));
             Some((MessageBody::Audio(Box::new(body)), Vec::new(), reply))
         }
+        Decoded::Video(video) => {
+            let body = video_body(store, &video);
+            Some((MessageBody::Video(Box::new(body)), Vec::new(), None))
+        }
         // A `Delete` body shown in the history directly (its target was never
         // held, or it has not been applied yet) is a bare tombstone with no
         // reveal; an applied delete is rendered from the target row's `deleted`
@@ -645,6 +720,26 @@ pub(crate) fn audio_body(store: &Store, audio: &AudioContent) -> crate::events::
         duration_ms: audio.duration_ms,
         waveform: audio.waveform.clone(),
         size: audio.blob_size,
+        state,
+    }
+}
+
+/// A video message as the UI sees it: where its clip is on this device.
+pub(crate) fn video_body(store: &Store, video: &VideoContent) -> crate::events::VideoBody {
+    let state = if store.media_entry(&video.blob_id).ok().flatten().is_some() {
+        MediaState::Available
+    } else if store.is_media_expired(&video.blob_id).unwrap_or(false) {
+        MediaState::Expired
+    } else {
+        MediaState::NotDownloaded
+    };
+    crate::events::VideoBody {
+        blob_id: video.blob_id,
+        width: video.width,
+        height: video.height,
+        duration_ms: video.duration_ms,
+        thumbhash: video.thumbhash.clone(),
+        size: video.blob_size,
         state,
     }
 }
@@ -854,8 +949,11 @@ pub(crate) fn receive_application(
     };
     let sent_at = decoded.sent_at;
     Ok(match decoded.body {
-        body
-        @ (Decoded::Text(_) | Decoded::Image(_) | Decoded::Audio(_) | Decoded::Unsupported) => {
+        body @ (Decoded::Text(_)
+        | Decoded::Image(_)
+        | Decoded::Audio(_)
+        | Decoded::Video(_)
+        | Decoded::Unsupported) => {
             let Some((body, mentions, reply)) = chat_parts(store, body) else {
                 return Ok(Received::Nothing);
             };

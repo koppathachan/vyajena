@@ -38,6 +38,14 @@ async fn filesystem() -> World {
     world_on(TestServer::start_with_blobs(Blobs::Filesystem).await).await
 }
 
+/// A filesystem-backed world whose one blob cap is pinned to `cap` bytes
+/// (video-messages: Config-driven limit), so a test can exercise the configured
+/// upload cap without allocating multi-megabyte blobs.
+async fn filesystem_capped(cap: u64) -> World {
+    let config = format!("[limits]\n{} = {cap}\n", protocol::video::CONFIG_KEY);
+    world_on(TestServer::start_with_blobs_and_config(Blobs::Filesystem, &config).await).await
+}
+
 /// Session tokens last six hours: after the clock moves further, the devices
 /// sign in again.
 async fn sign_in_again(w: &mut World) {
@@ -171,26 +179,68 @@ async fn a_member_uploads_a_blob_and_gets_an_expiry_seven_days_out() {
 // spec: blob-store/upload
 #[tokio::test]
 async fn the_largest_blob_is_accepted_and_one_byte_more_is_not() {
+    // The one blob cap is config-driven (video-messages: Config-driven limit);
+    // pin it to the image cap so the boundary is small and exact.
+    let cap = MAX_BLOB_BYTES;
+    let w = filesystem_capped(cap as u64).await;
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(cap))
+        .await
+        .check("a blob of the configured cap");
+    let over = upload(&w, &w.laptop, GROUP_ID, &blob_id(2), &ciphertext(cap + 1)).await;
+    assert_eq!(over.err().map(|s| s.code()), Some(Code::InvalidArgument));
+    // Nothing was stored for the refused one.
+    assert_eq!(stored(&w.server), vec![hex(&blob_id(1))]);
+}
+
+// spec: video-messages/config-driven-limit
+#[tokio::test]
+async fn the_default_cap_accepts_a_video_sized_blob_above_the_image_cap() {
+    // With no config the cap is the video default (5 MiB), above the image cap
+    // (~2 MiB), so a blob that the old image-sized cap would have refused is now
+    // accepted — a video blob is a blob.
     let w = filesystem().await;
+    assert_eq!(
+        w.server.state.config.limits.max_video_blob_bytes,
+        protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64
+    );
     upload(
         &w,
         &w.laptop,
         GROUP_ID,
         &blob_id(1),
-        &ciphertext(MAX_BLOB_BYTES),
+        &ciphertext(MAX_BLOB_BYTES + 100_000),
     )
     .await
-    .check("a blob of MAX_BLOB_BYTES");
+    .check("a blob above the image cap, under the video default");
+    assert_eq!(stored(&w.server), vec![hex(&blob_id(1))]);
+}
+
+// spec: video-messages/config-driven-limit
+#[tokio::test]
+async fn raising_the_config_raises_the_enforced_upload_cap() {
+    // The operator raises the cap; the server enforces the new value with no
+    // rebuild. A blob at the configured cap is accepted, one byte more refused.
+    let cap = MAX_BLOB_BYTES as u64 + 500_000;
+    let w = filesystem_capped(cap).await;
+    assert_eq!(w.server.state.config.limits.max_video_blob_bytes, cap);
+    upload(
+        &w,
+        &w.laptop,
+        GROUP_ID,
+        &blob_id(1),
+        &ciphertext(cap as usize),
+    )
+    .await
+    .check("a blob at the raised cap");
     let over = upload(
         &w,
         &w.laptop,
         GROUP_ID,
         &blob_id(2),
-        &ciphertext(MAX_BLOB_BYTES + 1),
+        &ciphertext(cap as usize + 1),
     )
     .await;
     assert_eq!(over.err().map(|s| s.code()), Some(Code::InvalidArgument));
-    // Nothing was stored for the refused one.
     assert_eq!(stored(&w.server), vec![hex(&blob_id(1))]);
 }
 
@@ -706,14 +756,10 @@ async fn uploads_older_than_an_hour_do_not_count() {
 #[tokio::test]
 async fn a_request_far_over_the_cap_is_refused_before_the_handler() {
     let w = filesystem().await;
-    let huge = upload(
-        &w,
-        &w.laptop,
-        GROUP_ID,
-        &blob_id(1),
-        &ciphertext(5 * 1024 * 1024),
-    )
-    .await;
+    // Far over the configured blob cap (video-messages: Config-driven limit), so
+    // the decode limit (the cap plus a little) refuses it before the handler.
+    let far_over = w.server.state.config.limits.max_video_blob_bytes as usize + 1_000_000;
+    let huge = upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(far_over)).await;
     let code = huge.err().map(|s| s.code());
     assert!(
         matches!(code, Some(Code::OutOfRange | Code::ResourceExhausted)),

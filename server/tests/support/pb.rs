@@ -804,7 +804,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6, 7")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -820,15 +820,16 @@ pub mod content {
         /// message-content: Image messages (change `media-blobs`).
         #[prost(message, tag = "5")]
         Image(super::Image),
-        /// message-content: Audio messages (change `audio-messages`). The next free
-        /// field after this one is 7 for the change that follows; `delete-messages`
-        /// takes it, so the two never collide.
+        /// message-content: Audio messages (change `audio-messages`).
         #[prost(message, tag = "6")]
         Audio(super::Audio),
-        /// message-deletion: Delete a message (change `delete-messages`). The next
-        /// free field after this one is 8.
+        /// message-deletion: Delete a message (change `delete-messages`).
         #[prost(message, tag = "7")]
         Delete(super::Delete),
+        /// message-content: Video messages (change `video-messages`). Field 8 is the
+        /// one video takes; `audio-calls` takes the next free number after it.
+        #[prost(message, tag = "8")]
+        Video(super::Video),
     }
 }
 /// message-deletion: Who may delete; Tombstone, not erasure. A superseding
@@ -930,6 +931,50 @@ pub struct Audio {
     /// replies). Same shape as `Text.reply_to`.
     #[prost(message, optional, tag = "6")]
     pub reply_to: ::core::option::Option<ReplyTo>,
+}
+/// message-content: Video messages (change `video-messages`). One short video
+/// message: an MP4 clip (H.264 video + AAC audio), stored as an encrypted blob on
+/// the server (blob-store) exactly as an image or voice message is. This body is
+/// what a receiver needs to lay out the bubble at the clip's aspect ratio and show
+/// a first-frame blur with a play overlay and the duration before anything
+/// downloads, and to fetch and decrypt the clip on tap. A client that predates it
+/// decodes the body as unset and shows the "needs a newer app version"
+/// placeholder. Only the Rust core reads it; the server never sees it, and
+/// `blob_key` never leaves the encrypted `Content`. The container and codecs are
+/// fixed (MP4/H.264/AAC), as WebP is fixed for images, so there is no
+/// container/codec field, and there is exactly one clip and no separate poster
+/// blob.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Video {
+    /// The random id the ciphertext is stored under on the server, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most the server's advertised
+    /// `Limits.max_video_blob_bytes`, itself bounded by
+    /// `protocol::video::MAX_VIDEO_BYTES`.
+    #[prost(uint64, tag = "3")]
+    pub blob_size: u64,
+    /// The clip's length in milliseconds, at least 1 and at most
+    /// `protocol::video::MAX_VIDEO_DURATION_MS` (30 000). The server never sees it;
+    /// the client enforces the 30-second cap.
+    #[prost(uint32, tag = "4")]
+    pub duration_ms: u32,
+    /// The clip's pixel size, so the bubble lays out at the right aspect ratio
+    /// before the clip downloads. Both are at least 1.
+    #[prost(uint32, tag = "5")]
+    pub width: u32,
+    #[prost(uint32, tag = "6")]
+    pub height: u32,
+    /// A ThumbHash of the first frame, shown as a blur until the clip is
+    /// downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes. The
+    /// video analogue of the image ThumbHash; there is no separate poster blob.
+    #[prost(bytes = "vec", tag = "7")]
+    pub thumbhash: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich
@@ -1115,6 +1160,16 @@ pub struct Limits {
     /// counts toward it.
     #[prost(uint32, tag = "2")]
     pub max_handshake_envelope_bytes: u32,
+    /// video-messages: Config-driven limit. The server's configured maximum blob
+    /// ciphertext size in bytes, read from its config at startup and clamped to
+    /// `\[the image cap, protocol::video::MAX_VIDEO_BYTES\]`. It is the one cap the
+    /// server enforces on every `Blobs.UploadBlob` (the server sees only
+    /// ciphertext bytes and cannot tell a video blob from an image blob). Clients
+    /// read it and refuse a video whose encrypted blob would exceed it; they
+    /// enforce the 30-second duration themselves, since the server never sees
+    /// duration. An older client ignores this field.
+    #[prost(uint64, tag = "3")]
+    pub max_video_blob_bytes: u64,
 }
 /// An MLS ExternalSender (RFC 9420 section 12.1.8.1), split into its two parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
