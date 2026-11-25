@@ -1,10 +1,12 @@
 // app-ui: Send an image; Image bubble and viewer (change `media-blobs`).
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/image_bubble.dart';
 import 'package:vyajena/chat/message_tile.dart';
+import 'package:vyajena/chat/picture_picker.dart';
 import 'package:vyajena/core/core_service.dart';
 
 import '../support/app.dart';
@@ -37,8 +39,21 @@ Future<void> attachPhoto(WidgetTester tester) async {
 }
 
 final preview = find.byKey(const Key('picture-preview'));
+final attaching = find.byKey(const Key('picture-attaching'));
 final bubble = find.byKey(const Key('image-bubble'));
 final send = find.byTooltip('Send');
+
+/// A gallery whose pick does not finish until the test lets it, so the
+/// placeholder shown while a pick is in flight can be observed.
+class SlowPicker extends PicturePicker {
+  final _gate = Completer<Uint8List?>();
+
+  /// Finishes the pending pick with [bytes].
+  void finish(Uint8List? bytes) => _gate.complete(bytes);
+
+  @override
+  Future<Uint8List?> pick() => _gate.future;
+}
 
 /// The bytes of a picked file (a tiny PNG, so the preview can draw it): the
 /// app passes them on as they are.
@@ -103,6 +118,29 @@ void main() {
     // And the message is in the chat, as a picture with its caption.
     expect(bubble, findsOneWidget);
     expect(find.text('my cat'), findsOneWidget);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('selecting a picture shows a placeholder at once, then the '
+      'preview when its bytes are ready', (tester) async {
+    final core = groupAsBob();
+    final picker = SlowPicker();
+    await openAppWithPictures(tester, core, picker);
+
+    await attachPhoto(tester);
+    // The placeholder fills the preview area the instant the user chooses,
+    // before the platform has the bytes; the attach button is held meanwhile.
+    expect(attaching, findsOneWidget);
+    expect(preview, findsNothing);
+    expect(tester.widget<IconButton>(attach).onPressed, isNull);
+
+    picker.finish(picked);
+    await tester.pump();
+    await tester.pump();
+    // The real preview replaces the placeholder once the bytes arrive.
+    expect(attaching, findsNothing);
+    expect(preview, findsOneWidget);
+    expect(tester.widget<IconButton>(attach).onPressed, isNotNull);
   });
 
   // spec: app-ui/send-an-image
