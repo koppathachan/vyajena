@@ -26,6 +26,19 @@ signed what, verified against a pinned identity key".
 
 ## Part A — Recovery phrase (same-key recovery)
 
+### D0. Why A is the real fix: the identity key is on one device only.
+The identity **private** key lives solely on the original/bootstrap device. Linking
+never copies it: `link_request` deletes any leftover identity key on the new device
+(`client/src/client.rs:459`), `approve_link` can only be performed by the
+identity-holding device (`identity_key(...).ok_or(NotIdentityDevice)`, `:483`), and
+`complete_link` only pins the identity **public** key on the linked device
+(`pin_identity_key`, `:619`). So a second device can message and do admin RPCs but
+**cannot add devices or re-key**, and losing the original device cannot be recovered by
+having had two devices. The recovery phrase is the **only** off-device backup of the
+identity private key, so it is the primary mitigation for this single point of failure;
+`admin-recovery`'s operator reset is the fallback that only works by re-keying (and thus
+forcing re-trust). A removes the re-key by keeping the same key.
+
 ### D1. The phrase WRAPS a full-entropy key; it is never the seed.
 A user-chosen 24-word phrase is low-entropy (word choice is not uniform, and users
 reuse patterns). Deriving the identity key *from* the phrase would cap the key's
@@ -45,6 +58,15 @@ Minimum 24 words is a floor, not a guarantee — "the the the …" is 24 words. 
 choice is gated by an **entropy estimate** (e.g. zxcvbn-style over the whole phrase,
 not per-word), rejecting weak phrases and nudging length/variety. The 24-word floor and
 the estimate together are the strength requirement.
+
+### D2a. Retroactive enrollment and rotation, on the identity device.
+Enrollment is **not** tied to first registration. The user can set up the phrase at any
+later time from settings, and can regenerate / rotate it (choose a new phrase, re-wrap).
+Each enrollment wraps the **existing** identity key under the new phrase — same
+identity, **no re-key**, so no peer is affected. Because wrapping needs the identity
+**private** key, enrollment is only possible on the device that holds it (the original,
+per D0); the settings entry point is hidden or disabled on a linked device. Rotation
+re-wraps the same key under a fresh phrase and supersedes the old blob.
 
 ### D3. Rate-limit and lock recovery attempts.
 Unwrapping is an **offline-guessable** operation once an attacker has the blob (which

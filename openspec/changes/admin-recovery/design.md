@@ -154,8 +154,35 @@ the quorum/badge system that makes re-trust nicer is deferred (`trust-verificati
 ### D7. No proto change.
 The reset edits the server's own DB; re-onboarding reuses `Devices.Register`
 unchanged; the re-trust gate is a local client rule over already-specified
-`Keys.GetIdentityKeys`/commit processing. Nothing crosses a new wire, so there is no
+`Keys.GetIdentityKeys`/commit processing (the client already has
+`Client::accept_identity_key` and a pending-key slot, `client/src/client.rs:872`, which
+the acknowledge-before-trust gate builds on). Nothing crosses a new wire, so there is no
 `.proto` edit and no `PROTOCOL_VERSION` bump.
+
+### D8. Two devices do not cover identity-device loss — why break-glass is still the net.
+The identity **private** key lives on **one** device only — the original/bootstrap
+device. A linked second device never holds it: `link_request` deletes any leftover
+identity key on the new device ("a leftover identity key would make this device act as
+the user's identity device", `client/src/client.rs:459`), `approve_link` can only be
+done by the device that holds the identity key (`identity_key(...).ok_or(NotIdentityDevice)`,
+`:483`), and `complete_link` only **pins the identity public key** on the linked device
+(`pin_identity_key`, `:619`). So a linked device:
+
+- **can** do admin RPCs (create invites, remove users) and keep messaging; but
+- **cannot** approve or link further devices, and **cannot** re-key or restore the
+  identity-device role.
+
+Consequences for recovery:
+
+- **Losing a linked device** is fully recoverable from the original: re-link a
+  replacement. No break-glass needed.
+- **Losing the original/identity device** (keys gone) leaves a linked device still
+  working and still admin-capable, but with **no way to add devices or recreate the
+  identity device** — the user is stuck single-device with a non-extensible, non-re-keyable
+  account, and if that was the only device, fully locked out. **Having two devices does
+  NOT cover identity-device loss.** This is exactly where the operator reset → re-key
+  break-glass is the net, and why same-key off-device backup of the identity key
+  (deferred `trust-verification` Part A) is the real fix for the single point of failure.
 
 ## Security notes
 

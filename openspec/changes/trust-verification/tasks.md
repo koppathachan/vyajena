@@ -7,7 +7,8 @@
 ## 1. Promotion checkpoints (each needs owner approval before it becomes build-ready)
 
 - [ ] 1.1 Part A (recovery phrase + `RecoverDevice`): owner approves; settle Argon2id
-  parameters and the recovery-attempt lockout curve (design D1–D4); confirm the MLS
+  parameters and the recovery-attempt lockout curve (design D1–D4); confirm the
+  retroactive enrolment / rotation flow is identity-device-only (D0, D2a) and the MLS
   rejoin + history-loss framing (D5); then split into its own build-ready change
 - [ ] 1.2 Part B (quorum re-trust): owner approves; settle the threshold shape across
   group sizes and what admin-trust concretely gates once re-established (design D6–D8);

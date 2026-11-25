@@ -19,6 +19,30 @@ not the key's seed. The core enforces this.
 - **THEN** the key is full-entropy random and the phrase only wraps it, so the key's
   strength does not depend on the phrase's guessability
 
+### Requirement: Recovery phrase can be enrolled and rotated at any time
+The core SHALL let a user enrol a recovery phrase at any time from settings on an
+existing account, not only at first registration, and SHALL let them regenerate or
+rotate it later. Each enrolment SHALL wrap the existing identity key under the chosen
+phrase with no re-key, so the identity is unchanged and no peer is affected. Enrolment
+SHALL be possible only on the device that holds the identity private key (the original
+device); the core enforces this.
+
+#### Scenario: Retroactive enrolment
+- **WHEN** the admin, who registered without a phrase, later sets one in settings on
+  the identity-holding device
+- **THEN** the core wraps the existing identity key under the new phrase without
+  re-keying, and no peer sees a safety-number change
+
+#### Scenario: Rotation supersedes the old phrase
+- **WHEN** the user chooses a new phrase to rotate an existing one
+- **THEN** the core re-wraps the same identity key under the new phrase and the old
+  wrapped blob no longer recovers the key
+
+#### Scenario: Linked device cannot enrol
+- **WHEN** a linked device that does not hold the identity private key opens the
+  recovery-phrase setting
+- **THEN** enrolment is unavailable there, because wrapping needs the identity private key
+
 ### Requirement: Recovery phrase strength and attempt limits
 The core SHALL require a chosen recovery phrase of at least 24 words and SHALL reject a
 phrase whose estimated entropy is too low, because word count alone is not security. It

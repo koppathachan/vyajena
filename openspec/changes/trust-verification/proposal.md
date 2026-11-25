@@ -31,11 +31,27 @@ Three parts, each promotable on its own.
 
 ### Part A — Recovery phrase (same-key recovery)
 
+**Primary single-point-of-failure mitigation.** The identity **private** key lives on
+**one** device only — the original/bootstrap device. A linked second device never holds
+it (`link_request` deletes any leftover identity key; `approve_link` requires the
+identity-holding device; `complete_link` only pins the identity *public* key —
+`client/src/client.rs:459,483,619`), so it can keep messaging and do admin RPCs but
+**cannot add devices or re-key**. Therefore having two devices does **not** cover loss
+of the identity device, and the recovery phrase is the **only** thing that backs the
+identity **private** key up **off** that single device. That is this part's motivation:
+it removes the single point of failure that `admin-recovery` can only paper over with a
+re-key.
+
 A fresh install can recover the user's **existing** identity key from a user-chosen
 recovery phrase, so recovery needs **no re-trust** (the pinned key is unchanged).
 
 - The admin (or any user) **chooses** the phrase — it is user-picked, not
   app-generated — minimum **24 words**.
+- **Retroactive enrollment (required):** the phrase can be set up — and regenerated or
+  rotated — at **any time from settings** on an existing account, not only at first
+  registration. Enrollment wraps the **existing** identity key under the chosen phrase,
+  so it is same-identity with **no re-key**. It can only be done on the device that
+  **holds** the identity private key (the original), per the device model above.
 - **Caveat (must spec):** the phrase is **NOT the seed**. A user-chosen phrase is
   low-entropy; using it directly as the key would weaken the identity key to the
   phrase's guessability. Instead the identity key is a **full-entropy random** key,
