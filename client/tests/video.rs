@@ -197,13 +197,19 @@ async fn a_clip_over_thirty_seconds_or_not_an_mp4_sends_nothing() {
         .client
         .send_video(&mp4(1000), MAX_VIDEO_DURATION_MS + 1, 854, 480, &[], 0, 0)
         .await;
-    assert!(matches!(too_long, Err(ClientError::VideoTooLong)), "{too_long:?}");
+    assert!(
+        matches!(too_long, Err(ClientError::VideoTooLong)),
+        "{too_long:?}"
+    );
 
     let not_a_video = alice
         .client
         .send_video(b"hello there", 5_000, 854, 480, &[], 0, 0)
         .await;
-    assert!(matches!(not_a_video, Err(ClientError::NotAVideo)), "{not_a_video:?}");
+    assert!(
+        matches!(not_a_video, Err(ClientError::NotAVideo)),
+        "{not_a_video:?}"
+    );
 
     assert!(server.blobs().is_empty(), "nothing was uploaded");
     assert!(alice.client.history(100).check("history").is_empty());
@@ -306,14 +312,21 @@ async fn an_expired_video_shows_as_expired_and_the_sender_can_resend_it() {
     assert!(server.blobs().is_empty(), "the server deleted it");
 
     let opened = bob.client.download_video(received.id).await;
-    assert!(matches!(opened, Err(ClientError::MediaExpired)), "{opened:?}");
+    assert!(
+        matches!(opened, Err(ClientError::MediaExpired)),
+        "{opened:?}"
+    );
     let now = bob
         .client
         .message(received.id)
         .check("message")
         .check("some");
     assert_eq!(video_of(&now).state, MediaState::Expired);
-    assert_eq!(video_of(&now).duration_ms, 12_000, "the bubble keeps its shape");
+    assert_eq!(
+        video_of(&now).duration_ms,
+        12_000,
+        "the bubble keeps its shape"
+    );
 
     // Alice kept the clip: resending makes a new message with a new blob.
     let again_id = alice.client.resend_video(id).await.check("resend");
@@ -326,7 +339,10 @@ async fn an_expired_video_shows_as_expired_and_the_sender_can_resend_it() {
 
     // Only an own clip this device has can be resent.
     let refused = bob.client.resend_video(resent.id).await;
-    assert!(matches!(refused, Err(ClientError::NoSuchMessage)), "{refused:?}");
+    assert!(
+        matches!(refused, Err(ClientError::NoSuchMessage)),
+        "{refused:?}"
+    );
 }
 
 // spec: video-messages/video-messages
@@ -339,5 +355,5 @@ async fn the_default_advertised_cap_is_the_protocol_default() {
     let id = send_clip(&alice, 300_000).await;
     assert!(id.is_ok(), "{id:?}");
     // Sanity: the default is well above a normalized clip.
-    assert!(DEFAULT_MAX_VIDEO_BYTES > 300_000);
+    const { assert!(DEFAULT_MAX_VIDEO_BYTES > 300_000) };
 }

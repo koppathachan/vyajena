@@ -822,8 +822,7 @@ pub(crate) fn receive_application(
     };
     let sent_at = decoded.sent_at;
     Ok(match decoded.body {
-        body
-        @ (Decoded::Text(_)
+        body @ (Decoded::Text(_)
         | Decoded::Image(_)
         | Decoded::Audio(_)
         | Decoded::Video(_)

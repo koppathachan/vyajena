@@ -1589,6 +1589,7 @@ impl Client {
     }
 
     /// Sends a normalized video to the main group: [`Client::send_video_in`].
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_video(
         &self,
         mp4: &[u8],

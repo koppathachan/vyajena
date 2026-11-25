@@ -37,7 +37,15 @@ context: |
     storage key from the key store; messages are not encrypted at rest.
   - User ids are <username>@<server_id>; the admin chooses the username.
   - Limits, timings and signing context strings are defined once, in protocol/,
-    which both the server and the core use.
+    which both the server and the core use. One owner-approved exception
+    (change video-messages, 2026-11-23): the server's maximum blob size is
+    config-driven (max_video_blob_bytes), read at startup and clamped within a
+    protocol/ ceiling [image cap, MAX_VIDEO_BYTES]; protocol/ still bounds it.
+  - The core owns every media transform (image/audio encode pipelines). One
+    owner-approved exception (change video-messages, 2026-11-23): video
+    normalization (H.264/MP4 transcode) runs in a native platform plugin, since
+    no viable pure-Rust mobile H.264 transcode exists; the core still does all
+    blob crypto and keys never leave it.
 
   Rust: edition 2024, one Cargo workspace at the repo root. thiserror in
   libraries, anyhow only in binaries. tracing for logs (ids, epochs, sizes; never

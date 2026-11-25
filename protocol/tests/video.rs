@@ -14,7 +14,7 @@ fn the_video_limits_are_the_owners() {
     // generous but bounded cap is in force out of the box.
     assert_eq!(MAX_VIDEO_BYTES, 8 * 1024 * 1024);
     assert_eq!(DEFAULT_MAX_VIDEO_BYTES, 5 * 1024 * 1024);
-    assert!(DEFAULT_MAX_VIDEO_BYTES < MAX_VIDEO_BYTES);
+    const { assert!(DEFAULT_MAX_VIDEO_BYTES < MAX_VIDEO_BYTES) };
     assert_eq!(CONFIG_KEY, "max_video_blob_bytes");
 }
 
@@ -59,17 +59,14 @@ fn a_config_above_the_ceiling_is_clamped_down_to_it() {
         clamp_max_blob_bytes(Some(MAX_VIDEO_BYTES as u64 + 1)),
         MAX_VIDEO_BYTES as u64
     );
-    assert_eq!(
-        clamp_max_blob_bytes(Some(u64::MAX)),
-        MAX_VIDEO_BYTES as u64
-    );
+    assert_eq!(clamp_max_blob_bytes(Some(u64::MAX)), MAX_VIDEO_BYTES as u64);
 }
 
 // spec: video-messages/config-driven-limit
 #[test]
 fn the_image_cap_is_a_valid_floor_below_the_ceiling() {
     // The clamp interval is non-empty: the image cap sits below the ceiling.
-    assert!(MAX_BLOB_BYTES < MAX_VIDEO_BYTES);
+    const { assert!(MAX_BLOB_BYTES < MAX_VIDEO_BYTES) };
 }
 
 // spec: video-messages/config-driven-limit
@@ -88,7 +85,10 @@ fn the_upload_request_limit_leaves_room_for_the_ids() {
 // spec: video-messages/video-messages
 #[test]
 fn a_blob_is_the_plaintext_plus_the_nonce_and_tag() {
-    assert_eq!(blob_size(1000), (1000 + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64);
+    assert_eq!(
+        blob_size(1000),
+        (1000 + BLOB_NONCE_LEN + BLOB_TAG_LEN) as u64
+    );
 }
 
 // spec: video-messages/video-messages
@@ -96,5 +96,5 @@ fn a_blob_is_the_plaintext_plus_the_nonce_and_tag() {
 fn a_first_frame_thumbhash_shares_the_image_thumbhash_cap() {
     // The video poster reuses the image ThumbHash budget; it is small (~25 bytes).
     assert_eq!(MP4_FTYP_MARKER, b"ftyp");
-    assert!(MAX_THUMBHASH_BYTES >= 25);
+    const { assert!(MAX_THUMBHASH_BYTES >= 25) };
 }

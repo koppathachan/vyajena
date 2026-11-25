@@ -98,7 +98,10 @@ async fn a_normalized_clip_goes_in_and_a_clip_path_comes_out() {
     assert_eq!(video.duration_ms, 12_000);
     assert!(!video.thumbhash.is_empty(), "a first-frame ThumbHash");
     assert_eq!(video.state, MediaStatus::NotDownloaded);
-    assert_eq!(bob.core.cached_video(received.id).await.check("cached"), None);
+    assert_eq!(
+        bob.core.cached_video(received.id).await.check("cached"),
+        None
+    );
 
     // The sender has her own clip; Bob's tap gets a path to an MP4 file, never
     // the bytes, and the key never crosses the bridge.
@@ -156,7 +159,10 @@ async fn an_expired_clip_is_its_own_error_and_state_and_the_sender_resends() {
     server.sweep().await;
 
     let gone = bob.core.download_video(received.id).await;
-    assert_eq!(gone.err().map(|e| e.kind), Some(CoreErrorKind::MediaExpired));
+    assert_eq!(
+        gone.err().map(|e| e.kind),
+        Some(CoreErrorKind::MediaExpired)
+    );
     let now = bob.core.message(received.id).check("message").check("some");
     assert_eq!(video_of(&now).state, MediaStatus::Expired);
 

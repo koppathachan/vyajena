@@ -12,8 +12,7 @@ use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
     ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, ReaddAnswer,
-    VideoView,
-    ReplyKind, ReplyQuote, SendState, UserRef,
+    ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {

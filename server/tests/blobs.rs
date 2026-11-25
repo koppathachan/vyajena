@@ -204,9 +204,15 @@ async fn raising_the_config_raises_the_enforced_upload_cap() {
     let cap = MAX_BLOB_BYTES as u64 + 500_000;
     let w = filesystem_capped(cap).await;
     assert_eq!(w.server.state.config.limits.max_video_blob_bytes, cap);
-    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(cap as usize))
-        .await
-        .check("a blob at the raised cap");
+    upload(
+        &w,
+        &w.laptop,
+        GROUP_ID,
+        &blob_id(1),
+        &ciphertext(cap as usize),
+    )
+    .await
+    .check("a blob at the raised cap");
     let over = upload(
         &w,
         &w.laptop,

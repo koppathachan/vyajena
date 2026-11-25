@@ -34,7 +34,9 @@ pub fn first_frame_thumbhash(rgba: &[u8], width: u32, height: u32) -> Option<Vec
     if width == 0 || height == 0 {
         return None;
     }
-    let expected = (width as usize).checked_mul(height as usize)?.checked_mul(4)?;
+    let expected = (width as usize)
+        .checked_mul(height as usize)?
+        .checked_mul(4)?;
     if rgba.len() != expected {
         return None;
     }

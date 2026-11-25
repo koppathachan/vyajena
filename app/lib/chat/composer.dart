@@ -96,6 +96,7 @@ class Composer extends StatefulWidget {
     this.pickImage,
     this.sendImage,
     this.sendAudio,
+    this.onSendVideo,
     this.onRecordingStarted,
   });
 
@@ -119,6 +120,12 @@ class Composer extends StatefulWidget {
   /// Sends a recorded voice message: the WAV file's bytes, which the core
   /// encodes. No microphone button when unset.
   final Future<void> Function(Uint8List wav, {int? replyTo})? sendAudio;
+
+  /// Runs the whole send-a-video flow (record or gallery-pick, trim, native
+  /// normalize, then hand to the core). Owned by the chat screen so the
+  /// composer stays free of the camera, picker and native plugin. No "Video"
+  /// entry in the attachment sheet when unset (app-ui: Send a video).
+  final Future<void> Function()? onSendVideo;
 
   /// A recording began: the chat stops any clip that is playing.
   final VoidCallback? onRecordingStarted;
@@ -482,17 +489,39 @@ class _ComposerState extends State<Composer> {
           key: const Key('attachment-sheet'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              key: const Key('attach-photo'),
-              leading: const Icon(Icons.image_outlined),
-              title: const Text('Photo'),
-              onTap: () => Navigator.of(sheet).pop('photo'),
-            ),
+            if (widget.pickImage != null)
+              ListTile(
+                key: const Key('attach-photo'),
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('Photo'),
+                onTap: () => Navigator.of(sheet).pop('photo'),
+              ),
+            if (widget.onSendVideo != null)
+              ListTile(
+                key: const Key('attach-video'),
+                leading: const Icon(Icons.videocam_outlined),
+                title: const Text('Video'),
+                onTap: () => Navigator.of(sheet).pop('video'),
+              ),
           ],
         ),
       ),
     );
-    if (choice == 'photo') await _attach();
+    if (choice == 'photo') {
+      await _attach();
+    } else if (choice == 'video') {
+      await _sendVideo();
+    }
+  }
+
+  Future<void> _sendVideo() async {
+    final send = widget.onSendVideo;
+    if (send == null || _sending) return;
+    try {
+      await send();
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    }
   }
 
   Future<void> _attach() async {
@@ -621,8 +650,9 @@ class _ComposerState extends State<Composer> {
           if (_recording)
             Expanded(child: _recordingInfo(context))
           else ...[
-            // A picture goes as its own message, not as a reply.
-            if (widget.pickImage != null && widget.reply == null)
+            // A picture or video goes as its own message, not as a reply.
+            if ((widget.pickImage != null || widget.onSendVideo != null) &&
+                widget.reply == null)
               IconButton(
                 key: const Key('attach-image'),
                 tooltip: 'Attach',

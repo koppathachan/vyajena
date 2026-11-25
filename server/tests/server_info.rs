@@ -79,7 +79,8 @@ async fn server_info_advertises_the_configured_video_blob_cap() {
     // value (video-messages: Config-driven limit, "Operator raises the limit").
     let cap = protocol::video::DEFAULT_MAX_VIDEO_BYTES as u64 + 1_000_000;
     let extra = format!("[limits]\n{} = {cap}\n", protocol::video::CONFIG_KEY);
-    let server = TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
+    let server =
+        TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
     let conn = server.connect().await;
     let limits = conn
         .devices()
@@ -104,7 +105,8 @@ async fn a_config_above_the_ceiling_is_advertised_clamped() {
         protocol::video::CONFIG_KEY,
         protocol::video::MAX_VIDEO_BYTES as u64 + 10_000_000
     );
-    let server = TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
+    let server =
+        TestServer::start_with_blobs_and_config(support::harness::Blobs::Off, &extra).await;
     let conn = server.connect().await;
     let limits = conn
         .devices()

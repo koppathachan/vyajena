@@ -85,6 +85,7 @@ void main() {
       'url_launcher',
       'record',
       'just_audio',
+      'video_player',
     });
     final flutterSection = pubspec.substring(
       pubspec.lastIndexOf(RegExp(r'^flutter:', multiLine: true)),

@@ -1,7 +1,7 @@
 // app-shell: Chats list. The one-line preview of a chat's newest message: its
-// text, or a media glyph and a word for an image or a voice message (video
-// joins with `video-messages`). Built from the history the core already
-// gives; nothing is stored here.
+// text, or a media glyph and a word for an image, a voice message or a video
+// (video-messages). Built from the history the core already gives; nothing is
+// stored here.
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
@@ -27,6 +27,10 @@ ChatPreview previewOf(ChatMessage message, {String? from}) {
     ChatBody_Audio() => ChatPreview(
       '${lead}Voice message',
       icon: Icons.mic_none,
+    ),
+    ChatBody_Video() => ChatPreview(
+      '${lead}Video',
+      icon: Icons.videocam_outlined,
     ),
     ChatBody_Unsupported() => ChatPreview('${lead}Unsupported message'),
   };
