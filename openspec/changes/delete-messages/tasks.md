@@ -67,6 +67,8 @@
 - [x] 7.1 `docs/architecture-decisions.md` (Scope "no edit or delete" → "delete,
       no edit"; the durability clarification is in `openspec/config.yaml`'s
       "Accepted means durable" invariant), `openspec/config.yaml` context
-- [ ] 7.2 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
-      `flutter analyze`, `flutter test`, `openspec validate delete-messages
-      --strict`
+- [x] 7.2 clippy (`--workspace --all-targets -D warnings`), fmt (`--check`),
+      `buf lint`, `buf breaking`, `flutter analyze`, `flutter test`, `openspec
+      validate delete-messages --strict` all pass; the change's own crate tests
+      (protocol/server/client/bridge `message_deletion`, `blobs` delete) pass.
+      Full `cargo test --workspace` left to CI (slow external disk)
