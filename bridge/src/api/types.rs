@@ -99,6 +99,17 @@ pub enum ChatBody {
         /// The clip. Boxed like an image: a message is carried in every event.
         video: Box<VideoView>,
     },
+    /// A deleted message, shown as a tombstone "This message was deleted"
+    /// (message-deletion: Tombstone, not erasure).
+    Deleted {
+        /// An admin deleted another user's message in the lobby or a named
+        /// group: the tombstone reads "by the admin".
+        by_admin: bool,
+        /// A DM tombstone whose original this device still holds: the app offers
+        /// Reveal (message-deletion: Receiver may reveal in a DM). Always
+        /// `false` in the lobby and named groups.
+        revealable: bool,
+    },
     /// A body this version does not know: shown as a placeholder saying the
     /// app needs an update (app-ui: Chat screen).
     Unsupported,
@@ -160,6 +171,10 @@ pub struct ReplyQuote {
     pub thumbhash: Vec<u8>,
     /// The original's local id when this device has it (tap to jump).
     pub original_id: Option<i64>,
+    /// The original was deleted and this device holds the delete, so the quote
+    /// shows "deleted message" instead of the snapshot (message-deletion:
+    /// Deleting media and replies).
+    pub original_deleted: bool,
 }
 
 /// Where an own message stands.

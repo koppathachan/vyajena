@@ -32,6 +32,10 @@ ChatPreview previewOf(ChatMessage message, {String? from}) {
       '${lead}Video',
       icon: Icons.videocam_outlined,
     ),
+    ChatBody_Deleted() => ChatPreview(
+      '${lead}This message was deleted',
+      icon: Icons.block,
+    ),
     ChatBody_Unsupported() => ChatPreview('${lead}Unsupported message'),
   };
 }

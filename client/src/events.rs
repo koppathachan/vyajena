@@ -156,6 +156,18 @@ pub enum MessageBody {
     /// A short video message (message-content: Video messages). Boxed like an
     /// image.
     Video(Box<VideoBody>),
+    /// A deleted message, shown as a tombstone "This message was deleted"
+    /// (message-deletion: Tombstone, not erasure).
+    Deleted {
+        /// An admin deleted another user's message in the lobby or a named
+        /// group, so the tombstone reads "by the admin".
+        by_admin: bool,
+        /// A DM tombstone whose original this device still holds: the UI offers
+        /// Reveal, which shows the original (message-deletion: Receiver may
+        /// reveal in a DM). Always `false` in the lobby and named groups, and
+        /// for a device that never received the original.
+        revealable: bool,
+    },
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,
@@ -223,6 +235,10 @@ pub struct Reply {
     pub thumbhash: Vec<u8>,
     /// The original's local id, when this device has it stored.
     pub original: Option<MessageId>,
+    /// The original was deleted and this device holds the delete, so the quote
+    /// shows "deleted message" in place of the stored snapshot (message-deletion:
+    /// Deleting media and replies).
+    pub original_deleted: bool,
 }
 
 /// A chat: the lobby, a named group or a DM. The lobby is

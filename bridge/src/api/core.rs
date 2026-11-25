@@ -700,6 +700,22 @@ impl Core {
         .0)
     }
 
+    /// message-deletion: Who may delete. Deletes the stored chat message `id`
+    /// in chat `chat_id` for everyone: an admin may delete any message in the
+    /// lobby or a named group, and in a DM a user may delete their own. Returns
+    /// the local id of the queued delete.
+    pub fn delete_message(&self, chat_id: i64, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.delete_message(ChatId(chat_id), MessageId(id)))?.0)
+    }
+
+    /// message-deletion: Receiver may reveal in a DM. The original of the deleted
+    /// DM message `id` in chat `chat_id`, if this device still holds it.
+    pub fn reveal(&self, chat_id: i64, id: i64) -> Result<ChatMessage, CoreError> {
+        Ok(map::message(forward(
+            self.client.reveal(ChatId(chat_id), MessageId(id)),
+        )?))
+    }
+
     /// [`Core::unseen_mentions`] in chat `chat_id`.
     pub fn unseen_mentions_in(&self, chat_id: i64) -> Result<Vec<i64>, CoreError> {
         Ok(forward(self.client.unseen_mentions_in(ChatId(chat_id)))?

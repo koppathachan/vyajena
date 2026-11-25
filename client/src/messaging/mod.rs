@@ -112,6 +112,18 @@ pub struct AudioContent {
     pub reply: Option<ReplyTo>,
 }
 
+/// A `Delete` body, decoded (message-deletion: Who may delete): the message it
+/// deletes, named by its original sender device and `msg_id`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeleteContent {
+    /// The user who sent the deleted message.
+    pub target_user: UserId,
+    /// The device that sent the deleted message.
+    pub target_device: DeviceId,
+    /// The deleted message's `msg_id`.
+    pub target_msg_id: [u8; 16],
+}
+
 /// A `Video` body, decoded and checked (message-content: Video messages). It
 /// keeps the blob key; the UI's [`crate::VideoBody`] does not.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +155,8 @@ pub enum Decoded {
     Audio(AudioContent),
     /// A video message.
     Video(VideoContent),
+    /// A delete of another message (message-deletion).
+    Delete(DeleteContent),
     /// `GroupSettings`: the group's name.
     GroupSettings {
         /// The name, if set.
@@ -194,6 +208,11 @@ pub fn decode(content: &[u8]) -> DecodedContent {
         // Likewise a video message that is not well formed.
         Some(Body::Video(video)) => {
             decode_video(video).map_or(Decoded::Unsupported, Decoded::Video)
+        }
+        // A delete whose target reference is not well formed is shown as a
+        // message this version cannot read, never dropped.
+        Some(Body::Delete(delete)) => {
+            decode_delete(delete).map_or(Decoded::Unsupported, Decoded::Delete)
         }
         None => Decoded::Unsupported,
     };
@@ -293,6 +312,32 @@ fn decode_audio(audio: pb::Audio) -> Option<AudioContent> {
         waveform: audio.waveform,
         reply: audio.reply_to.and_then(reply_from_pb),
     })
+}
+
+/// A `Delete` body, if its target reference is well formed (message-deletion:
+/// Who may delete).
+fn decode_delete(delete: pb::Delete) -> Option<DeleteContent> {
+    let sender = delete.target_sender?;
+    Some(DeleteContent {
+        target_user: UserId::from_pb(sender.user_id.as_ref()?),
+        target_device: DeviceId::try_from(sender.device_id.as_slice()).ok()?,
+        target_msg_id: <[u8; 16]>::try_from(delete.target_msg_id.as_slice()).ok()?,
+    })
+}
+
+/// A `Delete` body naming the message `(target_device of target_user,
+/// target_msg_id)` to delete (message-deletion: Who may delete).
+pub fn encode_delete(delete: &DeleteContent, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
+    encode(
+        Body::Delete(pb::Delete {
+            target_sender: Some(pb::DeviceRef {
+                user_id: Some(delete.target_user.to_pb()),
+                device_id: delete.target_device.to_vec(),
+            }),
+            target_msg_id: delete.target_msg_id.to_vec(),
+        }),
+        sent_at,
+    )
 }
 
 /// A `Video` body, if it is well formed: a 16-byte id, a 32-byte key, a blob size
@@ -550,6 +595,23 @@ pub fn encode_group_settings(
     )
 }
 
+/// message-deletion: Deletion retracts undelivered copies. The server-visible
+/// `Envelope.deletes` for an own `APPLICATION` whose `content` is a
+/// `Content.Delete`, so the server can authorise it and retract the target's
+/// undelivered copies; `None` for every other body.
+pub(crate) fn delete_target(content: &[u8]) -> Option<pb::DeleteTarget> {
+    match decode(content).body {
+        Decoded::Delete(del) => Some(pb::DeleteTarget {
+            target_sender: Some(pb::DeviceRef {
+                user_id: Some(del.target_user.to_pb()),
+                device_id: del.target_device.to_vec(),
+            }),
+            target_msg_id: del.target_msg_id.to_vec(),
+        }),
+        _ => None,
+    }
+}
+
 /// `<username>@<server_id>` as a [`UserId`].
 pub(crate) fn parse_user(text: &str) -> Option<UserId> {
     let (username, server_id) = text.split_once('@')?;
@@ -561,6 +623,12 @@ pub(crate) fn parse_user(text: &str) -> Option<UserId> {
 /// carried for the preview (message-content: Reply quote describes the
 /// original's kind).
 fn event_reply(store: &Store, reply: ReplyTo) -> Reply {
+    // message-deletion: Deleting media and replies. When this device holds the
+    // delete of the quoted original, the quote shows "deleted message" (the UI
+    // reads `original_deleted`) in place of the stored snapshot.
+    let original_deleted = store
+        .is_deleted_ref(&reply.device, &reply.msg_id)
+        .unwrap_or(false);
     Reply {
         original: store
             .chat_message_by_ref(&reply.device, &reply.msg_id)
@@ -573,6 +641,7 @@ fn event_reply(store: &Store, reply: ReplyTo) -> Reply {
         kind: reply.original_kind,
         duration_ms: reply.original_duration_ms,
         thumbhash: reply.original_thumbhash,
+        original_deleted,
     }
 }
 
@@ -600,6 +669,18 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
             let body = video_body(store, &video);
             Some((MessageBody::Video(Box::new(body)), Vec::new(), None))
         }
+        // A `Delete` body shown in the history directly (its target was never
+        // held, or it has not been applied yet) is a bare tombstone with no
+        // reveal; an applied delete is rendered from the target row's `deleted`
+        // flag instead (see `to_message`).
+        Decoded::Delete(_) => Some((
+            MessageBody::Deleted {
+                by_admin: false,
+                revealable: false,
+            },
+            Vec::new(),
+            None,
+        )),
         Decoded::Unsupported => Some((MessageBody::Unsupported, Vec::new(), None)),
         Decoded::Profile(_) | Decoded::GroupSettings { .. } => None,
     }
@@ -682,6 +763,52 @@ fn content_mentions(content: &DecodedContent, sender: &UserId, own_user: &UserId
 /// group-settings rows, which are not shown in the history. `own_user` is
 /// this device's user.
 pub(crate) fn to_message(
+    store: &Store,
+    stored: &StoredMessage,
+    own_user: &UserId,
+) -> Option<Message> {
+    let decoded = decode(&stored.content);
+    let sender = parse_user(&stored.sender_user)?;
+    let own = stored.outgoing || sender == *own_user;
+    let (body, mentions, reply) = if stored.deleted {
+        // message-deletion: Tombstone, not erasure; Receiver may reveal in a DM.
+        // A DM keeps the original plaintext (the body still decodes), so Reveal
+        // can show it; a lobby or named-group tombstone replaced it with the
+        // Delete body, so there is nothing to reveal.
+        let revealable = !matches!(decoded.body, Decoded::Delete(_) | Decoded::Unsupported);
+        (
+            MessageBody::Deleted {
+                by_admin: stored.deleted_by_admin,
+                revealable,
+            },
+            Vec::new(),
+            None,
+        )
+    } else {
+        chat_parts(store, decoded.body)?
+    };
+    Some(Message {
+        id: stored.id,
+        chat: crate::events::ChatId(stored.chat),
+        own_user: own,
+        mentions_me: !own && mentions_user(&sender, &mentions, own_user),
+        sender,
+        sender_device: stored.sender_device,
+        outgoing: stored.outgoing,
+        body,
+        mentions,
+        reply: reply.map(Box::new),
+        sent_at: decoded.sent_at,
+        accepted_at: stored.accepted_at,
+        status: stored.status.clone(),
+    })
+}
+
+/// message-deletion: Receiver may reveal in a DM. The original of a deleted
+/// message as the UI sees it, rendered from the plaintext this device kept
+/// (a DM tombstone only), ignoring the tombstone. `None` if the original body
+/// is not a chat body this version can show.
+pub(crate) fn revealed_message(
     store: &Store,
     stored: &StoredMessage,
     own_user: &UserId,
@@ -845,6 +972,54 @@ pub(crate) fn receive_application(
                 accepted_at,
                 status: None::<SendStatus>,
             })
+        }
+        Decoded::Delete(del) => {
+            // message-deletion: Who may delete. Honour the delete only from an
+            // authorised MLS sender — an admin device in the lobby or a named
+            // group (the group context names an admin), or the target's original
+            // sender in a DM. An unauthorised one is kept for dedup but hidden
+            // and never applied.
+            let authorised = match admin {
+                Some(admin) => sender_text == admin,
+                None => sender_user == del.target_user && sender_device == del.target_device,
+            };
+            if !authorised {
+                tracing::info!(server_seq = seq, "ignored an unauthorised delete");
+                store.hide_message(id)?;
+                return Ok(Received::Nothing);
+            }
+            // "by the admin" only when an admin deleted another user's message.
+            let by_admin = admin.is_some()
+                && (sender_user != del.target_user || sender_device != del.target_device);
+            // A DM keeps the original plaintext for Reveal; the lobby and named
+            // groups drop it, replaced by the Delete body (no reveal).
+            let replacement = admin.map(|_| content.as_slice());
+            let tombstone_id = match store.mark_deleted_by_ref(
+                &del.target_device,
+                &del.target_msg_id,
+                by_admin,
+                replacement,
+            )? {
+                // The target row carries the tombstone in place; hide this
+                // delete row.
+                Some(target_id) => {
+                    store.hide_message(id)?;
+                    target_id
+                }
+                // The target was never received: this delete row is the
+                // tombstone (message-deletion: Nothing to reveal).
+                None => {
+                    store.mark_delete_tombstone(id, by_admin)?;
+                    id
+                }
+            };
+            match store.message(tombstone_id)? {
+                Some(stored) => match to_message(store, &stored, own_user) {
+                    Some(message) => Received::Message(message),
+                    None => Received::Nothing,
+                },
+                None => Received::Nothing,
+            }
         }
         Decoded::Profile(profile) => {
             // message-content: User-owned profiles. Applied to the sending

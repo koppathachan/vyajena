@@ -355,6 +355,15 @@ abstract class CoreService {
     int? replyTo,
   });
 
+  /// Deletes the message [id] in chat [chatId] for everyone (message-deletion:
+  /// Who may delete): an admin in the lobby or a named group, or the sender in
+  /// a DM. Throws if this device may not delete it.
+  Future<int> deleteMessage(int chatId, int id);
+
+  /// The original of the deleted DM message [id] in chat [chatId], if this
+  /// device still holds it (message-deletion: Receiver may reveal in a DM).
+  Future<ChatMessage> reveal(int chatId, int id);
+
   /// [unseenMentions] in chat [chatId].
   Future<List<int>> unseenMentionsIn(int chatId);
 

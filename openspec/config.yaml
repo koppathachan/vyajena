@@ -30,7 +30,12 @@ context: |
     check it.
   - OpenMLS skips credential checks: verify each leaf's device certificate against
     the user's pinned identity key, and that its MLS key equals the leaf key.
-  - Accepted means durable. Nothing is dropped silently.
+  - Accepted means durable. Nothing is dropped silently. An accepted,
+    undelivered APPLICATION message MAY be retracted from other devices' queues
+    only by a message delete (change `delete-messages`, owner-approved
+    2026-11-20) — authorised (an admin in the lobby or a named group, the
+    original sender in a DM) and always paired with a delivered Delete
+    tombstone, so the message is superseded, never silently lost.
   - Identity, auth and MLS signature keys live only in the OS key store
     (desktop: the OS keychain; a 0600 key file only on explicit opt-in where
     there is none). OpenMLS group state is in SQLite only sealed under a

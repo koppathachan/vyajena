@@ -230,6 +230,12 @@ pub enum ClientError {
     /// The server does not know DMs yet (it lists no protocol version 2).
     #[error("the server does not support DMs yet")]
     DmsUnavailable,
+
+    /// This device may not delete that message (message-deletion: Who may
+    /// delete): a non-admin in the lobby or a named group, or another user's
+    /// message in a DM.
+    #[error("this device may not delete that message")]
+    CannotDelete,
 }
 
 struct Running {
@@ -1001,7 +1007,7 @@ impl Client {
                 Decoded::Video(_) | Decoded::Unsupported => {
                     (String::new(), ReplyOriginalKind::Text, 0, Vec::new())
                 }
-                Decoded::Profile(_) | Decoded::GroupSettings { .. } => {
+                Decoded::Profile(_) | Decoded::GroupSettings { .. } | Decoded::Delete(_) => {
                     return Err(ClientError::NoSuchMessage);
                 }
             };
@@ -1336,6 +1342,102 @@ impl Client {
         let content = crate::messaging::encode_message(text, mentions, reply.as_ref(), self.now())
             .map_err(too_long)?;
         self.queue_content(chat.0, &content)
+    }
+
+    // --- Deleting (message-deletion) ---
+
+    /// Deletes the stored chat message `id` in chat `chat` for everyone
+    /// (message-deletion: Who may delete). In the lobby and named groups only an
+    /// admin device may delete, any message; in a DM only the user's own
+    /// message. It queues a superseding `Content.Delete`, sent like any message;
+    /// clients show a tombstone, and the server drops the target's undelivered
+    /// copies. A media delete also purges the stored blob once the delete is
+    /// accepted. Returns the local id of the queued delete. Fails with
+    /// [`ClientError::CannotDelete`] when this device may not delete it,
+    /// [`ClientError::NoSuchMessage`] when there is no such chat message in
+    /// `chat`, or [`ClientError::ChatClosed`] for a closed DM.
+    pub fn delete_message(&self, chat: ChatId, id: MessageId) -> Result<MessageId, ClientError> {
+        use crate::messaging::Decoded;
+        let account = self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        // It must be a real, not-yet-deleted chat message in this chat.
+        if stored.chat != chat.0 || stored.deleted {
+            return Err(ClientError::NoSuchMessage);
+        }
+        if matches!(
+            crate::messaging::decode(&stored.content).body,
+            Decoded::Profile(_) | Decoded::GroupSettings { .. } | Decoded::Delete(_)
+        ) {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let own_user = UserId::new(account.username.clone(), account.server_id.clone());
+        // Who may delete: an admin in the lobby/named groups; the sender in a DM.
+        let is_group = if chat.is_main() {
+            true
+        } else {
+            let dm = self
+                .shared
+                .store
+                .dm_by_chat(chat.0)?
+                .ok_or(ClientError::NoSuchChat)?;
+            if dm.closed_at.is_some() {
+                return Err(ClientError::ChatClosed);
+            }
+            dm.named
+        };
+        let target_user =
+            crate::messaging::parse_user(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+        if is_group {
+            if !account.is_admin {
+                return Err(ClientError::CannotDelete);
+            }
+        } else if target_user != own_user {
+            return Err(ClientError::CannotDelete);
+        }
+        let content = crate::messaging::encode_delete(
+            &crate::messaging::DeleteContent {
+                target_user,
+                target_device: stored.sender_device,
+                target_msg_id: stored.msg_id,
+            },
+            self.now(),
+        )
+        .map_err(too_long)?;
+        self.queue_content(chat.0, &content)
+    }
+
+    /// message-deletion: Receiver may reveal in a DM. The original of the
+    /// deleted DM message `id` in chat `chat`, if this device still holds it.
+    /// Only a DM tombstone can be revealed; the lobby and named groups offer no
+    /// reveal. Fails with [`ClientError::NoSuchMessage`] when `id` is not a
+    /// revealable DM tombstone in `chat`.
+    pub fn reveal(&self, chat: ChatId, id: MessageId) -> Result<Message, ClientError> {
+        let account = self.account()?;
+        let stored = self
+            .shared
+            .store
+            .message(id)?
+            .ok_or(ClientError::NoSuchMessage)?;
+        if stored.chat != chat.0 || !stored.deleted {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let is_dm = !chat.is_main()
+            && self
+                .shared
+                .store
+                .dm_by_chat(chat.0)?
+                .map(|dm| !dm.named)
+                .unwrap_or(false);
+        if !is_dm {
+            return Err(ClientError::NoSuchMessage);
+        }
+        let own_user = UserId::new(account.username, account.server_id);
+        crate::messaging::revealed_message(&self.shared.store, &stored, &own_user)
+            .ok_or(ClientError::NoSuchMessage)
     }
 
     // --- Images (message-content: Image messages; client-runtime: Image
