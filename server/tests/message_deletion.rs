@@ -106,7 +106,13 @@ async fn a_delete_retracts_undelivered_copies_and_is_still_delivered() {
     // The admin deletes it.
     let epoch = w.admin.epoch();
     let carrier = w.admin.message(b"<delete>");
-    let delete = delete_envelope(GROUP_ID, epoch, carrier, w.admin.device_ref(), target_msg_id);
+    let delete = delete_envelope(
+        GROUP_ID,
+        epoch,
+        carrier,
+        w.admin.device_ref(),
+        target_msg_id,
+    );
     let delete_seq = w.admin_stream.accepted(delete).await;
 
     // The online laptop receives the delete over its stored copy
@@ -152,9 +158,12 @@ async fn dm_world() -> World {
     w.laptop.upload_dm_key_packages(&w.conn, 10).await;
     w.phone.upload_dm_key_packages(&w.conn, 10).await;
     let server = server_external_sender(&w.conn).await;
-    let request = w
-        .laptop
-        .create_dm(DM_ID, &server, ("alice@chat", "bob@chat"), w.bob.pb_user_id());
+    let request = w.laptop.create_dm(
+        DM_ID,
+        &server,
+        ("alice@chat", "bob@chat"),
+        w.bob.pb_user_id(),
+    );
     w.conn
         .dms()
         .create_dm(authed(w.laptop.token(), request))

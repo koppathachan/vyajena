@@ -115,6 +115,11 @@ pub(crate) enum Job {
         group_id: Vec<u8>,
         reply: Option<Reply>,
     },
+    /// message-deletion: Deleting media and replies. Purge the one stored blob
+    /// of a deleted media message with `Blobs.DeleteBlob`, after this device's
+    /// own delete was accepted. Best effort: a lost purge leaves the blob its
+    /// 7 days.
+    PurgeBlob { group_id: Vec<u8>, blob_id: Vec<u8> },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -246,6 +251,7 @@ impl Job {
             }
             Job::CloseGroup { group_id, .. } => format!("ng_close|{}", hex(group_id)),
             Job::RemoveClosedDm { group_id, .. } => format!("dm_remove|{}", hex(group_id)),
+            Job::PurgeBlob { group_id, .. } => format!("purge_blob|{}", hex(group_id)),
         }
     }
 
@@ -397,6 +403,12 @@ impl Engine {
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::PurgeBlob { group_id, blob_id } => {
+                if let Err(error) = self.purge_blob(&group_id, &blob_id).await {
+                    tracing::warn!(%error, "could not purge a deleted blob");
                 }
                 Ok(())
             }
@@ -968,6 +980,7 @@ impl Engine {
             | Job::RemoveClosedDm { .. }
             | Job::UploadKeyPackages { .. }
             | Job::RequestReadd { .. }
+            | Job::PurgeBlob { .. }
             | Job::OpenDm { .. } => Ok(Prepared::Nothing),
         }
     }
@@ -1088,6 +1101,24 @@ impl Engine {
             .await
             .map_err(NetError::from)?;
         tracing::info!("closed a named group");
+        Ok(())
+    }
+
+    /// message-deletion: Deleting media and replies. Purges the one stored blob
+    /// of a deleted media message with `Blobs.DeleteBlob`; a no-op on the server
+    /// when the blob already expired or was deleted.
+    async fn purge_blob(&self, group_id: &[u8], blob_id: &[u8]) -> Result<(), ClientError> {
+        let session = self.session().map_err(ClientError::from)?;
+        session
+            .conn()
+            .blobs()
+            .delete_blob(session.request(pb::DeleteBlobRequest {
+                group_id: group_id.to_vec(),
+                blob_id: blob_id.to_vec(),
+            })?)
+            .await
+            .map_err(NetError::from)?;
+        tracing::info!("purged a deleted blob");
         Ok(())
     }
 

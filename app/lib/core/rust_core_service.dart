@@ -188,6 +188,14 @@ class RustCoreService extends CoreService {
   );
 
   @override
+  Future<int> deleteMessage(int chatId, int id) =>
+      _c.deleteMessage(chatId: chatId, id: id);
+
+  @override
+  Future<ChatMessage> reveal(int chatId, int id) =>
+      _c.reveal(chatId: chatId, id: id);
+
+  @override
   Future<List<int>> unseenMentionsIn(int chatId) async => [
     for (final id in await _c.unseenMentionsIn(chatId: chatId)) id.toInt(),
   ];

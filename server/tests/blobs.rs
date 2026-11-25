@@ -733,7 +733,10 @@ async fn an_admin_purges_a_group_blob_and_a_member_cannot() {
 
     // A non-admin member cannot purge it: refused, and the blob is kept.
     let refused = delete(&w, &w.laptop, GROUP_ID, &blob_id(1)).await;
-    assert_eq!(refused.err().map(|s| s.code()), Some(Code::PermissionDenied));
+    assert_eq!(
+        refused.err().map(|s| s.code()),
+        Some(Code::PermissionDenied)
+    );
     assert_eq!(stored(&w.server), vec![hex(&blob_id(1))]);
     download(&w, &w.laptop, GROUP_ID, &blob_id(1))
         .await

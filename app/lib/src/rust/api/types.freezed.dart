@@ -55,13 +55,14 @@ extension ChatBodyPatterns on ChatBody {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Image value)?  image,TResult Function( ChatBody_Audio value)?  audio,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Image value)?  image,TResult Function( ChatBody_Audio value)?  audio,TResult Function( ChatBody_Deleted value)?  deleted,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that);case ChatBody_Image() when image != null:
 return image(_that);case ChatBody_Audio() when audio != null:
-return audio(_that);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that);case ChatBody_Deleted() when deleted != null:
+return deleted(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return orElse();
 
@@ -80,13 +81,14 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Image value)  image,required TResult Function( ChatBody_Audio value)  audio,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Image value)  image,required TResult Function( ChatBody_Audio value)  audio,required TResult Function( ChatBody_Deleted value)  deleted,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text():
 return text(_that);case ChatBody_Image():
 return image(_that);case ChatBody_Audio():
-return audio(_that);case ChatBody_Unsupported():
+return audio(_that);case ChatBody_Deleted():
+return deleted(_that);case ChatBody_Unsupported():
 return unsupported(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -101,13 +103,14 @@ return unsupported(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Image value)?  image,TResult? Function( ChatBody_Audio value)?  audio,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Image value)?  image,TResult? Function( ChatBody_Audio value)?  audio,TResult? Function( ChatBody_Deleted value)?  deleted,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that);case ChatBody_Image() when image != null:
 return image(_that);case ChatBody_Audio() when audio != null:
-return audio(_that);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that);case ChatBody_Deleted() when deleted != null:
+return deleted(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return null;
 
@@ -125,12 +128,13 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function( ImageView image)?  image,TResult Function( AudioView audio)?  audio,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function( ImageView image)?  image,TResult Function( AudioView audio)?  audio,TResult Function( bool byAdmin,  bool revealable)?  deleted,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that.text);case ChatBody_Image() when image != null:
 return image(_that.image);case ChatBody_Audio() when audio != null:
-return audio(_that.audio);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that.audio);case ChatBody_Deleted() when deleted != null:
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return orElse();
 
@@ -149,12 +153,13 @@ return unsupported();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function( ImageView image)  image,required TResult Function( AudioView audio)  audio,required TResult Function()  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function( ImageView image)  image,required TResult Function( AudioView audio)  audio,required TResult Function( bool byAdmin,  bool revealable)  deleted,required TResult Function()  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text():
 return text(_that.text);case ChatBody_Image():
 return image(_that.image);case ChatBody_Audio():
-return audio(_that.audio);case ChatBody_Unsupported():
+return audio(_that.audio);case ChatBody_Deleted():
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported():
 return unsupported();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -169,12 +174,13 @@ return unsupported();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function( ImageView image)?  image,TResult? Function( AudioView audio)?  audio,TResult? Function()?  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function( ImageView image)?  image,TResult? Function( AudioView audio)?  audio,TResult? Function( bool byAdmin,  bool revealable)?  deleted,TResult? Function()?  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that.text);case ChatBody_Image() when image != null:
 return image(_that.image);case ChatBody_Audio() when audio != null:
-return audio(_that.audio);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that.audio);case ChatBody_Deleted() when deleted != null:
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return null;
 
@@ -379,6 +385,79 @@ class _$ChatBody_AudioCopyWithImpl<$Res>
   return _then(ChatBody_Audio(
 audio: null == audio ? _self.audio : audio // ignore: cast_nullable_to_non_nullable
 as AudioView,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ChatBody_Deleted extends ChatBody {
+  const ChatBody_Deleted({required this.byAdmin, required this.revealable}): super._();
+  
+
+/// An admin deleted another user's message in the lobby or a named
+/// group: the tombstone reads "by the admin".
+ final  bool byAdmin;
+/// A DM tombstone whose original this device still holds: the app offers
+/// Reveal (message-deletion: Receiver may reveal in a DM). Always
+/// `false` in the lobby and named groups.
+ final  bool revealable;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ChatBody_DeletedCopyWith<ChatBody_Deleted> get copyWith => _$ChatBody_DeletedCopyWithImpl<ChatBody_Deleted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatBody_Deleted&&(identical(other.byAdmin, byAdmin) || other.byAdmin == byAdmin)&&(identical(other.revealable, revealable) || other.revealable == revealable));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,byAdmin,revealable);
+
+@override
+String toString() {
+  return 'ChatBody.deleted(byAdmin: $byAdmin, revealable: $revealable)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ChatBody_DeletedCopyWith<$Res> implements $ChatBodyCopyWith<$Res> {
+  factory $ChatBody_DeletedCopyWith(ChatBody_Deleted value, $Res Function(ChatBody_Deleted) _then) = _$ChatBody_DeletedCopyWithImpl;
+@useResult
+$Res call({
+ bool byAdmin, bool revealable
+});
+
+
+
+
+}
+/// @nodoc
+class _$ChatBody_DeletedCopyWithImpl<$Res>
+    implements $ChatBody_DeletedCopyWith<$Res> {
+  _$ChatBody_DeletedCopyWithImpl(this._self, this._then);
+
+  final ChatBody_Deleted _self;
+  final $Res Function(ChatBody_Deleted) _then;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? byAdmin = null,Object? revealable = null,}) {
+  return _then(ChatBody_Deleted(
+byAdmin: null == byAdmin ? _self.byAdmin : byAdmin // ignore: cast_nullable_to_non_nullable
+as bool,revealable: null == revealable ? _self.revealable : revealable // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 

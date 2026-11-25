@@ -28,6 +28,10 @@ ChatPreview previewOf(ChatMessage message, {String? from}) {
       '${lead}Voice message',
       icon: Icons.mic_none,
     ),
+    ChatBody_Deleted() => ChatPreview(
+      '${lead}This message was deleted',
+      icon: Icons.block,
+    ),
     ChatBody_Unsupported() => ChatPreview('${lead}Unsupported message'),
   };
 }
