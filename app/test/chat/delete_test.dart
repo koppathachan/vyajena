@@ -26,6 +26,7 @@ ChatSummary dmWithBob() => const ChatSummary(
   kind: ChatKindInfo.dm(peer: bob, waiting: false, closed: false),
   unread: 0,
   unseenMentions: 0,
+  muted: false,
 );
 
 Finder tile(String text) =>
