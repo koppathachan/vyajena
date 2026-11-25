@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 
 import '../app/names.dart';
 import '../core/core_service.dart';
+import 'sticker_plugins.dart';
 
 /// How many messages the chat shows.
 const historyLimit = 500;
@@ -690,6 +691,20 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Sends a subject cutout as a sticker (app-ui: Create a sticker); returns
+  /// once the core stored it. The core encodes the RGBA to a transparent WebP
+  /// and sends it down the image path.
+  Future<void> sendSticker(Cutout cutout) async {
+    _lastId = await core.sendSticker(
+      cutout.pixels,
+      source: cutout.source,
+      width: cutout.width,
+      height: cutout.height,
+      chatId: chatId,
+    );
+    await _reload();
+  }
+
   /// Deletes the message [id] in this chat for everyone (message-deletion:
   /// Who may delete). Throws if this device may not delete it; the tombstone
   /// arrives as a message event.
@@ -701,6 +716,7 @@ class ChatModel extends ChangeNotifier {
   /// The original of the deleted DM message [id], if this device still holds it
   /// (message-deletion: Receiver may reveal in a DM).
   Future<ChatMessage> reveal(int id) => core.reveal(chatId, id);
+
 
   /// Sends the recording [wav] as a voice message (app-ui: Record a voice
   /// message); returns once the core stored it.

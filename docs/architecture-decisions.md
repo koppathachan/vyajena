@@ -303,6 +303,59 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 - Server ids are `user@<server>` from day one, so federation can be added later. A device id is the first 16 bytes of SHA-256 of its auth public key.
 - Every message passes through the Rust core; Flutter never opens a connection (checked by an import scan of `app/lib/`).
 
+## Photo stickers
+
+A sticker is a picture with its subject cut out of the background — a
+transparent-background image. It reuses the image path whole: a sticker is sent
+as an ordinary `Image` body (a WebP that keeps its alpha channel), so the wire,
+the server, the relay and old clients are untouched. There is no new `Content`
+body, no new RPC and no proto change — a client that knows nothing of stickers
+renders one as a plain transparent image.
+
+The cutout is produced **on the device by the platform's own segmentation** —
+iOS Vision (`VNGenerateForegroundInstanceMaskRequest`, iOS 17+) and Android ML
+Kit Subject Segmentation. The photo never leaves the device, and the app bundles
+no segmentation model of its own (so there is no licence or attribution burden);
+the native code only produces a mask, never encodes or uploads.
+
+One seam keeps the engine swappable: a `SegmentationSource`
+(`protocol::photo_sticker`) names who made a cutout (MVP: `IosVision`,
+`AndroidMlKit`; reserved for later: `Server`, `OnnxLocal`) and pins one data
+shape — a straight-alpha, 8-bit-per-channel **RGBA** image (sRGB, R,G,B,A byte
+order, row stride width×4, orientation applied), background fully transparent.
+Nothing else crosses the seam: not a mask-only buffer, not an encoded image.
+
+**Styling and encoding stay in the shared Rust core.** Whatever engine made the
+mask, the core does the same work — trim the transparent margins, downscale the
+long edge to `MAX_IMAGE_EDGE`, encode WebP preserving the alpha within
+`MAX_IMAGE_BYTES`, compute the ThumbHash — then runs the unchanged image blob
+crypto and upload-then-`APPLICATION` send order. The per-blob key never leaves
+the core. Because the ThumbHash of a cutout carries its transparency, the
+receiver renders any transparent image without an opaque bubble fill, so the
+cutout reads against the chat.
+
+```mermaid
+flowchart LR
+  pick["Pick a photo"] --> seg
+  subgraph native["Native SegmentationSource (MVP)"]
+    seg["iOS Vision / Android ML Kit<br/>subject mask → RGBA cutout"]
+  end
+  seg -->|"RGBA contract<br/>(straight alpha, sRGB)"| core["Rust core (shared):<br/>trim, downscale,<br/>WebP+alpha, ThumbHash"]
+  core --> enc["Image blob crypto<br/>(fresh key, blob_id)"]
+  enc --> up["Blobs.UploadBlob"]
+  up --> app["APPLICATION: Content{Image}<br/>(transparent WebP)"]
+  server["Future: consented Server source"] -. "same RGBA contract" .-> core
+  onnx["Future: on-device ONNX/BiRefNet"] -. "same RGBA contract" .-> core
+```
+
+Future work behind the same seam (no wire change needed for the first two): a
+consented server segmentation path (`SegmentationSource::Server`), an on-device
+ONNX/BiRefNet model (`SegmentationSource::OnnxLocal`) for platforms without a
+good native API, and richer styling (outline, shadow) in the one Rust encode
+step. A true bubble-less, larger sticker that the receiver tells apart from a
+transparent photo would need a wire hint (an `is_sticker` flag), so it is
+deferred.
+
 ## Future
 
 Nothing here is built in the MVP, but the protocol leaves room for each.

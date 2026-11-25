@@ -209,6 +209,10 @@ enum BackgroundTask {
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
     BackgroundTask.channel = background
     background.setMethodCallHandler(BackgroundTask.handle)
+    let sticker = FlutterMethodChannel(
+      name: Sticker.channelName,
+      binaryMessenger: engineBridge.applicationRegistrar.messenger())
+    sticker.setMethodCallHandler(Sticker.handle)
     let video = FlutterMethodChannel(
       name: VideoNormalize.channelName,
       binaryMessenger: engineBridge.applicationRegistrar.messenger())

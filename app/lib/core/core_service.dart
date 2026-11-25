@@ -269,6 +269,30 @@ abstract class CoreService {
   /// the new message's local id.
   Future<int> resendImage(int id);
 
+  // --- Stickers (photo-sticker: Sticker is an image; app-ui: Create a
+  // sticker). A sticker is a transparent-background image. The native plugin
+  // cuts the subject out on the device and hands the app the RGBA; the core
+  // trims it, encodes WebP-with-alpha and sends it down the image path. The app
+  // never encodes, encrypts or uploads. ---
+
+  /// Sends a subject cutout as a sticker to chat [chatId]; returns its local
+  /// id. [rgba] is the straight-alpha RGBA the platform segmentation produced
+  /// ([width]×[height]×4, R,G,B,A); [source] names which engine made it. Like
+  /// an image it is queued at once, connected or not. A sticker has no caption.
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  });
+
+  /// Whether a ThumbHash encodes a transparent image: the app renders such an
+  /// image — a sticker — without an opaque bubble fill so its transparency
+  /// reads (photo-sticker: Sticker is an image). Decoded by the core; false
+  /// for bytes that are not a ThumbHash.
+  bool thumbhashIsTransparent(Uint8List thumbhash);
+
   // --- Voice messages (message-content: Audio messages; app-ui: Record a voice
   // message, Play a voice message). The core makes the OGG/Opus, encrypts it,
   // uploads it and decrypts what comes back: the app only passes the
