@@ -72,6 +72,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final _list = GlobalKey();
   final Map<int, GlobalKey> _tiles = {};
+  /// Deleted DM messages the user revealed, shown in place (message-deletion:
+  /// Receiver may reveal in a DM).
+  final Map<int, ChatMessage> _revealed = {};
   ReplyDraft? _reply;
 
   /// The chat's one voice player: one clip plays at a time, and it stops when
@@ -279,6 +282,15 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _deleteMessage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.deleteMessage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
   /// Picks a source (record or gallery), normalizes the clip through the native
   /// plugin and sends it (app-ui: Send a video). Owned here so the composer
   /// stays free of the camera, picker and plugin.
@@ -323,6 +335,28 @@ class _ChatScreenState extends State<ChatScreen> {
         frameWidth: clip.frameWidth,
         frameHeight: clip.frameHeight,
       );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Whether this device may delete [message] (message-deletion: Who may
+  /// delete): an admin in the lobby or a named group (`isGroup`), or the user's
+  /// own message in a DM. Never a tombstone, and never once this device is
+  /// removed.
+  bool _canDelete(ChatMessage message, bool isGroup) {
+    if (widget.core.removed.value || message.body is ChatBody_Deleted) {
+      return false;
+    }
+    return isGroup ? widget.admin : message.ownUser;
+  }
+
+  /// Reveals the original of a DM tombstone and shows it in place.
+  Future<void> _reveal(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final original = await _model.reveal(message.id);
+      if (mounted) setState(() => _revealed[message.id] = original);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }
@@ -595,6 +629,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
+                                  onDelete:
+                                      _canDelete(message, peer == null)
+                                      ? () => _deleteMessage(message)
+                                      : null,
+                                  onReveal: message.body is ChatBody_Deleted
+                                      ? () => _reveal(message)
+                                      : null,
+                                  revealed: _revealed[message.id],
                                   onQuoteTap: switch (message.reply) {
                                     final ReplyQuote r => () => _openOriginal(
                                       r,

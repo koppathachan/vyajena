@@ -139,6 +139,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
             duration_ms: reply.duration_ms,
             thumbhash: reply.thumbhash,
             original_id: reply.original.map(|id| id.0),
+            original_deleted: reply.original_deleted,
         }),
         body: match message.body {
             MessageBody::Text(text) => ChatBody::Text { text },
@@ -191,6 +192,13 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                     }),
                 }
             }
+            MessageBody::Deleted {
+                by_admin,
+                revealable,
+            } => ChatBody::Deleted {
+                by_admin,
+                revealable,
+            },
             _ => ChatBody::Unsupported,
         },
         sent_at_ms: message.sent_at.map(millis),

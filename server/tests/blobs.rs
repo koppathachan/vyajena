@@ -113,6 +113,25 @@ async fn ack(
         .map(|response| response.into_inner())
 }
 
+async fn delete(
+    w: &World,
+    who: &TestDevice,
+    group: &[u8],
+    id: &[u8],
+) -> Result<pb::DeleteBlobResponse, tonic::Status> {
+    w.conn
+        .blobs()
+        .delete_blob(authed(
+            who.token(),
+            pb::DeleteBlobRequest {
+                group_id: group.to_vec(),
+                blob_id: id.to_vec(),
+            },
+        ))
+        .await
+        .map(|response| response.into_inner())
+}
+
 /// The names of the files in the blob directory (probe and temp files aside).
 fn stored(server: &TestServer) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(server.blob_dir())
@@ -747,4 +766,38 @@ async fn a_request_far_over_the_cap_is_refused_before_the_handler() {
         "{code:?}"
     );
     assert!(stored(&w.server).is_empty(), "nothing was stored");
+}
+
+// spec: blob-store/delete-a-blob
+#[tokio::test]
+async fn an_admin_purges_a_group_blob_and_a_member_cannot() {
+    let w = filesystem().await;
+    // Alice's laptop (a non-admin member) uploads a blob.
+    upload(&w, &w.laptop, GROUP_ID, &blob_id(1), &ciphertext(1000))
+        .await
+        .check("UploadBlob");
+
+    // A non-admin member cannot purge it: refused, and the blob is kept.
+    let refused = delete(&w, &w.laptop, GROUP_ID, &blob_id(1)).await;
+    assert_eq!(
+        refused.err().map(|s| s.code()),
+        Some(Code::PermissionDenied)
+    );
+    assert_eq!(stored(&w.server), vec![hex(&blob_id(1))]);
+    download(&w, &w.laptop, GROUP_ID, &blob_id(1))
+        .await
+        .check("still downloadable");
+
+    // The admin purges it at once; a later download answers NOT_FOUND.
+    delete(&w, &w.admin, GROUP_ID, &blob_id(1))
+        .await
+        .check("admin DeleteBlob");
+    assert!(stored(&w.server).is_empty(), "the blob is gone");
+    let gone = download(&w, &w.laptop, GROUP_ID, &blob_id(1)).await;
+    assert_eq!(gone.err().map(|s| s.code()), Some(Code::NotFound));
+
+    // A purge of an absent blob succeeds as a no-op.
+    delete(&w, &w.admin, GROUP_ID, &blob_id(9))
+        .await
+        .check("no-op DeleteBlob on an absent blob");
 }

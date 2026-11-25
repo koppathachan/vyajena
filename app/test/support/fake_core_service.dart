@@ -431,6 +431,59 @@ class FakeCoreService extends CoreService {
     return null;
   }
 
+  /// Whether a [deleteMessage] marks the tombstone "by the admin"; tests set it
+  /// for an admin deleting another user's message in a group.
+  bool deleteByAdmin = false;
+
+  /// Originals kept so a DM [reveal] can return them.
+  final Map<int, ChatMessage> revealable = {};
+
+  @override
+  Future<int> deleteMessage(int chatId, int id) async {
+    _call('deleteMessage', (chatId: chatId, id: id));
+    final index = messages.indexWhere((m) => m.id == id);
+    if (index == -1) {
+      throw const CoreError(
+        kind: CoreErrorKind.noSuchMessage,
+        message: 'no such message',
+      );
+    }
+    final original = messages[index];
+    // A DM (a non-main chat in the tests) keeps the original for Reveal.
+    final isDm = chatId != 0;
+    if (isDm) revealable[id] = original;
+    messages[index] = ChatMessage(
+      id: original.id,
+      chatId: original.chatId,
+      sender: original.sender,
+      senderDevice: original.senderDevice,
+      outgoing: original.outgoing,
+      ownUser: original.ownUser,
+      body: ChatBody.deleted(byAdmin: deleteByAdmin, revealable: isDm),
+      mentions: const [],
+      mentionsMe: false,
+      reply: null,
+      sentAtMs: original.sentAtMs,
+      acceptedAtMs: original.acceptedAtMs,
+      status: original.status,
+    );
+    emit(CoreEvent.message(message: messages[index]));
+    return _newId();
+  }
+
+  @override
+  Future<ChatMessage> reveal(int chatId, int id) async {
+    _call('reveal', (chatId: chatId, id: id));
+    final original = revealable[id];
+    if (original == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.noSuchMessage,
+        message: 'no such message',
+      );
+    }
+    return original;
+  }
+
   @override
   Future<int> sendText(String text) async {
     _call('sendText', text);
@@ -465,6 +518,7 @@ class FakeCoreService extends CoreService {
         durationMs: body is ChatBody_Audio ? body.audio.durationMs : 0,
         thumbhash: body is ChatBody_Image ? body.image.thumbhash : Uint8List(0),
         originalId: original.id,
+        originalDeleted: body is ChatBody_Deleted,
       );
     }
     return _storeOwn(text, mentions, reply, 0);
@@ -608,6 +662,7 @@ class FakeCoreService extends CoreService {
               ? body.image.thumbhash
               : Uint8List(0),
           originalId: original.id,
+          originalDeleted: body is ChatBody_Deleted,
         );
       }
     }

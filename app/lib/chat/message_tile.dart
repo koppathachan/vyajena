@@ -63,6 +63,24 @@ const resendVideoLabel = 'Resend video';
 /// What a reply to a video quotes.
 const videoQuote = 'Video';
 
+/// What the long-press sheet's Delete entry says (message-deletion).
+const deleteLabel = 'Delete';
+
+/// The tombstone of a deleted message (message-deletion: Tombstone, not
+/// erasure).
+const deletedText = 'This message was deleted';
+
+/// The tombstone of a message an admin deleted in a group.
+const deletedByAdminText = 'This message was deleted by the admin';
+
+/// What a reply to a deleted message quotes (message-deletion: Deleting media
+/// and replies).
+const deletedQuote = 'deleted message';
+
+/// What the Reveal affordance on a DM tombstone says (message-deletion:
+/// Receiver may reveal in a DM).
+const revealLabel = 'Reveal';
+
 /// One message row.
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -78,6 +96,9 @@ class MessageTile extends StatelessWidget {
     this.onResendImage,
     this.onResendAudio,
     this.onResendVideo,
+    this.onDelete,
+    this.onReveal,
+    this.revealed,
     this.playback,
     this.showSender = true,
   });
@@ -119,6 +140,20 @@ class MessageTile extends StatelessWidget {
 
   /// Resends an own video as a new message (long-press → "Resend video").
   final VoidCallback? onResendVideo;
+
+  /// Deletes this message (long-press → Delete), when this device may: an admin
+  /// device in the lobby or a named group (any message), or the user's own
+  /// message in a DM. The sheet shows Delete only when this is set
+  /// (message-deletion: Who may delete).
+  final VoidCallback? onDelete;
+
+  /// Reveals the original of a DM tombstone this device still holds (the Reveal
+  /// affordance; message-deletion: Receiver may reveal in a DM).
+  final VoidCallback? onReveal;
+
+  /// The revealed original of a deleted message, once the user tapped Reveal:
+  /// its body is shown in place of the tombstone.
+  final ChatMessage? revealed;
 
   /// The chat's one player, which a voice message plays through.
   final VoicePlayback? playback;
@@ -172,6 +207,13 @@ class MessageTile extends StatelessWidget {
                 title: const Text(resendVideoLabel),
                 onTap: () => Navigator.of(context).pop('resend-video'),
               ),
+            if (onDelete != null)
+              ListTile(
+                key: const Key('delete'),
+                leading: const Icon(Icons.delete_outline),
+                title: const Text(deleteLabel),
+                onTap: () => Navigator.of(context).pop('delete'),
+              ),
           ],
         ),
       ),
@@ -185,6 +227,8 @@ class MessageTile extends StatelessWidget {
         resendVoice?.call();
       case 'resend-video':
         resendVideo?.call();
+      case 'delete':
+        onDelete?.call();
     }
   }
 
@@ -200,6 +244,41 @@ class MessageTile extends StatelessWidget {
       );
     }
     return _withMentions(context, text);
+  }
+
+  /// A tombstone for a deleted message (message-deletion: Tombstone, not
+  /// erasure): the italic "This message was deleted" (with "by the admin" for a
+  /// moderator delete), and in a DM, when this device still holds the original,
+  /// a Reveal affordance (Receiver may reveal in a DM).
+  Widget _tombstone(BuildContext context, bool byAdmin, bool revealable) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = Text(
+      byAdmin ? deletedByAdminText : deletedText,
+      style: TextStyle(
+        fontStyle: FontStyle.italic,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+    if (!revealable || onReveal == null) {
+      return label;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        label,
+        TextButton(
+          key: const Key('reveal'),
+          onPressed: onReveal,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(revealLabel),
+        ),
+      ],
+    );
   }
 
   /// [text] with this message's mentions and its links drawn in it.
@@ -296,6 +375,14 @@ class MessageTile extends StatelessWidget {
     final style = Theme.of(
       context,
     ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
+    // message-deletion: Deleting media and replies. A reply to a message this
+    // device knows was deleted quotes "deleted message", not the stale snapshot.
+    if (reply.originalDeleted) {
+      return Text(
+        deletedQuote,
+        style: style?.copyWith(fontStyle: FontStyle.italic),
+      );
+    }
     switch (reply.kind) {
       case ReplyKind.audio:
         final length = clipLengthText(Duration(milliseconds: reply.durationMs));
@@ -355,11 +442,20 @@ class MessageTile extends StatelessWidget {
     final own = message.ownUser;
     final status = message.outgoing ? message.status : null;
     final sentMs = (message.sentAtMs ?? message.acceptedAtMs)?.toInt();
-    final textBody = switch (message.body) {
+    // A revealed tombstone shows the original body in place of the tombstone.
+    final displayBody = message.body is ChatBody_Deleted && revealed != null
+        ? revealed!.body
+        : message.body;
+    final textBody = switch (displayBody) {
       ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Audio(:final audio) => _audio(context, audio),
       ChatBody_Video(:final video) => _video(context, video),
+      ChatBody_Deleted(:final byAdmin, :final revealable) => _tombstone(
+        context,
+        byAdmin,
+        revealable,
+      ),
       ChatBody_Unsupported() => Text(
         unsupportedText,
         style: TextStyle(

@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1884510766;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1787270778;
 
 // Section: executor
 
@@ -996,6 +996,61 @@ fn wire__crate__api__core__Core_create_named_group_impl(
                     })()
                     .await,
                 )
+            }
+        },
+    )
+}
+fn wire__crate__api__core__Core_delete_message_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_delete_message",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            let api_chat_id = <i64>::sse_decode(&mut deserializer);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::core::Core::delete_message(
+                        &*api_that_guard,
+                        api_chat_id,
+                        api_id,
+                    )?;
+                    Ok(output_ok)
+                })())
             }
         },
     )
@@ -2859,6 +2914,58 @@ fn wire__crate__api__core__Core_resend_video_impl(
         },
     )
 }
+fn wire__crate__api__core__Core_reveal_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_reveal",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            let api_chat_id = <i64>::sse_decode(&mut deserializer);
+            let api_id = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok =
+                        crate::api::core::Core::reveal(&*api_that_guard, api_chat_id, api_id)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__core__Core_revoke_device_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -4157,6 +4264,14 @@ impl SseDecode for crate::api::types::ChatBody {
                 return crate::api::types::ChatBody::Video { video: var_video };
             }
             4 => {
+                let mut var_byAdmin = <bool>::sse_decode(deserializer);
+                let mut var_revealable = <bool>::sse_decode(deserializer);
+                return crate::api::types::ChatBody::Deleted {
+                    by_admin: var_byAdmin,
+                    revealable: var_revealable,
+                };
+            }
+            5 => {
                 return crate::api::types::ChatBody::Unsupported;
             }
             _ => {
@@ -4811,6 +4926,7 @@ impl SseDecode for crate::api::types::ReplyQuote {
         let mut var_durationMs = <u32>::sse_decode(deserializer);
         let mut var_thumbhash = <Vec<u8>>::sse_decode(deserializer);
         let mut var_originalId = <Option<i64>>::sse_decode(deserializer);
+        let mut var_originalDeleted = <bool>::sse_decode(deserializer);
         return crate::api::types::ReplyQuote {
             to: var_to,
             quote: var_quote,
@@ -4818,6 +4934,7 @@ impl SseDecode for crate::api::types::ReplyQuote {
             duration_ms: var_durationMs,
             thumbhash: var_thumbhash,
             original_id: var_originalId,
+            original_deleted: var_originalDeleted,
         };
     }
 }
@@ -4947,76 +5064,78 @@ fn pde_ffi_dispatcher_primary_impl(
         17 => {
             wire__crate__api__core__Core_create_named_group_impl(port, ptr, rust_vec_len, data_len)
         }
-        18 => wire__crate__api__core__Core_device_id_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__core__Core_display_name_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__core__Core_dms_available_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__core__Core_download_audio_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__core__Core_download_image_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__core__Core_download_video_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__core__Core_epoch_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__core__Core_events_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__core__Core_group_members_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__core__Core_has_unsent_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__core__Core_history_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__core__Core_history_in_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__core__Core_identity_retrust_pending_impl(
+        18 => wire__crate__api__core__Core_delete_message_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__core__Core_device_id_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__core__Core_display_name_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__core__Core_dms_available_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__core__Core_download_audio_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__core__Core_download_image_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__core__Core_download_video_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__core__Core_epoch_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__core__Core_events_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__core__Core_group_members_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__core__Core_has_unsent_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__core__Core_history_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__core__Core_history_in_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__core__Core_identity_retrust_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        31 => wire__crate__api__core__Core_is_admin_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__core__Core_is_connected_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__core__Core_link_request_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__core__Core_list_invites_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__core__Core_mark_chat_read_impl(port, ptr, rust_vec_len, data_len),
-        36 => {
+        32 => wire__crate__api__core__Core_is_admin_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__core__Core_is_connected_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__core__Core_link_request_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__core__Core_list_invites_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__core__Core_mark_chat_read_impl(port, ptr, rust_vec_len, data_len),
+        37 => {
             wire__crate__api__core__Core_mark_mention_seen_impl(port, ptr, rust_vec_len, data_len)
         }
-        37 => wire__crate__api__core__Core_members_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__core__Core_message_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__core__Core_named_groups_available_impl(
+        38 => wire__crate__api__core__Core_members_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__core__Core_message_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__core__Core_named_groups_available_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        40 => wire__crate__api__core__Core_open_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__core__Core_open_dm_impl(port, ptr, rust_vec_len, data_len),
-        42 => wire__crate__api__core__Core_profile_impl(port, ptr, rust_vec_len, data_len),
-        43 => wire__crate__api__core__Core_reconnect_now_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__core__Core_remove_closed_dm_impl(port, ptr, rust_vec_len, data_len),
-        46 => {
+        41 => wire__crate__api__core__Core_open_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__core__Core_open_dm_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__core__Core_profile_impl(port, ptr, rust_vec_len, data_len),
+        44 => wire__crate__api__core__Core_reconnect_now_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__core__Core_remove_closed_dm_impl(port, ptr, rust_vec_len, data_len),
+        47 => {
             wire__crate__api__core__Core_remove_from_group_impl(port, ptr, rust_vec_len, data_len)
         }
-        47 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__core__Core_rename_group_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__core__Core_request_resync_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__core__Core_resend_video_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__core__Core_send_video_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__core__Core_send_video_in_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
-        69 => {
+        48 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__core__Core_rename_group_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__core__Core_request_resync_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__core__Core_resend_video_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__core__Core_reveal_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__core__Core_send_video_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__core__Core_send_video_in_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
+        71 => {
             wire__crate__api__core__Core_unseen_mentions_in_impl(port, ptr, rust_vec_len, data_len)
         }
-        70 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5029,9 +5148,9 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        71 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -5089,7 +5208,16 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::ChatBody {
             crate::api::types::ChatBody::Video { video } => {
                 [3.into_dart(), video.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::ChatBody::Unsupported => [4.into_dart()].into_dart(),
+            crate::api::types::ChatBody::Deleted {
+                by_admin,
+                revealable,
+            } => [
+                4.into_dart(),
+                by_admin.into_into_dart().into_dart(),
+                revealable.into_into_dart().into_dart(),
+            ]
+            .into_dart(),
+            crate::api::types::ChatBody::Unsupported => [5.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -5643,6 +5771,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::ReplyQuote {
             self.duration_ms.into_into_dart().into_dart(),
             self.thumbhash.into_into_dart().into_dart(),
             self.original_id.into_into_dart().into_dart(),
+            self.original_deleted.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -5818,8 +5947,16 @@ impl SseEncode for crate::api::types::ChatBody {
                 <i32>::sse_encode(3, serializer);
                 <Box<crate::api::types::VideoView>>::sse_encode(video, serializer);
             }
-            crate::api::types::ChatBody::Unsupported => {
+            crate::api::types::ChatBody::Deleted {
+                by_admin,
+                revealable,
+            } => {
                 <i32>::sse_encode(4, serializer);
+                <bool>::sse_encode(by_admin, serializer);
+                <bool>::sse_encode(revealable, serializer);
+            }
+            crate::api::types::ChatBody::Unsupported => {
+                <i32>::sse_encode(5, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -6395,6 +6532,7 @@ impl SseEncode for crate::api::types::ReplyQuote {
         <u32>::sse_encode(self.duration_ms, serializer);
         <Vec<u8>>::sse_encode(self.thumbhash, serializer);
         <Option<i64>>::sse_encode(self.original_id, serializer);
+        <bool>::sse_encode(self.original_deleted, serializer);
     }
 }
 
