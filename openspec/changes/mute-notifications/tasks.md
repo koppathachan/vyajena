@@ -40,6 +40,6 @@
 
 ## 6. Check
 
-- [ ] 6.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
+- [x] 6.1 `cargo test --workspace`, clippy, fmt, `buf lint`, `buf breaking`,
       `flutter analyze`, `flutter test`, `openspec validate mute-notifications
       --strict`; manual QA on the iOS simulator and the Android emulator

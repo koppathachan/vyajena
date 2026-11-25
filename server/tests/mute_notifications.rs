@@ -108,7 +108,7 @@ async fn whole_app_mute_rides_the_same_snapshot() {
 // spec: notification-prefs/mute-preference-sync
 #[tokio::test]
 async fn only_the_users_own_set_is_sent_and_it_holds_ids_and_a_flag_only() {
-    let w = world().await;
+    let mut w = world().await;
     set_mute(&w, &w.laptop, pb::MuteScope::Conversation, GROUP_ID, true)
         .await
         .check("SetMutePref");
@@ -142,7 +142,7 @@ async fn only_the_users_own_set_is_sent_and_it_holds_ids_and_a_flag_only() {
 // spec: notification-prefs/mute-preference-sync
 #[tokio::test]
 async fn muting_twice_is_idempotent() {
-    let mut w = world().await;
+    let w = world().await;
     for _ in 0..2 {
         set_mute(&w, &w.laptop, pb::MuteScope::Conversation, GROUP_ID, true)
             .await

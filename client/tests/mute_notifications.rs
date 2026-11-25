@@ -10,7 +10,7 @@ mod support;
 
 use client::{ChatId, Event, MuteTarget};
 use support::Check;
-use support::device::{self, Device, member, user};
+use support::device::{self, Device, member};
 use support::server::TestServer;
 
 /// The admin, Alice and Bob, all in the group and seeing each other.
