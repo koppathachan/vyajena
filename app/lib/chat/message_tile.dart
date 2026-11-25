@@ -342,23 +342,7 @@ class MessageTile extends StatelessWidget {
     // it is given (an Align, say) would stretch the bubble across the
     // screen (design D1).
     final content = own
-        ? Wrap(
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            spacing: 8,
-            children: [
-              body,
-              if (status != null)
-                Text(
-                  statusText(status),
-                  style: text.labelSmall?.copyWith(
-                    color: status is SendState_Failed
-                        ? scheme.error
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
-          )
+        ? body
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -395,17 +379,43 @@ class MessageTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   content,
-                  if (sentMs != null) ...[
+                  if (sentMs != null || status != null) ...[
                     const SizedBox(height: 2),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        clockText(context, sentMs),
-                        key: ValueKey('time-${message.id}'),
-                        style: text.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                    // The time and the delivery tick sit on one right-aligned
+                    // line below the body. A MainAxisSize.max Row forwards its
+                    // intrinsic width, so the bubble widens to keep both on the
+                    // line; the status is Flexible so a long failure reason
+                    // wraps rather than overflowing the bubble.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (sentMs != null)
+                          Text(
+                            clockText(context, sentMs),
+                            key: ValueKey('time-${message.id}'),
+                            style: text.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        if (sentMs != null && status != null)
+                          const SizedBox(width: 6),
+                        if (status != null)
+                          Flexible(
+                            child: Text(
+                              statusText(status),
+                              style: text.labelSmall?.copyWith(
+                                color: status is SendState_Failed
+                                    ? scheme.error
+                                    : scheme.onSurfaceVariant.withValues(
+                                        alpha: 0.6,
+                                      ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ],
