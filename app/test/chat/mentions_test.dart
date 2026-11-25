@@ -372,6 +372,7 @@ void main() {
         durationMs: 0,
         thumbhash: Uint8List(0),
         originalId: original.id,
+        originalDeleted: false,
       ),
       emitEvent: false,
     );
@@ -404,6 +405,7 @@ void main() {
         kind: ReplyKind.text,
         durationMs: 0,
         thumbhash: Uint8List(0),
+        originalDeleted: false,
       ),
     );
     await settle(tester);

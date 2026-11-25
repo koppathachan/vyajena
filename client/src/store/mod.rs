@@ -34,6 +34,7 @@ mod identity_keys;
 mod media;
 mod messages;
 mod migrations;
+mod prefs;
 
 pub use content_state::ProfileRow;
 pub use device_state::{AccountRow, GroupRow, OutgoingCommitRow};

@@ -137,11 +137,38 @@ pub(crate) fn has_backlog(conn: &Connection, device_id: &DeviceId) -> Result<boo
     )?)
 }
 
-/// Every device that still has an undelivered queued entry, of any kind
-/// (notification-reliability: Sweep catch-up wake ping).
+/// Whether `device_id` has any undelivered `APPLICATION` entry, across all
+/// groups (push-kind-aware: Only an application backlog alerts an offline
+/// device). A device whose only backlog is control envelopes
+/// (`COMMIT`/`WELCOME`/`PROPOSAL`) has no user-facing new message, so it is
+/// never woken by a push; it syncs on its next reconnect.
+pub(crate) fn has_application_backlog(
+    conn: &Connection,
+    device_id: &DeviceId,
+) -> Result<bool, StoreError> {
+    Ok(conn.query_row(
+        "SELECT EXISTS (
+             SELECT 1 FROM deliveries d JOIN envelopes e ON e.server_seq = d.server_seq
+             WHERE d.device_id = ?1 AND e.kind = ?2)",
+        params![device_id.as_slice(), Kind::Application as i32],
+        |row| row.get::<_, bool>(0),
+    )?)
+}
+
+/// Every device that still has an undelivered `APPLICATION` entry
+/// (notification-reliability: Sweep catch-up wake ping; push-kind-aware: Only
+/// an application backlog alerts an offline device). A control-only backlog
+/// (`COMMIT`/`WELCOME`/`PROPOSAL`) is excluded, so the sweep never fires a wake
+/// ping — nor spends the catch-up budget — for a device with no new message.
 pub(crate) fn backlogged_devices(conn: &Connection) -> Result<Vec<DeviceId>, StoreError> {
-    let mut stmt = conn.prepare("SELECT DISTINCT device_id FROM deliveries")?;
-    let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT d.device_id FROM deliveries d
+         JOIN envelopes e ON e.server_seq = d.server_seq
+         WHERE e.kind = ?1",
+    )?;
+    let rows = stmt.query_map(params![Kind::Application as i32], |row| {
+        row.get::<_, Vec<u8>>(0)
+    })?;
     let mut out = Vec::new();
     for row in rows {
         if let Some(id) = crate::store::records::device_id_from(&row?) {
@@ -232,6 +259,35 @@ pub(crate) fn ack(
     conn.execute(
         "DELETE FROM envelopes WHERE server_seq <= ?1
            AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.server_seq = envelopes.server_seq)",
+        params![seq],
+    )?;
+    Ok(())
+}
+
+/// message-deletion: Deletion retracts undelivered copies. Drops the still-queued
+/// `APPLICATION` copies of the target message `(target_sender, target_msg_id)`
+/// for every device that has not yet acked them — the delivery rows left for the
+/// target's `server_seq` — and then removes the envelope if nobody needs it any
+/// more. A device that already acked (or is the sender) has no such row and is
+/// untouched; a target that expired or never existed has no dedup record, so
+/// this is a safe no-op (design D4, spike S1). The target's `server_seq` comes
+/// from the dedup table, so it is found even after the queue entries expired.
+pub(crate) fn retract_undelivered(
+    conn: &Connection,
+    target_sender: &DeviceId,
+    target_msg_id: &[u8],
+) -> Result<(), StoreError> {
+    let Some(target) = dedup_lookup(conn, target_sender, target_msg_id)? else {
+        return Ok(());
+    };
+    let seq = i64_of(target.server_seq);
+    conn.execute(
+        "DELETE FROM deliveries WHERE server_seq = ?1 AND welcome = 0",
+        params![seq],
+    )?;
+    conn.execute(
+        "DELETE FROM envelopes WHERE server_seq = ?1
+           AND NOT EXISTS (SELECT 1 FROM deliveries d WHERE d.server_seq = ?1)",
         params![seq],
     )?;
     Ok(())
@@ -335,6 +391,10 @@ pub(crate) fn pending(
                 kind,
                 ciphertext,
                 welcome: None,
+                // The retract target travels in server-visible plaintext only
+                // inbound; clients honour the encrypted `Content.Delete`, so
+                // delivered envelopes carry no `deletes`.
+                deletes: None,
                 sender,
                 server_seq: seq,
                 accepted_at: Some(to_timestamp(from_unix_millis(at))),

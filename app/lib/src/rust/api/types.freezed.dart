@@ -55,13 +55,15 @@ extension ChatBodyPatterns on ChatBody {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Image value)?  image,TResult Function( ChatBody_Audio value)?  audio,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ChatBody_Text value)?  text,TResult Function( ChatBody_Image value)?  image,TResult Function( ChatBody_Audio value)?  audio,TResult Function( ChatBody_Video value)?  video,TResult Function( ChatBody_Deleted value)?  deleted,TResult Function( ChatBody_Unsupported value)?  unsupported,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that);case ChatBody_Image() when image != null:
 return image(_that);case ChatBody_Audio() when audio != null:
-return audio(_that);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that);case ChatBody_Video() when video != null:
+return video(_that);case ChatBody_Deleted() when deleted != null:
+return deleted(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return orElse();
 
@@ -80,13 +82,15 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Image value)  image,required TResult Function( ChatBody_Audio value)  audio,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ChatBody_Text value)  text,required TResult Function( ChatBody_Image value)  image,required TResult Function( ChatBody_Audio value)  audio,required TResult Function( ChatBody_Video value)  video,required TResult Function( ChatBody_Deleted value)  deleted,required TResult Function( ChatBody_Unsupported value)  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text():
 return text(_that);case ChatBody_Image():
 return image(_that);case ChatBody_Audio():
-return audio(_that);case ChatBody_Unsupported():
+return audio(_that);case ChatBody_Video():
+return video(_that);case ChatBody_Deleted():
+return deleted(_that);case ChatBody_Unsupported():
 return unsupported(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
@@ -101,13 +105,15 @@ return unsupported(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Image value)?  image,TResult? Function( ChatBody_Audio value)?  audio,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ChatBody_Text value)?  text,TResult? Function( ChatBody_Image value)?  image,TResult? Function( ChatBody_Audio value)?  audio,TResult? Function( ChatBody_Video value)?  video,TResult? Function( ChatBody_Deleted value)?  deleted,TResult? Function( ChatBody_Unsupported value)?  unsupported,}){
 final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that);case ChatBody_Image() when image != null:
 return image(_that);case ChatBody_Audio() when audio != null:
-return audio(_that);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that);case ChatBody_Video() when video != null:
+return video(_that);case ChatBody_Deleted() when deleted != null:
+return deleted(_that);case ChatBody_Unsupported() when unsupported != null:
 return unsupported(_that);case _:
   return null;
 
@@ -125,12 +131,14 @@ return unsupported(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function( ImageView image)?  image,TResult Function( AudioView audio)?  audio,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String text)?  text,TResult Function( ImageView image)?  image,TResult Function( AudioView audio)?  audio,TResult Function( VideoView video)?  video,TResult Function( bool byAdmin,  bool revealable)?  deleted,TResult Function()?  unsupported,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that.text);case ChatBody_Image() when image != null:
 return image(_that.image);case ChatBody_Audio() when audio != null:
-return audio(_that.audio);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that.audio);case ChatBody_Video() when video != null:
+return video(_that.video);case ChatBody_Deleted() when deleted != null:
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return orElse();
 
@@ -149,12 +157,14 @@ return unsupported();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function( ImageView image)  image,required TResult Function( AudioView audio)  audio,required TResult Function()  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String text)  text,required TResult Function( ImageView image)  image,required TResult Function( AudioView audio)  audio,required TResult Function( VideoView video)  video,required TResult Function( bool byAdmin,  bool revealable)  deleted,required TResult Function()  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text():
 return text(_that.text);case ChatBody_Image():
 return image(_that.image);case ChatBody_Audio():
-return audio(_that.audio);case ChatBody_Unsupported():
+return audio(_that.audio);case ChatBody_Video():
+return video(_that.video);case ChatBody_Deleted():
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported():
 return unsupported();}
 }
 /// A variant of `when` that fallback to returning `null`
@@ -169,12 +179,14 @@ return unsupported();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function( ImageView image)?  image,TResult? Function( AudioView audio)?  audio,TResult? Function()?  unsupported,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String text)?  text,TResult? Function( ImageView image)?  image,TResult? Function( AudioView audio)?  audio,TResult? Function( VideoView video)?  video,TResult? Function( bool byAdmin,  bool revealable)?  deleted,TResult? Function()?  unsupported,}) {final _that = this;
 switch (_that) {
 case ChatBody_Text() when text != null:
 return text(_that.text);case ChatBody_Image() when image != null:
 return image(_that.image);case ChatBody_Audio() when audio != null:
-return audio(_that.audio);case ChatBody_Unsupported() when unsupported != null:
+return audio(_that.audio);case ChatBody_Video() when video != null:
+return video(_that.video);case ChatBody_Deleted() when deleted != null:
+return deleted(_that.byAdmin,_that.revealable);case ChatBody_Unsupported() when unsupported != null:
 return unsupported();case _:
   return null;
 
@@ -379,6 +391,146 @@ class _$ChatBody_AudioCopyWithImpl<$Res>
   return _then(ChatBody_Audio(
 audio: null == audio ? _self.audio : audio // ignore: cast_nullable_to_non_nullable
 as AudioView,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ChatBody_Video extends ChatBody {
+  const ChatBody_Video({required this.video}): super._();
+  
+
+/// The clip. Boxed like an image: a message is carried in every event.
+ final  VideoView video;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ChatBody_VideoCopyWith<ChatBody_Video> get copyWith => _$ChatBody_VideoCopyWithImpl<ChatBody_Video>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatBody_Video&&(identical(other.video, video) || other.video == video));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,video);
+
+@override
+String toString() {
+  return 'ChatBody.video(video: $video)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ChatBody_VideoCopyWith<$Res> implements $ChatBodyCopyWith<$Res> {
+  factory $ChatBody_VideoCopyWith(ChatBody_Video value, $Res Function(ChatBody_Video) _then) = _$ChatBody_VideoCopyWithImpl;
+@useResult
+$Res call({
+ VideoView video
+});
+
+
+
+
+}
+/// @nodoc
+class _$ChatBody_VideoCopyWithImpl<$Res>
+    implements $ChatBody_VideoCopyWith<$Res> {
+  _$ChatBody_VideoCopyWithImpl(this._self, this._then);
+
+  final ChatBody_Video _self;
+  final $Res Function(ChatBody_Video) _then;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? video = null,}) {
+  return _then(ChatBody_Video(
+video: null == video ? _self.video : video // ignore: cast_nullable_to_non_nullable
+as VideoView,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ChatBody_Deleted extends ChatBody {
+  const ChatBody_Deleted({required this.byAdmin, required this.revealable}): super._();
+  
+
+/// An admin deleted another user's message in the lobby or a named
+/// group: the tombstone reads "by the admin".
+ final  bool byAdmin;
+/// A DM tombstone whose original this device still holds: the app offers
+/// Reveal (message-deletion: Receiver may reveal in a DM). Always
+/// `false` in the lobby and named groups.
+ final  bool revealable;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ChatBody_DeletedCopyWith<ChatBody_Deleted> get copyWith => _$ChatBody_DeletedCopyWithImpl<ChatBody_Deleted>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ChatBody_Deleted&&(identical(other.byAdmin, byAdmin) || other.byAdmin == byAdmin)&&(identical(other.revealable, revealable) || other.revealable == revealable));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,byAdmin,revealable);
+
+@override
+String toString() {
+  return 'ChatBody.deleted(byAdmin: $byAdmin, revealable: $revealable)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ChatBody_DeletedCopyWith<$Res> implements $ChatBodyCopyWith<$Res> {
+  factory $ChatBody_DeletedCopyWith(ChatBody_Deleted value, $Res Function(ChatBody_Deleted) _then) = _$ChatBody_DeletedCopyWithImpl;
+@useResult
+$Res call({
+ bool byAdmin, bool revealable
+});
+
+
+
+
+}
+/// @nodoc
+class _$ChatBody_DeletedCopyWithImpl<$Res>
+    implements $ChatBody_DeletedCopyWith<$Res> {
+  _$ChatBody_DeletedCopyWithImpl(this._self, this._then);
+
+  final ChatBody_Deleted _self;
+  final $Res Function(ChatBody_Deleted) _then;
+
+/// Create a copy of ChatBody
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? byAdmin = null,Object? revealable = null,}) {
+  return _then(ChatBody_Deleted(
+byAdmin: null == byAdmin ? _self.byAdmin : byAdmin // ignore: cast_nullable_to_non_nullable
+as bool,revealable: null == revealable ? _self.revealable : revealable // ignore: cast_nullable_to_non_nullable
+as bool,
   ));
 }
 
@@ -803,7 +955,7 @@ extension CoreEventPatterns on CoreEvent {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_Message value)?  message,TResult Function( CoreEvent_SendStatus value)?  sendStatus,TResult Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult Function( CoreEvent_Unreadable value)?  unreadable,TResult Function( CoreEvent_Gap value)?  gap,TResult Function( CoreEvent_ChatsChanged value)?  chatsChanged,TResult Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult Function( CoreEvent_Rejoined value)?  rejoined,TResult Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult Function( CoreEvent_Removed value)?  removed,TResult Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult Function( CoreEvent_MembersChanged value)?  membersChanged,TResult Function( CoreEvent_CommitRefused value)?  commitRefused,TResult Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult Function( CoreEvent_Connection value)?  connection,TResult Function( CoreEvent_Other value)?  other,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( CoreEvent_Message value)?  message,TResult Function( CoreEvent_SendStatus value)?  sendStatus,TResult Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult Function( CoreEvent_Unreadable value)?  unreadable,TResult Function( CoreEvent_Gap value)?  gap,TResult Function( CoreEvent_ChatsChanged value)?  chatsChanged,TResult Function( CoreEvent_MutePrefsChanged value)?  mutePrefsChanged,TResult Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult Function( CoreEvent_Rejoined value)?  rejoined,TResult Function( CoreEvent_OutOfSync value)?  outOfSync,TResult Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult Function( CoreEvent_Removed value)?  removed,TResult Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult Function( CoreEvent_MembersChanged value)?  membersChanged,TResult Function( CoreEvent_CommitRefused value)?  commitRefused,TResult Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult Function( CoreEvent_Connection value)?  connection,TResult Function( CoreEvent_Other value)?  other,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
@@ -812,9 +964,11 @@ return sendStatus(_that);case CoreEvent_ProfileChanged() when profileChanged != 
 return profileChanged(_that);case CoreEvent_Unreadable() when unreadable != null:
 return unreadable(_that);case CoreEvent_Gap() when gap != null:
 return gap(_that);case CoreEvent_ChatsChanged() when chatsChanged != null:
-return chatsChanged(_that);case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
+return chatsChanged(_that);case CoreEvent_MutePrefsChanged() when mutePrefsChanged != null:
+return mutePrefsChanged(_that);case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
 return removedForInactivity(_that);case CoreEvent_Rejoined() when rejoined != null:
-return rejoined(_that);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
+return rejoined(_that);case CoreEvent_OutOfSync() when outOfSync != null:
+return outOfSync(_that);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
 return identityKeyChanged(_that);case CoreEvent_ServerIdentityError() when serverIdentityError != null:
 return serverIdentityError(_that);case CoreEvent_Removed() when removed != null:
 return removed(_that);case CoreEvent_JoinedGroup() when joinedGroup != null:
@@ -841,7 +995,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_Message value)  message,required TResult Function( CoreEvent_SendStatus value)  sendStatus,required TResult Function( CoreEvent_ProfileChanged value)  profileChanged,required TResult Function( CoreEvent_Unreadable value)  unreadable,required TResult Function( CoreEvent_Gap value)  gap,required TResult Function( CoreEvent_ChatsChanged value)  chatsChanged,required TResult Function( CoreEvent_RemovedForInactivity value)  removedForInactivity,required TResult Function( CoreEvent_Rejoined value)  rejoined,required TResult Function( CoreEvent_IdentityKeyChanged value)  identityKeyChanged,required TResult Function( CoreEvent_ServerIdentityError value)  serverIdentityError,required TResult Function( CoreEvent_Removed value)  removed,required TResult Function( CoreEvent_JoinedGroup value)  joinedGroup,required TResult Function( CoreEvent_MembersChanged value)  membersChanged,required TResult Function( CoreEvent_CommitRefused value)  commitRefused,required TResult Function( CoreEvent_ReaddRequested value)  readdRequested,required TResult Function( CoreEvent_Connection value)  connection,required TResult Function( CoreEvent_Other value)  other,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( CoreEvent_Message value)  message,required TResult Function( CoreEvent_SendStatus value)  sendStatus,required TResult Function( CoreEvent_ProfileChanged value)  profileChanged,required TResult Function( CoreEvent_Unreadable value)  unreadable,required TResult Function( CoreEvent_Gap value)  gap,required TResult Function( CoreEvent_ChatsChanged value)  chatsChanged,required TResult Function( CoreEvent_MutePrefsChanged value)  mutePrefsChanged,required TResult Function( CoreEvent_RemovedForInactivity value)  removedForInactivity,required TResult Function( CoreEvent_Rejoined value)  rejoined,required TResult Function( CoreEvent_OutOfSync value)  outOfSync,required TResult Function( CoreEvent_IdentityKeyChanged value)  identityKeyChanged,required TResult Function( CoreEvent_ServerIdentityError value)  serverIdentityError,required TResult Function( CoreEvent_Removed value)  removed,required TResult Function( CoreEvent_JoinedGroup value)  joinedGroup,required TResult Function( CoreEvent_MembersChanged value)  membersChanged,required TResult Function( CoreEvent_CommitRefused value)  commitRefused,required TResult Function( CoreEvent_ReaddRequested value)  readdRequested,required TResult Function( CoreEvent_Connection value)  connection,required TResult Function( CoreEvent_Other value)  other,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message():
@@ -850,9 +1004,11 @@ return sendStatus(_that);case CoreEvent_ProfileChanged():
 return profileChanged(_that);case CoreEvent_Unreadable():
 return unreadable(_that);case CoreEvent_Gap():
 return gap(_that);case CoreEvent_ChatsChanged():
-return chatsChanged(_that);case CoreEvent_RemovedForInactivity():
+return chatsChanged(_that);case CoreEvent_MutePrefsChanged():
+return mutePrefsChanged(_that);case CoreEvent_RemovedForInactivity():
 return removedForInactivity(_that);case CoreEvent_Rejoined():
-return rejoined(_that);case CoreEvent_IdentityKeyChanged():
+return rejoined(_that);case CoreEvent_OutOfSync():
+return outOfSync(_that);case CoreEvent_IdentityKeyChanged():
 return identityKeyChanged(_that);case CoreEvent_ServerIdentityError():
 return serverIdentityError(_that);case CoreEvent_Removed():
 return removed(_that);case CoreEvent_JoinedGroup():
@@ -875,7 +1031,7 @@ return other(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_Message value)?  message,TResult? Function( CoreEvent_SendStatus value)?  sendStatus,TResult? Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult? Function( CoreEvent_Unreadable value)?  unreadable,TResult? Function( CoreEvent_Gap value)?  gap,TResult? Function( CoreEvent_ChatsChanged value)?  chatsChanged,TResult? Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult? Function( CoreEvent_Rejoined value)?  rejoined,TResult? Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult? Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult? Function( CoreEvent_Removed value)?  removed,TResult? Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult? Function( CoreEvent_MembersChanged value)?  membersChanged,TResult? Function( CoreEvent_CommitRefused value)?  commitRefused,TResult? Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult? Function( CoreEvent_Connection value)?  connection,TResult? Function( CoreEvent_Other value)?  other,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( CoreEvent_Message value)?  message,TResult? Function( CoreEvent_SendStatus value)?  sendStatus,TResult? Function( CoreEvent_ProfileChanged value)?  profileChanged,TResult? Function( CoreEvent_Unreadable value)?  unreadable,TResult? Function( CoreEvent_Gap value)?  gap,TResult? Function( CoreEvent_ChatsChanged value)?  chatsChanged,TResult? Function( CoreEvent_MutePrefsChanged value)?  mutePrefsChanged,TResult? Function( CoreEvent_RemovedForInactivity value)?  removedForInactivity,TResult? Function( CoreEvent_Rejoined value)?  rejoined,TResult? Function( CoreEvent_OutOfSync value)?  outOfSync,TResult? Function( CoreEvent_IdentityKeyChanged value)?  identityKeyChanged,TResult? Function( CoreEvent_ServerIdentityError value)?  serverIdentityError,TResult? Function( CoreEvent_Removed value)?  removed,TResult? Function( CoreEvent_JoinedGroup value)?  joinedGroup,TResult? Function( CoreEvent_MembersChanged value)?  membersChanged,TResult? Function( CoreEvent_CommitRefused value)?  commitRefused,TResult? Function( CoreEvent_ReaddRequested value)?  readdRequested,TResult? Function( CoreEvent_Connection value)?  connection,TResult? Function( CoreEvent_Other value)?  other,}){
 final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
@@ -884,9 +1040,11 @@ return sendStatus(_that);case CoreEvent_ProfileChanged() when profileChanged != 
 return profileChanged(_that);case CoreEvent_Unreadable() when unreadable != null:
 return unreadable(_that);case CoreEvent_Gap() when gap != null:
 return gap(_that);case CoreEvent_ChatsChanged() when chatsChanged != null:
-return chatsChanged(_that);case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
+return chatsChanged(_that);case CoreEvent_MutePrefsChanged() when mutePrefsChanged != null:
+return mutePrefsChanged(_that);case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
 return removedForInactivity(_that);case CoreEvent_Rejoined() when rejoined != null:
-return rejoined(_that);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
+return rejoined(_that);case CoreEvent_OutOfSync() when outOfSync != null:
+return outOfSync(_that);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
 return identityKeyChanged(_that);case CoreEvent_ServerIdentityError() when serverIdentityError != null:
 return serverIdentityError(_that);case CoreEvent_Removed() when removed != null:
 return removed(_that);case CoreEvent_JoinedGroup() when joinedGroup != null:
@@ -912,7 +1070,7 @@ return other(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ChatMessage message)?  message,TResult Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)?  unreadable,TResult Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)?  gap,TResult Function()?  chatsChanged,TResult Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult Function()?  rejoined,TResult Function( UserRef user)?  identityKeyChanged,TResult Function()?  serverIdentityError,TResult Function()?  removed,TResult Function()?  joinedGroup,TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult Function( String reason)?  commitRefused,TResult Function( ReaddAnswer outcome)?  readdRequested,TResult Function( ConnectionStatus status)?  connection,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( ChatMessage message)?  message,TResult Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)?  unreadable,TResult Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)?  gap,TResult Function()?  chatsChanged,TResult Function()?  mutePrefsChanged,TResult Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult Function()?  rejoined,TResult Function( PlatformInt64 chatId)?  outOfSync,TResult Function( UserRef user)?  identityKeyChanged,TResult Function()?  serverIdentityError,TResult Function()?  removed,TResult Function()?  joinedGroup,TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult Function( String reason)?  commitRefused,TResult Function( ReaddAnswer outcome)?  readdRequested,TResult Function( ConnectionStatus status)?  connection,TResult Function()?  other,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
 return message(_that.message);case CoreEvent_SendStatus() when sendStatus != null:
@@ -920,9 +1078,11 @@ return sendStatus(_that.id,_that.status);case CoreEvent_ProfileChanged() when pr
 return profileChanged(_that.user,_that.displayName,_that.about);case CoreEvent_Unreadable() when unreadable != null:
 return unreadable(_that.sender,_that.acceptedAtMs,_that.chatId);case CoreEvent_Gap() when gap != null:
 return gap(_that.newestExpiredAtMs,_that.chatId);case CoreEvent_ChatsChanged() when chatsChanged != null:
-return chatsChanged();case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
+return chatsChanged();case CoreEvent_MutePrefsChanged() when mutePrefsChanged != null:
+return mutePrefsChanged();case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
 return removedForInactivity(_that.missedSinceMs);case CoreEvent_Rejoined() when rejoined != null:
-return rejoined();case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
+return rejoined();case CoreEvent_OutOfSync() when outOfSync != null:
+return outOfSync(_that.chatId);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
 return identityKeyChanged(_that.user);case CoreEvent_ServerIdentityError() when serverIdentityError != null:
 return serverIdentityError();case CoreEvent_Removed() when removed != null:
 return removed();case CoreEvent_JoinedGroup() when joinedGroup != null:
@@ -949,7 +1109,7 @@ return other();case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ChatMessage message)  message,required TResult Function( PlatformInt64 id,  SendState status)  sendStatus,required TResult Function( UserRef user,  String? displayName,  String? about)  profileChanged,required TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)  unreadable,required TResult Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)  gap,required TResult Function()  chatsChanged,required TResult Function( PlatformInt64 missedSinceMs)  removedForInactivity,required TResult Function()  rejoined,required TResult Function( UserRef user)  identityKeyChanged,required TResult Function()  serverIdentityError,required TResult Function()  removed,required TResult Function()  joinedGroup,required TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)  membersChanged,required TResult Function( String reason)  commitRefused,required TResult Function( ReaddAnswer outcome)  readdRequested,required TResult Function( ConnectionStatus status)  connection,required TResult Function()  other,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( ChatMessage message)  message,required TResult Function( PlatformInt64 id,  SendState status)  sendStatus,required TResult Function( UserRef user,  String? displayName,  String? about)  profileChanged,required TResult Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)  unreadable,required TResult Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)  gap,required TResult Function()  chatsChanged,required TResult Function()  mutePrefsChanged,required TResult Function( PlatformInt64 missedSinceMs)  removedForInactivity,required TResult Function()  rejoined,required TResult Function( PlatformInt64 chatId)  outOfSync,required TResult Function( UserRef user)  identityKeyChanged,required TResult Function()  serverIdentityError,required TResult Function()  removed,required TResult Function()  joinedGroup,required TResult Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)  membersChanged,required TResult Function( String reason)  commitRefused,required TResult Function( ReaddAnswer outcome)  readdRequested,required TResult Function( ConnectionStatus status)  connection,required TResult Function()  other,}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message():
 return message(_that.message);case CoreEvent_SendStatus():
@@ -957,9 +1117,11 @@ return sendStatus(_that.id,_that.status);case CoreEvent_ProfileChanged():
 return profileChanged(_that.user,_that.displayName,_that.about);case CoreEvent_Unreadable():
 return unreadable(_that.sender,_that.acceptedAtMs,_that.chatId);case CoreEvent_Gap():
 return gap(_that.newestExpiredAtMs,_that.chatId);case CoreEvent_ChatsChanged():
-return chatsChanged();case CoreEvent_RemovedForInactivity():
+return chatsChanged();case CoreEvent_MutePrefsChanged():
+return mutePrefsChanged();case CoreEvent_RemovedForInactivity():
 return removedForInactivity(_that.missedSinceMs);case CoreEvent_Rejoined():
-return rejoined();case CoreEvent_IdentityKeyChanged():
+return rejoined();case CoreEvent_OutOfSync():
+return outOfSync(_that.chatId);case CoreEvent_IdentityKeyChanged():
 return identityKeyChanged(_that.user);case CoreEvent_ServerIdentityError():
 return serverIdentityError();case CoreEvent_Removed():
 return removed();case CoreEvent_JoinedGroup():
@@ -982,7 +1144,7 @@ return other();}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ChatMessage message)?  message,TResult? Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult? Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult? Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)?  unreadable,TResult? Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)?  gap,TResult? Function()?  chatsChanged,TResult? Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult? Function()?  rejoined,TResult? Function( UserRef user)?  identityKeyChanged,TResult? Function()?  serverIdentityError,TResult? Function()?  removed,TResult? Function()?  joinedGroup,TResult? Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult? Function( String reason)?  commitRefused,TResult? Function( ReaddAnswer outcome)?  readdRequested,TResult? Function( ConnectionStatus status)?  connection,TResult? Function()?  other,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( ChatMessage message)?  message,TResult? Function( PlatformInt64 id,  SendState status)?  sendStatus,TResult? Function( UserRef user,  String? displayName,  String? about)?  profileChanged,TResult? Function( UserRef? sender,  PlatformInt64? acceptedAtMs,  PlatformInt64 chatId)?  unreadable,TResult? Function( PlatformInt64 newestExpiredAtMs,  PlatformInt64 chatId)?  gap,TResult? Function()?  chatsChanged,TResult? Function()?  mutePrefsChanged,TResult? Function( PlatformInt64 missedSinceMs)?  removedForInactivity,TResult? Function()?  rejoined,TResult? Function( PlatformInt64 chatId)?  outOfSync,TResult? Function( UserRef user)?  identityKeyChanged,TResult? Function()?  serverIdentityError,TResult? Function()?  removed,TResult? Function()?  joinedGroup,TResult? Function( List<MemberDevice> added,  List<MemberDevice> removed,  UserRef? by,  List<MemberDevice> automatic)?  membersChanged,TResult? Function( String reason)?  commitRefused,TResult? Function( ReaddAnswer outcome)?  readdRequested,TResult? Function( ConnectionStatus status)?  connection,TResult? Function()?  other,}) {final _that = this;
 switch (_that) {
 case CoreEvent_Message() when message != null:
 return message(_that.message);case CoreEvent_SendStatus() when sendStatus != null:
@@ -990,9 +1152,11 @@ return sendStatus(_that.id,_that.status);case CoreEvent_ProfileChanged() when pr
 return profileChanged(_that.user,_that.displayName,_that.about);case CoreEvent_Unreadable() when unreadable != null:
 return unreadable(_that.sender,_that.acceptedAtMs,_that.chatId);case CoreEvent_Gap() when gap != null:
 return gap(_that.newestExpiredAtMs,_that.chatId);case CoreEvent_ChatsChanged() when chatsChanged != null:
-return chatsChanged();case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
+return chatsChanged();case CoreEvent_MutePrefsChanged() when mutePrefsChanged != null:
+return mutePrefsChanged();case CoreEvent_RemovedForInactivity() when removedForInactivity != null:
 return removedForInactivity(_that.missedSinceMs);case CoreEvent_Rejoined() when rejoined != null:
-return rejoined();case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
+return rejoined();case CoreEvent_OutOfSync() when outOfSync != null:
+return outOfSync(_that.chatId);case CoreEvent_IdentityKeyChanged() when identityKeyChanged != null:
 return identityKeyChanged(_that.user);case CoreEvent_ServerIdentityError() when serverIdentityError != null:
 return serverIdentityError();case CoreEvent_Removed() when removed != null:
 return removed();case CoreEvent_JoinedGroup() when joinedGroup != null:
@@ -1406,6 +1570,38 @@ String toString() {
 /// @nodoc
 
 
+class CoreEvent_MutePrefsChanged extends CoreEvent {
+  const CoreEvent_MutePrefsChanged(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreEvent_MutePrefsChanged);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'CoreEvent.mutePrefsChanged()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
+
+
 class CoreEvent_RemovedForInactivity extends CoreEvent {
   const CoreEvent_RemovedForInactivity({required this.missedSinceMs}): super._();
   
@@ -1501,6 +1697,73 @@ String toString() {
 
 
 
+
+/// @nodoc
+
+
+class CoreEvent_OutOfSync extends CoreEvent {
+  const CoreEvent_OutOfSync({required this.chatId}): super._();
+  
+
+/// The chat that is out of sync (0 is the lobby).
+ final  PlatformInt64 chatId;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$CoreEvent_OutOfSyncCopyWith<CoreEvent_OutOfSync> get copyWith => _$CoreEvent_OutOfSyncCopyWithImpl<CoreEvent_OutOfSync>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is CoreEvent_OutOfSync&&(identical(other.chatId, chatId) || other.chatId == chatId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,chatId);
+
+@override
+String toString() {
+  return 'CoreEvent.outOfSync(chatId: $chatId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $CoreEvent_OutOfSyncCopyWith<$Res> implements $CoreEventCopyWith<$Res> {
+  factory $CoreEvent_OutOfSyncCopyWith(CoreEvent_OutOfSync value, $Res Function(CoreEvent_OutOfSync) _then) = _$CoreEvent_OutOfSyncCopyWithImpl;
+@useResult
+$Res call({
+ PlatformInt64 chatId
+});
+
+
+
+
+}
+/// @nodoc
+class _$CoreEvent_OutOfSyncCopyWithImpl<$Res>
+    implements $CoreEvent_OutOfSyncCopyWith<$Res> {
+  _$CoreEvent_OutOfSyncCopyWithImpl(this._self, this._then);
+
+  final CoreEvent_OutOfSync _self;
+  final $Res Function(CoreEvent_OutOfSync) _then;
+
+/// Create a copy of CoreEvent
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? chatId = null,}) {
+  return _then(CoreEvent_OutOfSync(
+chatId: null == chatId ? _self.chatId : chatId // ignore: cast_nullable_to_non_nullable
+as PlatformInt64,
+  ));
+}
+
+
+}
 
 /// @nodoc
 
@@ -2300,13 +2563,14 @@ extension SendStatePatterns on SendState {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SendState_Sending value)?  sending,TResult Function( SendState_Accepted value)?  accepted,TResult Function( SendState_Failed value)?  failed,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( SendState_Sending value)?  sending,TResult Function( SendState_Accepted value)?  accepted,TResult Function( SendState_Failed value)?  failed,TResult Function( SendState_OutOfSync value)?  outOfSync,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case SendState_Sending() when sending != null:
 return sending(_that);case SendState_Accepted() when accepted != null:
 return accepted(_that);case SendState_Failed() when failed != null:
-return failed(_that);case _:
+return failed(_that);case SendState_OutOfSync() when outOfSync != null:
+return outOfSync(_that);case _:
   return orElse();
 
 }
@@ -2324,13 +2588,14 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SendState_Sending value)  sending,required TResult Function( SendState_Accepted value)  accepted,required TResult Function( SendState_Failed value)  failed,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( SendState_Sending value)  sending,required TResult Function( SendState_Accepted value)  accepted,required TResult Function( SendState_Failed value)  failed,required TResult Function( SendState_OutOfSync value)  outOfSync,}){
 final _that = this;
 switch (_that) {
 case SendState_Sending():
 return sending(_that);case SendState_Accepted():
 return accepted(_that);case SendState_Failed():
-return failed(_that);}
+return failed(_that);case SendState_OutOfSync():
+return outOfSync(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -2344,13 +2609,14 @@ return failed(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SendState_Sending value)?  sending,TResult? Function( SendState_Accepted value)?  accepted,TResult? Function( SendState_Failed value)?  failed,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( SendState_Sending value)?  sending,TResult? Function( SendState_Accepted value)?  accepted,TResult? Function( SendState_Failed value)?  failed,TResult? Function( SendState_OutOfSync value)?  outOfSync,}){
 final _that = this;
 switch (_that) {
 case SendState_Sending() when sending != null:
 return sending(_that);case SendState_Accepted() when accepted != null:
 return accepted(_that);case SendState_Failed() when failed != null:
-return failed(_that);case _:
+return failed(_that);case SendState_OutOfSync() when outOfSync != null:
+return outOfSync(_that);case _:
   return null;
 
 }
@@ -2367,12 +2633,13 @@ return failed(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  sending,TResult Function()?  accepted,TResult Function( String reason)?  failed,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  sending,TResult Function()?  accepted,TResult Function( String reason)?  failed,TResult Function()?  outOfSync,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case SendState_Sending() when sending != null:
 return sending();case SendState_Accepted() when accepted != null:
 return accepted();case SendState_Failed() when failed != null:
-return failed(_that.reason);case _:
+return failed(_that.reason);case SendState_OutOfSync() when outOfSync != null:
+return outOfSync();case _:
   return orElse();
 
 }
@@ -2390,12 +2657,13 @@ return failed(_that.reason);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  sending,required TResult Function()  accepted,required TResult Function( String reason)  failed,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  sending,required TResult Function()  accepted,required TResult Function( String reason)  failed,required TResult Function()  outOfSync,}) {final _that = this;
 switch (_that) {
 case SendState_Sending():
 return sending();case SendState_Accepted():
 return accepted();case SendState_Failed():
-return failed(_that.reason);}
+return failed(_that.reason);case SendState_OutOfSync():
+return outOfSync();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -2409,12 +2677,13 @@ return failed(_that.reason);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  sending,TResult? Function()?  accepted,TResult? Function( String reason)?  failed,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  sending,TResult? Function()?  accepted,TResult? Function( String reason)?  failed,TResult? Function()?  outOfSync,}) {final _that = this;
 switch (_that) {
 case SendState_Sending() when sending != null:
 return sending();case SendState_Accepted() when accepted != null:
 return accepted();case SendState_Failed() when failed != null:
-return failed(_that.reason);case _:
+return failed(_that.reason);case SendState_OutOfSync() when outOfSync != null:
+return outOfSync();case _:
   return null;
 
 }
@@ -2552,5 +2821,37 @@ as String,
 
 
 }
+
+/// @nodoc
+
+
+class SendState_OutOfSync extends SendState {
+  const SendState_OutOfSync(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is SendState_OutOfSync);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'SendState.outOfSync()';
+}
+
+
+}
+
+
+
 
 // dart format on

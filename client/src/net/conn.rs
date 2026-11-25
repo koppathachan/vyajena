@@ -22,6 +22,7 @@ use crate::pb::devices_client::DevicesClient;
 use crate::pb::dms_client::DmsClient;
 use crate::pb::keys_client::KeysClient;
 use crate::pb::messaging_client::MessagingClient;
+use crate::pb::prefs_client::PrefsClient;
 
 /// A token is renewed once it has less than this left (client-runtime:
 /// Connection lifecycle: renew the session token before it expires).
@@ -88,6 +89,11 @@ impl Conn {
     /// A `Dms` client (change `dms`).
     pub fn dms(&self) -> DmsClient<Channel> {
         DmsClient::new(self.channel.clone())
+    }
+
+    /// A `Prefs` client (notification-prefs, change `mute-notifications`).
+    pub fn prefs(&self) -> PrefsClient<Channel> {
+        PrefsClient::new(self.channel.clone())
     }
 
     /// A `Messaging` client.

@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 
 import '../app/names.dart';
 import '../core/core_service.dart';
+import 'sticker_plugins.dart';
 
 /// How many messages the chat shows.
 const historyLimit = 500;
@@ -119,6 +120,19 @@ class MemberNotice extends Notice {
   final UserRef by;
 }
 
+/// Shown only to the admin: a member's device was removed for inactivity, or a
+/// previously inactive member returned and was re-added (group-membership:
+/// Admin is told when a member goes inactive). Other members see nothing for
+/// these automatic changes (qa-fixes design D5).
+class InactivityNotice extends Notice {
+  const InactivityNotice(this.user, {required this.returned});
+  final UserRef user;
+
+  /// true: the member returned and was re-added; false: they went inactive and
+  /// were removed.
+  final bool returned;
+}
+
 /// The lobby's fixed name (multi-group: The system lobby): the app shows it
 /// whatever any `GroupSettings` says.
 const lobbyName = 'lobby';
@@ -212,6 +226,8 @@ class ChatModel extends ChangeNotifier {
   List<int> _unseen = const [];
   final Set<int> _marking = {};
   bool _removed = false;
+  bool _admin = false;
+  bool _outOfSync = false;
   Refusal? _refusal;
   ReaddAnswer? _readd;
   final List<_Anchored> _notices = [];
@@ -259,6 +275,12 @@ class ChatModel extends ChangeNotifier {
   /// null: it did not ask, or the answer changes nothing it waits for.
   ReaddAnswer? get readd => _readd;
 
+  /// Whether this chat is out of sync: this device is wedged behind the
+  /// group's epoch and cannot self-recover, so the chat shows an "out of sync
+  /// — re-sync" banner (app-ui: Out-of-sync re-sync affordance). Cleared once
+  /// the device re-syncs.
+  bool get outOfSync => _outOfSync;
+
   /// The chat, oldest first.
   List<ChatItem> get items {
     final out = <ChatItem>[];
@@ -289,6 +311,11 @@ class ChatModel extends ChangeNotifier {
     if (_primed) return;
     _primed = true;
     try {
+      try {
+        _admin = await core.isAdmin();
+      } on Object {
+        _admin = false;
+      }
       await _reloadMembers();
       if (peer case final UserRef peer) await names.load([peer]);
       await _reloadChat();
@@ -434,6 +461,37 @@ class ChatModel extends ChangeNotifier {
     }
     _members.removeWhere((_, devices) => devices.isEmpty);
 
+    // group-membership: Admin is told when a member goes inactive. The admin
+    // sees a notice for the automatic (inactivity) changes that other members
+    // see nothing for: a member removed for inactivity, and a member returned
+    // and re-added (the same device id back, so an automatic add wins over the
+    // automatic remove of its old leaf).
+    if (_admin) {
+      final returned = <String, UserRef>{};
+      for (final d in added) {
+        if (quiet.contains('${_key(d.user)}/${d.device}')) {
+          returned[_key(d.user)] = d.user;
+        }
+      }
+      final gone = <String, UserRef>{};
+      for (final d in removed) {
+        final key = _key(d.user);
+        if (quiet.contains('$key/${d.device}') && !returned.containsKey(key)) {
+          gone[key] = d.user;
+        }
+      }
+      final named = <UserRef>[];
+      for (final user in gone.values) {
+        _notice(InactivityNotice(user, returned: false));
+        named.add(user);
+      }
+      for (final user in returned.values) {
+        _notice(InactivityNotice(user, returned: true));
+        named.add(user);
+      }
+      if (named.isNotEmpty) names.load(named).then((_) => _changed());
+    }
+
     final notices = <Notice>[];
     // Removals first, then additions (a commit that does both reads that
     // way), each user once, in the commit's order.
@@ -487,7 +545,8 @@ class ChatModel extends ChangeNotifier {
   bool _elsewhere(CoreEvent event) => switch (event) {
     CoreEvent_Message(:final message) => message.chatId != chatId,
     CoreEvent_Unreadable(chatId: final id) ||
-    CoreEvent_Gap(chatId: final id) => id != chatId,
+    CoreEvent_Gap(chatId: final id) ||
+    CoreEvent_OutOfSync(chatId: final id) => id != chatId,
     CoreEvent_SendStatus() ||
     CoreEvent_ProfileChanged() ||
     CoreEvent_IdentityKeyChanged() ||
@@ -545,6 +604,13 @@ class ChatModel extends ChangeNotifier {
           _readd = outcome;
           _changed();
         }
+      case CoreEvent_OutOfSync():
+        // The device is wedged behind the group's epoch: show the re-sync
+        // banner (app-ui: Out-of-sync re-sync affordance).
+        if (!_outOfSync) {
+          _outOfSync = true;
+          _changed();
+        }
       case CoreEvent_ServerIdentityError():
         _notice(const ServerIdentityNotice());
       case CoreEvent_MembersChanged(
@@ -563,14 +629,19 @@ class ChatModel extends ChangeNotifier {
       case CoreEvent_Rejoined():
         _refusal = null;
         _readd = null;
+        _outOfSync = false;
         _notice(const RejoinedNotice());
         _reloadMembers();
         _reload();
       case CoreEvent_JoinedGroup():
         _refusal = null;
         _readd = null;
+        _outOfSync = false;
         _reloadMembers();
-      case CoreEvent_Connection() || CoreEvent_Other():
+      case CoreEvent_Connection() ||
+          CoreEvent_MutePrefsChanged() ||
+          CoreEvent_Other():
+        // The chat screen tracks mute state through its own subscription.
         break;
     }
   }
@@ -623,6 +694,33 @@ class ChatModel extends ChangeNotifier {
     await _reload();
   }
 
+  /// Sends a subject cutout as a sticker (app-ui: Create a sticker); returns
+  /// once the core stored it. The core encodes the RGBA to a transparent WebP
+  /// and sends it down the image path.
+  Future<void> sendSticker(Cutout cutout) async {
+    _lastId = await core.sendSticker(
+      cutout.pixels,
+      source: cutout.source,
+      width: cutout.width,
+      height: cutout.height,
+      chatId: chatId,
+    );
+    await _reload();
+  }
+
+  /// Deletes the message [id] in this chat for everyone (message-deletion:
+  /// Who may delete). Throws if this device may not delete it; the tombstone
+  /// arrives as a message event.
+  Future<void> deleteMessage(int id) async {
+    await core.deleteMessage(chatId, id);
+    await _reload();
+  }
+
+  /// The original of the deleted DM message [id], if this device still holds it
+  /// (message-deletion: Receiver may reveal in a DM).
+  Future<ChatMessage> reveal(int id) => core.reveal(chatId, id);
+
+
   /// Sends the recording [wav] as a voice message (app-ui: Record a voice
   /// message); returns once the core stored it.
   Future<void> sendAudio(Uint8List wav, {int? replyTo}) async {
@@ -633,6 +731,36 @@ class ChatModel extends ChangeNotifier {
   /// Sends the clip of own voice message [id] again, as a new message.
   Future<void> resendAudio(int id) async {
     _lastId = await core.resendAudio(id);
+    await _reload();
+  }
+
+  /// Sends the already-normalized clip [mp4] as a video message (app-ui: Send a
+  /// video); returns once the core stored it.
+  Future<void> sendVideo(
+    Uint8List mp4, {
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async {
+    _lastId = await core.sendVideo(
+      mp4,
+      chatId: chatId,
+      durationMs: durationMs,
+      width: width,
+      height: height,
+      firstFrameRgba: firstFrameRgba,
+      frameWidth: frameWidth,
+      frameHeight: frameHeight,
+    );
+    await _reload();
+  }
+
+  /// Sends the clip of own video message [id] again, as a new message.
+  Future<void> resendVideo(int id) async {
+    _lastId = await core.resendVideo(id);
     await _reload();
   }
 

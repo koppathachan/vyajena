@@ -594,6 +594,23 @@ pub struct AckBlobRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AckBlobResponse {}
+/// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+/// copy of `blob_id` immediately when its media message is deleted. The server
+/// authorises it with the same authority as the message delete (message-deletion:
+/// Who may delete): an admin device of `group_id` in the lobby or a named group,
+/// or the device that uploaded the blob in a DM; it rejects an unauthorised call
+/// with `PERMISSION_DENIED`, purging nothing. A call for an expired,
+/// already-deleted or unknown blob succeeds as a no-op; a later `DownloadBlob`
+/// answers `NOT_FOUND`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobResponse {}
 /// Generated client implementations.
 pub mod blobs_client {
     #![allow(
@@ -749,6 +766,33 @@ pub mod blobs_client {
             req.extensions_mut().insert(GrpcMethod::new("vyajena.v1.Blobs", "AckBlob"));
             self.inner.unary(req, path, codec).await
         }
+        /// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+        /// copy at once when a media message is deleted, authorised with the same
+        /// authority as the message delete.
+        pub async fn delete_blob(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteBlobResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Blobs/DeleteBlob",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Blobs", "DeleteBlob"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// message-content: Inner content format. A client send time and exactly one
@@ -760,7 +804,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6, 7, 8")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -776,12 +820,38 @@ pub mod content {
         /// message-content: Image messages (change `media-blobs`).
         #[prost(message, tag = "5")]
         Image(super::Image),
-        /// message-content: Audio messages (change `audio-messages`). The next free
-        /// field after this one is 7 for the change that follows; `delete-messages`
-        /// takes it, so the two never collide.
+        /// message-content: Audio messages (change `audio-messages`).
         #[prost(message, tag = "6")]
         Audio(super::Audio),
+        /// message-deletion: Delete a message (change `delete-messages`).
+        #[prost(message, tag = "7")]
+        Delete(super::Delete),
+        /// message-content: Video messages (change `video-messages`). Field 8 is the
+        /// one video takes; `audio-calls` takes the next free number after it.
+        #[prost(message, tag = "8")]
+        Video(super::Video),
     }
+}
+/// message-deletion: Who may delete; Tombstone, not erasure. A superseding
+/// message that deletes another one, naming the target message's original
+/// sender device and `msg_id`, the same way a `ReplyTo` names a reply's target.
+/// It is the encrypted, MLS-authenticated statement that the target is deleted;
+/// a receiving client honours it only when the delete's own MLS sender is
+/// authorised (an admin device in the lobby or a named group, or the target's
+/// original sender in a DM). It supersedes, never erasing history: the original
+/// row stays and the client shows a tombstone. A client that predates this body
+/// decodes it as unset and shows the "needs a newer app version" placeholder.
+/// Only the Rust core reads it; the server never sees it (the retract is driven
+/// by the plaintext `Envelope.deletes`).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Delete {
+    /// The device that sent the message being deleted, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Image messages. One static image, stored as an encrypted blob
 /// on the server (blob-store). This body is what a receiver needs to show a blurred
@@ -861,6 +931,50 @@ pub struct Audio {
     /// replies). Same shape as `Text.reply_to`.
     #[prost(message, optional, tag = "6")]
     pub reply_to: ::core::option::Option<ReplyTo>,
+}
+/// message-content: Video messages (change `video-messages`). One short video
+/// message: an MP4 clip (H.264 video + AAC audio), stored as an encrypted blob on
+/// the server (blob-store) exactly as an image or voice message is. This body is
+/// what a receiver needs to lay out the bubble at the clip's aspect ratio and show
+/// a first-frame blur with a play overlay and the duration before anything
+/// downloads, and to fetch and decrypt the clip on tap. A client that predates it
+/// decodes the body as unset and shows the "needs a newer app version"
+/// placeholder. Only the Rust core reads it; the server never sees it, and
+/// `blob_key` never leaves the encrypted `Content`. The container and codecs are
+/// fixed (MP4/H.264/AAC), as WebP is fixed for images, so there is no
+/// container/codec field, and there is exactly one clip and no separate poster
+/// blob.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Video {
+    /// The random id the ciphertext is stored under on the server, 16 bytes
+    /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
+    #[prost(bytes = "vec", tag = "1")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+    /// The fresh 256-bit XChaCha20-Poly1305 key for this blob, 32 bytes
+    /// (`protocol::blob_store::BLOB_KEY_LEN`).
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_key: ::prost::alloc::vec::Vec<u8>,
+    /// The blob ciphertext's size in bytes, at most the server's advertised
+    /// `Limits.max_video_blob_bytes`, itself bounded by
+    /// `protocol::video::MAX_VIDEO_BYTES`.
+    #[prost(uint64, tag = "3")]
+    pub blob_size: u64,
+    /// The clip's length in milliseconds, at least 1 and at most
+    /// `protocol::video::MAX_VIDEO_DURATION_MS` (30 000). The server never sees it;
+    /// the client enforces the 30-second cap.
+    #[prost(uint32, tag = "4")]
+    pub duration_ms: u32,
+    /// The clip's pixel size, so the bubble lays out at the right aspect ratio
+    /// before the clip downloads. Both are at least 1.
+    #[prost(uint32, tag = "5")]
+    pub width: u32,
+    #[prost(uint32, tag = "6")]
+    pub height: u32,
+    /// A ThumbHash of the first frame, shown as a blur until the clip is
+    /// downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes. The
+    /// video analogue of the image ThumbHash; there is no separate poster blob.
+    #[prost(bytes = "vec", tag = "7")]
+    pub thumbhash: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich
@@ -1046,6 +1160,16 @@ pub struct Limits {
     /// counts toward it.
     #[prost(uint32, tag = "2")]
     pub max_handshake_envelope_bytes: u32,
+    /// video-messages: Config-driven limit. The server's configured maximum blob
+    /// ciphertext size in bytes, read from its config at startup and clamped to
+    /// `\[the image cap, protocol::video::MAX_VIDEO_BYTES\]`. It is the one cap the
+    /// server enforces on every `Blobs.UploadBlob` (the server sees only
+    /// ciphertext bytes and cannot tell a video blob from an image blob). Clients
+    /// read it and refuse a video whose encrypted blob would exceed it; they
+    /// enforce the 30-second duration themselves, since the server never sees
+    /// duration. An older client ignores this field.
+    #[prost(uint64, tag = "3")]
+    pub max_video_blob_bytes: u64,
 }
 /// An MLS ExternalSender (RFC 9420 section 12.1.8.1), split into its two parts.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -2084,7 +2208,10 @@ pub mod client_frame {
 /// A frame from the server to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(
+        oneof = "server_frame::Frame",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+    )]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -2117,6 +2244,9 @@ pub mod server_frame {
         /// message-deletion: Removed-conversation sync (change `remove-closed-dm`).
         #[prost(message, tag = "11")]
         ConversationRemoved(super::ConversationRemoved),
+        /// notification-prefs: Mute preference sync (change `mute-notifications`).
+        #[prost(message, tag = "12")]
+        MutePrefs(super::MutePrefs),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -2183,6 +2313,17 @@ pub struct Envelope {
     /// on every other kind, and on every envelope the server sends.
     #[prost(message, optional, tag = "10")]
     pub welcome: ::core::option::Option<WelcomeBundle>,
+    /// message-deletion: Deletion retracts undelivered copies (change
+    /// `delete-messages`). Set by the deleting client on the `APPLICATION`
+    /// envelope that carries a `Content.Delete`, naming in server-visible metadata
+    /// the message the delete targets. The server reads it (it never reads the
+    /// encrypted `Content`), authorises the delete (message-deletion: Who may
+    /// delete) and drops the target's still-queued copies before delivering the
+    /// Delete envelope. Unset on every other envelope. A server that predates this
+    /// field ignores it, so the delete still tombstones everywhere but retracts
+    /// nothing.
+    #[prost(message, optional, tag = "11")]
+    pub deletes: ::core::option::Option<DeleteTarget>,
     /// The device that authenticated the sending stream, regardless of anything
     /// the client put here (message-delivery: Envelope). Unset when the server itself
     /// is the sender, as for its external Remove proposals.
@@ -2252,6 +2393,24 @@ pub mod envelope {
             }
         }
     }
+}
+/// message-deletion: Deletion retracts undelivered copies. The target a
+/// `Content.Delete` deletes, in server-visible plaintext on the carrying
+/// `APPLICATION` envelope, so the server can authorise the delete and drop the
+/// target's undelivered copies without reading content. The client sets the same
+/// target inside the encrypted `Content.Delete`; clients trust only that
+/// encrypted copy, so a server cannot forge a delete on any device by setting
+/// this field — it can only drop queue entries, which it already controls
+/// (design D2).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteTarget {
+    /// The device that sent the deleted message, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
 /// creates, sent inside that `COMMIT` envelope.
@@ -2428,6 +2587,22 @@ pub struct ConversationRemoved {
     #[prost(bytes = "vec", tag = "1")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
 }
+/// notification-prefs: Mute preference sync. The caller's user's private mute
+/// set, sent as one snapshot on every connect (change `mute-notifications`).
+/// Unlike `ConversationRemoved` (one frame per entry, a set that only grows),
+/// this is a single self-contained snapshot the device adopts wholesale: it
+/// carries the global flag alongside the id set, and the set shrinks on unmute.
+/// The server stores and sends the conversation ids and the one flag only, never
+/// content or history.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MutePrefs {
+    /// The conversation ids the user has muted.
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub muted_group_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// Whole-app mute: suppresses every conversation, overriding the id set.
+    #[prost(bool, tag = "2")]
+    pub muted_all: bool,
+}
 /// multi-group: Closing a named group. Sent to each member device of a closed
 /// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.
 /// The client marks the chat closed and keeps its history read-only; envelopes for
@@ -2569,6 +2744,169 @@ pub mod messaging_client {
             req.extensions_mut()
                 .insert(GrpcMethod::new("vyajena.v1.Messaging", "Connect"));
             self.inner.streaming(req, path, codec).await
+        }
+    }
+}
+/// notification-prefs: Mute a conversation; Mute the whole app. Idempotent.
+///
+/// For `MUTE_SCOPE_CONVERSATION`, `group_id` adds (`muted = true`) or removes
+/// (`muted = false`) that conversation from the caller's mute set; the server
+/// rejects it with `PERMISSION_DENIED` unless the caller's user is a member of
+/// that conversation. For `MUTE_SCOPE_GLOBAL`, `muted` sets or clears the
+/// caller's `muted_all` flag and `group_id` is ignored.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetMutePrefRequest {
+    #[prost(enumeration = "MuteScope", tag = "1")]
+    pub scope: i32,
+    /// The conversation's MLS group id, for `MUTE_SCOPE_CONVERSATION`.
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bool, tag = "3")]
+    pub muted: bool,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetMutePrefResponse {}
+/// What a `SetMutePref` call targets (notification-prefs: Mute a conversation,
+/// Mute the whole app).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MuteScope {
+    Unspecified = 0,
+    /// One conversation, named by `group_id`.
+    Conversation = 1,
+    /// Every conversation at once (the user's `muted_all` flag); `group_id` is
+    /// ignored.
+    Global = 2,
+}
+impl MuteScope {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "MUTE_SCOPE_UNSPECIFIED",
+            Self::Conversation => "MUTE_SCOPE_CONVERSATION",
+            Self::Global => "MUTE_SCOPE_GLOBAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MUTE_SCOPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "MUTE_SCOPE_CONVERSATION" => Some(Self::Conversation),
+            "MUTE_SCOPE_GLOBAL" => Some(Self::Global),
+            _ => None,
+        }
+    }
+}
+/// Generated client implementations.
+pub mod prefs_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    /// buf:lint:ignore SERVICE_SUFFIX
+    /// Service name as used in the specs.
+    #[derive(Debug, Clone)]
+    pub struct PrefsClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> PrefsClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + std::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + std::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> PrefsClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
+        {
+            PrefsClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// notification-prefs: Mute a conversation; Mute the whole app. Records the
+        /// caller's mute preference in their private server-side mute set.
+        pub async fn set_mute_pref(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetMutePrefRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetMutePrefResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Prefs/SetMutePref",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Prefs", "SetMutePref"));
+            self.inner.unary(req, path, codec).await
         }
     }
 }

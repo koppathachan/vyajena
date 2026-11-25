@@ -25,6 +25,7 @@ import 'image_bubble.dart';
 import 'links.dart';
 import 'mentions.dart';
 import 'time_text.dart';
+import 'video_bubble.dart';
 import 'voice_playback.dart';
 
 /// Placeholder for a message body this version does not know.
@@ -36,6 +37,9 @@ String statusText(SendState status) => switch (status) {
   SendState_Sending() => '⏳',
   SendState_Accepted() => '✓',
   SendState_Failed(:final reason) => 'Failed: $reason',
+  // Held while the chat is out of sync: kept and re-sent on re-sync, shown
+  // distinctly from a silent ⏳ (app-ui: Out-of-sync re-sync affordance).
+  SendState_OutOfSync() => '⟳ out of sync',
 };
 
 /// What the long-press sheet's reply entry says.
@@ -53,6 +57,30 @@ const resendPictureLabel = 'Resend picture';
 /// What the long-press sheet's entry for sending a voice message again says.
 const resendVoiceLabel = 'Resend voice message';
 
+/// What the long-press sheet's entry for sending a video again says.
+const resendVideoLabel = 'Resend video';
+
+/// What a reply to a video quotes.
+const videoQuote = 'Video';
+
+/// What the long-press sheet's Delete entry says (message-deletion).
+const deleteLabel = 'Delete';
+
+/// The tombstone of a deleted message (message-deletion: Tombstone, not
+/// erasure).
+const deletedText = 'This message was deleted';
+
+/// The tombstone of a message an admin deleted in a group.
+const deletedByAdminText = 'This message was deleted by the admin';
+
+/// What a reply to a deleted message quotes (message-deletion: Deleting media
+/// and replies).
+const deletedQuote = 'deleted message';
+
+/// What the Reveal affordance on a DM tombstone says (message-deletion:
+/// Receiver may reveal in a DM).
+const revealLabel = 'Reveal';
+
 /// One message row.
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -67,6 +95,10 @@ class MessageTile extends StatelessWidget {
     this.core,
     this.onResendImage,
     this.onResendAudio,
+    this.onResendVideo,
+    this.onDelete,
+    this.onReveal,
+    this.revealed,
     this.playback,
     this.showSender = true,
   });
@@ -106,6 +138,23 @@ class MessageTile extends StatelessWidget {
   /// voice message").
   final VoidCallback? onResendAudio;
 
+  /// Resends an own video as a new message (long-press → "Resend video").
+  final VoidCallback? onResendVideo;
+
+  /// Deletes this message (long-press → Delete), when this device may: an admin
+  /// device in the lobby or a named group (any message), or the user's own
+  /// message in a DM. The sheet shows Delete only when this is set
+  /// (message-deletion: Who may delete).
+  final VoidCallback? onDelete;
+
+  /// Reveals the original of a DM tombstone this device still holds (the Reveal
+  /// affordance; message-deletion: Receiver may reveal in a DM).
+  final VoidCallback? onReveal;
+
+  /// The revealed original of a deleted message, once the user tapped Reveal:
+  /// its body is shown in place of the tombstone.
+  final ChatMessage? revealed;
+
   /// The chat's one player, which a voice message plays through.
   final VoicePlayback? playback;
 
@@ -122,6 +171,9 @@ class MessageTile extends StatelessWidget {
         : null;
     final resendVoice = message.outgoing && message.body is ChatBody_Audio
         ? onResendAudio
+        : null;
+    final resendVideo = message.outgoing && message.body is ChatBody_Video
+        ? onResendVideo
         : null;
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -148,6 +200,20 @@ class MessageTile extends StatelessWidget {
                 title: const Text(resendVoiceLabel),
                 onTap: () => Navigator.of(context).pop('resend-voice'),
               ),
+            if (resendVideo != null)
+              ListTile(
+                key: const Key('resend-video'),
+                leading: const Icon(Icons.refresh),
+                title: const Text(resendVideoLabel),
+                onTap: () => Navigator.of(context).pop('resend-video'),
+              ),
+            if (onDelete != null)
+              ListTile(
+                key: const Key('delete'),
+                leading: const Icon(Icons.delete_outline),
+                title: const Text(deleteLabel),
+                onTap: () => Navigator.of(context).pop('delete'),
+              ),
           ],
         ),
       ),
@@ -159,6 +225,10 @@ class MessageTile extends StatelessWidget {
         resend?.call();
       case 'resend-voice':
         resendVoice?.call();
+      case 'resend-video':
+        resendVideo?.call();
+      case 'delete':
+        onDelete?.call();
     }
   }
 
@@ -174,6 +244,41 @@ class MessageTile extends StatelessWidget {
       );
     }
     return _withMentions(context, text);
+  }
+
+  /// A tombstone for a deleted message (message-deletion: Tombstone, not
+  /// erasure): the italic "This message was deleted" (with "by the admin" for a
+  /// moderator delete), and in a DM, when this device still holds the original,
+  /// a Reveal affordance (Receiver may reveal in a DM).
+  Widget _tombstone(BuildContext context, bool byAdmin, bool revealable) {
+    final scheme = Theme.of(context).colorScheme;
+    final label = Text(
+      byAdmin ? deletedByAdminText : deletedText,
+      style: TextStyle(
+        fontStyle: FontStyle.italic,
+        color: scheme.onSurfaceVariant,
+      ),
+    );
+    if (!revealable || onReveal == null) {
+      return label;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        label,
+        TextButton(
+          key: const Key('reveal'),
+          onPressed: onReveal,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 0),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(revealLabel),
+        ),
+      ],
+    );
   }
 
   /// [text] with this message's mentions and its links drawn in it.
@@ -222,6 +327,17 @@ class MessageTile extends StatelessWidget {
     );
   }
 
+  Widget _video(BuildContext context, VideoView video) {
+    final core = this.core;
+    if (core == null) return const Text('Video');
+    return VideoBubble(
+      key: ValueKey('video-${message.id}'),
+      core: core,
+      messageId: message.id,
+      video: video,
+    );
+  }
+
   Widget _quote(BuildContext context, ReplyQuote reply) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
@@ -259,6 +375,14 @@ class MessageTile extends StatelessWidget {
     final style = Theme.of(
       context,
     ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
+    // message-deletion: Deleting media and replies. A reply to a message this
+    // device knows was deleted quotes "deleted message", not the stale snapshot.
+    if (reply.originalDeleted) {
+      return Text(
+        deletedQuote,
+        style: style?.copyWith(fontStyle: FontStyle.italic),
+      );
+    }
     switch (reply.kind) {
       case ReplyKind.audio:
         final length = clipLengthText(Duration(milliseconds: reply.durationMs));
@@ -318,10 +442,32 @@ class MessageTile extends StatelessWidget {
     final own = message.ownUser;
     final status = message.outgoing ? message.status : null;
     final sentMs = (message.sentAtMs ?? message.acceptedAtMs)?.toInt();
-    final textBody = switch (message.body) {
+    // A revealed tombstone shows the original body in place of the tombstone.
+    final displayBody = message.body is ChatBody_Deleted && revealed != null
+        ? revealed!.body
+        : message.body;
+    // A transparent image — a sticker — with no caption and no reply is drawn
+    // without an opaque bubble fill, so its transparency reads against the
+    // chat (photo-sticker: Sticker is an image; app-ui: Create a sticker). A
+    // sticker is indistinguishable on the wire from any transparent image, so
+    // this keys off the ThumbHash the core decodes, not a wire flag.
+    final core = this.core;
+    final sticker =
+        core != null &&
+        message.reply == null &&
+        displayBody is ChatBody_Image &&
+        (displayBody.image.caption?.isEmpty ?? true) &&
+        core.thumbhashIsTransparent(displayBody.image.thumbhash);
+    final textBody = switch (displayBody) {
       ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
       ChatBody_Audio(:final audio) => _audio(context, audio),
+      ChatBody_Video(:final video) => _video(context, video),
+      ChatBody_Deleted(:final byAdmin, :final revealable) => _tombstone(
+        context,
+        byAdmin,
+        revealable,
+      ),
       ChatBody_Unsupported() => Text(
         unsupportedText,
         style: TextStyle(
@@ -342,23 +488,7 @@ class MessageTile extends StatelessWidget {
     // it is given (an Align, say) would stretch the bubble across the
     // screen (design D1).
     final content = own
-        ? Wrap(
-            alignment: WrapAlignment.end,
-            crossAxisAlignment: WrapCrossAlignment.end,
-            spacing: 8,
-            children: [
-              body,
-              if (status != null)
-                Text(
-                  statusText(status),
-                  style: text.labelSmall?.copyWith(
-                    color: status is SendState_Failed
-                        ? scheme.error
-                        : scheme.onSurfaceVariant,
-                  ),
-                ),
-            ],
-          )
+        ? body
         : Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -378,7 +508,11 @@ class MessageTile extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: Card(
-          color: own ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+          color: sticker
+              ? Colors.transparent
+              : own
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerHigh,
           elevation: 0,
           shape: message.mentionsMe
               ? RoundedRectangleBorder(
@@ -395,17 +529,43 @@ class MessageTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   content,
-                  if (sentMs != null) ...[
+                  if (sentMs != null || status != null) ...[
                     const SizedBox(height: 2),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        clockText(context, sentMs),
-                        key: ValueKey('time-${message.id}'),
-                        style: text.labelSmall?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                        ),
-                      ),
+                    // The time and the delivery tick sit on one right-aligned
+                    // line below the body. A MainAxisSize.max Row forwards its
+                    // intrinsic width, so the bubble widens to keep both on the
+                    // line; the status is Flexible so a long failure reason
+                    // wraps rather than overflowing the bubble.
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        if (sentMs != null)
+                          Text(
+                            clockText(context, sentMs),
+                            key: ValueKey('time-${message.id}'),
+                            style: text.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                            ),
+                          ),
+                        if (sentMs != null && status != null)
+                          const SizedBox(width: 6),
+                        if (status != null)
+                          Flexible(
+                            child: Text(
+                              statusText(status),
+                              style: text.labelSmall?.copyWith(
+                                color: status is SendState_Failed
+                                    ? scheme.error
+                                    : scheme.onSurfaceVariant.withValues(
+                                        alpha: 0.6,
+                                      ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ],

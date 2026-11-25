@@ -168,6 +168,11 @@ abstract class CoreService {
   /// Foreground and background, "Network back"; qa-fixes design D6).
   Future<void> reconnectNow();
 
+  /// Re-sync a chat the core signalled is out of sync: ask the server to
+  /// re-add this wedged device (app-ui: Out-of-sync re-sync affordance). The
+  /// held message keeps its place and is sent once the device re-syncs.
+  Future<void> requestResync();
+
   /// This device's user, once registered or linked.
   Future<UserRef?> userId();
 
@@ -264,6 +269,30 @@ abstract class CoreService {
   /// the new message's local id.
   Future<int> resendImage(int id);
 
+  // --- Stickers (photo-sticker: Sticker is an image; app-ui: Create a
+  // sticker). A sticker is a transparent-background image. The native plugin
+  // cuts the subject out on the device and hands the app the RGBA; the core
+  // trims it, encodes WebP-with-alpha and sends it down the image path. The app
+  // never encodes, encrypts or uploads. ---
+
+  /// Sends a subject cutout as a sticker to chat [chatId]; returns its local
+  /// id. [rgba] is the straight-alpha RGBA the platform segmentation produced
+  /// ([width]×[height]×4, R,G,B,A); [source] names which engine made it. Like
+  /// an image it is queued at once, connected or not. A sticker has no caption.
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  });
+
+  /// Whether a ThumbHash encodes a transparent image: the app renders such an
+  /// image — a sticker — without an opaque bubble fill so its transparency
+  /// reads (photo-sticker: Sticker is an image). Decoded by the core; false
+  /// for bytes that are not a ThumbHash.
+  bool thumbhashIsTransparent(Uint8List thumbhash);
+
   // --- Voice messages (message-content: Audio messages; app-ui: Record a voice
   // message, Play a voice message). The core makes the OGG/Opus, encrypts it,
   // uploads it and decrypts what comes back: the app only passes the
@@ -288,6 +317,45 @@ abstract class CoreService {
   /// Resends the clip of own voice message [id] as a new message; returns the
   /// new message's local id.
   Future<int> resendAudio(int id);
+
+  // --- Video messages (message-content: Video messages; app-ui: Send a video,
+  // Video bubble and player). The app's native plugin normalizes the clip to
+  // H.264/MP4 and extracts the first frame; the core does only the blob crypto,
+  // encrypts it, uploads it and decrypts what comes back. The app passes the
+  // normalized [mp4] and the [firstFrameRgba] in and plays the file path it gets
+  // out. ---
+
+  /// Sends the already-normalized clip [mp4] (H.264/MP4 at the 480p/~1 Mbps
+  /// target, ≤ 30 s) to chat [chatId]; returns its local id. [firstFrameRgba]
+  /// ([frameWidth] x [frameHeight] RGBA) is the first frame the core turns into
+  /// the bubble's ThumbHash; pass an empty list for no blur. Throws [CoreError]
+  /// with [CoreErrorKind.videoTooLong] over 30 s, [CoreErrorKind.videoTooLarge]
+  /// over the server's advertised cap, or [CoreErrorKind.notAVideo] for non-MP4
+  /// bytes. Like an image it is queued at once, connected or not.
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  });
+
+  /// The path of video message [id]'s clip, an MP4 file in the core's media
+  /// cache for a player to open: from the cache on this device, else downloaded
+  /// first. The app never copies or keeps the file. Throws [CoreError] with
+  /// [CoreErrorKind.mediaExpired] when the server no longer has it.
+  Future<String> downloadVideo(int id);
+
+  /// The path of video message [id]'s clip if this device has it cached; never
+  /// uses the network.
+  Future<String?> cachedVideo(int id);
+
+  /// Resends the clip of own video message [id] as a new message; returns the
+  /// new message's local id.
+  Future<int> resendVideo(int id);
 
   /// The blur a ThumbHash stands for, as a small PNG; null if the bytes are
   /// not a ThumbHash. Decoded by the core.
@@ -315,6 +383,15 @@ abstract class CoreService {
     List<MentionSpan> mentions = const [],
     int? replyTo,
   });
+
+  /// Deletes the message [id] in chat [chatId] for everyone (message-deletion:
+  /// Who may delete): an admin in the lobby or a named group, or the sender in
+  /// a DM. Throws if this device may not delete it.
+  Future<int> deleteMessage(int chatId, int id);
+
+  /// The original of the deleted DM message [id] in chat [chatId], if this
+  /// device still holds it (message-deletion: Receiver may reveal in a DM).
+  Future<ChatMessage> reveal(int chatId, int id);
 
   /// [unseenMentions] in chat [chatId].
   Future<List<int>> unseenMentionsIn(int chatId);
@@ -392,6 +469,23 @@ abstract class CoreService {
   /// closed DM). Throws if it is not a closed DM or the server cannot be
   /// reached; nothing is deleted then.
   Future<void> removeClosedDm(int chatId);
+
+  // --- Notification prefs (notification-prefs; change `mute-notifications`) ---
+
+  /// Mutes or unmutes the conversation [chatId] (notification-prefs: Mute a
+  /// conversation): the core tells the server, then records it on this and the
+  /// user's other devices. A muted conversation raises no wake push and no
+  /// in-app notification while its messages still arrive. Throws (leaving it
+  /// unmuted) if the server does not support it or cannot be reached.
+  Future<void> setConversationMuted(int chatId, bool muted);
+
+  /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
+  /// while on, every conversation is silenced, overriding the per-conversation
+  /// mutes.
+  Future<void> setAppMuted(bool muted);
+
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+  Future<bool> appMuted();
 
   /// The member devices of the named group [chatId].
   Future<List<MemberDevice>> groupMembers(int chatId);

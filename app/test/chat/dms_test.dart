@@ -34,6 +34,7 @@ ChatSummary dmWithBob({
   kind: ChatKindInfo.dm(peer: bob, waiting: waiting, closed: closed),
   unread: unread,
   unseenMentions: 0,
+  muted: false,
 );
 
 final composer = find.byKey(const Key('composer'));

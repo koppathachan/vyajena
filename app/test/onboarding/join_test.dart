@@ -172,6 +172,24 @@ void main() {
     expect(find.textContaining("server's identity"), findsNothing);
   });
 
+  // spec: app-ui/invite-expiry-is-surfaced
+  testWidgets('pasting an expired invite says it expired and a new one is '
+      'needed, not a generic failure', (tester) async {
+    final core = FakeCoreService()
+      ..fails['register'] = const CoreError(
+        kind: CoreErrorKind.inviteExpired,
+        message: 'the invite has expired',
+      );
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:bob');
+    await tap(tester, find.text('Join'));
+    expect(
+      find.text('This invite has expired. Ask the admin for a fresh one.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Could not join'), findsNothing);
+  });
+
   // spec: app-ui/join-from-an-invite
   testWidgets('Bad invite text: the app says the invite is not valid and '
       'calls nothing', (tester) async {

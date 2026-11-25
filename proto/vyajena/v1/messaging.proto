@@ -69,6 +69,8 @@ message ServerFrame {
     GroupClosed group_closed = 10;
     // message-deletion: Removed-conversation sync (change `remove-closed-dm`).
     ConversationRemoved conversation_removed = 11;
+    // notification-prefs: Mute preference sync (change `mute-notifications`).
+    MutePrefs mute_prefs = 12;
   }
 }
 
@@ -151,6 +153,17 @@ message Envelope {
   // on every other kind, and on every envelope the server sends.
   WelcomeBundle welcome = 10;
 
+  // message-deletion: Deletion retracts undelivered copies (change
+  // `delete-messages`). Set by the deleting client on the `APPLICATION`
+  // envelope that carries a `Content.Delete`, naming in server-visible metadata
+  // the message the delete targets. The server reads it (it never reads the
+  // encrypted `Content`), authorises the delete (message-deletion: Who may
+  // delete) and drops the target's still-queued copies before delivering the
+  // Delete envelope. Unset on every other envelope. A server that predates this
+  // field ignores it, so the delete still tombstones everywhere but retracts
+  // nothing.
+  DeleteTarget deletes = 11;
+
   // --- Set by the server when it accepts the envelope; ignored if a client sets
   // them. ---
 
@@ -163,6 +176,22 @@ message Envelope {
   uint64 server_seq = 8;
   // When the server accepted the envelope.
   google.protobuf.Timestamp accepted_at = 9;
+}
+
+// message-deletion: Deletion retracts undelivered copies. The target a
+// `Content.Delete` deletes, in server-visible plaintext on the carrying
+// `APPLICATION` envelope, so the server can authorise the delete and drop the
+// target's undelivered copies without reading content. The client sets the same
+// target inside the encrypted `Content.Delete`; clients trust only that
+// encrypted copy, so a server cannot forge a delete on any device by setting
+// this field — it can only drop queue entries, which it already controls
+// (design D2).
+message DeleteTarget {
+  // The device that sent the deleted message, as its envelope's `sender`
+  // named it.
+  DeviceRef target_sender = 1;
+  // The deleted message's `msg_id` (16 bytes).
+  bytes target_msg_id = 2;
 }
 
 // message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
@@ -309,6 +338,20 @@ message DmClosed {
 // if it has it and it is closed; otherwise it ignores the frame.
 message ConversationRemoved {
   bytes group_id = 1;
+}
+
+// notification-prefs: Mute preference sync. The caller's user's private mute
+// set, sent as one snapshot on every connect (change `mute-notifications`).
+// Unlike `ConversationRemoved` (one frame per entry, a set that only grows),
+// this is a single self-contained snapshot the device adopts wholesale: it
+// carries the global flag alongside the id set, and the set shrinks on unmute.
+// The server stores and sends the conversation ids and the one flag only, never
+// content or history.
+message MutePrefs {
+  // The conversation ids the user has muted.
+  repeated bytes muted_group_ids = 1;
+  // Whole-app mute: suppresses every conversation, overriding the id set.
+  bool muted_all = 2;
 }
 
 // multi-group: Closing a named group. Sent to each member device of a closed

@@ -42,6 +42,28 @@ pub struct ImageView {
     pub state: MediaStatus,
 }
 
+/// Which on-device engine produced a subject cutout (photo-sticker:
+/// Segmentation seam and RGBA contract). The app passes the source its platform
+/// plugin used; the core encodes every source identically, so this only names
+/// the producer. Only the two MVP sources are exposed; `Server`/`OnnxLocal` are
+/// reserved in the core for later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StickerSource {
+    /// iOS Vision foreground/subject mask.
+    IosVision,
+    /// Android ML Kit Subject Segmentation.
+    AndroidMlKit,
+}
+
+impl StickerSource {
+    pub(crate) fn to_core(self) -> client::media::SegmentationSource {
+        match self {
+            Self::IosVision => client::media::SegmentationSource::IosVision,
+            Self::AndroidMlKit => client::media::SegmentationSource::AndroidMlKit,
+        }
+    }
+}
+
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +74,24 @@ pub struct AudioView {
     /// before the clip is downloaded.
     pub waveform: Vec<u8>,
     /// The clip's size on the server in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaStatus,
+}
+
+/// A video message (message-content: Video messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoView {
+    /// Pixel width of the clip, for the bubble's aspect ratio.
+    pub width: u32,
+    /// Pixel height of the clip, for the bubble's aspect ratio.
+    pub height: u32,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The first-frame ThumbHash blur to draw until the clip is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The clip's size on the server in bytes, to show before downloading.
     pub size: u64,
     /// Where the clip is.
     pub state: MediaStatus,
@@ -75,6 +115,22 @@ pub enum ChatBody {
     Audio {
         /// The clip. Boxed like an image: a message is carried in every event.
         audio: Box<AudioView>,
+    },
+    /// A video message.
+    Video {
+        /// The clip. Boxed like an image: a message is carried in every event.
+        video: Box<VideoView>,
+    },
+    /// A deleted message, shown as a tombstone "This message was deleted"
+    /// (message-deletion: Tombstone, not erasure).
+    Deleted {
+        /// An admin deleted another user's message in the lobby or a named
+        /// group: the tombstone reads "by the admin".
+        by_admin: bool,
+        /// A DM tombstone whose original this device still holds: the app offers
+        /// Reveal (message-deletion: Receiver may reveal in a DM). Always
+        /// `false` in the lobby and named groups.
+        revealable: bool,
     },
     /// A body this version does not know: shown as a placeholder saying the
     /// app needs an update (app-ui: Chat screen).
@@ -137,6 +193,10 @@ pub struct ReplyQuote {
     pub thumbhash: Vec<u8>,
     /// The original's local id when this device has it (tap to jump).
     pub original_id: Option<i64>,
+    /// The original was deleted and this device holds the delete, so the quote
+    /// shows "deleted message" instead of the snapshot (message-deletion:
+    /// Deleting media and replies).
+    pub original_deleted: bool,
 }
 
 /// Where an own message stands.
@@ -151,6 +211,11 @@ pub enum SendState {
         /// Why, for display.
         reason: String,
     },
+    /// Held because this device is wedged behind the group's epoch and out of
+    /// sync (group-membership: Orphaned device self-recovery). Its text is
+    /// kept and sent once the device re-syncs: shown as waiting to re-sync, not
+    /// a silent ⏳ and not failed.
+    OutOfSync,
 }
 
 /// A chat message, received or sent by this device.
@@ -224,6 +289,9 @@ pub struct ChatSummary {
     pub unseen_mentions: u32,
     /// When its newest message was stored.
     pub last_message_at_ms: Option<i64>,
+    /// This conversation is individually muted (notification-prefs: Mute a
+    /// conversation); whole-app mute is shown globally via [`Core::app_muted`].
+    pub muted: bool,
 }
 
 /// The connection to the server.
@@ -308,6 +376,10 @@ pub enum CoreEvent {
     /// The chat list changed: a DM was opened, joined, got its peer's first
     /// device, or was closed (change `dms`).
     ChatsChanged,
+    /// The user's mute set changed (notification-prefs: Mute preference sync): a
+    /// snapshot was adopted from the server, or this device's own mute/unmute
+    /// took effect. The app re-reads the chats' `muted` flags and `app_muted`.
+    MutePrefsChanged,
     /// This device was removed for inactivity; messages since then were not
     /// kept for it.
     RemovedForInactivity {
@@ -316,6 +388,14 @@ pub enum CoreEvent {
     },
     /// This device was re-added after a removal.
     Rejoined,
+    /// A chat is out of sync: this device is wedged behind the group's epoch
+    /// and cannot self-recover, so the app shows an "out of sync — re-sync"
+    /// affordance (app-ui: Out-of-sync re-sync affordance). Cleared on re-add
+    /// (`Rejoined` / `JoinedGroup`).
+    OutOfSync {
+        /// The chat that is out of sync (0 is the lobby).
+        chat_id: i64,
+    },
     /// A known user's identity key changed.
     IdentityKeyChanged {
         /// The user.

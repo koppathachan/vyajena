@@ -1,0 +1,46 @@
+// Prefs service: a user's private, per-user notification preferences
+// (notification-prefs, change `mute-notifications`).
+//
+// Every RPC requires a session token (wire-transport: Session authentication).
+// A preference is personal: it is keyed by the caller's user and read or
+// written only by that user's own devices. The server stores conversation ids
+// and one flag, never message content or history. `Prefs` is the shared
+// per-user-preference rail; later per-user prefs can move onto it.
+syntax = "proto3";
+
+package vyajena.v1;
+
+// buf:lint:ignore SERVICE_SUFFIX
+// Service name as used in the specs.
+service Prefs {
+  // notification-prefs: Mute a conversation; Mute the whole app. Records the
+  // caller's mute preference in their private server-side mute set.
+  rpc SetMutePref(SetMutePrefRequest) returns (SetMutePrefResponse);
+}
+
+// What a `SetMutePref` call targets (notification-prefs: Mute a conversation,
+// Mute the whole app).
+enum MuteScope {
+  MUTE_SCOPE_UNSPECIFIED = 0;
+  // One conversation, named by `group_id`.
+  MUTE_SCOPE_CONVERSATION = 1;
+  // Every conversation at once (the user's `muted_all` flag); `group_id` is
+  // ignored.
+  MUTE_SCOPE_GLOBAL = 2;
+}
+
+// notification-prefs: Mute a conversation; Mute the whole app. Idempotent.
+//
+// For `MUTE_SCOPE_CONVERSATION`, `group_id` adds (`muted = true`) or removes
+// (`muted = false`) that conversation from the caller's mute set; the server
+// rejects it with `PERMISSION_DENIED` unless the caller's user is a member of
+// that conversation. For `MUTE_SCOPE_GLOBAL`, `muted` sets or clears the
+// caller's `muted_all` flag and `group_id` is ignored.
+message SetMutePrefRequest {
+  MuteScope scope = 1;
+  // The conversation's MLS group id, for `MUTE_SCOPE_CONVERSATION`.
+  bytes group_id = 2;
+  bool muted = 3;
+}
+
+message SetMutePrefResponse {}

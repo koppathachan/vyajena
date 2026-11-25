@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use support::clients::TestDevice;
 use support::harness::{Conn, TestServer, authed};
-use support::messaging::{Stream, offline, say, wait_offline, world};
+use support::messaging::{Stream, commit_envelope, offline, say, wait_offline, world};
 use support::{Check, pb};
 
 async fn set_token(conn: &Conn, device: &TestDevice, token: &str) {
@@ -89,6 +89,31 @@ async fn connected_device_gets_the_message_and_no_ping() {
     let got = w.phone_stream.envelope().await;
     assert_eq!(w.phone.read_message(&got.ciphertext), b"on the stream");
     pings_settle(&w.server, &w.phone, 0).await;
+}
+
+// spec: message-delivery/content-free-wake-pings
+#[tokio::test]
+async fn control_only_backlog_fires_no_ping_but_a_message_does() {
+    // push-kind-aware: Only an application backlog alerts an offline device.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    // The admin commits a leaf update: a control-only `COMMIT` is queued to the
+    // offline phone (no Welcome, no application entry).
+    let epoch = w.admin.epoch();
+    let commit = w.admin.self_update();
+    w.admin_stream
+        .accepted(commit_envelope(epoch, commit, None))
+        .await;
+    w.admin.confirm();
+    // A control-only backlog must not alert the offline device.
+    pings_settle(&w.server, &w.phone, 0).await;
+
+    // A real message to the same offline device does fire exactly one ping.
+    say(&mut w.admin, &mut w.admin_stream, b"a real message").await;
+    pings_settle(&w.server, &w.phone, 1).await;
 }
 
 // spec: message-delivery/content-free-wake-pings

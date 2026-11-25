@@ -6,6 +6,7 @@
 // once its bubble was on screen while the app is in the foreground, or
 // when the badge takes the user to it. Tapping a reply's quote scrolls to
 // the original when it is among the loaded messages.
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -22,11 +23,18 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'sticker_plugins.dart';
+import 'video_plugins.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
 
 /// The banner of a closed named group (app-ui: Named group screen).
 const groupClosedText = 'This group was closed';
+
+/// The in-chat banner when a chat is out of sync: this device fell behind the
+/// group's epoch and could not re-sync on its own (app-ui: Out-of-sync re-sync
+/// affordance). The held message is kept, not lost.
+const outOfSyncText = 'This chat is out of sync';
 
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
@@ -66,6 +74,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final _list = GlobalKey();
   final Map<int, GlobalKey> _tiles = {};
+  /// Deleted DM messages the user revealed, shown in place (message-deletion:
+  /// Receiver may reveal in a DM).
+  final Map<int, ChatMessage> _revealed = {};
   ReplyDraft? _reply;
 
   /// The chat's one voice player: one clip plays at a time, and it stops when
@@ -78,6 +89,11 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _jumping = false;
 
   int? _readUpTo;
+
+  /// Whether this conversation is muted individually (notification-prefs: Mute
+  /// a conversation), for the overflow menu's label.
+  bool _muted = false;
+  StreamSubscription<CoreEvent>? _muteSub;
 
   /// The read mark as it stood when this screen opened: the "New messages"
   /// divider pins to it, so it stays put while the stored mark advances
@@ -102,7 +118,31 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _model.ensureLoaded();
     _loadSnapshot();
+    _loadMuted();
+    _muteSub = widget.core.events.listen((event) {
+      if (event is CoreEvent_MutePrefsChanged) _loadMuted();
+    });
     _scroll.addListener(_onScroll);
+  }
+
+  /// Reads whether this conversation is muted, for the menu's label
+  /// (notification-prefs: Mute a conversation).
+  Future<void> _loadMuted() async {
+    try {
+      final chats = await widget.core.chats();
+      bool? muted;
+      for (final c in chats) {
+        if (c.chatId == _model.chatId) {
+          muted = c.muted;
+          break;
+        }
+      }
+      if (mounted && muted != null && muted != _muted) {
+        setState(() => _muted = muted!);
+      }
+    } on Object {
+      // The label falls back to "Mute"; not critical.
+    }
   }
 
   /// Reads the read mark once, before [_markRead] advances it, so the
@@ -164,10 +204,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _muteSub?.cancel();
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _playback?.dispose();
     super.dispose();
+  }
+
+  /// notification-prefs: Mute a conversation. Toggles this conversation's mute
+  /// from the overflow menu.
+  Future<void> _toggleMuted() async {
+    try {
+      await widget.core.setConversationMuted(_model.chatId, !_muted);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorText(error))));
+      }
+    }
   }
 
   String _name(Object user) => _model.names.of(user as UserRef);
@@ -250,6 +305,8 @@ class _ChatScreenState extends State<ChatScreen> {
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
 
+  Future<void> _sendSticker(Cutout cutout) => _model.sendSticker(cutout);
+
   Future<void> _sendAudio(Uint8List wav, {int? replyTo}) async {
     await _model.sendAudio(wav, replyTo: replyTo);
     if (mounted) setState(() => _reply = null);
@@ -268,6 +325,95 @@ class _ChatScreenState extends State<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _model.resendImage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  Future<void> _deleteMessage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.deleteMessage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Picks a source (record or gallery), normalizes the clip through the native
+  /// plugin and sends it (app-ui: Send a video). Owned here so the composer
+  /// stays free of the camera, picker and plugin.
+  Future<void> _sendVideo() async {
+    final source = VideoScope.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('video-source-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('video-record'),
+              leading: const Icon(Icons.videocam),
+              title: const Text('Record'),
+              onTap: () => Navigator.of(sheet).pop('record'),
+            ),
+            ListTile(
+              key: const Key('video-gallery'),
+              leading: const Icon(Icons.video_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(sheet).pop('gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    try {
+      final clip = choice == 'record'
+          ? await source.record()
+          : await source.pick();
+      if (clip == null) return;
+      await _model.sendVideo(
+        clip.mp4,
+        durationMs: clip.durationMs,
+        width: clip.width,
+        height: clip.height,
+        firstFrameRgba: clip.firstFrameRgba,
+        frameWidth: clip.frameWidth,
+        frameHeight: clip.frameHeight,
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Whether this device may delete [message] (message-deletion: Who may
+  /// delete): an admin in the lobby or a named group (`isGroup`), or the user's
+  /// own message in a DM. Never a tombstone, and never once this device is
+  /// removed.
+  bool _canDelete(ChatMessage message, bool isGroup) {
+    if (widget.core.removed.value || message.body is ChatBody_Deleted) {
+      return false;
+    }
+    return isGroup ? widget.admin : message.ownUser;
+  }
+
+  /// Reveals the original of a DM tombstone and shows it in place.
+  Future<void> _reveal(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final original = await _model.reveal(message.id);
+      if (mounted) setState(() => _revealed[message.id] = original);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  Future<void> _resendVideo(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _model.resendVideo(message.id);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }
@@ -477,11 +623,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 chatId: _model.chatId,
                 admin: widget.admin,
                 names: _model.names,
+                muted: _muted,
+                onToggleMute: _toggleMuted,
               )
             else
               ChatMenu(
                 admin: widget.admin && _model.isMain,
                 lobby: _model.isMain,
+                muted: _muted,
+                onToggleMute: _toggleMuted,
               ),
           ],
         ),
@@ -526,10 +676,19 @@ class _ChatScreenState extends State<ChatScreen> {
                                   core: widget.core,
                                   onResendImage: () => _resendImage(message),
                                   onResendAudio: () => _resendAudio(message),
+                                  onResendVideo: () => _resendVideo(message),
                                   playback: _playback,
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
+                                  onDelete:
+                                      _canDelete(message, peer == null)
+                                      ? () => _deleteMessage(message)
+                                      : null,
+                                  onReveal: message.body is ChatBody_Deleted
+                                      ? () => _reveal(message)
+                                      : null,
+                                  revealed: _revealed[message.id],
                                   onQuoteTap: switch (message.reply) {
                                     final ReplyQuote r => () => _openOriginal(
                                       r,
@@ -579,6 +738,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 actions: const [SizedBox.shrink()],
               )
             else ...[
+              if (_model.outOfSync)
+                MaterialBanner(
+                  key: const Key('out-of-sync'),
+                  content: const Text(outOfSyncText),
+                  actions: [
+                    TextButton(
+                      key: const Key('re-sync'),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await widget.core.requestResync();
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Re-syncing…')),
+                        );
+                      },
+                      child: const Text('Re-sync'),
+                    ),
+                  ],
+                ),
               if (_model.waiting)
                 Padding(
                   key: const Key('dm-waiting'),
@@ -596,7 +773,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
+                segmenter: SegmenterScope.of(context),
+                sendSticker: _sendSticker,
                 sendAudio: _sendAudio,
+                onSendVideo: _sendVideo,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,
@@ -664,8 +844,18 @@ enum MenuEntry {
 
 /// The chat's menu: everyone's entries, and the admin's only on admin
 /// devices (the server rejects other devices' admin calls anyway).
+/// The mute/unmute entry's value in [ChatMenu] (it is not a route like the
+/// other entries).
+const String _muteAction = '__mute_toggle__';
+
 class ChatMenu extends StatelessWidget {
-  const ChatMenu({super.key, required this.admin, this.lobby = false});
+  const ChatMenu({
+    super.key,
+    required this.admin,
+    this.lobby = false,
+    this.muted = false,
+    this.onToggleMute,
+  });
 
   final bool admin;
 
@@ -674,22 +864,41 @@ class ChatMenu extends StatelessWidget {
   /// (app-ui: Lobby is fixed; change `lobby-multi-group`).
   final bool lobby;
 
+  /// Whether this conversation is muted (notification-prefs: Mute a
+  /// conversation).
+  final bool muted;
+
+  /// Mutes or unmutes this conversation.
+  final Future<void> Function()? onToggleMute;
+
   @override
-  Widget build(BuildContext context) => PopupMenuButton<MenuEntry>(
+  Widget build(BuildContext context) => PopupMenuButton<Object>(
     tooltip: 'Menu',
-    onSelected: (entry) => Navigator.of(context).pushNamed(entry.route),
+    onSelected: (entry) {
+      if (entry == _muteAction) {
+        onToggleMute?.call();
+      } else if (entry is MenuEntry) {
+        Navigator.of(context).pushNamed(entry.route);
+      }
+    },
     itemBuilder: (context) => [
+      if (onToggleMute != null)
+        PopupMenuItem<Object>(
+          key: const Key('conversation-mute-toggle'),
+          value: _muteAction,
+          child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+        ),
       for (final entry in MenuEntry.values)
         if (admin || !entry.adminOnly)
           PopupMenuItem(value: entry, child: Text(entry.label)),
       if (lobby) ...const [
         PopupMenuDivider(),
-        PopupMenuItem<MenuEntry>(
+        PopupMenuItem<Object>(
           key: ValueKey('lobby-rename-disabled'),
           enabled: false,
           child: Text('Rename group (the lobby is fixed)'),
         ),
-        PopupMenuItem<MenuEntry>(
+        PopupMenuItem<Object>(
           key: ValueKey('lobby-close-disabled'),
           enabled: false,
           child: Text('Close group (the lobby cannot be closed)'),

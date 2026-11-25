@@ -87,6 +87,10 @@ pub struct Stream {
     /// same sequence as before automatic add (read with
     /// [`Stream::join_notice`]).
     joins: VecDeque<pb::JoinNotice>,
+    /// `MutePrefs` snapshots, kept apart (sent on every connect,
+    /// notification-prefs: Mute preference sync) so tests about other frames
+    /// see the same sequence as before (read with [`Stream::mute_prefs`]).
+    mutes: VecDeque<pb::MutePrefs>,
 }
 
 impl Stream {
@@ -110,6 +114,7 @@ impl Stream {
             rx,
             stash: VecDeque::new(),
             joins: VecDeque::new(),
+            mutes: VecDeque::new(),
         })
     }
 
@@ -138,6 +143,9 @@ impl Stream {
                 Ok(Some(pb::ServerFrame {
                     frame: Some(Out::JoinNotice(notice)),
                 })) => self.joins.push_back(notice),
+                Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::MutePrefs(prefs)),
+                })) => self.mutes.push_back(prefs),
                 other => return Ok(other),
             }
         }
@@ -166,6 +174,34 @@ impl Stream {
     /// Drops the `JoinNotice` frames received so far.
     pub fn forget_join_notices(&mut self) {
         self.joins.clear();
+    }
+
+    /// The next `MutePrefs` snapshot (notification-prefs: Mute preference sync);
+    /// other frames before it are kept for [`Stream::next`].
+    pub async fn mute_prefs(&mut self) -> pb::MutePrefs {
+        let mut skipped = VecDeque::new();
+        let found = loop {
+            if let Some(prefs) = self.mutes.pop_front() {
+                break prefs;
+            }
+            match tokio::time::timeout(WAIT, self.rx.message()).await {
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::MutePrefs(prefs)),
+                }))) => break prefs,
+                Ok(Ok(Some(pb::ServerFrame {
+                    frame: Some(Out::JoinNotice(notice)),
+                }))) => self.joins.push_back(notice),
+                Ok(Ok(Some(pb::ServerFrame { frame: Some(frame) }))) => skipped.push_back(frame),
+                other => panic!("expected a MutePrefs, got {other:?}"),
+            }
+        };
+        self.stash.extend(skipped);
+        found
+    }
+
+    /// Drops the `MutePrefs` snapshots received so far.
+    pub fn forget_mute_prefs(&mut self) {
+        self.mutes.clear();
     }
 
     /// Asserts no `JoinNotice` arrives for a short while (other frames are

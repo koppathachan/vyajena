@@ -10,6 +10,7 @@ import '../core/core_service.dart';
 
 /// The entries of a named group's menu.
 enum GroupMenuEntry {
+  mute('Mute notifications', false),
   members('Members', false),
   addMember('Add member', true),
   removeMember('Remove member', true),
@@ -32,12 +33,20 @@ class GroupMenu extends StatelessWidget {
     required this.chatId,
     required this.admin,
     required this.names,
+    this.muted = false,
+    this.onToggleMute,
   });
 
   final CoreService core;
   final int chatId;
   final bool admin;
   final UserNames names;
+
+  /// Whether this group is muted (notification-prefs: Mute a conversation).
+  final bool muted;
+
+  /// Mutes or unmutes this group.
+  final Future<void> Function()? onToggleMute;
 
   void _fail(BuildContext context, Object error) {
     ScaffoldMessenger.of(
@@ -219,6 +228,7 @@ class GroupMenu extends StatelessWidget {
     key: const Key('group-menu'),
     tooltip: 'Menu',
     onSelected: (entry) => switch (entry) {
+      GroupMenuEntry.mute => onToggleMute?.call(),
       GroupMenuEntry.members => _show(context),
       GroupMenuEntry.addMember => _add(context),
       GroupMenuEntry.removeMember => _remove(context),
@@ -227,8 +237,19 @@ class GroupMenu extends StatelessWidget {
     },
     itemBuilder: (context) => [
       for (final entry in GroupMenuEntry.values)
-        if (admin || !entry.adminOnly)
-          PopupMenuItem(value: entry, child: Text(entry.label)),
+        if ((admin || !entry.adminOnly) &&
+            (entry != GroupMenuEntry.mute || onToggleMute != null))
+          PopupMenuItem(
+            key: entry == GroupMenuEntry.mute
+                ? const Key('conversation-mute-toggle')
+                : null,
+            value: entry,
+            child: Text(
+              entry == GroupMenuEntry.mute && muted
+                  ? 'Unmute notifications'
+                  : entry.label,
+            ),
+          ),
     ],
   );
 }

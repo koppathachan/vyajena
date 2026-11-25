@@ -27,6 +27,11 @@ service Blobs {
   // blob-store: Expiry and ack-delete. A member device reports it needs the
   // blob no more.
   rpc AckBlob(AckBlobRequest) returns (AckBlobResponse);
+
+  // blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+  // copy at once when a media message is deleted, authorised with the same
+  // authority as the message delete.
+  rpc DeleteBlob(DeleteBlobRequest) returns (DeleteBlobResponse);
 }
 
 // blob-store: Upload. The server accepts it only from a current member device of
@@ -69,3 +74,18 @@ message AckBlobRequest {
 }
 
 message AckBlobResponse {}
+
+// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+// copy of `blob_id` immediately when its media message is deleted. The server
+// authorises it with the same authority as the message delete (message-deletion:
+// Who may delete): an admin device of `group_id` in the lobby or a named group,
+// or the device that uploaded the blob in a DM; it rejects an unauthorised call
+// with `PERMISSION_DENIED`, purging nothing. A call for an expired,
+// already-deleted or unknown blob succeeds as a no-op; a later `DownloadBlob`
+// answers `NOT_FOUND`.
+message DeleteBlobRequest {
+  bytes group_id = 1;
+  bytes blob_id = 2;
+}
+
+message DeleteBlobResponse {}

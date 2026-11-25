@@ -63,6 +63,11 @@ const pickerOnly = {'package:image_picker/image_picker.dart'};
 /// OS browser (app-ui: Links in messages). It opens no connection in Dart.
 const linksOnly = {'package:url_launcher/url_launcher.dart'};
 
+/// What only the sticker preview may import: `dart:ui` to draw the cutout's
+/// RGBA over a checkerboard (app-ui: Create a sticker). It is a rendering API
+/// (`decodeImageFromPixels`, `Canvas`) with no socket, HTTP client or file API.
+const stickerPreviewOnly = {'dart:ui'};
+
 /// What only the one voice-plugin file may import: the microphone and the
 /// speaker (app-ui: Record a voice message; Play a voice message). It records
 /// to a temporary file and plays a file the core cached; it opens no
@@ -71,6 +76,28 @@ const voiceOnly = {
   'dart:io',
   'package:record/record.dart',
   'package:just_audio/just_audio.dart',
+};
+
+/// The video files (app-ui: Send a video; Video bubble and player):
+/// `video_plugins.dart` picks/records and normalizes a clip through the native
+/// plugin, `video_bubble.dart` plays the core's cached file. Neither opens a
+/// connection (the player only ever opens a local file).
+const videoFiles = {'lib/chat/video_plugins.dart', 'lib/chat/video_bubble.dart'};
+
+/// The files that may read local media files via `dart:io` (a temporary
+/// recording, a picked clip, the core's cached MP4): the voice and video
+/// plugins and the video bubble. None holds network code.
+const ioFiles = {
+  'lib/chat/voice_plugins.dart',
+  'lib/chat/video_plugins.dart',
+  'lib/chat/video_bubble.dart',
+};
+
+/// The files that may pick a file from the gallery (`image_picker`): the one
+/// picture picker and the video plugins. Neither opens a connection.
+const pickerFiles = {
+  'lib/chat/picture_picker.dart',
+  'lib/chat/video_plugins.dart',
 };
 
 /// What only the generated bindings may import: FFI to the Rust core.
@@ -98,8 +125,17 @@ void main() {
             file.path.replaceAll(r'\', '/') == 'lib/main.dart',
           _ when linksOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/links.dart',
+          // dart:io, image_picker and video_player overlap across the voice and
+          // video files, so these are matched by uri before the set arms below.
+          'dart:io' => ioFiles.contains(file.path.replaceAll(r'\', '/')),
+          'package:image_picker/image_picker.dart' =>
+            pickerFiles.contains(file.path.replaceAll(r'\', '/')),
+          'package:video_player/video_player.dart' =>
+            videoFiles.contains(file.path.replaceAll(r'\', '/')),
           _ when pickerOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/picture_picker.dart',
+          _ when stickerPreviewOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/chat/sticker_preview.dart',
           _ when voiceOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/voice_plugins.dart',
           _ => false,
@@ -118,9 +154,10 @@ void main() {
     );
     final bad = [
       for (final file in libFiles())
-        // The voice plugins' temporary recording is the one file this app
-        // touches; it holds no network code.
-        if (file.path.replaceAll(r'\', '/') != 'lib/chat/voice_plugins.dart')
+        // The voice plugins' temporary recording and the video files' cached
+        // MP4 are the files this app touches; they hold no network code.
+        if (file.path.replaceAll(r'\', '/') != 'lib/chat/voice_plugins.dart' &&
+            !videoFiles.contains(file.path.replaceAll(r'\', '/')))
           for (final m in api.allMatches(file.readAsStringSync()))
             '${file.path}: ${m.group(0)}',
     ];
@@ -144,6 +181,8 @@ void main() {
     // messages).
     // record and just_audio only use the microphone and the speaker (Record a
     // voice message; Play a voice message).
+    // video_player only plays the core's cached local MP4 (Video bubble and
+    // player); image_picker also picks the video to send (Send a video).
     expect(names, {
       'flutter',
       'bridge',
@@ -154,6 +193,7 @@ void main() {
       'url_launcher',
       'record',
       'just_audio',
+      'video_player',
     });
   });
 

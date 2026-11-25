@@ -91,6 +91,17 @@ class FakeCoreService extends CoreService {
   /// The recordings [sendAudio] was given, in order.
   final List<Uint8List> sentRecordings = [];
 
+  /// The clips this device has cached, by message id: the path [cachedVideo]
+  /// returns.
+  final Map<int, String> cachedVideoClips = {};
+
+  /// The video clips the server still has, by message id: what [downloadVideo]
+  /// downloads. A message not here has expired.
+  final Map<int, String> serverVideoClips = {};
+
+  /// The normalized clips [sendVideo] was given, in order.
+  final List<Uint8List> sentVideos = [];
+
   /// A new local id, after every id in [messages].
   int _newId() {
     for (final m in messages) {
@@ -178,6 +189,44 @@ class FakeCoreService extends CoreService {
     );
     messages.add(message);
     if (!expired) serverClips[id] = '/media/clip-$id.opus';
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  /// A received video from [sender]. The server still has its clip
+  /// ([serverVideoClips]) unless [expired]; it is not cached yet.
+  ChatMessage receiveVideo(
+    UserRef sender, {
+    bool expired = false,
+    int durationMs = 12000,
+    int width = 854,
+    int height = 480,
+    int chatId = 0,
+  }) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.video(
+        video: VideoView(
+          width: width,
+          height: height,
+          durationMs: durationMs,
+          thumbhash: Uint8List.fromList([1, 2, 3]),
+          size: BigInt.from(4 * 1024 * 1024),
+          state: expired ? MediaStatus.expired : MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: const [],
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    if (!expired) serverVideoClips[id] = '/media/clip-$id.mp4';
     emit(CoreEvent.message(message: message));
     return message;
   }
@@ -294,6 +343,9 @@ class FakeCoreService extends CoreService {
   Future<void> reconnectNow() async => calls.add('reconnectNow');
 
   @override
+  Future<void> requestResync() async => calls.add('requestResync');
+
+  @override
   Future<UserRef?> userId() async => storedUser;
 
   @override
@@ -379,6 +431,59 @@ class FakeCoreService extends CoreService {
     return null;
   }
 
+  /// Whether a [deleteMessage] marks the tombstone "by the admin"; tests set it
+  /// for an admin deleting another user's message in a group.
+  bool deleteByAdmin = false;
+
+  /// Originals kept so a DM [reveal] can return them.
+  final Map<int, ChatMessage> revealable = {};
+
+  @override
+  Future<int> deleteMessage(int chatId, int id) async {
+    _call('deleteMessage', (chatId: chatId, id: id));
+    final index = messages.indexWhere((m) => m.id == id);
+    if (index == -1) {
+      throw const CoreError(
+        kind: CoreErrorKind.noSuchMessage,
+        message: 'no such message',
+      );
+    }
+    final original = messages[index];
+    // A DM (a non-main chat in the tests) keeps the original for Reveal.
+    final isDm = chatId != 0;
+    if (isDm) revealable[id] = original;
+    messages[index] = ChatMessage(
+      id: original.id,
+      chatId: original.chatId,
+      sender: original.sender,
+      senderDevice: original.senderDevice,
+      outgoing: original.outgoing,
+      ownUser: original.ownUser,
+      body: ChatBody.deleted(byAdmin: deleteByAdmin, revealable: isDm),
+      mentions: const [],
+      mentionsMe: false,
+      reply: null,
+      sentAtMs: original.sentAtMs,
+      acceptedAtMs: original.acceptedAtMs,
+      status: original.status,
+    );
+    emit(CoreEvent.message(message: messages[index]));
+    return _newId();
+  }
+
+  @override
+  Future<ChatMessage> reveal(int chatId, int id) async {
+    _call('reveal', (chatId: chatId, id: id));
+    final original = revealable[id];
+    if (original == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.noSuchMessage,
+        message: 'no such message',
+      );
+    }
+    return original;
+  }
+
   @override
   Future<int> sendText(String text) async {
     _call('sendText', text);
@@ -413,6 +518,7 @@ class FakeCoreService extends CoreService {
         durationMs: body is ChatBody_Audio ? body.audio.durationMs : 0,
         thumbhash: body is ChatBody_Image ? body.image.thumbhash : Uint8List(0),
         originalId: original.id,
+        originalDeleted: body is ChatBody_Deleted,
       );
     }
     return _storeOwn(text, mentions, reply, 0);
@@ -526,6 +632,91 @@ class FakeCoreService extends CoreService {
     return sendImage(picture);
   }
 
+  /// The ThumbHash the fake marks as transparent, so
+  /// [thumbhashIsTransparent] reports a sticker.
+  static final Uint8List stickerThumbhash = Uint8List.fromList([7, 7, 7]);
+
+  /// The cutouts [sendSticker] was given, in order.
+  final List<({StickerSource source, int width, int height, Uint8List rgba})>
+  sentStickers = [];
+
+  @override
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  }) async {
+    _call('sendSticker', (chatId: chatId, source: source, w: width, h: height));
+    sentStickers.add((
+      source: source,
+      width: width,
+      height: height,
+      rgba: rgba,
+    ));
+    final id = _newId();
+    cachedPictures[id] = rgba;
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.image(
+          image: ImageView(
+            width: width,
+            height: height,
+            thumbhash: stickerThumbhash,
+            size: BigInt.from(40 * 1024),
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: const [],
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  /// A received sticker (a transparent image) from [sender].
+  ChatMessage receiveSticker(UserRef sender, {int chatId = 0}) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.image(
+        image: ImageView(
+          width: 240,
+          height: 240,
+          thumbhash: stickerThumbhash,
+          size: BigInt.from(40 * 1024),
+          state: MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: const [],
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    piPictures[id] = blurPng;
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  @override
+  bool thumbhashIsTransparent(Uint8List thumbhash) =>
+      thumbhash.length == stickerThumbhash.length &&
+      thumbhash.every((b) => b == stickerThumbhash.first);
+
   @override
   Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async {
     _call('sendAudio', chatId);
@@ -556,6 +747,7 @@ class FakeCoreService extends CoreService {
               ? body.image.thumbhash
               : Uint8List(0),
           originalId: original.id,
+          originalDeleted: body is ChatBody_Deleted,
         );
       }
     }
@@ -617,6 +809,84 @@ class FakeCoreService extends CoreService {
   }
 
   @override
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async {
+    _call('sendVideo', (chatId: chatId, durationMs: durationMs));
+    sentVideos.add(mp4);
+    final id = _newId();
+    cachedVideoClips[id] = '/media/clip-$id.mp4';
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.video(
+          video: VideoView(
+            width: width,
+            height: height,
+            durationMs: durationMs,
+            thumbhash: Uint8List.fromList([1, 2, 3]),
+            size: BigInt.from(mp4.length),
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: const [],
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<String> downloadVideo(int id) async {
+    _call('downloadVideo', id);
+    final cached = cachedVideoClips[id];
+    if (cached != null) return cached;
+    final clip = serverVideoClips[id];
+    if (clip == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaExpired,
+        message: 'the video has expired',
+      );
+    }
+    cachedVideoClips[id] = clip;
+    return clip;
+  }
+
+  @override
+  Future<String?> cachedVideo(int id) async => cachedVideoClips[id];
+
+  @override
+  Future<int> resendVideo(int id) async {
+    _call('resendVideo', id);
+    if (cachedVideoClips[id] == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaNotOnDevice,
+        message: 'not on this device',
+      );
+    }
+    return sendVideo(
+      Uint8List(0),
+      durationMs: 12000,
+      width: 854,
+      height: 480,
+    );
+  }
+
+  @override
   Uint8List? thumbhashPreview(Uint8List thumbhash) => blurPng;
 
   @override
@@ -637,6 +907,23 @@ class FakeCoreService extends CoreService {
   @override
   Future<bool> dmsAvailable() async => dms;
 
+  /// The conversations muted individually (notification-prefs: Mute a
+  /// conversation). Chat id 0 is the lobby.
+  final Set<int> mutedChats = {};
+
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+  bool appMutedValue = false;
+
+  /// `summary` with its `muted` flag taken from [mutedChats].
+  ChatSummary _withMuteState(ChatSummary summary) => ChatSummary(
+    chatId: summary.chatId,
+    kind: summary.kind,
+    unread: summary.unread,
+    unseenMentions: summary.unseenMentions,
+    lastMessageAtMs: summary.lastMessageAtMs,
+    muted: mutedChats.contains(summary.chatId),
+  );
+
   @override
   Future<List<ChatSummary>> chats() async => [
     if (epochValue != null)
@@ -645,10 +932,39 @@ class FakeCoreService extends CoreService {
         kind: const ChatKindInfo.lobby(),
         unread: 0,
         unseenMentions: (await unseenMentionsIn(0)).length,
+        muted: mutedChats.contains(0),
       ),
-    ...groupChats,
-    ...dmChats,
+    for (final c in groupChats) _withMuteState(c),
+    for (final c in dmChats) _withMuteState(c),
   ];
+
+  /// What [setConversationMuted] and [setAppMuted] throw, to test a failure.
+  Object? setMuteError;
+
+  @override
+  Future<void> setConversationMuted(int chatId, bool muted) async {
+    _call('setConversationMuted', [chatId, muted]);
+    final error = setMuteError;
+    if (error != null) throw error;
+    if (muted) {
+      mutedChats.add(chatId);
+    } else {
+      mutedChats.remove(chatId);
+    }
+    emit(const CoreEvent.mutePrefsChanged());
+  }
+
+  @override
+  Future<void> setAppMuted(bool muted) async {
+    _call('setAppMuted', muted);
+    final error = setMuteError;
+    if (error != null) throw error;
+    appMutedValue = muted;
+    emit(const CoreEvent.mutePrefsChanged());
+  }
+
+  @override
+  Future<bool> appMuted() async => appMutedValue;
 
   /// What [namedGroupsAvailable] returns.
   bool namedGroups = true;
@@ -672,6 +988,7 @@ class FakeCoreService extends CoreService {
         kind: ChatKindInfo.group(name: name, closed: false),
         unread: 0,
         unseenMentions: 0,
+        muted: false,
       ),
     );
     emit(const CoreEvent.chatsChanged());
@@ -705,6 +1022,7 @@ class FakeCoreService extends CoreService {
             ),
             unread: c.unread,
             unseenMentions: c.unseenMentions,
+            muted: c.muted,
           )
         else
           c,
@@ -742,6 +1060,7 @@ class FakeCoreService extends CoreService {
             ),
             unread: c.unread,
             unseenMentions: c.unseenMentions,
+            muted: c.muted,
           )
         else
           c,
@@ -770,6 +1089,7 @@ class FakeCoreService extends CoreService {
         kind: ChatKindInfo.dm(peer: user, waiting: true, closed: false),
         unread: 0,
         unseenMentions: 0,
+        muted: false,
       ),
     );
     emit(const CoreEvent.chatsChanged());
@@ -853,7 +1173,11 @@ class FakeCoreService extends CoreService {
     return InviteInfo(
       code: 'code-$username',
       user: UserRef(username: username, serverId: 'chat'),
-      expiresAtMs: 0,
+      // A week out, as the server mints (invite_ttl, 7 days by default), so the
+      // screen can show when it expires.
+      expiresAtMs: DateTime.now()
+          .add(const Duration(days: 7))
+          .millisecondsSinceEpoch,
       text: 'vyajena-invite:$username',
     );
   }

@@ -8,6 +8,28 @@ import '../app/shell_app_bar.dart';
 import '../app/text_box.dart';
 import '../core/core_service.dart';
 
+/// How long until an invite expires, for display (app-ui: Invite expiry is
+/// surfaced). An invite is valid for `invite_ttl` (7 days by default).
+String inviteExpiryText(int expiresAtMs, {DateTime? now}) {
+  final current = now ?? DateTime.now();
+  final remaining = DateTime.fromMillisecondsSinceEpoch(
+    expiresAtMs,
+  ).difference(current);
+  if (!remaining.isNegative && remaining.inDays >= 1) {
+    final days = remaining.inDays;
+    return 'Expires in ${days == 1 ? '1 day' : '$days days'}.';
+  }
+  if (!remaining.isNegative && remaining.inHours >= 1) {
+    final hours = remaining.inHours;
+    return 'Expires in ${hours == 1 ? '1 hour' : '$hours hours'}.';
+  }
+  if (!remaining.isNegative) {
+    final minutes = remaining.inMinutes < 1 ? 1 : remaining.inMinutes;
+    return 'Expires in ${minutes == 1 ? '1 minute' : '$minutes minutes'}.';
+  }
+  return 'This invite has expired — create a new one.';
+}
+
 /// Create an invite.
 class InviteScreen extends StatefulWidget {
   const InviteScreen({super.key, required this.core});
@@ -57,7 +79,19 @@ class _InviteScreenState extends State<InviteScreen> {
         });
       }
     } catch (error) {
-      if (mounted) setState(() => _error = errorText(error));
+      if (mounted) {
+        setState(() {
+          // The server refuses an invite for a username whose user still
+          // exists and is not removed. Tell the admin to remove them first —
+          // the recovery flow for a wiped device (app-ui: Admin recovers a
+          // locked-out user).
+          _error = error is CoreError && error.kind == CoreErrorKind.refused
+              ? '$username may already be in the group. To re-invite someone '
+                    'whose phone was wiped or cannot re-sync, remove them first '
+                    '(Remove a user), then invite the same username here.'
+              : errorText(error);
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -83,6 +117,19 @@ class _InviteScreenState extends State<InviteScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          Card.outlined(
+            key: const Key('recovery-note'),
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'Lost a phone or stuck out of sync? To let someone back in, '
+                'first remove them (Remove a user), then invite the same '
+                'username here. They lose their old device key and the history '
+                'on that device, and any direct messages they had reopen.',
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           TextField(
             key: const Key('username'),
             controller: _username,
@@ -129,6 +176,12 @@ class _InviteScreenState extends State<InviteScreen> {
             ),
             const SizedBox(height: 8),
             ShareableText(text: text),
+            const SizedBox(height: 8),
+            Text(
+              inviteExpiryText(invite.expiresAtMs),
+              key: const Key('invite-expiry'),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ],
         ],
       ),

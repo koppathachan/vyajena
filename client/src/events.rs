@@ -57,6 +57,7 @@ pub struct MessageId(pub i64);
 
 /// Where an own message stands (client-runtime: Send status).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SendStatus {
     /// Stored locally; the server has not accepted it yet.
     Sending,
@@ -67,6 +68,12 @@ pub enum SendStatus {
         /// Why, for display.
         reason: String,
     },
+    /// Held behind the group's epoch while this device is wedged out of epoch
+    /// sync and cannot self-recover (group-membership: Orphaned device
+    /// self-recovery). Its text is kept, with its `msg_id`, to send once the
+    /// device re-syncs: a distinct recoverable state, not a silent `Sending`
+    /// and not `Failed`.
+    OutOfSync,
 }
 
 /// Where an image or voice message's media is on this device (client-runtime: Image
@@ -120,6 +127,27 @@ pub struct AudioBody {
     pub state: MediaState,
 }
 
+/// A video message, as the UI sees it (message-content: Video messages). The
+/// blob key is not here: it never leaves the core.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VideoBody {
+    /// The blob's id, which names the clip to [`crate::Client::download_video`]
+    /// callers and keys the cache.
+    pub blob_id: [u8; protocol::blob_store::BLOB_ID_LEN],
+    /// Pixel width of the clip, for the bubble's aspect ratio.
+    pub width: u32,
+    /// Pixel height of the clip, for the bubble's aspect ratio.
+    pub height: u32,
+    /// The clip's length in milliseconds.
+    pub duration_ms: u32,
+    /// The first-frame ThumbHash blur shown until the clip is downloaded.
+    pub thumbhash: Vec<u8>,
+    /// The blob's size on the server, in bytes.
+    pub size: u64,
+    /// Where the clip is.
+    pub state: MediaState,
+}
+
 /// What a message says.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -132,6 +160,21 @@ pub enum MessageBody {
     Image(Box<ImageBody>),
     /// A voice message (message-content: Audio messages). Boxed like an image.
     Audio(Box<AudioBody>),
+    /// A short video message (message-content: Video messages). Boxed like an
+    /// image.
+    Video(Box<VideoBody>),
+    /// A deleted message, shown as a tombstone "This message was deleted"
+    /// (message-deletion: Tombstone, not erasure).
+    Deleted {
+        /// An admin deleted another user's message in the lobby or a named
+        /// group, so the tombstone reads "by the admin".
+        by_admin: bool,
+        /// A DM tombstone whose original this device still holds: the UI offers
+        /// Reveal, which shows the original (message-deletion: Receiver may
+        /// reveal in a DM). Always `false` in the lobby and named groups, and
+        /// for a device that never received the original.
+        revealable: bool,
+    },
     /// A body this version does not know: shown as "needs a newer app
     /// version" (message-content: Inner content format).
     Unsupported,
@@ -199,6 +242,10 @@ pub struct Reply {
     pub thumbhash: Vec<u8>,
     /// The original's local id, when this device has it stored.
     pub original: Option<MessageId>,
+    /// The original was deleted and this device holds the delete, so the quote
+    /// shows "deleted message" in place of the stored snapshot (message-deletion:
+    /// Deleting media and replies).
+    pub original_deleted: bool,
 }
 
 /// A chat: the lobby, a named group or a DM. The lobby is
@@ -255,6 +302,31 @@ pub struct Chat {
     pub unseen_mentions: u32,
     /// When its newest chat message was stored.
     pub last_message_at: Option<SystemTime>,
+    /// This conversation is in the user's mute set (notification-prefs: Mute a
+    /// conversation). Per-conversation only: it does not reflect whole-app mute,
+    /// which [`MutePrefs::muted_all`] carries and the UI shows globally.
+    pub muted: bool,
+}
+
+/// The user's notification mute preferences, as the UI sees them
+/// (notification-prefs, change `mute-notifications`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MutePrefs {
+    /// The chats the user has muted individually.
+    pub muted_chats: Vec<ChatId>,
+    /// Whole-app mute: every conversation is silenced, overriding the per-chat
+    /// set (notification-prefs: Mute the whole app).
+    pub muted_all: bool,
+}
+
+/// What a mute/unmute targets (notification-prefs: Mute a conversation; Mute the
+/// whole app).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MuteTarget {
+    /// One conversation.
+    Conversation(ChatId),
+    /// Every conversation at once (the `muted_all` flag).
+    Global,
 }
 
 /// A chat message, received or sent by this device.
@@ -363,6 +435,17 @@ pub enum Event {
     },
     /// This device was re-added to the group after a removal.
     Rejoined,
+    /// A chat is out of sync: this device is wedged behind the group's epoch
+    /// and cannot self-recover (no device able to re-add it is online, or the
+    /// re-add daily limit is reached), so the app shows an "out of sync —
+    /// re-sync" affordance rather than leaving a held send a silent hourglass
+    /// (group-membership: Orphaned device self-recovery; app-ui: Out-of-sync
+    /// re-sync affordance). Cleared when the device re-syncs ([`Event::Rejoined`]
+    /// / [`Event::JoinedGroup`]).
+    OutOfSync {
+        /// The chat that is out of sync.
+        chat: ChatId,
+    },
     /// A known user's identity key changed; adding their devices is blocked
     /// until the user accepts the new key (key-directory: Clients verify the
     /// identity chain).
@@ -415,6 +498,11 @@ pub enum Event {
     },
     /// The connection state changed.
     Connection(ConnectionState),
+    /// The user's mute set changed (notification-prefs: Mute preference sync):
+    /// a `MutePrefs` snapshot was adopted from the server, or this device's own
+    /// mute/unmute took effect. The UI re-reads [`crate::Client::mute_prefs`]
+    /// and the chats' `muted` flags.
+    MutePrefsChanged,
 }
 
 /// The server's answer to `Keys.RequestReadd` (group-membership: Re-add after an

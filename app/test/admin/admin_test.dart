@@ -27,6 +27,59 @@ void main() {
     expect(shared, ['vyajena-invite:bob']);
   });
 
+  // spec: app-ui/invite-expiry-is-surfaced
+  testWidgets('a created invite shows when it expires', (tester) async {
+    await openApp(tester, adminCore());
+    await menu(tester, 'Invite a user');
+    await tester.enterText(find.byKey(const Key('username')), 'bob');
+    await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
+    final expiry = find.byKey(const Key('invite-expiry'));
+    expect(expiry, findsOneWidget);
+    expect(
+      tester.widget<Text>(expiry).data,
+      contains('Expires in'),
+    );
+  });
+
+  // spec: app-ui/admin-recovers-a-locked-out-user
+  testWidgets('the invite screen shows the recovery note, and an invite the '
+      'server refuses says to remove the user first', (tester) async {
+    final core = adminCore()
+      ..fails['createInvite'] = const CoreError(
+        kind: CoreErrorKind.refused,
+        message: 'this user already exists',
+      );
+    await openApp(tester, core);
+    await menu(tester, 'Invite a user');
+    expect(find.byKey(const Key('recovery-note')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('username')), 'bob');
+    await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
+    expect(find.textContaining('remove them first'), findsOneWidget);
+  });
+
+  // spec: app-ui/admin-recovers-a-locked-out-user
+  testWidgets('the recovery flow: the admin removes a user, then invites the '
+      'same username', (tester) async {
+    final core = adminCore()
+      ..memberDevices = const [
+        MemberDevice(user: akhil, device: '01'),
+        MemberDevice(user: bob, device: '03'),
+      ];
+    await openApp(tester, core);
+    await menu(tester, 'Remove a user');
+    await tap(tester, find.widgetWithText(TextButton, 'Remove'));
+    await tap(tester, find.widgetWithText(FilledButton, 'Remove'));
+    expect(core.args['removeUser'], bob);
+    await tester.pageBack();
+    await settle(tester);
+    // The freed username can now be invited again.
+    await menu(tester, 'Invite a user');
+    await tester.enterText(find.byKey(const Key('username')), 'bob');
+    await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
+    expect(core.args['createInvite'], 'bob');
+    expect(find.text('vyajena-invite:bob'), findsOneWidget);
+  });
+
   // spec: app-ui/admin-screens
   testWidgets('inviting a username that already has an unused invite says so', (
     tester,

@@ -101,3 +101,53 @@ decision.
   reuses the reset and defers succession to it.
 - Strict epoch (`max_past_epochs = 0`) is unchanged; recovery is re-add + Welcome
   (a fresh start), never relaxing the epoch rule.
+
+## Decisions revisited during implementation (2026-11-25)
+
+Four task notes assumed server-side bookkeeping that the code on `main` already
+provides, or that a proto change would carry. The change avoids a proto change
+(it must not contend for a `ServerFrame` field number with the in-flight
+`replace-user` / `mute-notifications` / `video-messages` / `delete-messages` /
+`audio-calls`), so the implementation lands as below. Behaviour matches the
+specs; no requirement was weakened.
+
+- **D3 (durable removal notice) needs no new table / migration.** The server
+  already records inactivity durably in `inactive_devices` (with `missed_since`)
+  and `connect_info` (`server/src/messaging/stream.rs`) delivers the
+  `RemovedNotice` on the device's *next* connect for as long as the record
+  stands (since PR #5), i.e. even when the device was offline at the moment its
+  leaf was committed-removed. So no SQLite migration `0010+` was added; the
+  guarantee is proven by `server/tests/inactivity.rs::removed_while_offline_is_
+  told_on_next_connect`.
+- **"Admin is told when a member goes inactive" is app-side surfacing.** With no
+  new wire field available, the admin learns of an inactivity removal the way it
+  already does as an active member: the server's external-Remove proposal/commit
+  (durable through the envelope log, so it reaches an admin that was offline at
+  the sweep). Today the app suppresses *automatic* `MembersChanged` entries
+  (qa-fixes D5); the change surfaces them **to the admin only** as an
+  inactivity notice ("X went inactive and was removed" / "X came back and was
+  re-added"). No server table, migration or proto field.
+- **Add-a-member-to-a-named-group already exists on `main`.** The admin's
+  group menu has had an admin-only "Add member" action using `add_to_group`
+  since PR #16 (`app/lib/chat/group_menu.dart`); the proposal's "Members screen
+  is view-only" described the *deployed* `1.4.0+8`, not `main`. Only a confirming
+  widget test was added.
+- **Expired-invite surfacing uses a distinct status, not a proto field.**
+  `Devices.Register` lumped unknown/used/revoked/expired into one
+  `PERMISSION_DENIED`, so the app could not say specifically "expired". The
+  server now returns `DEADLINE_EXCEEDED` for an otherwise-valid invite that has
+  only expired; the core maps it to `ClientError::InviteExpired` →
+  `CoreErrorKind::InviteExpired`, and the app says "This invite has expired. Ask
+  the admin for a fresh one." No proto change.
+- **Out-of-sync is surfaced as soon as the wedge is detected** (removed for
+  inactivity + an own message held behind the epoch + the stream caught up), and
+  cleared on re-add (`Rejoined` / `JoinedGroup`). This upholds the invariant
+  "never a silent indefinite hourglass". Whether a re-adder is currently online
+  is server-side knowledge not exposed without a proto field, so during a
+  transient re-add the banner may show briefly and then clear; the held message
+  keeps its `msg_id` throughout and goes to accepted on re-sync.
+- **Admin single-device lockout** is recorded in
+  `docs/architecture-decisions.md` Open decisions (link a second admin device as
+  a standing safeguard; co-signed succession stays `replace-user` Phase 2). It is
+  already mitigated by the merged `admin-recovery` break-glass; `group-resync`
+  changes no admin authority.

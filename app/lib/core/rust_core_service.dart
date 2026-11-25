@@ -45,6 +45,11 @@ class RustCoreService extends CoreService {
   }
 
   @override
+  Future<void> requestResync() async {
+    await _core?.requestResync();
+  }
+
+  @override
   Future<void> dispose() async {
     await _subscription?.cancel();
     await super.dispose();
@@ -144,8 +149,31 @@ class RustCoreService extends CoreService {
       (await _c.resendImage(id: id)).toInt();
 
   @override
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  }) async => (await _c.sendStickerIn(
+    chatId: chatId,
+    source: source,
+    rgba: rgba,
+    width: width,
+    height: height,
+  )).toInt();
+
+  @override
+  bool thumbhashIsTransparent(Uint8List thumbhash) =>
+      rust.thumbhashIsTransparent(thumbhash: thumbhash);
+
+  @override
   Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async =>
-      (await _c.sendAudioIn(chatId: chatId, wav: wav, replyTo: replyTo)).toInt();
+      (await _c.sendAudioIn(
+        chatId: chatId,
+        wav: wav,
+        replyTo: replyTo,
+      )).toInt();
 
   @override
   Future<String> downloadAudio(int id) => _c.downloadAudio(id: id);
@@ -156,6 +184,37 @@ class RustCoreService extends CoreService {
   @override
   Future<int> resendAudio(int id) async =>
       (await _c.resendAudio(id: id)).toInt();
+
+  @override
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async => (await _c.sendVideoIn(
+    chatId: chatId,
+    mp4: mp4,
+    durationMs: durationMs,
+    width: width,
+    height: height,
+    firstFrameRgba: firstFrameRgba ?? Uint8List(0),
+    frameWidth: frameWidth,
+    frameHeight: frameHeight,
+  )).toInt();
+
+  @override
+  Future<String> downloadVideo(int id) => _c.downloadVideo(id: id);
+
+  @override
+  Future<String?> cachedVideo(int id) => _c.cachedVideo(id: id);
+
+  @override
+  Future<int> resendVideo(int id) async =>
+      (await _c.resendVideo(id: id)).toInt();
 
   @override
   Uint8List? thumbhashPreview(Uint8List thumbhash) =>
@@ -186,6 +245,14 @@ class RustCoreService extends CoreService {
     mentions: mentions,
     replyTo: replyTo,
   );
+
+  @override
+  Future<int> deleteMessage(int chatId, int id) =>
+      _c.deleteMessage(chatId: chatId, id: id);
+
+  @override
+  Future<ChatMessage> reveal(int chatId, int id) =>
+      _c.reveal(chatId: chatId, id: id);
 
   @override
   Future<List<int>> unseenMentionsIn(int chatId) async => [
@@ -265,6 +332,16 @@ class RustCoreService extends CoreService {
   Future<void> removeClosedDm(int chatId) => _c.removeClosedDm(chatId: chatId);
 
   @override
+  Future<void> setConversationMuted(int chatId, bool muted) =>
+      _c.setConversationMuted(chatId: chatId, muted: muted);
+
+  @override
+  Future<void> setAppMuted(bool muted) => _c.setAppMuted(muted: muted);
+
+  @override
+  Future<bool> appMuted() => _c.appMuted();
+
+  @override
   Future<List<MemberDevice>> groupMembers(int chatId) =>
       _c.groupMembers(chatId: chatId);
 
@@ -277,6 +354,5 @@ class RustCoreService extends CoreService {
       _c.acknowledgeIdentityKey(user: user);
 
   @override
-  Future<List<UserRef>> identityRetrustPending() =>
-      _c.identityRetrustPending();
+  Future<List<UserRef>> identityRetrustPending() => _c.identityRetrustPending();
 }

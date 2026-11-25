@@ -19,6 +19,7 @@ ChatSummary group(
   kind: ChatKindInfo.group(name: name, closed: closed),
   unread: unread,
   unseenMentions: 0,
+  muted: false,
 );
 
 FakeCoreService adminWithGroups() => FakeCoreService(storedUser: akhil)
@@ -79,6 +80,7 @@ void main() {
           kind: const ChatKindInfo.dm(peer: bob, waiting: false, closed: false),
           unread: 1,
           unseenMentions: 0,
+          muted: false,
         ),
       ];
     await openHome(tester, core);
@@ -213,6 +215,31 @@ void main() {
     await tap(tester, find.byKey(const Key('group-close-confirm')));
     expect(core.args['closeGroup'], 100);
     expect(find.byKey(const Key('group-closed')), findsOneWidget);
+  });
+
+  // spec: app-ui/add-a-member-to-an-existing-named-group
+  testWidgets('the admin adds an existing user to an existing named group '
+      'without recreating it', (tester) async {
+    final core = adminWithGroups()
+      ..groupChats = [group(100, 'Weekend')]
+      ..groupMemberDevices = {
+        100: const [
+          MemberDevice(user: akhil, device: '01'),
+          MemberDevice(user: alice, device: '02'),
+        ],
+      };
+    await openHome(tester, core);
+    await tap(tester, find.byKey(const ValueKey('chat-100')));
+    await tap(tester, find.byKey(const Key('group-menu')));
+    await tap(tester, find.text('Add member'));
+    // Bob and Carol are in the lobby but not in Weekend: they are offered.
+    expect(find.byKey(const ValueKey('pick-bob')), findsOneWidget);
+    expect(find.byKey(const ValueKey('pick-carol')), findsOneWidget);
+    // Alice is already in the group and the admin is excluded.
+    expect(find.byKey(const ValueKey('pick-alice')), findsNothing);
+    expect(find.byKey(const ValueKey('pick-akhil')), findsNothing);
+    await tap(tester, find.byKey(const ValueKey('pick-bob')));
+    expect(core.args['addToGroup'], [100, bob]);
   });
 
   // spec: app-ui/admin-group-screens

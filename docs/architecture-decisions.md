@@ -8,8 +8,10 @@ The MVP is old-school messaging, text and one picture at a time, in a system lob
 
 **In**
 
-- Text messages, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); no edit or delete
+- Text messages, with @-mentions (a member or `@everyone`, which any member may send) and replies carrying a quote of up to 100 characters, all inside the encrypted `Content` (change `mentions`, owner 2026-11-17); delete, no edit
+- Deleting a message for everyone (change `delete-messages`, owner 2026-11-20, narrowed 2026-11-23): a superseding encrypted `Content.Delete`, never erased history. In the lobby and named groups only an admin device may delete, text or media, as moderation; in a DM only the sender may delete their own. A delete is a real removal while the message is still queued undelivered (the server drops the target's undelivered copies, driven by server-visible `Envelope.deletes`) and a reveal-able tombstone once delivered; honouring clients show "This message was deleted" (and "by the admin"), and a DM receiver may Reveal the original it still holds. Deleting a media message purges the one stored blob at once (`Blobs.DeleteBlob`). No edit
 - Picture messages (change `media-blobs`, owner 2026-11-19): one static image per message with an optional caption (which takes mentions). The core turns every picture into a WebP of at most 2048 px and 2 MB with no metadata; it travels as an encrypted blob on the server and the MLS message carries only its id, key, size and a ThumbHash blur. The full picture downloads on tap and is cached on the device; the server keeps a blob 7 days or until every member device has it
+- Video messages (change `video-messages`, owner 2026-11-23): one short clip per message in the lobby, named groups and DMs, like a picture. Locked format MP4 (H.264 + AAC), normalized to 480p/~1 Mbps, capped at 30 s; a 30 s clip is ≈ 4 MB. Two sources: in-app recording captured straight to H.264/MP4 bounded to 30 s, and a gallery pick trimmed with a 30 s slider (never rejected). The MLS message carries only the blob id, key, size, duration, dimensions and a first-frame ThumbHash; the clip travels as an encrypted blob reusing the picture machinery (upload-then-send, cache, ack-delete, 7-day expiry). The blob downloads on tap and plays full screen. **Two owner-approved departures from the invariants (2026-11-23):** the server's maximum blob size is **config-driven** within a `protocol/` ceiling (see Delivery and limits), not compile-time; and video **normalization runs in a native platform plugin** (AVFoundation on iOS, MediaCodec on Android), not the pure-Rust core, because there is no viable pure-Rust mobile H.264 transcode — the core still does all crypto, keys never leave it, and the normalized plaintext lives only in the app's encrypt-at-rest temp until the core encrypts it
 - A system lobby and named groups (change `lobby-multi-group`, owner 2026-11-20):
   - the group the admin created is the lobby: every member is in it, its name is the fixed "lobby" (clients ignore `GroupSettings.name` for it), and it can never be closed
   - the admin (Akhil) creates named groups holding any subset of the members, renames them and closes them ("delete" is a close, like a DM's); a new member joins the lobby only
@@ -32,7 +34,7 @@ The MVP is old-school messaging, text and one picture at a time, in a system lob
 
 - User-created groups, roles or co-admins in a group; blocking, muting one chat, leaving a DM
 - Read receipts, presence, typing indicators
-- Voice, video; albums, GIFs and animated images; stickers, cutouts and picture editing (the next media changes)
+- Video calls (change `audio-calls`); albums, multiple clips per message, GIFs and animated images; stickers, cutouts and picture editing (the next media changes)
 - Server-side message history
 - Encryption at rest (no SQLCipher)
 
@@ -76,7 +78,7 @@ flowchart LR
   push -.->|"&quot;New message&quot;; tap opens the app"| core
 ```
 
-- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. Pictures are made, encrypted, uploaded and decrypted by the core, which keeps them in its own cache; Dart is handed the picked file going in and WebP bytes to draw coming out (change `media-blobs`). The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
+- **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. Pictures are made, encrypted, uploaded and decrypted by the core, which keeps them in its own cache; Dart is handed the picked file going in and WebP bytes to draw coming out (change `media-blobs`). Video is the one media the core does not transform: a native plugin normalizes the clip to H.264/MP4 (change `video-messages`, a documented departure) and the core does the blob crypto, handed the normalized bytes going in and a cached MP4 file path to play coming out. The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
 - **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
 - **server:** routes, orders and queues ciphertext; stores encrypted picture blobs; dispatches wake pings.
@@ -180,6 +182,8 @@ stateDiagram-v2
 | Inactivity | A device offline 7 days, or whose queue reaches 1,000, is removed and re-added automatically when it returns |
 | Max message size | 64 KB of application ciphertext |
 | Picture | At most 2048 px on the long edge, at most 2 MB of WebP; its blob is at most that plus 40 bytes |
+| Video | MP4 (H.264 + AAC), 480p/~1 Mbps, ≤ 30 s; its blob is capped by the server's configured `max_video_blob_bytes` (video-messages) |
+| Max blob size | One server-enforced cap for every blob, read from `max_video_blob_bytes` in the server config at startup and clamped to `[the 2 MB image cap, protocol::video::MAX_VIDEO_BYTES (8 MiB)]`; default 5 MiB. Advertised in `ServerInfo.Limits`; a client refuses a video whose blob would exceed it and enforces the 30 s duration itself. A **documented departure** from "limits live compile-time in `protocol/`": the cap is config-tunable within the `protocol/` ceiling, so changing it is a config edit and restart, no rebuild |
 | Blob lifetime | 7 days from upload, or until every member device has acked it |
 | Handshake size | 256 KB per Commit or Proposal envelope, a Commit's Welcome included |
 | Commits, Proposals and Welcomes | Exempt from expiry and cap; deleted once every device that must receive them has acknowledged |
@@ -290,7 +294,7 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 | `Devices` | `GetServerInfo`, `Register` (invite), `GetChallenge`, `Authenticate`, `LinkDevice`, `GetSelf`, `RevokeDevice`, `UpdatePushToken` |
 | `Keys` | `UploadKeyPackages` (a new device's first upload triggers the `JoinNotice`), `FetchKeyPackages` (one user, optionally only some devices; with a DM's `group_id`, only KeyPackages that list `0xF0A2`; with a named group's, only those that list `0xF0A3`), `GetIdentityKeys` (identity keys only, consumes nothing), `RequestReadd` (a device that could not use its Welcome asks to be re-added, with fresh KeyPackages; welcome-recovery) |
 | `Admin` | `CreateInvite`, `ListInvites`, `RevokeInvite`, `CreateGroup`, `CreateNamedGroup`, `CloseGroup`, `RemoveUser` (also closes the user's DMs) |
-| `Blobs` | `UploadBlob`, `DownloadBlob`, `AckBlob` (change `media-blobs`): unary, a blob up to 2 MB, only for a member device of the blob's group; `UNAVAILABLE` while the blob backend is absent or off |
+| `Blobs` | `UploadBlob`, `DownloadBlob`, `AckBlob` (change `media-blobs`): unary, a blob up to the server's configured `max_video_blob_bytes` (video-messages; default 5 MiB, was a fixed 2 MB), only for a member device of the blob's group; `UNAVAILABLE` while the blob backend is absent or off |
 | `Dms` | `CreateDm` (any member; `created = false` with the open DM's id when the peer opened it first; change `dms`) |
 
 **Envelope:** `msg_id` (16 bytes, client-generated, for dedup) · `group_id` · `epoch` · `kind` (application, commit, proposal, welcome) · `ciphertext` (the MLS message) · `welcome` (on a commit only: Welcome bytes + recipient devices). Set by the server: `sender` · `server_seq` · `accepted_at`.
@@ -299,13 +303,66 @@ The contract is package `vyajena.v1` in `proto/vyajena/v1/`.
 - Server ids are `user@<server>` from day one, so federation can be added later. A device id is the first 16 bytes of SHA-256 of its auth public key.
 - Every message passes through the Rust core; Flutter never opens a connection (checked by an import scan of `app/lib/`).
 
+## Photo stickers
+
+A sticker is a picture with its subject cut out of the background — a
+transparent-background image. It reuses the image path whole: a sticker is sent
+as an ordinary `Image` body (a WebP that keeps its alpha channel), so the wire,
+the server, the relay and old clients are untouched. There is no new `Content`
+body, no new RPC and no proto change — a client that knows nothing of stickers
+renders one as a plain transparent image.
+
+The cutout is produced **on the device by the platform's own segmentation** —
+iOS Vision (`VNGenerateForegroundInstanceMaskRequest`, iOS 17+) and Android ML
+Kit Subject Segmentation. The photo never leaves the device, and the app bundles
+no segmentation model of its own (so there is no licence or attribution burden);
+the native code only produces a mask, never encodes or uploads.
+
+One seam keeps the engine swappable: a `SegmentationSource`
+(`protocol::photo_sticker`) names who made a cutout (MVP: `IosVision`,
+`AndroidMlKit`; reserved for later: `Server`, `OnnxLocal`) and pins one data
+shape — a straight-alpha, 8-bit-per-channel **RGBA** image (sRGB, R,G,B,A byte
+order, row stride width×4, orientation applied), background fully transparent.
+Nothing else crosses the seam: not a mask-only buffer, not an encoded image.
+
+**Styling and encoding stay in the shared Rust core.** Whatever engine made the
+mask, the core does the same work — trim the transparent margins, downscale the
+long edge to `MAX_IMAGE_EDGE`, encode WebP preserving the alpha within
+`MAX_IMAGE_BYTES`, compute the ThumbHash — then runs the unchanged image blob
+crypto and upload-then-`APPLICATION` send order. The per-blob key never leaves
+the core. Because the ThumbHash of a cutout carries its transparency, the
+receiver renders any transparent image without an opaque bubble fill, so the
+cutout reads against the chat.
+
+```mermaid
+flowchart LR
+  pick["Pick a photo"] --> seg
+  subgraph native["Native SegmentationSource (MVP)"]
+    seg["iOS Vision / Android ML Kit<br/>subject mask → RGBA cutout"]
+  end
+  seg -->|"RGBA contract<br/>(straight alpha, sRGB)"| core["Rust core (shared):<br/>trim, downscale,<br/>WebP+alpha, ThumbHash"]
+  core --> enc["Image blob crypto<br/>(fresh key, blob_id)"]
+  enc --> up["Blobs.UploadBlob"]
+  up --> app["APPLICATION: Content{Image}<br/>(transparent WebP)"]
+  server["Future: consented Server source"] -. "same RGBA contract" .-> core
+  onnx["Future: on-device ONNX/BiRefNet"] -. "same RGBA contract" .-> core
+```
+
+Future work behind the same seam (no wire change needed for the first two): a
+consented server segmentation path (`SegmentationSource::Server`), an on-device
+ONNX/BiRefNet model (`SegmentationSource::OnnxLocal`) for platforms without a
+good native API, and richer styling (outline, shadow) in the one Rust encode
+step. A true bubble-less, larger sticker that the receiver tells apart from a
+transparent photo would need a wire hint (an `is_sticker` flag), so it is
+deferred.
+
 ## Future
 
 Nothing here is built in the MVP, but the protocol leaves room for each.
 
 - Muting one chat (the push would need an opaque per-device chat tag), leaving a DM, blocking
 - User-created groups, then Discord-style servers (named groups are admin-only today)
-- More media on the blob store built in `media-blobs`: picture transforms and stickers (the next two changes), albums, voice, video, thumbnails
+- More media on the blob store built in `media-blobs`: picture transforms and stickers, albums, thumbnails (voice shipped in `audio-messages`, video in `video-messages`)
 - A second blob backend (an object-storage bucket) behind the same trait
 - P2P under conditions (media, voice, video) via iroh, server or relay as iroh-relay
 - Encrypted per-user history store on the server, which also gives new devices history
@@ -323,3 +380,4 @@ Nothing here is built in the MVP, but the protocol leaves room for each.
 - [x] Build order? **Changed** (owner, 2026-11-11; flutter-app): 1. Server ✅, 2. Rust core library ✅, 3. Flutter app (iOS and Android; the first point where two people can chat locally, on two simulators), 4. question-and-answer verification (`qa-verification`), 5. relay and server deployment ✅ (relay first, real push (FCM/APNs) in the next change; owner, 2026-11-15), 6. the terminal client. (Was, server-core: server, core, terminal client, deployment, then the app with push.)
 - [x] How does a locked-out admin recover? **Operator/host access, not a cryptographic recovery key** (owner, 2026-11-25; `admin-recovery`): the admin owns the self-hosted box, so a local `server admin-reset` (host access to the data directory, optionally plus a passphrase) re-seats the admin via the existing bootstrap + removed-user re-key paths. No network reset endpoint (that would be a catastrophic attack surface), and no stored break-glass key (another single point of failure). The re-keyed admin is a changed safety number to every member, who must acknowledge a re-trust prompt — never silently auto-accepted. Same-key recovery (keep the key, no re-trust) and quorum/badges are deferred to `trust-verification`.
 - [x] How is the app distributed? **Privately first** (owner, 2026-11-15; app-release): a new Play app `com.purplechaamba.vyajena` on internal testing now, TestFlight internal testing once the owner's individual Apple account exists; Android 7.0+ and iOS 15.0+, iPhone only; name "Vyajena", icon "വ്യ"; export compliance `ITSAppUsesNonExemptEncryption = NO` on App Store Connect's own answer for standard algorithms outside France (was YES; France left out); upload key and certificate held only by the owner (Keychain + password manager), never in the repo or CI; policy at https://www.purplechaamba.com/vyajena/privacy/. The old vyajena Play app and its CI deployment are deleted once this app runs. A **public** listing waits for: the relay (reviewers must reach the server), in-app account deletion, report/block, real push, and Play's 12-tester closed test. Steps: `docs/release.md`.
+- [ ] Admin single-device lockout — standing safeguard (raised by `group-resync`, 2026-11-25, **owner to confirm**): a sole admin device that is wiped before `admin-reset` is run still means a host round-trip to recover (see the break-glass decision above). As a cheap standing safeguard the owner **should link a second admin device now**, so a lost phone is recovered from the other device over the normal device-linking path with no server access and no admin re-key (so no member re-trust prompt). This is operational advice, not a code change. A true in-band fix — co-signed admin **succession** (one admin device promotes another without host access) — remains **`replace-user` Phase 2**, deferred. `group-resync` itself only recovers *member* devices wedged behind the group epoch (orphaned-device self-recovery + a re-sync affordance); it does not change admin authority.

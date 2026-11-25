@@ -18,6 +18,7 @@ use super::pb::devices_client::DevicesClient;
 use super::pb::dms_client::DmsClient;
 use super::pb::keys_client::KeysClient;
 use super::pb::messaging_client::MessagingClient;
+use super::pb::prefs_client::PrefsClient;
 use super::push::RecordingPush;
 use super::{Check, config_with, manual_clock, tls_client};
 
@@ -63,6 +64,9 @@ pub struct TestServer {
     /// provider does).
     pub pushes: RecordingPush,
     blobs: Blobs,
+    /// Extra TOML appended to the config (e.g. a `[limits]` override), kept so a
+    /// restart uses the same config.
+    extra_config: String,
     stop: Option<oneshot::Sender<()>>,
     _dir: tempfile::TempDir,
 }
@@ -71,21 +75,28 @@ impl TestServer {
     /// Starts a fresh server (admin `akhil@chat`) whose wake pings are
     /// recorded in [`TestServer::pushes`].
     pub async fn start() -> Self {
-        Self::start_inner(true, Blobs::Off).await
+        Self::start_inner(true, Blobs::Off, String::new()).await
     }
 
     /// [`TestServer::start`] with image blobs stored as `blobs` says.
     pub async fn start_with_blobs(blobs: Blobs) -> Self {
-        Self::start_inner(true, blobs).await
+        Self::start_inner(true, blobs, String::new()).await
+    }
+
+    /// [`TestServer::start_with_blobs`] plus extra config TOML appended (e.g. a
+    /// `[limits]` table), so a test can set `max_video_blob_bytes`
+    /// (video-messages: Config-driven limit).
+    pub async fn start_with_blobs_and_config(blobs: Blobs, extra_config: &str) -> Self {
+        Self::start_inner(true, blobs, extra_config.to_owned()).await
     }
 
     /// Starts a fresh server with the default push provider (the logging
     /// one); [`TestServer::pushes`] stays empty.
     pub async fn start_with_default_push() -> Self {
-        Self::start_inner(false, Blobs::Off).await
+        Self::start_inner(false, Blobs::Off, String::new()).await
     }
 
-    async fn start_inner(record: bool, blobs: Blobs) -> Self {
+    async fn start_inner(record: bool, blobs: Blobs, extra_config: String) -> Self {
         let dir = tempfile::tempdir().check("temp dir");
         if matches!(blobs, Blobs::Filesystem) {
             std::fs::create_dir(dir.path().join("blobs")).check("blob directory");
@@ -93,10 +104,10 @@ impl TestServer {
         let clock = manual_clock();
         let pushes = RecordingPush::default();
         let server = if record {
-            Self::start_server(dir.path(), &blobs, &clock, &pushes).await
+            Self::start_server(dir.path(), &blobs, &extra_config, &clock, &pushes).await
         } else {
             Server::start(
-                config_with(dir.path(), blobs.config()),
+                config_with(dir.path(), &format!("{}{extra_config}", blobs.config())),
                 Arc::new(clock.clone()),
             )
             .await
@@ -121,6 +132,7 @@ impl TestServer {
             bootstrap_code,
             pushes,
             blobs,
+            extra_config,
             stop: Some(stop),
             _dir: dir,
         }
@@ -129,10 +141,11 @@ impl TestServer {
     async fn start_server(
         dir: &std::path::Path,
         blobs: &Blobs,
+        extra_config: &str,
         clock: &ManualClock,
         pushes: &RecordingPush,
     ) -> Result<Server, server::runtime::StartError> {
-        let config = config_with(dir, blobs.config());
+        let config = config_with(dir, &format!("{}{extra_config}", blobs.config()));
         let clock = Arc::new(clock.clone());
         let pushes = Arc::new(pushes.clone());
         match blobs {
@@ -160,9 +173,15 @@ impl TestServer {
         if let Some(stop) = self.stop.take() {
             let _ = stop.send(());
         }
-        let server = Self::start_server(self._dir.path(), &self.blobs, &self.clock, &self.pushes)
-            .await
-            .check("server restart");
+        let server = Self::start_server(
+            self._dir.path(),
+            &self.blobs,
+            &self.extra_config,
+            &self.clock,
+            &self.pushes,
+        )
+        .await
+        .check("server restart");
         if let Bootstrap::Created(invite) = server.bootstrap() {
             // A re-minted bootstrap invite (e.g. after an admin reset): keep the
             // latest code so tests can re-register the admin.
@@ -277,6 +296,11 @@ impl Conn {
     /// A `Dms` client.
     pub fn dms(&self) -> DmsClient<Channel> {
         DmsClient::new(self.channel.clone())
+    }
+
+    /// A `Prefs` client (notification-prefs, change `mute-notifications`).
+    pub fn prefs(&self) -> PrefsClient<Channel> {
+        PrefsClient::new(self.channel.clone())
     }
 
     /// A `Blobs` client.

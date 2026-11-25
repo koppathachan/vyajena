@@ -60,6 +60,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   /// Whether the server offers named groups: New group is offered only then.
   bool _groups = false;
+
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app):
+  /// shown as a banner, and it overrides the per-row mute markers.
+  bool _appMuted = false;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -72,7 +76,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
           _reload();
         case CoreEvent_ChatsChanged() ||
             CoreEvent_Message() ||
-            CoreEvent_SendStatus():
+            CoreEvent_SendStatus() ||
+            CoreEvent_MutePrefsChanged():
           _reload();
         default:
           break;
@@ -111,9 +116,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _load() async {
     final chats = _arranged(await widget.core.chats());
-    final (dms, groups) = await (
+    final (dms, groups, appMuted) = await (
       widget.core.dmsAvailable(),
       widget.core.namedGroupsAvailable(),
+      widget.core.appMuted(),
     ).wait;
     await _names.load([
       for (final c in chats)
@@ -145,6 +151,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _previews = previews;
         _dms = dms;
         _groups = groups;
+        _appMuted = appMuted;
       });
     }
   }
@@ -396,19 +403,40 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ),
       ),
     };
+    // notification-prefs: Mute a conversation. A muted row shows a bell-off
+    // marker, unless whole-app mute is on (then the banner conveys it, per-row
+    // markers would be misleading).
+    final showMuteMarker = chat.muted && !_appMuted;
+    final titleText = Text(
+      title,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: closed ? TextStyle(color: disabled) : null,
+    );
     final tile = ListTile(
       key: key,
       leading: avatar,
       enabled: true,
-      title: Text(
-        title,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: closed ? TextStyle(color: disabled) : null,
-      ),
+      // Keep a plain Text title when there is no marker, so the row reads the
+      // same as before (tests and layout).
+      title: showMuteMarker
+          ? Row(
+              children: [
+                Icon(
+                  Icons.notifications_off_outlined,
+                  key: ValueKey('chat-muted-${chat.chatId}'),
+                  size: 16,
+                  color: disabled,
+                ),
+                const SizedBox(width: 4),
+                Flexible(child: titleText),
+              ],
+            )
+          : titleText,
       subtitle: _subtitle(chat, closedText),
       trailing: _trailing(chat),
       onTap: () => _open(chat),
+      onLongPress: () => _muteSheet(chat),
     );
     if (!(closed && chat.kind is ChatKindInfo_Dm)) return tile;
     // message-deletion: Remove a closed DM. The swipe never deletes by itself:
@@ -433,6 +461,43 @@ class _ChatListScreenState extends State<ChatListScreen> {
       },
       child: tile,
     );
+  }
+
+  /// notification-prefs: Mute a conversation. The chat-row long-press menu:
+  /// mute or unmute this conversation (offered for the lobby, a DM and a named
+  /// group alike).
+  Future<void> _muteSheet(ChatSummary chat) async {
+    final muted = chat.muted;
+    final action = await showModalBottomSheet<bool>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              key: ValueKey('chat-mute-toggle-${chat.chatId}'),
+              leading: Icon(
+                muted
+                    ? Icons.notifications_active_outlined
+                    : Icons.notifications_off_outlined,
+              ),
+              title: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+              onTap: () => Navigator.of(sheet).pop(!muted),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null) return;
+    try {
+      await widget.core.setConversationMuted(chat.chatId, action);
+      if (mounted) await _load();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
   }
 
   Future<void> _removeClosedDm(ChatSummary chat) async {
@@ -494,7 +559,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
         onRefresh: () => widget.core.reconnectNow(),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: [for (final chat in _chats) _row(chat)],
+          children: [
+            // notification-prefs: Mute the whole app. While it is on, the list
+            // conveys that notifications are globally off (not per row).
+            if (_appMuted)
+              MaterialBanner(
+                key: const Key('app-muted-banner'),
+                leading: const Icon(Icons.notifications_off_outlined),
+                content: const Text(
+                  'All notifications are muted. Turn it off in Profile.',
+                ),
+                actions: const [SizedBox.shrink()],
+              ),
+            for (final chat in _chats) _row(chat),
+          ],
         ),
       ),
     ),

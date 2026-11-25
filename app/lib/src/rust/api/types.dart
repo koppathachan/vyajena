@@ -8,7 +8,8 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These functions are ignored because they are not marked as `pub`: `to_core`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
 
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
@@ -70,6 +71,25 @@ sealed class ChatBody with _$ChatBody {
     /// The clip. Boxed like an image: a message is carried in every event.
     required AudioView audio,
   }) = ChatBody_Audio;
+
+  /// A video message.
+  const factory ChatBody.video({
+    /// The clip. Boxed like an image: a message is carried in every event.
+    required VideoView video,
+  }) = ChatBody_Video;
+
+  /// A deleted message, shown as a tombstone "This message was deleted"
+  /// (message-deletion: Tombstone, not erasure).
+  const factory ChatBody.deleted({
+    /// An admin deleted another user's message in the lobby or a named
+    /// group: the tombstone reads "by the admin".
+    required bool byAdmin,
+
+    /// A DM tombstone whose original this device still holds: the app offers
+    /// Reveal (message-deletion: Receiver may reveal in a DM). Always
+    /// `false` in the lobby and named groups.
+    required bool revealable,
+  }) = ChatBody_Deleted;
 
   /// A body this version does not know: shown as a placeholder saying the
   /// app needs an update (app-ui: Chat screen).
@@ -219,12 +239,17 @@ class ChatSummary {
   /// When its newest message was stored.
   final PlatformInt64? lastMessageAtMs;
 
+  /// This conversation is individually muted (notification-prefs: Mute a
+  /// conversation); whole-app mute is shown globally via [`Core::app_muted`].
+  final bool muted;
+
   const ChatSummary({
     required this.chatId,
     required this.kind,
     required this.unread,
     required this.unseenMentions,
     this.lastMessageAtMs,
+    required this.muted,
   });
 
   @override
@@ -233,7 +258,8 @@ class ChatSummary {
       kind.hashCode ^
       unread.hashCode ^
       unseenMentions.hashCode ^
-      lastMessageAtMs.hashCode;
+      lastMessageAtMs.hashCode ^
+      muted.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -244,7 +270,8 @@ class ChatSummary {
           kind == other.kind &&
           unread == other.unread &&
           unseenMentions == other.unseenMentions &&
-          lastMessageAtMs == other.lastMessageAtMs;
+          lastMessageAtMs == other.lastMessageAtMs &&
+          muted == other.muted;
 }
 
 /// The connection to the server.
@@ -316,6 +343,11 @@ sealed class CoreEvent with _$CoreEvent {
   /// device, or was closed (change `dms`).
   const factory CoreEvent.chatsChanged() = CoreEvent_ChatsChanged;
 
+  /// The user's mute set changed (notification-prefs: Mute preference sync): a
+  /// snapshot was adopted from the server, or this device's own mute/unmute
+  /// took effect. The app re-reads the chats' `muted` flags and `app_muted`.
+  const factory CoreEvent.mutePrefsChanged() = CoreEvent_MutePrefsChanged;
+
   /// This device was removed for inactivity; messages since then were not
   /// kept for it.
   const factory CoreEvent.removedForInactivity({
@@ -325,6 +357,15 @@ sealed class CoreEvent with _$CoreEvent {
 
   /// This device was re-added after a removal.
   const factory CoreEvent.rejoined() = CoreEvent_Rejoined;
+
+  /// A chat is out of sync: this device is wedged behind the group's epoch
+  /// and cannot self-recover, so the app shows an "out of sync — re-sync"
+  /// affordance (app-ui: Out-of-sync re-sync affordance). Cleared on re-add
+  /// (`Rejoined` / `JoinedGroup`).
+  const factory CoreEvent.outOfSync({
+    /// The chat that is out of sync (0 is the lobby).
+    required PlatformInt64 chatId,
+  }) = CoreEvent_OutOfSync;
 
   /// A known user's identity key changed.
   const factory CoreEvent.identityKeyChanged({
@@ -667,6 +708,11 @@ class ReplyQuote {
   /// The original's local id when this device has it (tap to jump).
   final PlatformInt64? originalId;
 
+  /// The original was deleted and this device holds the delete, so the quote
+  /// shows "deleted message" instead of the snapshot (message-deletion:
+  /// Deleting media and replies).
+  final bool originalDeleted;
+
   const ReplyQuote({
     required this.to,
     required this.quote,
@@ -674,6 +720,7 @@ class ReplyQuote {
     required this.durationMs,
     required this.thumbhash,
     this.originalId,
+    required this.originalDeleted,
   });
 
   @override
@@ -683,7 +730,8 @@ class ReplyQuote {
       kind.hashCode ^
       durationMs.hashCode ^
       thumbhash.hashCode ^
-      originalId.hashCode;
+      originalId.hashCode ^
+      originalDeleted.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -695,7 +743,8 @@ class ReplyQuote {
           kind == other.kind &&
           durationMs == other.durationMs &&
           thumbhash == other.thumbhash &&
-          originalId == other.originalId;
+          originalId == other.originalId &&
+          originalDeleted == other.originalDeleted;
 }
 
 @freezed
@@ -713,6 +762,25 @@ sealed class SendState with _$SendState {
     /// Why, for display.
     required String reason,
   }) = SendState_Failed;
+
+  /// Held because this device is wedged behind the group's epoch and out of
+  /// sync (group-membership: Orphaned device self-recovery). Its text is
+  /// kept and sent once the device re-syncs: shown as waiting to re-sync, not
+  /// a silent ⏳ and not failed.
+  const factory SendState.outOfSync() = SendState_OutOfSync;
+}
+
+/// Which on-device engine produced a subject cutout (photo-sticker:
+/// Segmentation seam and RGBA contract). The app passes the source its platform
+/// plugin used; the core encodes every source identically, so this only names
+/// the producer. Only the two MVP sources are exposed; `Server`/`OnnxLocal` are
+/// reserved in the core for later.
+enum StickerSource {
+  /// iOS Vision foreground/subject mask.
+  iosVision,
+
+  /// Android ML Kit Subject Segmentation.
+  androidMlKit,
 }
 
 /// A user id `<username>@<server_id>`.
@@ -735,4 +803,56 @@ class UserRef {
           runtimeType == other.runtimeType &&
           username == other.username &&
           serverId == other.serverId;
+}
+
+/// A video message (message-content: Video messages). No key and no blob id: they
+/// stay in the core, which is given the message's local id.
+class VideoView {
+  /// Pixel width of the clip, for the bubble's aspect ratio.
+  final int width;
+
+  /// Pixel height of the clip, for the bubble's aspect ratio.
+  final int height;
+
+  /// The clip's length in milliseconds.
+  final int durationMs;
+
+  /// The first-frame ThumbHash blur to draw until the clip is downloaded.
+  final Uint8List thumbhash;
+
+  /// The clip's size on the server in bytes, to show before downloading.
+  final BigInt size;
+
+  /// Where the clip is.
+  final MediaStatus state;
+
+  const VideoView({
+    required this.width,
+    required this.height,
+    required this.durationMs,
+    required this.thumbhash,
+    required this.size,
+    required this.state,
+  });
+
+  @override
+  int get hashCode =>
+      width.hashCode ^
+      height.hashCode ^
+      durationMs.hashCode ^
+      thumbhash.hashCode ^
+      size.hashCode ^
+      state.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is VideoView &&
+          runtimeType == other.runtimeType &&
+          width == other.width &&
+          height == other.height &&
+          durationMs == other.durationMs &&
+          thumbhash == other.thumbhash &&
+          size == other.size &&
+          state == other.state;
 }

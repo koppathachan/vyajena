@@ -5,14 +5,14 @@
 //! one runtime per app process, spike 1.3) or its thread pool.
 
 use client::keystore::{KeyStoreConfig, open_key_store};
-use client::{ChatId, Client, ClientConfig, EventStream, MessageId};
+use client::{ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget};
 use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo,
-    PushPlatform, UserRef,
+    PushPlatform, StickerSource, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -55,6 +55,15 @@ pub fn text_fits(text: String) -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn thumbhash_preview(thumbhash: Vec<u8>) -> Option<Vec<u8>> {
     client::media::encode::thumbhash_preview(&thumbhash)
+}
+
+/// Whether a ThumbHash encodes a transparent image. The app renders such an
+/// image — a sticker — without an opaque bubble fill so its transparency reads
+/// (photo-sticker: Sticker is an image; app-ui: Create a sticker). `false` for
+/// bytes that are not a ThumbHash. The core decodes it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn thumbhash_is_transparent(thumbhash: Vec<u8>) -> bool {
+    client::media::encode::thumbhash_is_transparent(&thumbhash)
 }
 
 impl Core {
@@ -192,6 +201,14 @@ impl Core {
     /// Whether the core is connected right now.
     pub fn is_connected(&self) -> bool {
         self.client.is_connected()
+    }
+
+    /// Re-sync a chat the core signalled is out of sync (`CoreEvent::OutOfSync`):
+    /// ask the server to re-add this wedged device. The held message keeps its
+    /// id and is sent once a device able to re-add this one is online (app-ui:
+    /// Out-of-sync re-sync affordance).
+    pub fn request_resync(&self) {
+        self.client.request_resync();
     }
 
     // --- Push (app-ui: Push notifications) ---
@@ -345,6 +362,31 @@ impl Core {
         .0)
     }
 
+    /// Sends a subject cutout as a sticker to chat `chat_id` (photo-sticker:
+    /// Sticker is an image; Sticker styling and encode). `rgba` is the
+    /// straight-alpha RGBA the platform's `SegmentationSource` produced
+    /// (R,G,B,A byte order, row stride `width`×4, orientation applied,
+    /// `width`×`height`×4 bytes). The core trims it, encodes WebP preserving the
+    /// alpha and sends it down the unchanged image blob path; the native side
+    /// encodes nothing and never sees the key. Queued at once like an image,
+    /// connected or not. A sticker has no caption. Returns its local id.
+    pub async fn send_sticker_in(
+        &self,
+        chat_id: i64,
+        source: StickerSource,
+        rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+    ) -> Result<i64, CoreError> {
+        let cutout = client::media::RgbaCutout {
+            source: source.to_core(),
+            width,
+            height,
+            pixels: rgba,
+        };
+        Ok(forward(self.client.send_sticker_in(ChatId(chat_id), cutout).await)?.0)
+    }
+
     /// The picture of image message `id` as WebP bytes: from this device's
     /// cache, else downloaded, decrypted and cached (client-runtime: Image
     /// download and cache). Fails with [`CoreErrorKind::MediaExpired`] when
@@ -414,6 +456,96 @@ impl Core {
     /// returns the new message's local id.
     pub async fn resend_audio(&self, id: i64) -> Result<i64, CoreError> {
         Ok(forward(self.client.resend_audio(MessageId(id)).await)?.0)
+    }
+
+    /// Sends a video to the main group; returns its local id.
+    /// [`Core::send_video_in`] in the main group.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video(
+        &self,
+        mp4: Vec<u8>,
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: Vec<u8>,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<i64, CoreError> {
+        self.send_video_in(
+            0,
+            mp4,
+            duration_ms,
+            width,
+            height,
+            first_frame_rgba,
+            frame_width,
+            frame_height,
+        )
+        .await
+    }
+
+    /// Sends a video to chat `chat_id`; returns its local id. `mp4` is the
+    /// already-normalized clip the app's native plugin produced (H.264/MP4 at the
+    /// 480p/~1 Mbps target, ≤ 30 s); the core does only the blob crypto
+    /// (video-messages: Video normalization in a native plugin).
+    /// `first_frame_rgba` (RGBA, `frame_width` x `frame_height`) is the first
+    /// frame the core turns into the body's ThumbHash — pass an empty list for no
+    /// blur. The core refuses a clip over 30 s with
+    /// [`CoreErrorKind::VideoTooLong`], one whose encrypted blob exceeds the
+    /// server's advertised cap with [`CoreErrorKind::VideoTooLarge`], and
+    /// non-MP4 bytes with [`CoreErrorKind::NotAVideo`]; otherwise it queues the
+    /// message at once, connected or not, and uploads then sends it like an image.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn send_video_in(
+        &self,
+        chat_id: i64,
+        mp4: Vec<u8>,
+        duration_ms: u32,
+        width: u32,
+        height: u32,
+        first_frame_rgba: Vec<u8>,
+        frame_width: u32,
+        frame_height: u32,
+    ) -> Result<i64, CoreError> {
+        Ok(forward(
+            self.client
+                .send_video_in(
+                    ChatId(chat_id),
+                    &mp4,
+                    duration_ms,
+                    width,
+                    height,
+                    &first_frame_rgba,
+                    frame_width,
+                    frame_height,
+                )
+                .await,
+        )?
+        .0)
+    }
+
+    /// The path of video message `id`'s clip, an MP4 file in the core's media
+    /// cache for a player to open: from the cache, else downloaded, decrypted and
+    /// cached (client-runtime: Image download and cache). Dart never copies or
+    /// keeps the file. Fails with [`CoreErrorKind::MediaExpired`] when the server
+    /// no longer has it.
+    pub async fn download_video(&self, id: i64) -> Result<String, CoreError> {
+        Ok(path_text(forward(
+            self.client.download_video(MessageId(id)).await,
+        )?))
+    }
+
+    /// The path of video message `id`'s clip if this device has it cached; never
+    /// uses the network.
+    pub async fn cached_video(&self, id: i64) -> Result<Option<String>, CoreError> {
+        Ok(forward(self.client.cached_video(MessageId(id)).await)?.map(path_text))
+    }
+
+    /// Resends the clip of the own video message `id` as a new message with a new
+    /// blob, when the first one expired (client-runtime: Expired media); returns
+    /// the new message's local id.
+    pub async fn resend_video(&self, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.resend_video(MessageId(id)).await)?.0)
     }
 
     /// The local ids of messages whose mention of this user is not seen yet,
@@ -560,6 +692,31 @@ impl Core {
         forward(self.client.remove_closed_dm(ChatId(chat_id)).await)
     }
 
+    /// Mutes or unmutes the conversation `chat_id` (notification-prefs: Mute a
+    /// conversation): tells the server, then records it here and on the user's
+    /// other devices. A muted conversation raises no wake push and no in-app
+    /// notification while its messages still arrive. Fails (leaving it unmuted)
+    /// if the server does not support it or is unreachable.
+    pub async fn set_conversation_muted(&self, chat_id: i64, muted: bool) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .set_mute_pref(MuteTarget::Conversation(ChatId(chat_id)), muted)
+                .await,
+        )
+    }
+
+    /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
+    /// while on, every conversation is silenced, overriding the per-conversation
+    /// mutes.
+    pub async fn set_app_muted(&self, muted: bool) -> Result<(), CoreError> {
+        forward(self.client.set_mute_pref(MuteTarget::Global, muted).await)
+    }
+
+    /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+    pub fn app_muted(&self) -> Result<bool, CoreError> {
+        Ok(forward(self.client.mute_prefs())?.muted_all)
+    }
+
     /// The member devices of the named group `chat_id`.
     pub fn group_members(&self, chat_id: i64) -> Result<Vec<MemberDevice>, CoreError> {
         Ok(forward(self.client.group_members(ChatId(chat_id)))?
@@ -608,6 +765,22 @@ impl Core {
             reply_to.map(MessageId),
         ))?
         .0)
+    }
+
+    /// message-deletion: Who may delete. Deletes the stored chat message `id`
+    /// in chat `chat_id` for everyone: an admin may delete any message in the
+    /// lobby or a named group, and in a DM a user may delete their own. Returns
+    /// the local id of the queued delete.
+    pub fn delete_message(&self, chat_id: i64, id: i64) -> Result<i64, CoreError> {
+        Ok(forward(self.client.delete_message(ChatId(chat_id), MessageId(id)))?.0)
+    }
+
+    /// message-deletion: Receiver may reveal in a DM. The original of the deleted
+    /// DM message `id` in chat `chat_id`, if this device still holds it.
+    pub fn reveal(&self, chat_id: i64, id: i64) -> Result<ChatMessage, CoreError> {
+        Ok(map::message(forward(
+            self.client.reveal(ChatId(chat_id), MessageId(id)),
+        )?))
     }
 
     /// [`Core::unseen_mentions`] in chat `chat_id`.

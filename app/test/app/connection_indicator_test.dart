@@ -154,6 +154,7 @@ void main() {
           kind: ChatKindInfo.dm(peer: akhil, waiting: false, closed: false),
           unread: 0,
           unseenMentions: 0,
+          muted: false,
         ),
       ];
     await openApp(tester, core);

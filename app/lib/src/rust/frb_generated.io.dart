@@ -82,6 +82,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageView dco_decode_box_image_view(dynamic raw);
 
   @protected
+  VideoView dco_decode_box_video_view(dynamic raw);
+
+  @protected
   ChatBody dco_decode_chat_body(dynamic raw);
 
   @protected
@@ -202,6 +205,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendState dco_decode_send_state(dynamic raw);
 
   @protected
+  StickerSource dco_decode_sticker_source(dynamic raw);
+
+  @protected
   int dco_decode_u_32(dynamic raw);
 
   @protected
@@ -218,6 +224,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt dco_decode_usize(dynamic raw);
+
+  @protected
+  VideoView dco_decode_video_view(dynamic raw);
 
   @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
@@ -277,6 +286,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ImageView sse_decode_box_image_view(SseDeserializer deserializer);
+
+  @protected
+  VideoView sse_decode_box_video_view(SseDeserializer deserializer);
 
   @protected
   ChatBody sse_decode_chat_body(SseDeserializer deserializer);
@@ -407,6 +419,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendState sse_decode_send_state(SseDeserializer deserializer);
 
   @protected
+  StickerSource sse_decode_sticker_source(SseDeserializer deserializer);
+
+  @protected
   int sse_decode_u_32(SseDeserializer deserializer);
 
   @protected
@@ -423,6 +438,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   BigInt sse_decode_usize(SseDeserializer deserializer);
+
+  @protected
+  VideoView sse_decode_video_view(SseDeserializer deserializer);
 
   @protected
   void sse_encode_AnyhowException(
@@ -501,6 +519,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_image_view(ImageView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_video_view(VideoView self, SseSerializer serializer);
 
   @protected
   void sse_encode_chat_body(ChatBody self, SseSerializer serializer);
@@ -665,6 +686,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_send_state(SendState self, SseSerializer serializer);
 
   @protected
+  void sse_encode_sticker_source(StickerSource self, SseSerializer serializer);
+
+  @protected
   void sse_encode_u_32(int self, SseSerializer serializer);
 
   @protected
@@ -681,6 +705,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_video_view(VideoView self, SseSerializer serializer);
 }
 
 // Section: wire_class

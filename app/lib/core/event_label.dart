@@ -10,14 +10,17 @@ String eventLabel(CoreEvent event) => switch (event) {
       SendState_Sending() => 'sending',
       SendState_Accepted() => 'accepted',
       SendState_Failed() => 'failed',
+      SendState_OutOfSync() => 'out-of-sync',
     }}',
   CoreEvent_ProfileChanged(:final user) =>
     'profile-changed ${user.username}@${user.serverId}',
   CoreEvent_Unreadable() => 'unreadable',
   CoreEvent_Gap() => 'gap',
   CoreEvent_ChatsChanged() => 'chats changed',
+  CoreEvent_MutePrefsChanged() => 'mute-prefs-changed',
   CoreEvent_RemovedForInactivity() => 'removed-for-inactivity',
   CoreEvent_Rejoined() => 'rejoined',
+  CoreEvent_OutOfSync(:final chatId) => 'out-of-sync chat=$chatId',
   CoreEvent_IdentityKeyChanged(:final user) =>
     'identity-key-changed ${user.username}@${user.serverId}',
   CoreEvent_ServerIdentityError() => 'server-identity-error',

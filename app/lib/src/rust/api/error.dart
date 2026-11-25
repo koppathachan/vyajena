@@ -48,9 +48,13 @@ enum CoreErrorKind {
   /// The server could not be reached, or answered something unexpected.
   network,
 
-  /// The server refused the call (for example a used or expired invite, or an
-  /// admin call from a non-admin device).
+  /// The server refused the call (for example a used invite, or an admin call
+  /// from a non-admin device).
   refused,
+
+  /// The pasted invite has expired; a fresh one is needed (app-ui: Invite
+  /// expiry is surfaced).
+  inviteExpired,
 
   /// Text that is not an invite, link request or link approval, or one of
   /// the wrong kind.
@@ -141,6 +145,17 @@ enum CoreErrorKind {
 
   /// The voice message is longer than two minutes.
   audioTooLong,
+
+  /// The video is longer than the 30-second cap (video-messages).
+  videoTooLong,
+
+  /// The video's encrypted blob is over the server's advertised maximum blob
+  /// size (video-messages: Config-driven limit).
+  videoTooLarge,
+
+  /// The bytes handed in are not an MP4 video the app can send
+  /// (video-messages).
+  notAVideo,
 
   /// The server no longer has the picture or voice message (client-runtime:
   /// Expired media).
