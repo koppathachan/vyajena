@@ -1481,6 +1481,40 @@ impl Client {
         self.queue_encoded(chat, encoded, caption, mentions).await
     }
 
+    /// Sends a subject cutout as a sticker to the main group:
+    /// [`Client::send_sticker_in`].
+    pub async fn send_sticker(
+        &self,
+        cutout: crate::media::RgbaCutout,
+    ) -> Result<MessageId, ClientError> {
+        self.send_sticker_in(ChatId::MAIN, cutout).await
+    }
+
+    /// Sends a sticker — a transparent-background subject cutout — to chat
+    /// `chat` (photo-sticker: Sticker is an image; Sticker styling and encode).
+    /// `cutout` is the straight-alpha RGBA a `SegmentationSource` produced on the
+    /// device; the core trims it, encodes WebP preserving the alpha and sends it
+    /// down the unchanged image blob path (upload-then-`APPLICATION` order,
+    /// cache, ack-delete, expiry, resend), so a sticker is an ordinary `Image`
+    /// on the wire. The native side encodes nothing and never sees the key.
+    ///
+    /// Like an image it is queued at once, connected or not, and shows as
+    /// sending until the blob is uploaded and the message accepted. A sticker
+    /// carries no caption or mentions.
+    pub async fn send_sticker_in(
+        &self,
+        chat: ChatId,
+        cutout: crate::media::RgbaCutout,
+    ) -> Result<MessageId, ClientError> {
+        self.account()?;
+        self.check_can_queue(chat)?;
+        let encoded = blocking(move || {
+            Ok(crate::media::encode::encode_cutout(&cutout).map_err(MediaError::from)?)
+        })
+        .await?;
+        self.queue_encoded(chat, encoded, None, &[]).await
+    }
+
     /// Resends the image of the own message `id` as a new message with a fresh
     /// blob, key and `msg_id`, from the picture this device kept: for when the
     /// first blob expired on the server (client-runtime: Expired media). Fails with

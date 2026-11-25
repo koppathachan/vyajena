@@ -443,6 +443,18 @@ class MessageTile extends StatelessWidget {
     final displayBody = message.body is ChatBody_Deleted && revealed != null
         ? revealed!.body
         : message.body;
+    // A transparent image — a sticker — with no caption and no reply is drawn
+    // without an opaque bubble fill, so its transparency reads against the
+    // chat (photo-sticker: Sticker is an image; app-ui: Create a sticker). A
+    // sticker is indistinguishable on the wire from any transparent image, so
+    // this keys off the ThumbHash the core decodes, not a wire flag.
+    final core = this.core;
+    final sticker =
+        core != null &&
+        message.reply == null &&
+        displayBody is ChatBody_Image &&
+        (displayBody.image.caption?.isEmpty ?? true) &&
+        core.thumbhashIsTransparent(displayBody.image.thumbhash);
     final textBody = switch (displayBody) {
       ChatBody_Text(:final text) => _text(context, text),
       ChatBody_Image(:final image) => _image(context, image),
@@ -493,7 +505,11 @@ class MessageTile extends StatelessWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: Card(
-          color: own ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+          color: sticker
+              ? Colors.transparent
+              : own
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerHigh,
           elevation: 0,
           shape: message.mentionsMe
               ? RoundedRectangleBorder(

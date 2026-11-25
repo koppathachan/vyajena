@@ -169,6 +169,11 @@ dependencies {
     // FCM only; no Analytics (push design D8).
     implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
     implementation("com.google.firebase:firebase-messaging")
+    // On-device subject segmentation for stickers (photo-sticker: On-device
+    // native cutout; design S2). The model is downloaded on demand by Google
+    // Play services, not bundled in the APK, so there is no size or licence
+    // cost in the app and nothing ships with it.
+    implementation("com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1")
 }
 
 kotlin {

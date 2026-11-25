@@ -146,13 +146,35 @@ flowchart LR
 
 ## Spikes (before code that relies on them, at implementation time — not planning)
 
-- **S1:** the iOS Vision foreground/subject-mask request produces a usable
-  straight-alpha RGBA cutout at the contract's format and orientation, and the
-  minimum iOS version it needs; record the floor and the fallback.
-- **S2:** Android ML Kit Subject Segmentation produces the same RGBA cutout within
-  the contract, on-device with no model download; record device/SDK requirements.
-- **S3:** the core encodes WebP-with-alpha within `MAX_IMAGE_BYTES` with acceptable
-  edge quality, and the ThumbHash of a transparent image renders a sensible blur.
+- **S1 — iOS Vision (result):** `VNGenerateForegroundInstanceMaskRequest` lifts
+  the subject(s) and `generateMaskedImage(ofInstances:from:croppedToInstancesExtent:)`
+  returns a masked `CVPixelBuffer` with a transparent background. The request
+  needs **iOS 17.0+**; below that `available` returns `false` and the Sticker
+  entry is hidden. CoreImage renders premultiplied RGBA8, so the plugin
+  **unpremultiplies** to the contract's straight alpha and renders in sRGB
+  (`app/ios/Runner/Sticker.swift`); orientation is baked in before the request.
+  **Device verification pending** (needs a physical iPhone / iOS 17 simulator
+  with a photo; not runnable in CI). Fallback: no subject or pre-17 OS →
+  `noSubject` / `unsupported`, told to the user (Open Question 1).
+- **S2 — Android ML Kit (result):** `SubjectSegmentation` with
+  `enableForegroundBitmap()` returns an `ARGB_8888` foreground bitmap (straight
+  alpha), converted to the RGBA contract in `Sticker.kt`. Dependency:
+  `com.google.android.gms:play-services-mlkit-subject-segmentation:16.0.0-beta1`.
+  **Nuance for the owner:** the model is **not bundled in the APK** (no app-side
+  licence/attribution/size cost — the MVP's intent) but ML Kit downloads it
+  **once on demand via Google Play services**, so it is not strictly "no model
+  download" as the spec wording reads. The chosen engine and "nothing ships in
+  the bundle" hold; the on-demand fetch is inherent to ML Kit. A download/runtime
+  failure is treated as `unsupported`. **Device verification pending** (needs a
+  Play-services device/emulator; not runnable in CI).
+- **S3 — core WebP-with-alpha (result, verified):**
+  `client/tests/sticker_pipeline.rs` and `client/tests/stickers.rs` confirm the
+  core encodes a straight-alpha RGBA cutout to a WebP that keeps its alpha within
+  `MAX_IMAGE_BYTES` (background decodes back transparent, subject opaque), trims
+  transparent margins to the subject, downscales to `MAX_IMAGE_EDGE`, and that
+  the same cutout from any `SegmentationSource` encodes byte-for-byte
+  identically. A transparent cutout's ThumbHash is detected as transparent
+  (`thumbhash_is_transparent`), so the receiver drops the opaque bubble fill.
 
 ## Risks / Trade-offs
 

@@ -629,6 +629,91 @@ class FakeCoreService extends CoreService {
     return sendImage(picture);
   }
 
+  /// The ThumbHash the fake marks as transparent, so
+  /// [thumbhashIsTransparent] reports a sticker.
+  static final Uint8List stickerThumbhash = Uint8List.fromList([7, 7, 7]);
+
+  /// The cutouts [sendSticker] was given, in order.
+  final List<({StickerSource source, int width, int height, Uint8List rgba})>
+  sentStickers = [];
+
+  @override
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  }) async {
+    _call('sendSticker', (chatId: chatId, source: source, w: width, h: height));
+    sentStickers.add((
+      source: source,
+      width: width,
+      height: height,
+      rgba: rgba,
+    ));
+    final id = _newId();
+    cachedPictures[id] = rgba;
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.image(
+          image: ImageView(
+            width: width,
+            height: height,
+            thumbhash: stickerThumbhash,
+            size: BigInt.from(40 * 1024),
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: const [],
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  /// A received sticker (a transparent image) from [sender].
+  ChatMessage receiveSticker(UserRef sender, {int chatId = 0}) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.image(
+        image: ImageView(
+          width: 240,
+          height: 240,
+          thumbhash: stickerThumbhash,
+          size: BigInt.from(40 * 1024),
+          state: MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: const [],
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    piPictures[id] = blurPng;
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  @override
+  bool thumbhashIsTransparent(Uint8List thumbhash) =>
+      thumbhash.length == stickerThumbhash.length &&
+      thumbhash.every((b) => b == stickerThumbhash.first);
+
   @override
   Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async {
     _call('sendAudio', chatId);

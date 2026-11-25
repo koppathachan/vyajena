@@ -23,6 +23,15 @@ bool textFits({required String text}) =>
 Uint8List? thumbhashPreview({required List<int> thumbhash}) =>
     RustLib.instance.api.crateApiCoreThumbhashPreview(thumbhash: thumbhash);
 
+/// Whether a ThumbHash encodes a transparent image. The app renders such an
+/// image — a sticker — without an opaque bubble fill so its transparency reads
+/// (photo-sticker: Sticker is an image; app-ui: Create a sticker). `false` for
+/// bytes that are not a ThumbHash. The core decodes it.
+bool thumbhashIsTransparent({required List<int> thumbhash}) => RustLib
+    .instance
+    .api
+    .crateApiCoreThumbhashIsTransparent(thumbhash: thumbhash);
+
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>>
 abstract class Core implements RustOpaqueInterface {
   /// The admin accepted `user`'s changed identity key (app-ui: Notices in
@@ -319,6 +328,22 @@ abstract class Core implements RustOpaqueInterface {
     required String text,
     required List<MentionSpan> mentions,
     PlatformInt64? replyTo,
+  });
+
+  /// Sends a subject cutout as a sticker to chat `chat_id` (photo-sticker:
+  /// Sticker is an image; Sticker styling and encode). `rgba` is the
+  /// straight-alpha RGBA the platform's `SegmentationSource` produced
+  /// (R,G,B,A byte order, row stride `width`×4, orientation applied,
+  /// `width`×`height`×4 bytes). The core trims it, encodes WebP preserving the
+  /// alpha and sends it down the unchanged image blob path; the native side
+  /// encodes nothing and never sees the key. Queued at once like an image,
+  /// connected or not. A sticker has no caption. Returns its local id.
+  Future<PlatformInt64> sendStickerIn({
+    required PlatformInt64 chatId,
+    required StickerSource source,
+    required List<int> rgba,
+    required int width,
+    required int height,
   });
 
   /// Sends a text message; returns its local id. Its status arrives as

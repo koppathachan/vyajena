@@ -12,7 +12,7 @@ use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo,
-    PushPlatform, UserRef,
+    PushPlatform, StickerSource, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -55,6 +55,15 @@ pub fn text_fits(text: String) -> bool {
 #[flutter_rust_bridge::frb(sync)]
 pub fn thumbhash_preview(thumbhash: Vec<u8>) -> Option<Vec<u8>> {
     client::media::encode::thumbhash_preview(&thumbhash)
+}
+
+/// Whether a ThumbHash encodes a transparent image. The app renders such an
+/// image — a sticker — without an opaque bubble fill so its transparency reads
+/// (photo-sticker: Sticker is an image; app-ui: Create a sticker). `false` for
+/// bytes that are not a ThumbHash. The core decodes it.
+#[flutter_rust_bridge::frb(sync)]
+pub fn thumbhash_is_transparent(thumbhash: Vec<u8>) -> bool {
+    client::media::encode::thumbhash_is_transparent(&thumbhash)
 }
 
 impl Core {
@@ -343,6 +352,31 @@ impl Core {
                 .await,
         )?
         .0)
+    }
+
+    /// Sends a subject cutout as a sticker to chat `chat_id` (photo-sticker:
+    /// Sticker is an image; Sticker styling and encode). `rgba` is the
+    /// straight-alpha RGBA the platform's `SegmentationSource` produced
+    /// (R,G,B,A byte order, row stride `width`×4, orientation applied,
+    /// `width`×`height`×4 bytes). The core trims it, encodes WebP preserving the
+    /// alpha and sends it down the unchanged image blob path; the native side
+    /// encodes nothing and never sees the key. Queued at once like an image,
+    /// connected or not. A sticker has no caption. Returns its local id.
+    pub async fn send_sticker_in(
+        &self,
+        chat_id: i64,
+        source: StickerSource,
+        rgba: Vec<u8>,
+        width: u32,
+        height: u32,
+    ) -> Result<i64, CoreError> {
+        let cutout = client::media::RgbaCutout {
+            source: source.to_core(),
+            width,
+            height,
+            pixels: rgba,
+        };
+        Ok(forward(self.client.send_sticker_in(ChatId(chat_id), cutout).await)?.0)
     }
 
     /// The picture of image message `id` as WebP bytes: from this device's

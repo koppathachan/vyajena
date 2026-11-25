@@ -44,6 +44,8 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Sticker.CHANNEL)
+            .setMethodCallHandler { call, result -> Sticker.handle(call, result) }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VideoNormalize.CHANNEL)
             .setMethodCallHandler { call, result ->
                 VideoNormalize.handle(call.method, call.arguments as? Map<*, *>, result)

@@ -9,8 +9,11 @@
 use std::io::Cursor;
 
 use image::imageops::FilterType;
-use image::{DynamicImage, ImageDecoder, ImageReader};
+use image::{DynamicImage, ImageDecoder, ImageReader, RgbaImage};
 use protocol::blob_store::{MAX_IMAGE_BYTES, MAX_IMAGE_EDGE, MAX_THUMBHASH_BYTES, WEBP_QUALITY};
+use protocol::photo_sticker::rgba_buffer_len;
+
+pub use protocol::photo_sticker::SegmentationSource;
 
 /// The longest edge a ThumbHash input may have (the crate's limit).
 const THUMBHASH_EDGE: u32 = 100;
@@ -37,6 +40,33 @@ pub enum ImageError {
     /// Even the smallest, lowest-quality encode is over the size cap.
     #[error("the image is too large to send")]
     TooLarge,
+    /// A subject cutout from a `SegmentationSource` did not meet the RGBA
+    /// contract (photo-sticker: Segmentation seam and RGBA contract): the buffer
+    /// was not `width`×`height`×4 bytes, or it had no non-transparent pixel.
+    #[error("the subject cutout is not a valid RGBA image")]
+    BadCutout,
+}
+
+/// A straight-alpha subject cutout from a [`SegmentationSource`]
+/// (photo-sticker: Segmentation seam and RGBA contract). This is the **only**
+/// shape that crosses the seam between a native segmentation engine and the
+/// core: not a mask-only buffer, not an encoded image. Every engine, native or
+/// future, hands the core this same thing, and the core styles and encodes it
+/// identically regardless of which engine made it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RgbaCutout {
+    /// Who produced the cutout. Carried for the record only; it does not change
+    /// how the core encodes.
+    pub source: SegmentationSource,
+    /// Pixel width of the RGBA image.
+    pub width: u32,
+    /// Pixel height of the RGBA image.
+    pub height: u32,
+    /// Straight-alpha, 8-bit-per-channel RGBA in the sRGB color space, R,G,B,A
+    /// byte order, row stride `width`×4, orientation already applied.
+    /// Background pixels are fully transparent (alpha 0); subject pixels keep
+    /// their original color.
+    pub pixels: Vec<u8>,
 }
 
 /// An encoded image, ready to encrypt.
@@ -80,6 +110,65 @@ pub fn encode(input: &[u8]) -> Result<EncodedImage, ImageError> {
         height: image.height(),
         thumbhash,
     })
+}
+
+/// Encodes a subject cutout from a `SegmentationSource` into a sticker
+/// (photo-sticker: Sticker styling and encode; client-runtime: Image encode
+/// pipeline). The core does the consistent work no matter which engine made the
+/// mask: it trims fully-transparent margins, downscales so the long edge is at
+/// most [`MAX_IMAGE_EDGE`], and encodes **WebP preserving the alpha channel**
+/// within [`MAX_IMAGE_BYTES`] — never compositing onto an opaque fill — then
+/// computes the ThumbHash and records the WebP `width`/`height`. The native side
+/// encodes nothing and the blob key never leaves the core.
+///
+/// For the MVP no styling beyond trimming is applied (richer styling is future
+/// work). The `cutout.source` does not change the output: every engine's cutout
+/// is encoded identically.
+pub fn encode_cutout(cutout: &RgbaCutout) -> Result<EncodedImage, ImageError> {
+    if cutout.width == 0
+        || cutout.height == 0
+        || cutout.pixels.len() != rgba_buffer_len(cutout.width, cutout.height)
+    {
+        return Err(ImageError::BadCutout);
+    }
+    let rgba = RgbaImage::from_raw(cutout.width, cutout.height, cutout.pixels.clone())
+        .ok_or(ImageError::BadCutout)?;
+    // Trim away the fully-transparent border so the subject fills the sticker;
+    // a cutout with no opaque pixel at all is not a subject.
+    let rgba = trim_transparent(&rgba).ok_or(ImageError::BadCutout)?;
+    let image = scale_to(&DynamicImage::ImageRgba8(rgba), MAX_IMAGE_EDGE);
+    let (webp, image) = fit_in_cap(image)?;
+    let thumbhash = thumbhash_of(&image);
+    Ok(EncodedImage {
+        webp,
+        width: image.width(),
+        height: image.height(),
+        thumbhash,
+    })
+}
+
+/// `image` cropped to the bounding box of its non-transparent pixels, keeping
+/// the alpha of every pixel inside. `None` when every pixel is fully
+/// transparent (no subject to cut out).
+fn trim_transparent(image: &RgbaImage) -> Option<RgbaImage> {
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (u32::MAX, u32::MAX, 0u32, 0u32);
+    for (x, y, px) in image.enumerate_pixels() {
+        if px[3] != 0 {
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    if min_x > max_x {
+        return None;
+    }
+    // Already tight: no copy needed.
+    if (min_x, min_y, max_x, max_y) == (0, 0, image.width() - 1, image.height() - 1) {
+        return Some(image.clone());
+    }
+    let (w, h) = (max_x - min_x + 1, max_y - min_y + 1);
+    Some(image::imageops::crop_imm(image, min_x, min_y, w, h).to_image())
 }
 
 /// `image` scaled down so its long edge is at most `edge`; never up.
@@ -136,6 +225,21 @@ pub fn webp_size(bytes: &[u8]) -> Option<(u32, u32)> {
         .into_decoder()
         .ok()?;
     Some(decoder.dimensions())
+}
+
+/// Whether `hash` is the ThumbHash of an image that carries transparency (some
+/// pixel is not fully opaque). `false` for bytes that are not a ThumbHash.
+///
+/// A sticker is indistinguishable on the wire from any other transparent image
+/// (photo-sticker: Sticker is an image), so the receiver uses this to render a
+/// transparent image — a sticker — without an opaque bubble fill, so its
+/// transparency reads (app-ui: Create a sticker). The core decodes the
+/// ThumbHash so the app needs no ThumbHash code of its own.
+pub fn thumbhash_is_transparent(hash: &[u8]) -> bool {
+    match thumbhash::thumb_hash_to_rgba(hash) {
+        Ok((_, _, rgba)) => rgba.chunks_exact(4).any(|px| px[3] < 255),
+        Err(_) => false,
+    }
 }
 
 /// The blur a ThumbHash stands for, as a small PNG the app draws until the

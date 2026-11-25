@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../chat/chat_model.dart';
 import '../chat/group_gate.dart';
 import '../chat/picture_picker.dart';
+import '../chat/sticker_plugins.dart';
 import '../chat/video_plugins.dart';
 import '../chat/voice_plugins.dart';
 import '../core/core_service.dart';
@@ -30,6 +31,7 @@ class VyajenaApp extends StatefulWidget {
     this.background,
     this.pictures = const GalleryPicker(),
     this.voice = const DeviceVoicePlugins(),
+    this.segmenter = const DeviceSegmenter(),
     this.video = const DeviceVideoSource(),
   });
 
@@ -42,6 +44,10 @@ class VyajenaApp extends StatefulWidget {
   /// The microphone and speaker for voice messages (app-ui: Record a voice
   /// message; Play a voice message); the phone's, or fakes in widget tests.
   final VoicePlugins voice;
+
+  /// The platform's on-device subject segmentation for stickers (app-ui:
+  /// Create a sticker); the phone's, or a fake in widget tests.
+  final Segmenter segmenter;
 
   /// Where a video to send comes from and how it is normalized (app-ui: Send a
   /// video); the phone's camera/gallery and native plugin, or a fake in tests.
@@ -92,18 +98,21 @@ class _VyajenaAppState extends State<VyajenaApp> {
       picker: widget.pictures,
       child: VoiceScope(
         plugins: widget.voice,
-        child: VideoScope(
-          source: widget.video,
-          child: MaterialApp(
-          title: 'Vyajena',
-          // Never the debug banner, also in profile builds and screenshots
-          // (app-release design D7).
-          debugShowCheckedModeBanner: false,
-          theme: lightTheme,
-          darkTheme: darkTheme,
-          themeMode: themeMode,
-          home: HomeScreen(core: widget.core, chat: _chat),
-          routes: appRoutes(widget.core),
+        child: SegmenterScope(
+          segmenter: widget.segmenter,
+          child: VideoScope(
+            source: widget.video,
+            child: MaterialApp(
+              title: 'Vyajena',
+              // Never the debug banner, also in profile builds and screenshots
+              // (app-release design D7).
+              debugShowCheckedModeBanner: false,
+              theme: lightTheme,
+              darkTheme: darkTheme,
+              themeMode: themeMode,
+              home: HomeScreen(core: widget.core, chat: _chat),
+              routes: appRoutes(widget.core),
+            ),
           ),
         ),
       ),

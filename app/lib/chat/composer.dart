@@ -28,6 +28,8 @@ import '../app/errors.dart';
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
 import 'mentions.dart';
+import 'sticker_plugins.dart';
+import 'sticker_preview.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
 
@@ -84,6 +86,14 @@ const voiceHoldHint = 'Hold the microphone to record a voice message.';
 const microphoneDeniedText =
     'Allow the microphone in Settings to record a voice message.';
 
+/// What the composer says when segmentation finds no subject (app-ui: Create a
+/// sticker, "No subject").
+const noSubjectText = 'No subject found. Try a photo with a clear subject.';
+
+/// What the composer says when the OS has no subject segmentation (app-ui:
+/// Create a sticker, "Not supported").
+const stickerUnsupportedText = "This phone can't make stickers.";
+
 /// The message box and Send button.
 class Composer extends StatefulWidget {
   const Composer({
@@ -96,6 +106,8 @@ class Composer extends StatefulWidget {
     this.pickImage,
     this.sendImage,
     this.sendAudio,
+    this.segmenter,
+    this.sendSticker,
     this.onSendVideo,
     this.onRecordingStarted,
   });
@@ -120,6 +132,14 @@ class Composer extends StatefulWidget {
   /// Sends a recorded voice message: the WAV file's bytes, which the core
   /// encodes. No microphone button when unset.
   final Future<void> Function(Uint8List wav, {int? replyTo})? sendAudio;
+
+  /// The platform's on-device subject segmentation (app-ui: Create a sticker).
+  /// No Sticker entry in the attachment sheet when unset or when [pickImage]
+  /// is unset.
+  final Segmenter? segmenter;
+
+  /// Sends a subject cutout as a sticker; the core encodes and uploads it.
+  final Future<void> Function(Cutout cutout)? sendSticker;
 
   /// Runs the whole send-a-video flow (record or gallery-pick, trim, native
   /// normalize, then hand to the core). Owned by the chat screen so the
@@ -153,6 +173,13 @@ class _ComposerState extends State<Composer> {
 
   /// The picked picture waiting to be sent, whose caption is the text.
   Uint8List? _picture;
+
+  /// The subject cutout waiting in the sticker preview, if any.
+  Cutout? _sticker;
+
+  /// Whether the native cutout is running (the gallery closed, the engine
+  /// working), so the sheet shows progress and a second tap is ignored.
+  bool _segmenting = false;
 
   /// A pick is in flight: the composer shows a placeholder at once so choosing
   /// a picture feels immediate even while the platform prepares its bytes.
@@ -292,7 +319,12 @@ class _ComposerState extends State<Composer> {
             if (blur != null)
               ClipRRect(
                 borderRadius: BorderRadius.circular(3),
-                child: Image.memory(blur, width: 20, height: 20, fit: BoxFit.cover),
+                child: Image.memory(
+                  blur,
+                  width: 20,
+                  height: 20,
+                  fit: BoxFit.cover,
+                ),
               )
             else
               const Icon(Icons.photo, size: 16),
@@ -500,6 +532,14 @@ class _ComposerState extends State<Composer> {
                 title: const Text('Photo'),
                 onTap: () => Navigator.of(sheet).pop('photo'),
               ),
+            if (widget.segmenter != null)
+              ListTile(
+                key: const Key('attach-sticker'),
+                leading: const Icon(Icons.auto_awesome_outlined),
+                title: const Text('Sticker'),
+                subtitle: const Text('Cut the subject out of a photo'),
+                onTap: () => Navigator.of(sheet).pop('sticker'),
+              ),
             if (widget.onSendVideo != null)
               ListTile(
                 key: const Key('attach-video'),
@@ -511,11 +551,98 @@ class _ComposerState extends State<Composer> {
         ),
       ),
     );
-    if (choice == 'photo') {
-      await _attach();
-    } else if (choice == 'video') {
-      await _sendVideo();
+    if (choice == 'photo') await _attach();
+    if (choice == 'sticker') await _makeSticker();
+    if (choice == 'video') await _sendVideo();
+  }
+
+  /// Picks a photo and cuts its subject out on the device; on success the
+  /// cutout waits in the preview (app-ui: Create a sticker). No subject or an
+  /// unsupported OS is told to the user and nothing is sent.
+  Future<void> _makeSticker() async {
+    final pick = widget.pickImage;
+    final segmenter = widget.segmenter;
+    if (pick == null || segmenter == null || _sending || _segmenting) return;
+    setState(() {
+      _error = null;
+      _segmenting = true;
+    });
+    try {
+      final photo = await pick();
+      if (photo == null) return;
+      final cutout = await segmenter.cutout(photo);
+      if (mounted) setState(() => _sticker = cutout);
+    } on SegmentException catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.reason == SegmentError.unsupported
+              ? stickerUnsupportedText
+              : noSubjectText,
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _segmenting = false);
     }
+  }
+
+  /// Hands the previewed cutout to the core, which encodes and sends it.
+  Future<void> _sendSticker() async {
+    final sticker = _sticker;
+    final sendSticker = widget.sendSticker;
+    if (sticker == null || sendSticker == null || _sending) return;
+    setState(() {
+      _error = null;
+      _sending = true;
+    });
+    try {
+      await sendSticker(sticker);
+      if (mounted) setState(() => _sticker = null);
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Widget _stickerBar(BuildContext context, Cutout sticker) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const Key('sticker-preview-bar'),
+      margin: const EdgeInsets.fromLTRB(12, 4, 8, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_error case final error?)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(error, style: TextStyle(color: scheme.error)),
+            ),
+          Row(
+            children: [
+              StickerPreview(cutout: sticker, size: 72),
+              const SizedBox(width: 12),
+              const Expanded(child: Text('Sticker to send')),
+              IconButton(
+                key: const Key('remove-sticker'),
+                tooltip: 'Remove the sticker',
+                onPressed: _sending
+                    ? null
+                    : () => setState(() => _sticker = null),
+                icon: const Icon(Icons.close),
+              ),
+              IconButton.filled(
+                key: const Key('send-sticker'),
+                tooltip: 'Send sticker',
+                onPressed: _sending ? null : _sendSticker,
+                icon: const Icon(Icons.send),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _sendVideo() async {
@@ -669,7 +796,9 @@ class _ComposerState extends State<Composer> {
           _attachingBar(context)
         else if (_picture case final Uint8List picture when !removed)
           _pictureBar(context, picture),
-        _field(context, removed),
+        if (_sticker case final Cutout sticker when !removed)
+          _stickerBar(context, sticker),
+        if (_sticker == null) _field(context, removed),
       ],
     ),
   );
