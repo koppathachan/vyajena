@@ -2,10 +2,8 @@
 // (change `mute-notifications`).
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:vyajena/core/core_service.dart';
 
 import '../support/app.dart';
-import '../support/fake_core_service.dart';
 import 'dms_test.dart' show aliceInGroup;
 
 /// A tall screen so the whole Profile tab is built and on screen.
