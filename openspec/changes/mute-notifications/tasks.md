@@ -7,12 +7,12 @@
 
 ## 2. Server
 
-- [ ] 2.1 Migration `0009_mute_prefs.sql` (`muted_conversations(username,
+- [x] 2.1 Migration `0009_mute_prefs.sql` (`muted_conversations(username,
       group_id)` + per-user `muted_all`; ids and flag only); `Prefs.SetMutePref`
       (member-of-conversation else `PERMISSION_DENIED`; global scope sets the
       flag; idempotent); send the mute set on connect as `mute_prefs`; tests
       `notification-prefs/mute-preference-sync`
-- [ ] 2.2 Wake-push sender consults the recipient user's mute set and skips the
+- [x] 2.2 Wake-push sender consults the recipient user's mute set and skips the
       push for a muted conversation or when `muted_all`; message still queued and
       delivered; test
       `notification-prefs/a-muted-conversation-gets-no-wake-push`

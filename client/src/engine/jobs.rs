@@ -115,6 +115,16 @@ pub(crate) enum Job {
         group_id: Vec<u8>,
         reply: Option<Reply>,
     },
+    /// notification-prefs: Set a mute preference. `Prefs.SetMutePref`, then the
+    /// local update (change `mute-notifications`).
+    SetMutePref {
+        scope: pb::MuteScope,
+        /// The conversation's group id for `MUTE_SCOPE_CONVERSATION`; empty for
+        /// `MUTE_SCOPE_GLOBAL`.
+        group_id: Vec<u8>,
+        muted: bool,
+        reply: Option<Reply>,
+    },
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -246,6 +256,9 @@ impl Job {
             }
             Job::CloseGroup { group_id, .. } => format!("ng_close|{}", hex(group_id)),
             Job::RemoveClosedDm { group_id, .. } => format!("dm_remove|{}", hex(group_id)),
+            Job::SetMutePref {
+                scope, group_id, ..
+            } => format!("mute|{}|{}", scope.as_str_name(), hex(group_id)),
         }
     }
 
@@ -323,7 +336,8 @@ impl Job {
             | Job::AddToGroup { reply, .. }
             | Job::RemoveFromGroup { reply, .. }
             | Job::CloseGroup { reply, .. }
-            | Job::RemoveClosedDm { reply, .. } => reply.take(),
+            | Job::RemoveClosedDm { reply, .. }
+            | Job::SetMutePref { reply, .. } => reply.take(),
             _ => None,
         }
     }
@@ -385,6 +399,20 @@ impl Engine {
             Job::CloseGroup { ref group_id, .. } => {
                 let group_id = group_id.clone();
                 let result = self.close_named_group(&group_id).await;
+                match result {
+                    Ok(()) => job.succeed(),
+                    Err(error) => job.fail(error),
+                }
+                Ok(())
+            }
+            Job::SetMutePref {
+                scope,
+                ref group_id,
+                muted,
+                ..
+            } => {
+                let group_id = group_id.clone();
+                let result = self.set_mute_pref(scope, &group_id, muted).await;
                 match result {
                     Ok(()) => job.succeed(),
                     Err(error) => job.fail(error),
@@ -966,6 +994,7 @@ impl Engine {
             | Job::CreateNamedGroup { .. }
             | Job::CloseGroup { .. }
             | Job::RemoveClosedDm { .. }
+            | Job::SetMutePref { .. }
             | Job::UploadKeyPackages { .. }
             | Job::RequestReadd { .. }
             | Job::OpenDm { .. } => Ok(Prepared::Nothing),
@@ -1088,6 +1117,36 @@ impl Engine {
             .await
             .map_err(NetError::from)?;
         tracing::info!("closed a named group");
+        Ok(())
+    }
+
+    /// notification-prefs: Set a mute preference. The server first, so the
+    /// preference reaches this user's other devices (and the server can suppress
+    /// the wake push); only then the local update. Nothing changes locally if
+    /// the server call fails.
+    async fn set_mute_pref(
+        &mut self,
+        scope: pb::MuteScope,
+        group_id: &[u8],
+        muted: bool,
+    ) -> Result<(), ClientError> {
+        let session = self.session().map_err(ClientError::from)?;
+        session
+            .conn()
+            .prefs()
+            .set_mute_pref(session.request(pb::SetMutePrefRequest {
+                scope: scope.into(),
+                group_id: group_id.to_vec(),
+                muted,
+            })?)
+            .await
+            .map_err(NetError::from)?;
+        match scope {
+            pb::MuteScope::Global => self.store().set_muted_all(muted)?,
+            _ => self.store().set_conversation_muted(group_id, muted)?,
+        }
+        self.emit(crate::events::Event::MutePrefsChanged);
+        tracing::info!(scope = scope.as_str_name(), muted, "set a mute preference");
         Ok(())
     }
 

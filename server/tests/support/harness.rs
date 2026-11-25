@@ -18,6 +18,7 @@ use super::pb::devices_client::DevicesClient;
 use super::pb::dms_client::DmsClient;
 use super::pb::keys_client::KeysClient;
 use super::pb::messaging_client::MessagingClient;
+use super::pb::prefs_client::PrefsClient;
 use super::push::RecordingPush;
 use super::{Check, config_with, manual_clock, tls_client};
 
@@ -277,6 +278,11 @@ impl Conn {
     /// A `Dms` client.
     pub fn dms(&self) -> DmsClient<Channel> {
         DmsClient::new(self.channel.clone())
+    }
+
+    /// A `Prefs` client (notification-prefs, change `mute-notifications`).
+    pub fn prefs(&self) -> PrefsClient<Channel> {
+        PrefsClient::new(self.channel.clone())
     }
 
     /// A `Blobs` client.

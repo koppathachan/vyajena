@@ -255,6 +255,31 @@ pub struct Chat {
     pub unseen_mentions: u32,
     /// When its newest chat message was stored.
     pub last_message_at: Option<SystemTime>,
+    /// This conversation is in the user's mute set (notification-prefs: Mute a
+    /// conversation). Per-conversation only: it does not reflect whole-app mute,
+    /// which [`MutePrefs::muted_all`] carries and the UI shows globally.
+    pub muted: bool,
+}
+
+/// The user's notification mute preferences, as the UI sees them
+/// (notification-prefs, change `mute-notifications`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MutePrefs {
+    /// The chats the user has muted individually.
+    pub muted_chats: Vec<ChatId>,
+    /// Whole-app mute: every conversation is silenced, overriding the per-chat
+    /// set (notification-prefs: Mute the whole app).
+    pub muted_all: bool,
+}
+
+/// What a mute/unmute targets (notification-prefs: Mute a conversation; Mute the
+/// whole app).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MuteTarget {
+    /// One conversation.
+    Conversation(ChatId),
+    /// Every conversation at once (the `muted_all` flag).
+    Global,
 }
 
 /// A chat message, received or sent by this device.
@@ -415,6 +440,11 @@ pub enum Event {
     },
     /// The connection state changed.
     Connection(ConnectionState),
+    /// The user's mute set changed (notification-prefs: Mute preference sync):
+    /// a `MutePrefs` snapshot was adopted from the server, or this device's own
+    /// mute/unmute took effect. The UI re-reads [`crate::Client::mute_prefs`]
+    /// and the chats' `muted` flags.
+    MutePrefsChanged,
 }
 
 /// The server's answer to `Keys.RequestReadd` (group-membership: Re-add after an

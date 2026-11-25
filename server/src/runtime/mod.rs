@@ -272,6 +272,7 @@ pub fn routes(state: &State) -> Routes {
         .add_service(crate::keys::service(state).max_decoding_message_size(cap))
         .add_service(crate::admin::service(state).max_decoding_message_size(cap))
         .add_service(crate::dms::service(state).max_decoding_message_size(cap))
+        .add_service(crate::prefs::service(state).max_decoding_message_size(cap))
         .add_service(crate::blobs::service(state))
         .add_service(crate::messaging::service(state).max_decoding_message_size(cap))
 }
