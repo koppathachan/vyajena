@@ -144,8 +144,31 @@ class RustCoreService extends CoreService {
       (await _c.resendImage(id: id)).toInt();
 
   @override
+  Future<int> sendSticker(
+    Uint8List rgba, {
+    required StickerSource source,
+    required int width,
+    required int height,
+    int chatId = 0,
+  }) async => (await _c.sendStickerIn(
+    chatId: chatId,
+    source: source,
+    rgba: rgba,
+    width: width,
+    height: height,
+  )).toInt();
+
+  @override
+  bool thumbhashIsTransparent(Uint8List thumbhash) =>
+      rust.thumbhashIsTransparent(thumbhash: thumbhash);
+
+  @override
   Future<int> sendAudio(Uint8List wav, {int chatId = 0, int? replyTo}) async =>
-      (await _c.sendAudioIn(chatId: chatId, wav: wav, replyTo: replyTo)).toInt();
+      (await _c.sendAudioIn(
+        chatId: chatId,
+        wav: wav,
+        replyTo: replyTo,
+      )).toInt();
 
   @override
   Future<String> downloadAudio(int id) => _c.downloadAudio(id: id);
@@ -277,6 +300,5 @@ class RustCoreService extends CoreService {
       _c.acknowledgeIdentityKey(user: user);
 
   @override
-  Future<List<UserRef>> identityRetrustPending() =>
-      _c.identityRetrustPending();
+  Future<List<UserRef>> identityRetrustPending() => _c.identityRetrustPending();
 }

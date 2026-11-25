@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
 import 'package:vyajena/chat/picture_picker.dart';
+import 'package:vyajena/chat/sticker_plugins.dart';
 import 'package:vyajena/chat/voice_plugins.dart';
 import 'package:vyajena/core/core_service.dart';
 
@@ -65,6 +66,28 @@ Future<FakeCoreService> openAppWithPictures(
   PicturePicker pictures,
 ) async {
   await tester.pumpWidget(VyajenaApp(core: core, pictures: pictures));
+  await core.open();
+  await settle(tester);
+  final group = find.byKey(const ValueKey('chat-main'));
+  if (core.dmChats.isEmpty &&
+      core.groupChats.isEmpty &&
+      group.evaluate().isNotEmpty) {
+    await tap(tester, group);
+  }
+  return core;
+}
+
+/// [openApp] with [pictures] as the gallery and [segmenter] as the on-device
+/// subject segmentation (app-ui: Create a sticker), landing in the group chat.
+Future<FakeCoreService> openAppWithStickers(
+  WidgetTester tester,
+  FakeCoreService core,
+  PicturePicker pictures,
+  Segmenter segmenter,
+) async {
+  await tester.pumpWidget(
+    VyajenaApp(core: core, pictures: pictures, segmenter: segmenter),
+  );
   await core.open();
   await settle(tester);
   final group = find.byKey(const ValueKey('chat-main'));

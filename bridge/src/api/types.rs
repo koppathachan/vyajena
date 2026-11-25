@@ -42,6 +42,28 @@ pub struct ImageView {
     pub state: MediaStatus,
 }
 
+/// Which on-device engine produced a subject cutout (photo-sticker:
+/// Segmentation seam and RGBA contract). The app passes the source its platform
+/// plugin used; the core encodes every source identically, so this only names
+/// the producer. Only the two MVP sources are exposed; `Server`/`OnnxLocal` are
+/// reserved in the core for later.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StickerSource {
+    /// iOS Vision foreground/subject mask.
+    IosVision,
+    /// Android ML Kit Subject Segmentation.
+    AndroidMlKit,
+}
+
+impl StickerSource {
+    pub(crate) fn to_core(self) -> client::media::SegmentationSource {
+        match self {
+            Self::IosVision => client::media::SegmentationSource::IosVision,
+            Self::AndroidMlKit => client::media::SegmentationSource::AndroidMlKit,
+        }
+    }
+}
+
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
 #[derive(Debug, Clone, PartialEq, Eq)]

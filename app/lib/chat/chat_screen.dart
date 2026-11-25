@@ -22,6 +22,7 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'sticker_plugins.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
 
@@ -249,6 +250,8 @@ class _ChatScreenState extends State<ChatScreen> {
     String? caption,
     List<MentionSpan> mentions,
   ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+
+  Future<void> _sendSticker(Cutout cutout) => _model.sendSticker(cutout);
 
   Future<void> _sendAudio(Uint8List wav, {int? replyTo}) async {
     await _model.sendAudio(wav, replyTo: replyTo);
@@ -596,6 +599,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
                 sendImage: _sendImage,
+                segmenter: SegmenterScope.of(context),
+                sendSticker: _sendSticker,
                 sendAudio: _sendAudio,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,

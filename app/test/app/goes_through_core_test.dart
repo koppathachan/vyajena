@@ -63,6 +63,11 @@ const pickerOnly = {'package:image_picker/image_picker.dart'};
 /// OS browser (app-ui: Links in messages). It opens no connection in Dart.
 const linksOnly = {'package:url_launcher/url_launcher.dart'};
 
+/// What only the sticker preview may import: `dart:ui` to draw the cutout's
+/// RGBA over a checkerboard (app-ui: Create a sticker). It is a rendering API
+/// (`decodeImageFromPixels`, `Canvas`) with no socket, HTTP client or file API.
+const stickerPreviewOnly = {'dart:ui'};
+
 /// What only the one voice-plugin file may import: the microphone and the
 /// speaker (app-ui: Record a voice message; Play a voice message). It records
 /// to a temporary file and plays a file the core cached; it opens no
@@ -100,6 +105,8 @@ void main() {
             file.path.replaceAll(r'\', '/') == 'lib/chat/links.dart',
           _ when pickerOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/picture_picker.dart',
+          _ when stickerPreviewOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/chat/sticker_preview.dart',
           _ when voiceOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/voice_plugins.dart',
           _ => false,

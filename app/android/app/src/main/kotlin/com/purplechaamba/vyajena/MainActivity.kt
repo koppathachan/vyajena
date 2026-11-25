@@ -44,6 +44,8 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Sticker.CHANNEL)
+            .setMethodCallHandler { call, result -> Sticker.handle(call, result) }
         val push = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vyajena/push")
         PushChannel.channel = push
         push.setMethodCallHandler { call, result ->

@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 
 import '../app/names.dart';
 import '../core/core_service.dart';
+import 'sticker_plugins.dart';
 
 /// How many messages the chat shows.
 const historyLimit = 500;
@@ -620,6 +621,20 @@ class ChatModel extends ChangeNotifier {
   /// Sends the picture of own message [id] again, as a new message.
   Future<void> resendImage(int id) async {
     _lastId = await core.resendImage(id);
+    await _reload();
+  }
+
+  /// Sends a subject cutout as a sticker (app-ui: Create a sticker); returns
+  /// once the core stored it. The core encodes the RGBA to a transparent WebP
+  /// and sends it down the image path.
+  Future<void> sendSticker(Cutout cutout) async {
+    _lastId = await core.sendSticker(
+      cutout.pixels,
+      source: cutout.source,
+      width: cutout.width,
+      height: cutout.height,
+      chatId: chatId,
+    );
     await _reload();
   }
 
