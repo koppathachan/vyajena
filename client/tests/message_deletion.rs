@@ -98,7 +98,7 @@ fn picture(w: u32, h: u32) -> Vec<u8> {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_admin_delete_shows_a_tombstone_in_place_and_a_member_cannot_delete() {
     let server = TestServer::start().await;
-    let (mut admin, mut alice, mut bob) = group(&server).await;
+    let (mut admin, alice, mut bob) = group(&server).await;
 
     alice.client.send_text("before").check("send");
     let alice_middle = alice.client.send_text("middle").check("send");
@@ -149,7 +149,7 @@ async fn an_admin_delete_shows_a_tombstone_in_place_and_a_member_cannot_delete()
 #[tokio::test(flavor = "multi_thread")]
 async fn an_admin_deleting_its_own_message_is_not_marked_by_the_admin() {
     let server = TestServer::start().await;
-    let (mut admin, _alice, mut bob) = group(&server).await;
+    let (admin, _alice, mut bob) = group(&server).await;
     let admins = admin.client.send_text("admin note").check("send");
     let bobs = wait_text(&mut bob, "admin note").await;
     admin
@@ -229,7 +229,7 @@ async fn deleting_an_image_purges_its_blob() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_reply_to_a_deleted_message_shows_a_deleted_quote() {
     let server = TestServer::start().await;
-    let (mut admin, mut alice, mut bob) = group(&server).await;
+    let (mut admin, alice, mut bob) = group(&server).await;
 
     alice.client.send_text("original").check("send");
     let admin_orig = wait_text(&mut admin, "original").await;
