@@ -6,7 +6,6 @@ import 'package:vyajena/core/core_service.dart';
 
 import '../chat/dms_test.dart' show aliceInGroup, dmWithBob;
 import '../support/app.dart';
-import '../support/fake_core_service.dart';
 
 const _green = Color(0xFF34C759);
 
