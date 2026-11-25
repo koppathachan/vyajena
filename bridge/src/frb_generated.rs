@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -239068800;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 510402073;
 
 // Section: executor
 
@@ -2522,6 +2522,57 @@ fn wire__crate__api__core__Core_rename_group_impl(
         },
     )
 }
+fn wire__crate__api__core__Core_request_resync_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_request_resync",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = Result::<_, ()>::Ok({
+                        crate::api::core::Core::request_resync(&*api_that_guard);
+                    })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__core__Core_resend_audio_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -3906,39 +3957,40 @@ impl SseDecode for crate::api::error::CoreErrorKind {
             2 => crate::api::error::CoreErrorKind::ServerIdentity,
             3 => crate::api::error::CoreErrorKind::Network,
             4 => crate::api::error::CoreErrorKind::Refused,
-            5 => crate::api::error::CoreErrorKind::InvalidPayload,
-            6 => crate::api::error::CoreErrorKind::NotRegistered,
-            7 => crate::api::error::CoreErrorKind::AlreadyRegistered,
-            8 => crate::api::error::CoreErrorKind::Offline,
-            9 => crate::api::error::CoreErrorKind::NotAdmin,
-            10 => crate::api::error::CoreErrorKind::NotIdentityDevice,
-            11 => crate::api::error::CoreErrorKind::NoLinkRequest,
-            12 => crate::api::error::CoreErrorKind::ServerMismatch,
-            13 => crate::api::error::CoreErrorKind::NoGroup,
-            14 => crate::api::error::CoreErrorKind::AlreadyInGroup,
-            15 => crate::api::error::CoreErrorKind::Stalled,
-            16 => crate::api::error::CoreErrorKind::IdentityKeyChanged,
-            17 => crate::api::error::CoreErrorKind::Certificate,
-            18 => crate::api::error::CoreErrorKind::UnknownUser,
-            19 => crate::api::error::CoreErrorKind::NoKeyPackages,
-            20 => crate::api::error::CoreErrorKind::TooLarge,
-            21 => crate::api::error::CoreErrorKind::TooLong,
-            22 => crate::api::error::CoreErrorKind::InvalidMention,
-            23 => crate::api::error::CoreErrorKind::NoSuchMessage,
-            24 => crate::api::error::CoreErrorKind::Rejected,
-            25 => crate::api::error::CoreErrorKind::NotYet,
-            26 => crate::api::error::CoreErrorKind::NoSuchChat,
-            27 => crate::api::error::CoreErrorKind::ChatClosed,
-            28 => crate::api::error::CoreErrorKind::DmsUnavailable,
-            29 => crate::api::error::CoreErrorKind::GroupsUnavailable,
-            30 => crate::api::error::CoreErrorKind::ImageUnsupported,
-            31 => crate::api::error::CoreErrorKind::ImageTooLarge,
-            32 => crate::api::error::CoreErrorKind::AudioUnsupported,
-            33 => crate::api::error::CoreErrorKind::AudioTooLong,
-            34 => crate::api::error::CoreErrorKind::MediaExpired,
-            35 => crate::api::error::CoreErrorKind::MediaNotOnDevice,
-            36 => crate::api::error::CoreErrorKind::EventsTaken,
-            37 => crate::api::error::CoreErrorKind::Internal,
+            5 => crate::api::error::CoreErrorKind::InviteExpired,
+            6 => crate::api::error::CoreErrorKind::InvalidPayload,
+            7 => crate::api::error::CoreErrorKind::NotRegistered,
+            8 => crate::api::error::CoreErrorKind::AlreadyRegistered,
+            9 => crate::api::error::CoreErrorKind::Offline,
+            10 => crate::api::error::CoreErrorKind::NotAdmin,
+            11 => crate::api::error::CoreErrorKind::NotIdentityDevice,
+            12 => crate::api::error::CoreErrorKind::NoLinkRequest,
+            13 => crate::api::error::CoreErrorKind::ServerMismatch,
+            14 => crate::api::error::CoreErrorKind::NoGroup,
+            15 => crate::api::error::CoreErrorKind::AlreadyInGroup,
+            16 => crate::api::error::CoreErrorKind::Stalled,
+            17 => crate::api::error::CoreErrorKind::IdentityKeyChanged,
+            18 => crate::api::error::CoreErrorKind::Certificate,
+            19 => crate::api::error::CoreErrorKind::UnknownUser,
+            20 => crate::api::error::CoreErrorKind::NoKeyPackages,
+            21 => crate::api::error::CoreErrorKind::TooLarge,
+            22 => crate::api::error::CoreErrorKind::TooLong,
+            23 => crate::api::error::CoreErrorKind::InvalidMention,
+            24 => crate::api::error::CoreErrorKind::NoSuchMessage,
+            25 => crate::api::error::CoreErrorKind::Rejected,
+            26 => crate::api::error::CoreErrorKind::NotYet,
+            27 => crate::api::error::CoreErrorKind::NoSuchChat,
+            28 => crate::api::error::CoreErrorKind::ChatClosed,
+            29 => crate::api::error::CoreErrorKind::DmsUnavailable,
+            30 => crate::api::error::CoreErrorKind::GroupsUnavailable,
+            31 => crate::api::error::CoreErrorKind::ImageUnsupported,
+            32 => crate::api::error::CoreErrorKind::ImageTooLarge,
+            33 => crate::api::error::CoreErrorKind::AudioUnsupported,
+            34 => crate::api::error::CoreErrorKind::AudioTooLong,
+            35 => crate::api::error::CoreErrorKind::MediaExpired,
+            36 => crate::api::error::CoreErrorKind::MediaNotOnDevice,
+            37 => crate::api::error::CoreErrorKind::EventsTaken,
+            38 => crate::api::error::CoreErrorKind::Internal,
             _ => unreachable!("Invalid variant for CoreErrorKind: {}", inner),
         };
     }
@@ -4004,19 +4056,25 @@ impl SseDecode for crate::api::types::CoreEvent {
                 return crate::api::types::CoreEvent::Rejoined;
             }
             8 => {
+                let mut var_chatId = <i64>::sse_decode(deserializer);
+                return crate::api::types::CoreEvent::OutOfSync {
+                    chat_id: var_chatId,
+                };
+            }
+            9 => {
                 let mut var_user = <crate::api::types::UserRef>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::IdentityKeyChanged { user: var_user };
             }
-            9 => {
+            10 => {
                 return crate::api::types::CoreEvent::ServerIdentityError;
             }
-            10 => {
+            11 => {
                 return crate::api::types::CoreEvent::Removed;
             }
-            11 => {
+            12 => {
                 return crate::api::types::CoreEvent::JoinedGroup;
             }
-            12 => {
+            13 => {
                 let mut var_added =
                     <Vec<crate::api::types::MemberDevice>>::sse_decode(deserializer);
                 let mut var_removed =
@@ -4031,22 +4089,22 @@ impl SseDecode for crate::api::types::CoreEvent {
                     automatic: var_automatic,
                 };
             }
-            13 => {
+            14 => {
                 let mut var_reason = <String>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::CommitRefused { reason: var_reason };
             }
-            14 => {
+            15 => {
                 let mut var_outcome = <crate::api::types::ReaddAnswer>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::ReaddRequested {
                     outcome: var_outcome,
                 };
             }
-            15 => {
+            16 => {
                 let mut var_status =
                     <crate::api::types::ConnectionStatus>::sse_decode(deserializer);
                 return crate::api::types::CoreEvent::Connection { status: var_status };
             }
-            16 => {
+            17 => {
                 return crate::api::types::CoreEvent::Other;
             }
             _ => {
@@ -4447,6 +4505,9 @@ impl SseDecode for crate::api::types::SendState {
                 let mut var_reason = <String>::sse_decode(deserializer);
                 return crate::api::types::SendState::Failed { reason: var_reason };
             }
+            3 => {
+                return crate::api::types::SendState::OutOfSync;
+            }
             _ => {
                 unimplemented!("");
             }
@@ -4577,27 +4638,28 @@ fn pde_ffi_dispatcher_primary_impl(
         }
         45 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
         46 => wire__crate__api__core__Core_rename_group_impl(port, ptr, rust_vec_len, data_len),
-        47 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
-        55 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
-        56 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
-        63 => {
+        47 => wire__crate__api__core__Core_request_resync_impl(port, ptr, rust_vec_len, data_len),
+        48 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
+        49 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
+        50 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
+        58 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
+        59 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
+        64 => {
             wire__crate__api__core__Core_unseen_mentions_in_impl(port, ptr, rust_vec_len, data_len)
         }
-        64 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4610,9 +4672,9 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        65 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -4826,39 +4888,40 @@ impl flutter_rust_bridge::IntoDart for crate::api::error::CoreErrorKind {
             Self::ServerIdentity => 2.into_dart(),
             Self::Network => 3.into_dart(),
             Self::Refused => 4.into_dart(),
-            Self::InvalidPayload => 5.into_dart(),
-            Self::NotRegistered => 6.into_dart(),
-            Self::AlreadyRegistered => 7.into_dart(),
-            Self::Offline => 8.into_dart(),
-            Self::NotAdmin => 9.into_dart(),
-            Self::NotIdentityDevice => 10.into_dart(),
-            Self::NoLinkRequest => 11.into_dart(),
-            Self::ServerMismatch => 12.into_dart(),
-            Self::NoGroup => 13.into_dart(),
-            Self::AlreadyInGroup => 14.into_dart(),
-            Self::Stalled => 15.into_dart(),
-            Self::IdentityKeyChanged => 16.into_dart(),
-            Self::Certificate => 17.into_dart(),
-            Self::UnknownUser => 18.into_dart(),
-            Self::NoKeyPackages => 19.into_dart(),
-            Self::TooLarge => 20.into_dart(),
-            Self::TooLong => 21.into_dart(),
-            Self::InvalidMention => 22.into_dart(),
-            Self::NoSuchMessage => 23.into_dart(),
-            Self::Rejected => 24.into_dart(),
-            Self::NotYet => 25.into_dart(),
-            Self::NoSuchChat => 26.into_dart(),
-            Self::ChatClosed => 27.into_dart(),
-            Self::DmsUnavailable => 28.into_dart(),
-            Self::GroupsUnavailable => 29.into_dart(),
-            Self::ImageUnsupported => 30.into_dart(),
-            Self::ImageTooLarge => 31.into_dart(),
-            Self::AudioUnsupported => 32.into_dart(),
-            Self::AudioTooLong => 33.into_dart(),
-            Self::MediaExpired => 34.into_dart(),
-            Self::MediaNotOnDevice => 35.into_dart(),
-            Self::EventsTaken => 36.into_dart(),
-            Self::Internal => 37.into_dart(),
+            Self::InviteExpired => 5.into_dart(),
+            Self::InvalidPayload => 6.into_dart(),
+            Self::NotRegistered => 7.into_dart(),
+            Self::AlreadyRegistered => 8.into_dart(),
+            Self::Offline => 9.into_dart(),
+            Self::NotAdmin => 10.into_dart(),
+            Self::NotIdentityDevice => 11.into_dart(),
+            Self::NoLinkRequest => 12.into_dart(),
+            Self::ServerMismatch => 13.into_dart(),
+            Self::NoGroup => 14.into_dart(),
+            Self::AlreadyInGroup => 15.into_dart(),
+            Self::Stalled => 16.into_dart(),
+            Self::IdentityKeyChanged => 17.into_dart(),
+            Self::Certificate => 18.into_dart(),
+            Self::UnknownUser => 19.into_dart(),
+            Self::NoKeyPackages => 20.into_dart(),
+            Self::TooLarge => 21.into_dart(),
+            Self::TooLong => 22.into_dart(),
+            Self::InvalidMention => 23.into_dart(),
+            Self::NoSuchMessage => 24.into_dart(),
+            Self::Rejected => 25.into_dart(),
+            Self::NotYet => 26.into_dart(),
+            Self::NoSuchChat => 27.into_dart(),
+            Self::ChatClosed => 28.into_dart(),
+            Self::DmsUnavailable => 29.into_dart(),
+            Self::GroupsUnavailable => 30.into_dart(),
+            Self::ImageUnsupported => 31.into_dart(),
+            Self::ImageTooLarge => 32.into_dart(),
+            Self::AudioUnsupported => 33.into_dart(),
+            Self::AudioTooLong => 34.into_dart(),
+            Self::MediaExpired => 35.into_dart(),
+            Self::MediaNotOnDevice => 36.into_dart(),
+            Self::EventsTaken => 37.into_dart(),
+            Self::Internal => 38.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -4923,19 +4986,22 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::CoreEvent {
                 [6.into_dart(), missed_since_ms.into_into_dart().into_dart()].into_dart()
             }
             crate::api::types::CoreEvent::Rejoined => [7.into_dart()].into_dart(),
-            crate::api::types::CoreEvent::IdentityKeyChanged { user } => {
-                [8.into_dart(), user.into_into_dart().into_dart()].into_dart()
+            crate::api::types::CoreEvent::OutOfSync { chat_id } => {
+                [8.into_dart(), chat_id.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::CoreEvent::ServerIdentityError => [9.into_dart()].into_dart(),
-            crate::api::types::CoreEvent::Removed => [10.into_dart()].into_dart(),
-            crate::api::types::CoreEvent::JoinedGroup => [11.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::IdentityKeyChanged { user } => {
+                [9.into_dart(), user.into_into_dart().into_dart()].into_dart()
+            }
+            crate::api::types::CoreEvent::ServerIdentityError => [10.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::Removed => [11.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::JoinedGroup => [12.into_dart()].into_dart(),
             crate::api::types::CoreEvent::MembersChanged {
                 added,
                 removed,
                 by,
                 automatic,
             } => [
-                12.into_dart(),
+                13.into_dart(),
                 added.into_into_dart().into_dart(),
                 removed.into_into_dart().into_dart(),
                 by.into_into_dart().into_dart(),
@@ -4943,15 +5009,15 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::CoreEvent {
             ]
             .into_dart(),
             crate::api::types::CoreEvent::CommitRefused { reason } => {
-                [13.into_dart(), reason.into_into_dart().into_dart()].into_dart()
+                [14.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
             crate::api::types::CoreEvent::ReaddRequested { outcome } => {
-                [14.into_dart(), outcome.into_into_dart().into_dart()].into_dart()
+                [15.into_dart(), outcome.into_into_dart().into_dart()].into_dart()
             }
             crate::api::types::CoreEvent::Connection { status } => {
-                [15.into_dart(), status.into_into_dart().into_dart()].into_dart()
+                [16.into_dart(), status.into_into_dart().into_dart()].into_dart()
             }
-            crate::api::types::CoreEvent::Other => [16.into_dart()].into_dart(),
+            crate::api::types::CoreEvent::Other => [17.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -5235,6 +5301,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::SendState {
             crate::api::types::SendState::Failed { reason } => {
                 [2.into_dart(), reason.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::types::SendState::OutOfSync => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -5459,39 +5526,40 @@ impl SseEncode for crate::api::error::CoreErrorKind {
                 crate::api::error::CoreErrorKind::ServerIdentity => 2,
                 crate::api::error::CoreErrorKind::Network => 3,
                 crate::api::error::CoreErrorKind::Refused => 4,
-                crate::api::error::CoreErrorKind::InvalidPayload => 5,
-                crate::api::error::CoreErrorKind::NotRegistered => 6,
-                crate::api::error::CoreErrorKind::AlreadyRegistered => 7,
-                crate::api::error::CoreErrorKind::Offline => 8,
-                crate::api::error::CoreErrorKind::NotAdmin => 9,
-                crate::api::error::CoreErrorKind::NotIdentityDevice => 10,
-                crate::api::error::CoreErrorKind::NoLinkRequest => 11,
-                crate::api::error::CoreErrorKind::ServerMismatch => 12,
-                crate::api::error::CoreErrorKind::NoGroup => 13,
-                crate::api::error::CoreErrorKind::AlreadyInGroup => 14,
-                crate::api::error::CoreErrorKind::Stalled => 15,
-                crate::api::error::CoreErrorKind::IdentityKeyChanged => 16,
-                crate::api::error::CoreErrorKind::Certificate => 17,
-                crate::api::error::CoreErrorKind::UnknownUser => 18,
-                crate::api::error::CoreErrorKind::NoKeyPackages => 19,
-                crate::api::error::CoreErrorKind::TooLarge => 20,
-                crate::api::error::CoreErrorKind::TooLong => 21,
-                crate::api::error::CoreErrorKind::InvalidMention => 22,
-                crate::api::error::CoreErrorKind::NoSuchMessage => 23,
-                crate::api::error::CoreErrorKind::Rejected => 24,
-                crate::api::error::CoreErrorKind::NotYet => 25,
-                crate::api::error::CoreErrorKind::NoSuchChat => 26,
-                crate::api::error::CoreErrorKind::ChatClosed => 27,
-                crate::api::error::CoreErrorKind::DmsUnavailable => 28,
-                crate::api::error::CoreErrorKind::GroupsUnavailable => 29,
-                crate::api::error::CoreErrorKind::ImageUnsupported => 30,
-                crate::api::error::CoreErrorKind::ImageTooLarge => 31,
-                crate::api::error::CoreErrorKind::AudioUnsupported => 32,
-                crate::api::error::CoreErrorKind::AudioTooLong => 33,
-                crate::api::error::CoreErrorKind::MediaExpired => 34,
-                crate::api::error::CoreErrorKind::MediaNotOnDevice => 35,
-                crate::api::error::CoreErrorKind::EventsTaken => 36,
-                crate::api::error::CoreErrorKind::Internal => 37,
+                crate::api::error::CoreErrorKind::InviteExpired => 5,
+                crate::api::error::CoreErrorKind::InvalidPayload => 6,
+                crate::api::error::CoreErrorKind::NotRegistered => 7,
+                crate::api::error::CoreErrorKind::AlreadyRegistered => 8,
+                crate::api::error::CoreErrorKind::Offline => 9,
+                crate::api::error::CoreErrorKind::NotAdmin => 10,
+                crate::api::error::CoreErrorKind::NotIdentityDevice => 11,
+                crate::api::error::CoreErrorKind::NoLinkRequest => 12,
+                crate::api::error::CoreErrorKind::ServerMismatch => 13,
+                crate::api::error::CoreErrorKind::NoGroup => 14,
+                crate::api::error::CoreErrorKind::AlreadyInGroup => 15,
+                crate::api::error::CoreErrorKind::Stalled => 16,
+                crate::api::error::CoreErrorKind::IdentityKeyChanged => 17,
+                crate::api::error::CoreErrorKind::Certificate => 18,
+                crate::api::error::CoreErrorKind::UnknownUser => 19,
+                crate::api::error::CoreErrorKind::NoKeyPackages => 20,
+                crate::api::error::CoreErrorKind::TooLarge => 21,
+                crate::api::error::CoreErrorKind::TooLong => 22,
+                crate::api::error::CoreErrorKind::InvalidMention => 23,
+                crate::api::error::CoreErrorKind::NoSuchMessage => 24,
+                crate::api::error::CoreErrorKind::Rejected => 25,
+                crate::api::error::CoreErrorKind::NotYet => 26,
+                crate::api::error::CoreErrorKind::NoSuchChat => 27,
+                crate::api::error::CoreErrorKind::ChatClosed => 28,
+                crate::api::error::CoreErrorKind::DmsUnavailable => 29,
+                crate::api::error::CoreErrorKind::GroupsUnavailable => 30,
+                crate::api::error::CoreErrorKind::ImageUnsupported => 31,
+                crate::api::error::CoreErrorKind::ImageTooLarge => 32,
+                crate::api::error::CoreErrorKind::AudioUnsupported => 33,
+                crate::api::error::CoreErrorKind::AudioTooLong => 34,
+                crate::api::error::CoreErrorKind::MediaExpired => 35,
+                crate::api::error::CoreErrorKind::MediaNotOnDevice => 36,
+                crate::api::error::CoreErrorKind::EventsTaken => 37,
+                crate::api::error::CoreErrorKind::Internal => 38,
                 _ => {
                     unimplemented!("");
                 }
@@ -5552,18 +5620,22 @@ impl SseEncode for crate::api::types::CoreEvent {
             crate::api::types::CoreEvent::Rejoined => {
                 <i32>::sse_encode(7, serializer);
             }
-            crate::api::types::CoreEvent::IdentityKeyChanged { user } => {
+            crate::api::types::CoreEvent::OutOfSync { chat_id } => {
                 <i32>::sse_encode(8, serializer);
+                <i64>::sse_encode(chat_id, serializer);
+            }
+            crate::api::types::CoreEvent::IdentityKeyChanged { user } => {
+                <i32>::sse_encode(9, serializer);
                 <crate::api::types::UserRef>::sse_encode(user, serializer);
             }
             crate::api::types::CoreEvent::ServerIdentityError => {
-                <i32>::sse_encode(9, serializer);
-            }
-            crate::api::types::CoreEvent::Removed => {
                 <i32>::sse_encode(10, serializer);
             }
-            crate::api::types::CoreEvent::JoinedGroup => {
+            crate::api::types::CoreEvent::Removed => {
                 <i32>::sse_encode(11, serializer);
+            }
+            crate::api::types::CoreEvent::JoinedGroup => {
+                <i32>::sse_encode(12, serializer);
             }
             crate::api::types::CoreEvent::MembersChanged {
                 added,
@@ -5571,26 +5643,26 @@ impl SseEncode for crate::api::types::CoreEvent {
                 by,
                 automatic,
             } => {
-                <i32>::sse_encode(12, serializer);
+                <i32>::sse_encode(13, serializer);
                 <Vec<crate::api::types::MemberDevice>>::sse_encode(added, serializer);
                 <Vec<crate::api::types::MemberDevice>>::sse_encode(removed, serializer);
                 <Option<crate::api::types::UserRef>>::sse_encode(by, serializer);
                 <Vec<crate::api::types::MemberDevice>>::sse_encode(automatic, serializer);
             }
             crate::api::types::CoreEvent::CommitRefused { reason } => {
-                <i32>::sse_encode(13, serializer);
+                <i32>::sse_encode(14, serializer);
                 <String>::sse_encode(reason, serializer);
             }
             crate::api::types::CoreEvent::ReaddRequested { outcome } => {
-                <i32>::sse_encode(14, serializer);
+                <i32>::sse_encode(15, serializer);
                 <crate::api::types::ReaddAnswer>::sse_encode(outcome, serializer);
             }
             crate::api::types::CoreEvent::Connection { status } => {
-                <i32>::sse_encode(15, serializer);
+                <i32>::sse_encode(16, serializer);
                 <crate::api::types::ConnectionStatus>::sse_encode(status, serializer);
             }
             crate::api::types::CoreEvent::Other => {
-                <i32>::sse_encode(16, serializer);
+                <i32>::sse_encode(17, serializer);
             }
             _ => {
                 unimplemented!("");
@@ -5940,6 +6012,9 @@ impl SseEncode for crate::api::types::SendState {
             crate::api::types::SendState::Failed { reason } => {
                 <i32>::sse_encode(2, serializer);
                 <String>::sse_encode(reason, serializer);
+            }
+            crate::api::types::SendState::OutOfSync => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");

@@ -1,6 +1,7 @@
 // app-ui: Chat screen.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/chat/message_tile.dart';
 import 'package:vyajena/core/core_service.dart';
 
@@ -309,5 +310,33 @@ void main() {
       find.text('A message from Bob (bob) could not be read.'),
       findsOneWidget,
     );
+  });
+
+  // spec: app-ui/out-of-sync-re-sync-affordance
+  testWidgets('the out-of-sync banner and Re-sync action appear on OutOfSync '
+      'and Re-sync calls through to the core', (tester) async {
+    final core = await aliceInChat(tester);
+    final id = await send(tester, core, 'hi');
+
+    core.emit(const CoreEvent.outOfSync(chatId: 0));
+    await settle(tester);
+    expect(find.byKey(const Key('out-of-sync')), findsOneWidget);
+    expect(find.text(outOfSyncText), findsOneWidget);
+
+    // The held message is shown as out of sync, not a silent ⏳ and not failed.
+    core.setStatus(id, const SendState.outOfSync());
+    await settle(tester);
+    expect(
+      find.descendant(of: tile('hi'), matching: find.text('⟳ out of sync')),
+      findsOneWidget,
+    );
+
+    await tap(tester, find.byKey(const Key('re-sync')));
+    expect(core.calls, contains('requestResync'));
+
+    // Re-syncing clears the banner.
+    core.emit(const CoreEvent.rejoined());
+    await settle(tester);
+    expect(find.byKey(const Key('out-of-sync')), findsNothing);
   });
 }

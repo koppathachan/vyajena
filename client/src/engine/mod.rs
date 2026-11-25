@@ -220,6 +220,23 @@ pub(crate) struct Engine {
     last_rotation_check: Option<SystemTime>,
     rotation_at: Option<SystemTime>,
     last_link_poll: Instant,
+    /// Groups this device was told (`RemovedNotice`) it was removed from for
+    /// inactivity while it still holds the group locally: it is wedged behind
+    /// the epoch (group-membership: Orphaned device self-recovery). Cleared on
+    /// re-add.
+    removed_inactive: std::collections::BTreeSet<Vec<u8>>,
+    /// Groups the core has already surfaced as out of sync (so it emits the
+    /// event once, not every tick). Cleared on re-add.
+    out_of_sync: std::collections::BTreeSet<Vec<u8>>,
+    /// Own messages already reported out of sync, so a held message is marked
+    /// once (and a message typed after the banner shows is marked too), without
+    /// re-emitting every tick. Cleared on re-add.
+    out_of_sync_msgs: std::collections::BTreeSet<MessageId>,
+    /// Groups the core has already self-requested re-add for on this link while
+    /// wedged, so it asks once per connect, not every tick. Cleared on a new
+    /// link, so a restart re-asks (group-membership: Orphaned device
+    /// self-recovery, "Restart does not dead-end a stale group").
+    wedged_readd_asked: std::collections::BTreeSet<Vec<u8>>,
 }
 
 fn random_msg_id() -> Result<[u8; 16], MlsError> {
@@ -342,6 +359,10 @@ impl Engine {
             last_rotation_check: None,
             rotation_at: None,
             last_link_poll: Instant::now(),
+            removed_inactive: std::collections::BTreeSet::new(),
+            out_of_sync: std::collections::BTreeSet::new(),
+            out_of_sync_msgs: std::collections::BTreeSet::new(),
+            wedged_readd_asked: std::collections::BTreeSet::new(),
         };
         if let Some(row) = engine.shared.store.outgoing_commit()? {
             let group_id = pb::Envelope::decode(row.envelope.as_slice())
@@ -380,6 +401,7 @@ impl Engine {
             engine.push_job(Job::RequestReadd {
                 refused_seq: 0,
                 reason: "no group at start".into(),
+                wedged: false,
             });
         }
         Ok(engine)
@@ -761,6 +783,11 @@ impl Engine {
         // in flight are sent again with the same bytes.
         self.deferred.clear();
         self.apps_in_flight.clear();
+        // Each new link re-detects the wedge and re-asks, so a restart does not
+        // dead-end a stale group (group-membership: Orphaned device
+        // self-recovery). The RemovedNotice is redelivered on the next connect.
+        self.removed_inactive.clear();
+        self.wedged_readd_asked.clear();
         if let Some(inflight) = self.inflight.as_mut() {
             inflight.sent = false;
         }
@@ -910,6 +937,69 @@ impl Engine {
                 self.push_job(Job::AddLinked { device });
             }
         }
+        self.check_wedged()?;
+        Ok(())
+    }
+
+    /// group-membership: Orphaned device self-recovery. When this device still
+    /// holds the main group but has caught up on its stream (idle, backlog
+    /// drained) and was told it is out of the group for inactivity, an own
+    /// message held behind the epoch will never send on its own: the
+    /// epoch-advancing commit will not reach a non-member. The core then
+    /// self-requests re-add (bounded by the per-device daily limit, even though
+    /// it still holds group state) and surfaces the chat as out of sync so a
+    /// held send is never a silent indefinite hourglass (app-ui: Out-of-sync
+    /// re-sync affordance).
+    fn check_wedged(&mut self) -> Result<(), EngineError> {
+        // Idle means the link is up, no own commit is in flight and no
+        // envelopes are held: the catch-up backlog has drained, so a device
+        // merely transiently behind has already applied the commit.
+        if !self.idle() {
+            return Ok(());
+        }
+        let Some(row) = self.store().group()? else {
+            return Ok(());
+        };
+        let group_id = row.group_id;
+        if row.stalled.is_some() || !self.removed_inactive.contains(&group_id) {
+            return Ok(());
+        }
+        // Nothing is silently stuck unless an own message is held in the main
+        // chat (not one already in flight).
+        let held: Vec<MessageId> = self
+            .store()
+            .outgoing_in_flight()?
+            .into_iter()
+            .filter(|m| m.chat == crate::store::MAIN_CHAT)
+            .filter(|m| !self.apps_in_flight.contains_key(&m.msg_id))
+            .map(|m| m.id)
+            .collect();
+        if held.is_empty() {
+            return Ok(());
+        }
+        if self.wedged_readd_asked.insert(group_id.clone()) {
+            tracing::info!("wedged behind the group epoch; asking to be re-added");
+            self.push_job(Job::RequestReadd {
+                refused_seq: 0,
+                reason: "behind epoch".into(),
+                wedged: true,
+            });
+        }
+        if self.out_of_sync.insert(group_id) {
+            self.emit(Event::OutOfSync {
+                chat: crate::events::ChatId(crate::store::MAIN_CHAT),
+            });
+        }
+        // Mark each held message out of sync once — including one typed after
+        // the banner first showed — without re-emitting every tick.
+        for id in held {
+            if self.out_of_sync_msgs.insert(id) {
+                self.emit(Event::SendStatus {
+                    id,
+                    status: crate::events::SendStatus::OutOfSync,
+                });
+            }
+        }
         Ok(())
     }
 
@@ -923,10 +1013,15 @@ impl Engine {
             return false;
         }
         // After STALE_EPOCH, wait for the commits that moved each group on
-        // (unless this device stopped following it).
+        // (unless this device stopped following it). A group this device was
+        // removed from for inactivity never catches up, so it does not block
+        // the queue — otherwise the wedged device's own re-add could never run
+        // (group-membership: Orphaned device self-recovery).
         self.server_epochs.iter().all(|(group_id, hint)| {
-            self.group_ref(group_id)
-                .is_none_or(|g| g.epoch().as_u64() >= *hint)
+            self.removed_inactive.contains(group_id)
+                || self
+                    .group_ref(group_id)
+                    .is_none_or(|g| g.epoch().as_u64() >= *hint)
                 || self
                     .store()
                     .group_for(group_id)
@@ -986,9 +1081,14 @@ impl Engine {
                 // the stream for the Welcome that re-adds it. A device in no
                 // group (it asked to be re-added after an unusable Welcome)
                 // was removed from nothing it knows: no notice.
-                if self.store().group()?.is_none() {
+                let Some(row) = self.store().group()? else {
                     return Ok(());
-                }
+                };
+                // group-membership: Orphaned device self-recovery. This device
+                // still holds the main group but was removed from it for
+                // inactivity: it is wedged behind the epoch. Remember so the
+                // wedge check can self-request re-add and surface out of sync.
+                self.removed_inactive.insert(row.group_id);
                 if let Some(at) = notice.missed_since.as_ref() {
                     self.emit(Event::RemovedForInactivity {
                         missed_since: crate::identity::certificate::from_timestamp(at),
@@ -1603,6 +1703,13 @@ impl Engine {
                 );
                 self.group = Some(group);
                 self.rotation_at = None;
+                // Re-synced: the wedge is cleared (group-membership: Orphaned
+                // device self-recovery). The held messages flush in the new
+                // epoch and go to accepted.
+                self.removed_inactive.remove(envelope.group_id.as_slice());
+                self.out_of_sync.remove(envelope.group_id.as_slice());
+                self.out_of_sync_msgs.clear();
+                self.wedged_readd_asked.remove(envelope.group_id.as_slice());
             }
             Err(error) => {
                 self.reload_group()?;
@@ -1737,6 +1844,7 @@ impl Engine {
         self.push_job(Job::RequestReadd {
             refused_seq: seq,
             reason,
+            wedged: false,
         });
         Ok(())
     }

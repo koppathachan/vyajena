@@ -36,6 +36,9 @@ String statusText(SendState status) => switch (status) {
   SendState_Sending() => '⏳',
   SendState_Accepted() => '✓',
   SendState_Failed(:final reason) => 'Failed: $reason',
+  // Held while the chat is out of sync: kept and re-sent on re-sync, shown
+  // distinctly from a silent ⏳ (app-ui: Out-of-sync re-sync affordance).
+  SendState_OutOfSync() => '⟳ out of sync',
 };
 
 /// What the long-press sheet's reply entry says.

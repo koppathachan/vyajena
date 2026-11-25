@@ -394,9 +394,18 @@ fn register(
         .map_err(StoreError::from)?;
     let username = match invite {
         Some((username, expires_at, None, None)) if now < from_unix_millis(expires_at) => username,
+        // group-resync: an otherwise-valid invite that has only expired gets a
+        // distinct status, so the app can say "this invite has expired — ask
+        // for a fresh one" instead of a generic failure (app-ui: Invite expiry
+        // is surfaced). An invite is valid for `invite_ttl` (7 days default).
+        Some((_, _, None, None)) => {
+            return Err(Status::deadline_exceeded(
+                "the invite has expired; ask for a fresh one",
+            ));
+        }
         _ => {
             return Err(Status::permission_denied(
-                "the invite is unknown, used, revoked or expired",
+                "the invite is unknown, used or revoked",
             ));
         }
     };
