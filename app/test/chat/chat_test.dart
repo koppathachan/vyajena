@@ -94,21 +94,29 @@ void main() {
     expect(mine.right, closeTo(screen.width, 1));
     expect(mine.width, lessThan(screen.width / 3));
     expect(theirs.left, closeTo(0, 1));
-    // No "bob" label; the ✓ sits in the bubble, on the line of the text.
+    // No "bob" label; the ✓ sits in the bubble footer, sharing one line
+    // with the timestamp below the text (not on the text's line).
     expect(
       find.descendant(of: tile('hi'), matching: find.text('Bob (bob)')),
       findsNothing,
     );
     final check = find.descendant(of: tile('hi'), matching: find.text('✓'));
     expect(check, findsOneWidget);
+    final time = find.byKey(ValueKey('time-$id'));
+    expect(time, findsOneWidget);
+    // Tick and time share a horizontal line (their boxes overlap vertically;
+    // the ✓ glyph box is taller than the small time text, so centers differ).
+    final checkRect = tester.getRect(check);
+    final timeRect = tester.getRect(time);
+    expect(checkRect.top, lessThan(timeRect.bottom));
+    expect(timeRect.top, lessThan(checkRect.bottom));
+    // That line sits below the message text.
     expect(
-      tester.getCenter(check).dy,
-      closeTo(tester.getCenter(find.text('hi')).dy, 4),
+      timeRect.top,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.text('hi')).dy - 1),
     );
-    expect(
-      tester.getTopLeft(check).dx,
-      greaterThan(tester.getTopRight(find.text('hi')).dx),
-    );
+    // The tick trails the time on that line.
+    expect(checkRect.left, greaterThan(timeRect.right));
     // Other users' messages keep their sender.
     expect(
       find.descendant(
