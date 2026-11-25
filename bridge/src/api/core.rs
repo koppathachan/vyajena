@@ -203,6 +203,14 @@ impl Core {
         self.client.is_connected()
     }
 
+    /// Re-sync a chat the core signalled is out of sync (`CoreEvent::OutOfSync`):
+    /// ask the server to re-add this wedged device. The held message keeps its
+    /// id and is sent once a device able to re-add this one is online (app-ui:
+    /// Out-of-sync re-sync affordance).
+    pub fn request_resync(&self) {
+        self.client.request_resync();
+    }
+
     // --- Push (app-ui: Push notifications) ---
 
     /// Registers or replaces this device's push token on the server (needs a

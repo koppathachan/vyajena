@@ -63,8 +63,15 @@ pub(crate) enum Job {
     UploadKeyPackages { remaining: Option<u32> },
     /// group-membership: Re-add after an unusable Welcome. Ask the server to be
     /// added again, with fresh KeyPackages: after refusing the Welcome at
-    /// `refused_seq`, or (`0`) at start with no group.
-    RequestReadd { refused_seq: u64, reason: String },
+    /// `refused_seq`, or (`0`) at start with no group. `wedged` is set when the
+    /// device still holds the group locally but is wedged behind its epoch
+    /// (group-membership: Orphaned device self-recovery): the ask is made even
+    /// though it holds group state.
+    RequestReadd {
+        refused_seq: u64,
+        reason: String,
+        wedged: bool,
+    },
     /// direct-messages: Opening a DM with `peer`.
     OpenDm { peer: UserId, reply: Option<Reply> },
     /// direct-messages: DM members kept complete. Add `device` of `user` to
@@ -415,8 +422,9 @@ impl Engine {
             Job::RequestReadd {
                 refused_seq,
                 reason,
+                wedged,
             } => {
-                if let Err(error) = self.request_readd(refused_seq, &reason).await {
+                if let Err(error) = self.request_readd(refused_seq, &reason, wedged).await {
                     tracing::warn!(%error, "asking to be added again failed");
                     if matches!(
                         error,
@@ -425,6 +433,7 @@ impl Engine {
                         self.push_job(Job::RequestReadd {
                             refused_seq,
                             reason,
+                            wedged,
                         });
                     }
                 }
@@ -1355,9 +1364,16 @@ impl Engine {
     /// group-membership: Re-add after an unusable Welcome. Asks the server with
     /// fresh KeyPackages, which replace the device's stored ones only if the
     /// Server answers `ASKED` (welcome-recovery design D2, D3).
-    async fn request_readd(&mut self, refused_seq: u64, reason: &str) -> Result<(), ClientError> {
-        if refused_seq == 0 && self.store().group()?.is_some() {
-            // Joined since the ask was queued.
+    async fn request_readd(
+        &mut self,
+        refused_seq: u64,
+        reason: &str,
+        wedged: bool,
+    ) -> Result<(), ClientError> {
+        if refused_seq == 0 && !wedged && self.store().group()?.is_some() {
+            // Joined since the ask was queued. A wedged device holds a *stale*
+            // group, so it asks even though it has group state
+            // (group-membership: Orphaned device self-recovery).
             return Ok(());
         }
         let session = self.session().map_err(ClientError::from)?;

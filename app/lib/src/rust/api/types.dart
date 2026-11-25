@@ -346,6 +346,15 @@ sealed class CoreEvent with _$CoreEvent {
   /// This device was re-added after a removal.
   const factory CoreEvent.rejoined() = CoreEvent_Rejoined;
 
+  /// A chat is out of sync: this device is wedged behind the group's epoch
+  /// and cannot self-recover, so the app shows an "out of sync — re-sync"
+  /// affordance (app-ui: Out-of-sync re-sync affordance). Cleared on re-add
+  /// (`Rejoined` / `JoinedGroup`).
+  const factory CoreEvent.outOfSync({
+    /// The chat that is out of sync (0 is the lobby).
+    required PlatformInt64 chatId,
+  }) = CoreEvent_OutOfSync;
+
   /// A known user's identity key changed.
   const factory CoreEvent.identityKeyChanged({
     /// The user.
@@ -741,6 +750,12 @@ sealed class SendState with _$SendState {
     /// Why, for display.
     required String reason,
   }) = SendState_Failed;
+
+  /// Held because this device is wedged behind the group's epoch and out of
+  /// sync (group-membership: Orphaned device self-recovery). Its text is
+  /// kept and sent once the device re-syncs: shown as waiting to re-sync, not
+  /// a silent ⏳ and not failed.
+  const factory SendState.outOfSync() = SendState_OutOfSync;
 }
 
 /// Which on-device engine produced a subject cutout (photo-sticker:

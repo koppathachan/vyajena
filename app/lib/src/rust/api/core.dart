@@ -246,6 +246,12 @@ abstract class Core implements RustOpaqueInterface {
     required String name,
   });
 
+  /// Re-sync a chat the core signalled is out of sync (`CoreEvent::OutOfSync`):
+  /// ask the server to re-add this wedged device. The held message keeps its
+  /// id and is sent once a device able to re-add this one is online (app-ui:
+  /// Out-of-sync re-sync affordance).
+  Future<void> requestResync();
+
   /// Resends the clip of the own voice message `id` as a new message with a
   /// new blob, when the first one expired (client-runtime: Expired media);
   /// returns the new message's local id.

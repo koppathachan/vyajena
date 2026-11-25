@@ -57,6 +57,7 @@ pub struct MessageId(pub i64);
 
 /// Where an own message stands (client-runtime: Send status).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SendStatus {
     /// Stored locally; the server has not accepted it yet.
     Sending,
@@ -67,6 +68,12 @@ pub enum SendStatus {
         /// Why, for display.
         reason: String,
     },
+    /// Held behind the group's epoch while this device is wedged out of epoch
+    /// sync and cannot self-recover (group-membership: Orphaned device
+    /// self-recovery). Its text is kept, with its `msg_id`, to send once the
+    /// device re-syncs: a distinct recoverable state, not a silent `Sending`
+    /// and not `Failed`.
+    OutOfSync,
 }
 
 /// Where an image or voice message's media is on this device (client-runtime: Image
@@ -403,6 +410,17 @@ pub enum Event {
     },
     /// This device was re-added to the group after a removal.
     Rejoined,
+    /// A chat is out of sync: this device is wedged behind the group's epoch
+    /// and cannot self-recover (no device able to re-add it is online, or the
+    /// re-add daily limit is reached), so the app shows an "out of sync —
+    /// re-sync" affordance rather than leaving a held send a silent hourglass
+    /// (group-membership: Orphaned device self-recovery; app-ui: Out-of-sync
+    /// re-sync affordance). Cleared when the device re-syncs ([`Event::Rejoined`]
+    /// / [`Event::JoinedGroup`]).
+    OutOfSync {
+        /// The chat that is out of sync.
+        chat: ChatId,
+    },
     /// A known user's identity key changed; adding their devices is blocked
     /// until the user accepts the new key (key-directory: Clients verify the
     /// identity chain).

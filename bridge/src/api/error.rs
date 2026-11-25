@@ -13,9 +13,12 @@ pub enum CoreErrorKind {
     ServerIdentity,
     /// The server could not be reached, or answered something unexpected.
     Network,
-    /// The server refused the call (for example a used or expired invite, or an
-    /// admin call from a non-admin device).
+    /// The server refused the call (for example a used invite, or an admin call
+    /// from a non-admin device).
     Refused,
+    /// The pasted invite has expired; a fresh one is needed (app-ui: Invite
+    /// expiry is surfaced).
+    InviteExpired,
     /// Text that is not an invite, link request or link approval, or one of
     /// the wrong kind.
     InvalidPayload,

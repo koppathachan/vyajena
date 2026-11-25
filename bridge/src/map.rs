@@ -55,6 +55,10 @@ fn status(status: SendStatus) -> SendState {
         SendStatus::Sending => SendState::Sending,
         SendStatus::Accepted => SendState::Accepted,
         SendStatus::Failed { reason } => SendState::Failed { reason },
+        SendStatus::OutOfSync => SendState::OutOfSync,
+        // A future status this bridge version does not know: treat as still
+        // sending rather than a false terminal state.
+        _ => SendState::Sending,
     }
 }
 
@@ -280,6 +284,7 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             missed_since_ms: millis(missed_since),
         },
         Event::Rejoined => CoreEvent::Rejoined,
+        Event::OutOfSync { chat } => CoreEvent::OutOfSync { chat_id: chat.0 },
         Event::IdentityKeyChanged { user: u } => CoreEvent::IdentityKeyChanged { user: user(&u) },
         Event::ServerIdentityError => CoreEvent::ServerIdentityError,
         Event::Removed => CoreEvent::Removed,
@@ -322,6 +327,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
         ClientError::KeyStore(_) => K::KeyStore,
         ClientError::Store(_) => K::Storage,
         ClientError::Net(NetError::ServerIdentity) => K::ServerIdentity,
+        // An expired invite gets a distinct kind so the app can explain it
+        // (app-ui: Invite expiry is surfaced).
+        ClientError::InviteExpired => K::InviteExpired,
         ClientError::Net(NetError::Rpc(_)) => K::Refused,
         ClientError::Net(_) => K::Network,
         ClientError::Payload(_) => K::InvalidPayload,

@@ -30,6 +30,11 @@ import 'voice_plugins.dart';
 /// The banner of a closed named group (app-ui: Named group screen).
 const groupClosedText = 'This group was closed';
 
+/// The in-chat banner when a chat is out of sync: this device fell behind the
+/// group's epoch and could not re-sync on its own (app-ui: Out-of-sync re-sync
+/// affordance). The held message is kept, not lost.
+const outOfSyncText = 'This chat is out of sync';
+
 /// "Waiting for Bobby's devices": a DM before the peer's first device is
 /// in it (app-ui: Open a DM).
 String dmWaitingText(String name) =>
@@ -684,6 +689,24 @@ class _ChatScreenState extends State<ChatScreen> {
                 actions: const [SizedBox.shrink()],
               )
             else ...[
+              if (_model.outOfSync)
+                MaterialBanner(
+                  key: const Key('out-of-sync'),
+                  content: const Text(outOfSyncText),
+                  actions: [
+                    TextButton(
+                      key: const Key('re-sync'),
+                      onPressed: () async {
+                        final messenger = ScaffoldMessenger.of(context);
+                        await widget.core.requestResync();
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('Re-syncing…')),
+                        );
+                      },
+                      child: const Text('Re-sync'),
+                    ),
+                  ],
+                ),
               if (_model.waiting)
                 Padding(
                   key: const Key('dm-waiting'),

@@ -343,6 +343,9 @@ class FakeCoreService extends CoreService {
   Future<void> reconnectNow() async => calls.add('reconnectNow');
 
   @override
+  Future<void> requestResync() async => calls.add('requestResync');
+
+  @override
   Future<UserRef?> userId() async => storedUser;
 
   @override
@@ -1120,7 +1123,11 @@ class FakeCoreService extends CoreService {
     return InviteInfo(
       code: 'code-$username',
       user: UserRef(username: username, serverId: 'chat'),
-      expiresAtMs: 0,
+      // A week out, as the server mints (invite_ttl, 7 days by default), so the
+      // screen can show when it expires.
+      expiresAtMs: DateTime.now()
+          .add(const Duration(days: 7))
+          .millisecondsSinceEpoch,
       text: 'vyajena-invite:$username',
     );
   }

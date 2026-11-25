@@ -168,6 +168,11 @@ abstract class CoreService {
   /// Foreground and background, "Network back"; qa-fixes design D6).
   Future<void> reconnectNow();
 
+  /// Re-sync a chat the core signalled is out of sync: ask the server to
+  /// re-add this wedged device (app-ui: Out-of-sync re-sync affordance). The
+  /// held message keeps its place and is sent once the device re-syncs.
+  Future<void> requestResync();
+
   /// This device's user, once registered or linked.
   Future<UserRef?> userId();
 

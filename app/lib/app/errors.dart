@@ -9,6 +9,8 @@ String errorText(Object error) {
       "The server's identity does not match the invite. Not connecting: "
           'someone may be pretending to be the server.',
     CoreErrorKind.network => 'Could not reach the server: ${error.message}',
+    CoreErrorKind.inviteExpired =>
+      'This invite has expired. Ask the admin for a fresh one.',
     CoreErrorKind.offline => 'Not connected to the server right now.',
     CoreErrorKind.notAdmin => "Only the admin's devices can do this.",
     CoreErrorKind.notIdentityDevice =>

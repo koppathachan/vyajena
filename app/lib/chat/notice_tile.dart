@@ -47,6 +47,10 @@ String noticeText(
       '${name(by)} removed a device of ${name(user)}',
     MemberChange.removedUser => '${name(by)} removed ${name(user)}',
   },
+  InactivityNotice(:final user, :final returned) =>
+    returned
+        ? '${name(user)} came back and was re-added to the group.'
+        : '${name(user)} went inactive and was removed from the group.',
 };
 
 /// One notice row.

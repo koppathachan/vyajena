@@ -211,6 +211,11 @@ pub enum SendState {
         /// Why, for display.
         reason: String,
     },
+    /// Held because this device is wedged behind the group's epoch and out of
+    /// sync (group-membership: Orphaned device self-recovery). Its text is
+    /// kept and sent once the device re-syncs: shown as waiting to re-sync, not
+    /// a silent ⏳ and not failed.
+    OutOfSync,
 }
 
 /// A chat message, received or sent by this device.
@@ -376,6 +381,14 @@ pub enum CoreEvent {
     },
     /// This device was re-added after a removal.
     Rejoined,
+    /// A chat is out of sync: this device is wedged behind the group's epoch
+    /// and cannot self-recover, so the app shows an "out of sync — re-sync"
+    /// affordance (app-ui: Out-of-sync re-sync affordance). Cleared on re-add
+    /// (`Rejoined` / `JoinedGroup`).
+    OutOfSync {
+        /// The chat that is out of sync (0 is the lobby).
+        chat_id: i64,
+    },
     /// A known user's identity key changed.
     IdentityKeyChanged {
         /// The user.

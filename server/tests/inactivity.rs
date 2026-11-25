@@ -253,6 +253,37 @@ async fn back_from_holiday_the_admin_re_adds_the_phone() {
     assert!(is_member(&w.server, &w.phone).await);
 }
 
+// group-resync G3: the "removed for inactivity" notice is durable. A device
+// offline when its leaf was committed-removed is still told, with the
+// since-when, on its next connect — not only if it was online at removal.
+// spec: group-membership/automatic-re-add
+#[tokio::test]
+async fn removed_while_offline_is_told_on_next_connect() {
+    let mut w = world().await;
+    let m_at = phone_in_drawer(&mut w, &mut []).await;
+
+    // An active member commits the server's Remove while the phone is still
+    // offline: its leaf is actually gone from the group.
+    w.admin_stream = reconnect(&w.conn, &mut w.admin).await;
+    let proposal = receive(&mut w.admin_stream, &mut w.admin).await;
+    assert_eq!(proposal.kind, Kind::Proposal as i32);
+    w.admin.receive_proposal(&proposal.ciphertext);
+    let epoch = w.admin.epoch();
+    let commit = w.admin.commit_pending();
+    w.admin_stream
+        .accepted(commit_envelope(epoch, commit, None))
+        .await;
+    w.admin.confirm();
+    assert!(!is_member(&w.server, &w.phone).await);
+
+    // The phone was offline the whole time. On its next connect the server
+    // still delivers the removal notice with the since-when, so the app can
+    // show it instead of leaving the user with no indication.
+    w.phone.authenticate(&w.conn).await;
+    w.phone_stream = Stream::open(&w.conn, &w.phone).await;
+    assert_eq!(removed_since(w.phone_stream.next().await), m_at);
+}
+
 // spec: group-membership/automatic-re-add
 #[tokio::test]
 async fn two_devices_race_to_re_add_and_the_loser_is_stale() {

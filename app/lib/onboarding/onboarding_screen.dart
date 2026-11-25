@@ -54,7 +54,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       if (!mounted) return;
       setState(() {
         _joining = false;
-        _error = error is CoreError && error.kind == CoreErrorKind.network
+        // A network error or an expired invite speak for themselves; anything
+        // else is prefixed so the user knows the join did not go through
+        // (app-ui: Invite expiry is surfaced).
+        _error =
+            error is CoreError &&
+                (error.kind == CoreErrorKind.network ||
+                    error.kind == CoreErrorKind.inviteExpired)
             ? errorText(error)
             : 'Could not join. ${errorText(error)}';
       });

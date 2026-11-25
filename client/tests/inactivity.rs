@@ -292,6 +292,7 @@ async fn back_from_holiday_after_a_reset_the_laptop_joins_and_re_pins() {
 
 // spec: client-runtime/send-status
 // spec: group-membership/automatic-re-add
+// spec: group-membership/orphaned-device-self-recovery
 #[tokio::test(flavor = "multi_thread")]
 async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
     let server = TestServer::start().await;
@@ -318,18 +319,29 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
         .check("read")
         .check("the message")
         .msg_id;
+    // group-resync G1/G2: holding a stale group yet caught up, Bob surfaces the
+    // chat as out of sync, the held send as out of sync (not a silent hourglass
+    // and not failed), and self-requests re-add even though it holds group
+    // state.
+    bob.wait_event("the chat is out of sync", |e| {
+        matches!(e, Event::OutOfSync { chat } if *chat == client::ChatId::MAIN)
+    })
+    .await;
+    bob.wait_event("the held send is out of sync", |e| {
+        matches!(e, Event::SendStatus { id: i, status: SendStatus::OutOfSync } if *i == id)
+    })
+    .await;
+    bob.wait_event("asked to be re-added", |e| {
+        matches!(e, Event::ReaddRequested { .. })
+    })
+    .await;
     assert!(
-        !bob.sees_within_quiet(|e| matches!(e, Event::SendStatus { id: i, .. } if *i == id))
-            .await,
-        "{:?}",
+        !bob.events().iter().any(|e| matches!(
+            e,
+            Event::SendStatus { id: i, status: SendStatus::Failed { .. } } if *i == id
+        )),
+        "the held message must not be reported failed: {:?}",
         bob.events()
-    );
-    assert_eq!(
-        bob.client
-            .message(id)
-            .check("message")
-            .and_then(|m| m.status),
-        Some(SendStatus::Sending)
     );
 
     // The admin connects and re-adds Bob; "back" goes out in the new epoch

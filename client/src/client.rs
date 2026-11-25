@@ -147,6 +147,10 @@ pub enum ClientError {
     /// The server behind the invite is not the one it names.
     #[error("the server does not match the invite: {0}")]
     ServerMismatch(String),
+    /// The pasted invite has expired; a fresh one is needed (device-identity:
+    /// Signup with an invite; app-ui: Invite expiry is surfaced).
+    #[error("the invite has expired")]
+    InviteExpired,
     /// This device is not in the group.
     #[error("this device is not in the group")]
     NoGroup,
@@ -430,7 +434,7 @@ impl Client {
             .await?;
         let info = checked_server_info(&conn, &invite.user.server_id).await?;
         let identity_public = identity.verifying_key().to_bytes().to_vec();
-        let registered = conn
+        let registered = match conn
             .devices()
             .register(pb::RegisterRequest {
                 invite_code: invite.code.clone(),
@@ -438,8 +442,16 @@ impl Client {
                 certificate: Some(signed.clone()),
             })
             .await
-            .map_err(NetError::from)?
-            .into_inner();
+        {
+            Ok(response) => response.into_inner(),
+            // device-identity: Signup with an invite. The server marks an
+            // expired-but-otherwise-valid invite with DEADLINE_EXCEEDED so the
+            // app can say it expired (app-ui: Invite expiry is surfaced).
+            Err(status) if status.code() == tonic::Code::DeadlineExceeded => {
+                return Err(ClientError::InviteExpired);
+            }
+            Err(status) => return Err(NetError::from(status).into()),
+        };
         let user = registered
             .user_id
             .as_ref()
@@ -734,6 +746,23 @@ impl Client {
     /// Whether the client has an authenticated connection right now.
     pub fn is_connected(&self) -> bool {
         self.shared.session.lock().is_some()
+    }
+
+    /// Re-sync a chat that the core signalled is out of sync: this device is
+    /// wedged behind the group's epoch and cannot self-recover. Asks the server
+    /// to be re-added (bounded by the per-device daily limit), even though this
+    /// device still holds group state (group-membership: Orphaned device
+    /// self-recovery; app-ui: Out-of-sync re-sync affordance). The held message
+    /// keeps its `msg_id` and is sent once a device able to re-add this one is
+    /// online. Does nothing before [`Client::start`].
+    pub fn request_resync(&self) {
+        if let Some(running) = self.running.lock().as_ref() {
+            let _ = running.commands.try_send(Command::Job(Job::RequestReadd {
+                refused_seq: 0,
+                reason: "re-sync".into(),
+                wedged: true,
+            }));
+        }
     }
 
     fn session(&self) -> Result<Session, ClientError> {
