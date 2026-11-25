@@ -69,6 +69,8 @@ message ServerFrame {
     GroupClosed group_closed = 10;
     // message-deletion: Removed-conversation sync (change `remove-closed-dm`).
     ConversationRemoved conversation_removed = 11;
+    // notification-prefs: Mute preference sync (change `mute-notifications`).
+    MutePrefs mute_prefs = 12;
   }
 }
 
@@ -309,6 +311,20 @@ message DmClosed {
 // if it has it and it is closed; otherwise it ignores the frame.
 message ConversationRemoved {
   bytes group_id = 1;
+}
+
+// notification-prefs: Mute preference sync. The caller's user's private mute
+// set, sent as one snapshot on every connect (change `mute-notifications`).
+// Unlike `ConversationRemoved` (one frame per entry, a set that only grows),
+// this is a single self-contained snapshot the device adopts wholesale: it
+// carries the global flag alongside the id set, and the set shrinks on unmute.
+// The server stores and sends the conversation ids and the one flag only, never
+// content or history.
+message MutePrefs {
+  // The conversation ids the user has muted.
+  repeated bytes muted_group_ids = 1;
+  // Whole-app mute: suppresses every conversation, overriding the id set.
+  bool muted_all = 2;
 }
 
 // multi-group: Closing a named group. Sent to each member device of a closed

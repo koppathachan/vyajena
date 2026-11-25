@@ -1,6 +1,6 @@
 ## 1. Proto
 
-- [ ] 1.1 New `prefs.proto`: `Prefs.SetMutePref` (`SetMutePrefRequest{scope,
+- [x] 1.1 New `prefs.proto`: `Prefs.SetMutePref` (`SetMutePrefRequest{scope,
       group_id, muted}`, `MuteScope`); `messaging.proto`:
       `ServerFrame.mute_prefs = 12` (`MutePrefs{muted_group_ids, muted_all}`);
       `buf lint`, `buf breaking`; `cargo run -p pbgen`

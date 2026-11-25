@@ -2976,7 +2976,10 @@ pub mod client_frame {
 /// A frame from the server to the device.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ServerFrame {
-    #[prost(oneof = "server_frame::Frame", tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11")]
+    #[prost(
+        oneof = "server_frame::Frame",
+        tags = "1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12"
+    )]
     pub frame: ::core::option::Option<server_frame::Frame>,
 }
 /// Nested message and enum types in `ServerFrame`.
@@ -3009,6 +3012,9 @@ pub mod server_frame {
         /// message-deletion: Removed-conversation sync (change `remove-closed-dm`).
         #[prost(message, tag = "11")]
         ConversationRemoved(super::ConversationRemoved),
+        /// notification-prefs: Mute preference sync (change `mute-notifications`).
+        #[prost(message, tag = "12")]
+        MutePrefs(super::MutePrefs),
     }
 }
 /// wire-transport: Protocol version negotiation.
@@ -3320,6 +3326,22 @@ pub struct ConversationRemoved {
     #[prost(bytes = "vec", tag = "1")]
     pub group_id: ::prost::alloc::vec::Vec<u8>,
 }
+/// notification-prefs: Mute preference sync. The caller's user's private mute
+/// set, sent as one snapshot on every connect (change `mute-notifications`).
+/// Unlike `ConversationRemoved` (one frame per entry, a set that only grows),
+/// this is a single self-contained snapshot the device adopts wholesale: it
+/// carries the global flag alongside the id set, and the set shrinks on unmute.
+/// The server stores and sends the conversation ids and the one flag only, never
+/// content or history.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MutePrefs {
+    /// The conversation ids the user has muted.
+    #[prost(bytes = "vec", repeated, tag = "1")]
+    pub muted_group_ids: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// Whole-app mute: suppresses every conversation, overriding the id set.
+    #[prost(bool, tag = "2")]
+    pub muted_all: bool,
+}
 /// multi-group: Closing a named group. Sent to each member device of a closed
 /// named group on every connect until it sends `Ack(group_id, server_seq = 0)`.
 /// The client marks the chat closed and keeps its history read-only; envelopes for
@@ -3541,6 +3563,243 @@ pub mod messaging_server {
     /// Generated gRPC service name
     pub const SERVICE_NAME: &str = "vyajena.v1.Messaging";
     impl<T> tonic::server::NamedService for MessagingServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}
+/// notification-prefs: Mute a conversation; Mute the whole app. Idempotent.
+///
+/// For `MUTE_SCOPE_CONVERSATION`, `group_id` adds (`muted = true`) or removes
+/// (`muted = false`) that conversation from the caller's mute set; the server
+/// rejects it with `PERMISSION_DENIED` unless the caller's user is a member of
+/// that conversation. For `MUTE_SCOPE_GLOBAL`, `muted` sets or clears the
+/// caller's `muted_all` flag and `group_id` is ignored.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetMutePrefRequest {
+    #[prost(enumeration = "MuteScope", tag = "1")]
+    pub scope: i32,
+    /// The conversation's MLS group id, for `MUTE_SCOPE_CONVERSATION`.
+    #[prost(bytes = "vec", tag = "2")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bool, tag = "3")]
+    pub muted: bool,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetMutePrefResponse {}
+/// What a `SetMutePref` call targets (notification-prefs: Mute a conversation,
+/// Mute the whole app).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum MuteScope {
+    Unspecified = 0,
+    /// One conversation, named by `group_id`.
+    Conversation = 1,
+    /// Every conversation at once (the user's `muted_all` flag); `group_id` is
+    /// ignored.
+    Global = 2,
+}
+impl MuteScope {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "MUTE_SCOPE_UNSPECIFIED",
+            Self::Conversation => "MUTE_SCOPE_CONVERSATION",
+            Self::Global => "MUTE_SCOPE_GLOBAL",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "MUTE_SCOPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "MUTE_SCOPE_CONVERSATION" => Some(Self::Conversation),
+            "MUTE_SCOPE_GLOBAL" => Some(Self::Global),
+            _ => None,
+        }
+    }
+}
+/// Generated server implementations.
+pub mod prefs_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with PrefsServer.
+    #[async_trait]
+    pub trait Prefs: std::marker::Send + std::marker::Sync + 'static {
+        /// notification-prefs: Mute a conversation; Mute the whole app. Records the
+        /// caller's mute preference in their private server-side mute set.
+        async fn set_mute_pref(
+            &self,
+            request: tonic::Request<super::SetMutePrefRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetMutePrefResponse>,
+            tonic::Status,
+        >;
+    }
+    /// buf:lint:ignore SERVICE_SUFFIX
+    /// Service name as used in the specs.
+    #[derive(Debug)]
+    pub struct PrefsServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> PrefsServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for PrefsServer<T>
+    where
+        T: Prefs,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/vyajena.v1.Prefs/SetMutePref" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetMutePrefSvc<T: Prefs>(pub Arc<T>);
+                    impl<T: Prefs> tonic::server::UnaryService<super::SetMutePrefRequest>
+                    for SetMutePrefSvc<T> {
+                        type Response = super::SetMutePrefResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetMutePrefRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Prefs>::set_mute_pref(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetMutePrefSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for PrefsServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "vyajena.v1.Prefs";
+    impl<T> tonic::server::NamedService for PrefsServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }
