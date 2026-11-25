@@ -398,4 +398,13 @@ abstract class CoreService {
 
   /// Admin: accepts [user]'s changed identity key.
   Future<bool> acceptIdentityKey(UserRef user);
+
+  /// The owner re-trusts [user]'s changed safety number (admin-recovery): the
+  /// re-trust prompt clears and the identity is verified again. On admin
+  /// devices a key kept waiting is also accepted and the user re-added.
+  Future<bool> acknowledgeIdentityKey(UserRef user);
+
+  /// The users whose safety number changed and still await the owner's
+  /// re-trust (admin-recovery: Admin re-key forces peer re-trust).
+  Future<List<UserRef>> identityRetrustPending();
 }

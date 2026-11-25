@@ -71,36 +71,58 @@ void main() {
     );
   });
 
-  // spec: app-ui/notices-in-the-chat
-  testWidgets('Key changed: every member sees a warning naming Bob; only '
-      'the admin\'s device offers to accept it', (tester) async {
+  // spec: app-ui/notices-in-the-chat (safety-number-changed-prompt)
+  testWidgets('Safety number changed: every member — not just the admin — '
+      'sees a re-trust prompt naming the user and can re-trust it', (
+    tester,
+  ) async {
     final core = FakeCoreService(storedUser: alice)
       ..displayNames = {'bob@chat': 'Bob (bob)'};
     await openApp(tester, core);
     core.emit(const CoreEvent.identityKeyChanged(user: bob));
     await settle(tester);
-    expect(find.textContaining("Bob (bob)'s key changed"), findsOneWidget);
-    expect(find.text('Accept new key'), findsNothing);
+    // A warning naming the user, phrased as a re-trust question, with an action
+    // this non-admin member can take.
+    expect(
+      find.textContaining("Bob (bob)'s safety number changed"),
+      findsOneWidget,
+    );
+    expect(find.text('Re-trust'), findsOneWidget);
+    // Nothing is presented as verified yet: the re-trust prompt is still open.
+    expect(
+      find.textContaining('You re-trusted'),
+      findsNothing,
+    );
   });
 
-  // spec: app-ui/notices-in-the-chat
-  testWidgets('the admin accepts a changed key, which calls '
-      'accept_identity_key', (tester) async {
-    final core = FakeCoreService(storedUser: akhil)
-      ..admin = true
-      ..displayNames = {'bob@chat': 'Bob (bob)'};
+  // spec: app-ui/notices-in-the-chat (safety-number-changed-prompt)
+  testWidgets('re-trusting a changed safety number calls '
+      'acknowledge_identity_key and never auto-accepts silently', (
+    tester,
+  ) async {
+    final core = FakeCoreService(storedUser: alice)
+      ..displayNames = {'akhil@chat': 'Akhil'};
     await openApp(tester, core);
-    core.emit(const CoreEvent.identityKeyChanged(user: bob));
-    // The core warns again each time it meets the key: one warning.
-    core.emit(const CoreEvent.identityKeyChanged(user: bob));
+    // The recovered admin re-keyed; the member sees one prompt even if the core
+    // meets the key more than once.
+    core.emit(const CoreEvent.identityKeyChanged(user: akhil));
+    core.emit(const CoreEvent.identityKeyChanged(user: akhil));
     await settle(tester);
-    expect(find.textContaining("Bob (bob)'s key changed"), findsOneWidget);
+    expect(
+      find.textContaining("Akhil's safety number changed"),
+      findsOneWidget,
+    );
+    // Trust is withheld until the owner acts: no acknowledge happened on its own.
+    expect(core.calls, isNot(contains('acknowledgeIdentityKey')));
 
-    await tap(tester, find.text('Accept new key'));
-    expect(core.calls, contains('acceptIdentityKey'));
-    expect(core.args['acceptIdentityKey'], bob);
-    expect(find.text("Bob (bob)'s new key was accepted."), findsOneWidget);
-    expect(find.text('Accept new key'), findsNothing);
+    await tap(tester, find.text('Re-trust'));
+    expect(core.calls, contains('acknowledgeIdentityKey'));
+    expect(core.args['acknowledgeIdentityKey'], akhil);
+    expect(
+      find.text("You re-trusted Akhil's new safety number."),
+      findsOneWidget,
+    );
+    expect(find.text('Re-trust'), findsNothing);
   });
 
   // spec: app-ui/notices-in-the-chat
@@ -172,7 +194,10 @@ void main() {
     await settle(tester);
     await enterGroup(tester);
 
-    expect(find.textContaining("Ali (alice)'s key changed"), findsOneWidget);
+    expect(
+      find.textContaining("Ali (alice)'s safety number changed"),
+      findsOneWidget,
+    );
   });
 
   // spec: app-ui/notices-in-the-chat
@@ -194,7 +219,7 @@ void main() {
     await settle(tester);
 
     final gap = find.textContaining('expired before this phone fetched them');
-    final key = find.textContaining("alice's key changed");
+    final key = find.textContaining("alice's safety number changed");
     expect(gap, findsOneWidget);
     expect(key, findsOneWidget);
     expect(above(tester, find.text('first'), gap), isTrue);

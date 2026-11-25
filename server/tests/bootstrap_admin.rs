@@ -174,6 +174,82 @@ async fn no_bootstrap_invite_once_users_exist() {
 
 // spec: device-identity/bootstrap-admin
 #[tokio::test]
+async fn healthy_server_with_other_users_does_not_re_bootstrap() {
+    let tmp = temp();
+    let config = support::config_in(tmp.path());
+    let clock = support::manual_clock();
+    let server = start(&config, &clock).await;
+    // The admin is active (removed_at NULL) and another user exists.
+    let inserted = server
+        .state()
+        .store
+        .call(|conn| {
+            conn.execute(
+                "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
+                params!["akhil", vec![1u8; 32], 0_i64],
+            )?;
+            conn.execute(
+                "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
+                params!["bob", vec![2u8; 32], 0_i64],
+            )?;
+            Ok(())
+        })
+        .await;
+    assert!(inserted.is_ok());
+    drop(server);
+
+    clock.advance(Duration::from_secs(60 * 60));
+    let server = start(&config, &clock).await;
+    assert_eq!(server.bootstrap(), &Bootstrap::NotNeeded);
+    assert_eq!(bootstrap_rows(&server.state().store).await.len(), 1);
+}
+
+// spec: device-identity/bootstrap-admin
+#[tokio::test]
+async fn re_bootstrap_after_the_admin_is_removed() {
+    let tmp = temp();
+    let config = support::config_in(tmp.path());
+    let clock = support::manual_clock();
+    let server = start(&config, &clock).await;
+    // The admin registered (bootstrap invite consumed) and another user joined;
+    // then an operator reset marked the admin removed.
+    let prepared = server
+        .state()
+        .store
+        .call(|conn| {
+            conn.execute(
+                "INSERT INTO users (username, identity_public_key, created_at, removed_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params!["akhil", vec![1u8; 32], 0_i64, 1_i64],
+            )?;
+            conn.execute(
+                "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
+                params!["bob", vec![2u8; 32], 0_i64],
+            )?;
+            // The first-start bootstrap invite has been used, so none is usable.
+            conn.execute(
+                "UPDATE invites SET used_at = ?1 WHERE bootstrap = 1",
+                params![1_i64],
+            )?;
+            Ok(())
+        })
+        .await;
+    assert!(prepared.is_ok());
+    drop(server);
+
+    clock.advance(Duration::from_secs(60 * 60));
+    let server = start(&config, &clock).await;
+    assert!(
+        matches!(server.bootstrap(), Bootstrap::Created(invite) if invite.invite.username == "akhil"),
+        "expected a re-minted bootstrap invite for the admin, got {:?}",
+        server.bootstrap()
+    );
+    // A second bootstrap invite now exists (the used one plus the new one).
+    assert_eq!(bootstrap_rows(&server.state().store).await.len(), 2);
+}
+
+// spec: device-identity/bootstrap-admin
+#[tokio::test]
 async fn database_of_another_server_id_is_refused() {
     let tmp = temp();
     let config = support::config_in(tmp.path());

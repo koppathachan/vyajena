@@ -2,6 +2,7 @@
 //! keys, opens the database, creates the bootstrap invite and binds the port;
 //! [`server::serve`] runs the gRPC services over TLS until shutdown.
 
+pub mod admin_reset;
 pub mod bootstrap;
 pub mod clock;
 pub mod config;
@@ -28,9 +29,10 @@ use crate::messaging::Hub;
 use crate::push::{LoggingProvider, PushProvider};
 use crate::store::{Store, StoreError};
 
+pub use admin_reset::{ResetError, ResetReport};
 pub use bootstrap::{Bootstrap, BootstrapInvite};
 pub use clock::{Clock, ManualClock, SystemClock};
-pub use config::{Config, ConfigError};
+pub use config::{Config, ConfigError, Recovery};
 pub use redact::redact;
 pub use server_keys::{KeyError, ServerKeys};
 pub use tls::{TlsConnectInfo, TlsError};

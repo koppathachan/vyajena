@@ -29,6 +29,12 @@ abstract class Core implements RustOpaqueInterface {
   /// the chat). `false` if no new key is pending.
   Future<bool> acceptIdentityKey({required UserRef user});
 
+  /// The owner acknowledges `user`'s changed safety number (admin-recovery:
+  /// Admin re-key forces peer re-trust): the re-trust prompt is cleared and
+  /// the identity is verified again. On admin devices a key kept waiting is
+  /// also accepted and the user re-added. `false` if nothing was pending.
+  Future<bool> acknowledgeIdentityKey({required UserRef user});
+
   /// Admin: adds all of `user`'s devices to the named group `chat_id`.
   Future<void> addToGroup({
     required PlatformInt64 chatId,
@@ -132,6 +138,11 @@ abstract class Core implements RustOpaqueInterface {
     required PlatformInt64 chatId,
     required int limit,
   });
+
+  /// The users whose safety number changed and await the owner's re-trust
+  /// (admin-recovery: Admin re-key forces peer re-trust). The app shows a
+  /// prompt for each and withholds the verified state until acknowledged.
+  Future<List<UserRef>> identityRetrustPending();
 
   /// Whether this device's user is the admin.
   Future<bool> isAdmin();

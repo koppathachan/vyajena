@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0007_media.sql"),
     include_str!("migrations/0008_blob_pending.sql"),
     include_str!("migrations/0009_named_groups.sql"),
+    include_str!("migrations/0010_identity_retrust.sql"),
 ];
 
 /// The schema version this library writes.

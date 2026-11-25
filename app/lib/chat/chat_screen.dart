@@ -543,10 +543,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               notice: notice,
                               text: noticeText(context, notice, _name),
                               onAccept:
-                                  widget.admin &&
-                                      notice is KeyChangedNotice &&
-                                      !notice.accepted
-                                  ? () => _model.accept(notice)
+                                  notice is KeyChangedNotice &&
+                                      !notice.acknowledged
+                                  ? () => _model.acknowledge(notice)
                                   : null,
                             ),
                           };

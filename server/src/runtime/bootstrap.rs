@@ -1,7 +1,9 @@
-//! device-identity: Bootstrap admin. On a start with no users and no usable
-//! bootstrap invite, the server creates one invite for the configured admin user id
-//! and prints its payload to the log once. The user created from it is the
-//! admin (the admin is whoever `admin_username` names).
+//! device-identity: Bootstrap admin. On a start with no **active** admin and no
+//! usable bootstrap invite, the server creates one invite for the configured
+//! admin user id and prints its payload to the log once. The user created or
+//! re-keyed from it is the admin (the admin is whoever `admin_username` names).
+//! An active admin is the admin user id present with `removed_at IS NULL`; a
+//! removed admin (after `server admin-reset`, admin-recovery) re-fires bootstrap.
 
 use std::time::SystemTime;
 
@@ -55,8 +57,11 @@ pub fn encode_payload(payload: &pb::InvitePayload) -> String {
     URL_SAFE_NO_PAD.encode(payload.encode_to_vec())
 }
 
-/// Creates the bootstrap invite if the database has no users and no usable
-/// bootstrap invite, in one transaction.
+/// Creates the bootstrap invite if the database has no **active** admin and no
+/// usable bootstrap invite, in one transaction. "Active admin" is the admin
+/// user id present with `removed_at IS NULL`; other users do not count, so a
+/// server whose admin was reset (admin-recovery: Operator break-glass reset)
+/// re-mints here on its next start.
 pub async fn ensure_bootstrap_invite(
     store: &Store,
     config: &Config,
@@ -70,8 +75,12 @@ pub async fn ensure_bootstrap_invite(
     store
         .call(move |conn| {
             let tx = conn.transaction()?;
-            let users: i64 = tx.query_row("SELECT count(*) FROM users", [], |row| row.get(0))?;
-            if users > 0 {
+            let active_admin: i64 = tx.query_row(
+                "SELECT count(*) FROM users WHERE username = ?1 AND removed_at IS NULL",
+                [&admin],
+                |row| row.get(0),
+            )?;
+            if active_admin > 0 {
                 return Ok(Bootstrap::NotNeeded);
             }
             if let Some(pending) = invites::usable_bootstrap(&tx, now)? {

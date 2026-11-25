@@ -13,6 +13,11 @@
 //! backend = "filesystem"
 //! path = "/mnt/vyajena-blobs"            # a stable path, the same on every start
 //!
+//! [recovery]                             # optional: break-glass admin reset
+//! passphrase = "..."                     # if set, `server admin-reset` also needs
+//!                                        #   this passphrase (defense-in-depth on
+//!                                        #   top of host access; admin-recovery).
+//!
 //! [limits]                               # optional: every field defaults to the
 //!                                        # built-in value, so an absent table or
 //!                                        # field keeps today's behaviour. Durations
@@ -69,6 +74,20 @@ pub struct Config {
     /// Every field defaults to the built-in value, so an absent `[limits]`
     /// table keeps today's behaviour.
     pub limits: Limits,
+    /// Break-glass admin-reset settings (admin-recovery: Reset needs genuine
+    /// host access). An absent `[recovery]` table means host access alone
+    /// authorises `server admin-reset`.
+    pub recovery: Recovery,
+}
+
+/// Optional defense-in-depth for the break-glass admin reset. When
+/// `passphrase` is set, `server admin-reset` additionally requires that exact
+/// passphrase; absent, filesystem access to the data directory is the only
+/// authority (admin-recovery: Reset needs genuine host access).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Recovery {
+    /// The operator passphrase `admin-reset` must be given, if any.
+    pub passphrase: Option<String>,
 }
 
 /// The server-enforced, operator-tunable limits. Each field defaults to the
@@ -159,6 +178,10 @@ pub mod field {
     pub const BLOB_STORE_PATH: &str = "blob_store.path";
     /// `[limits]`
     pub const LIMITS: &str = "limits";
+    /// `[recovery]`
+    pub const RECOVERY: &str = "recovery";
+    /// `recovery.passphrase`
+    pub const RECOVERY_PASSPHRASE: &str = "recovery.passphrase";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -169,6 +192,7 @@ pub mod field {
         KEY_DIR,
         BLOB_STORE,
         LIMITS,
+        RECOVERY,
     ];
 
     /// The known fields inside the `[limits]` table.
@@ -280,6 +304,7 @@ impl Config {
         let key_dir = base.join(required_str(&table, field::KEY_DIR)?);
         let blob_store = blob_store(&table, base)?;
         let limits = limits(&table)?;
+        let recovery = recovery(&table)?;
 
         Ok(Self {
             server_id,
@@ -290,6 +315,7 @@ impl Config {
             key_dir,
             blob_store,
             limits,
+            recovery,
         })
     }
 
@@ -409,6 +435,44 @@ fn limits(table: &toml::Table) -> Result<Limits, ConfigError> {
         limits.max_uploads_per_device_per_hour = bounded_u32("max_uploads_per_device_per_hour", n)?;
     }
     Ok(limits)
+}
+
+/// The `[recovery]` table, if there is one. Only `passphrase` is known; it must
+/// be a non-empty string when present (admin-recovery: Reset needs genuine host
+/// access).
+fn recovery(table: &toml::Table) -> Result<Recovery, ConfigError> {
+    let Some(value) = table.get(field::RECOVERY) else {
+        return Ok(Recovery::default());
+    };
+    let toml::Value::Table(sub) = value else {
+        return Err(ConfigError::Invalid {
+            field: field::RECOVERY,
+            reason: format!("must be a table, found {}", value.type_str()),
+        });
+    };
+    const KNOWN: &[&str] = &["passphrase"];
+    if let Some(unknown) = sub.keys().find(|key| !KNOWN.contains(&key.as_str())) {
+        return Err(ConfigError::Unknown {
+            field: format!("{}.{unknown}", field::RECOVERY),
+        });
+    }
+    let passphrase = match sub.get("passphrase") {
+        None => None,
+        Some(toml::Value::String(value)) if !value.is_empty() => Some(value.clone()),
+        Some(toml::Value::String(_)) => {
+            return Err(ConfigError::Invalid {
+                field: field::RECOVERY_PASSPHRASE,
+                reason: "must not be empty".into(),
+            });
+        }
+        Some(other) => {
+            return Err(ConfigError::Invalid {
+                field: field::RECOVERY_PASSPHRASE,
+                reason: format!("must be a string, found {}", other.type_str()),
+            });
+        }
+    };
+    Ok(Recovery { passphrase })
 }
 
 /// An optional positive integer from a `[limits]` sub-field, erroring (naming

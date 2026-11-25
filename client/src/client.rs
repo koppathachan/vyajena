@@ -895,6 +895,34 @@ impl Client {
         Ok(accepted)
     }
 
+    /// The owner acknowledges `user`'s changed safety number after an
+    /// [`Event::IdentityKeyChanged`] (admin-recovery: Admin re-key forces peer
+    /// re-trust). It promotes a key the admin-gated path kept waiting (as
+    /// [`Client::accept_identity_key`] does, re-adding on admin devices) and
+    /// clears a pending-re-trust mark left by the auto-repin path, so the
+    /// identity is treated as verified again. Returns `true` if anything was
+    /// acknowledged. Trust is withheld until this is called: no path accepts a
+    /// changed key as verified on its own.
+    pub fn acknowledge_identity_key(&self, user: &UserId) -> Result<bool, ClientError> {
+        let promoted = self.accept_identity_key(user)?;
+        let cleared = self
+            .shared
+            .store
+            .acknowledge_retrust(&user.to_string(), self.now())?;
+        Ok(promoted || cleared)
+    }
+
+    /// The users whose identity is unverified / pending re-trust: a changed key
+    /// is waiting to be accepted, or the pinned key was auto-repinned and not
+    /// yet acknowledged (admin-recovery: Admin re-key forces peer re-trust).
+    pub fn identity_retrust_pending(&self) -> Result<Vec<UserId>, ClientError> {
+        let ids = self.shared.store.identity_retrust_pending()?;
+        Ok(ids
+            .iter()
+            .filter_map(|id| id.split_once('@').map(|(u, s)| UserId::new(u, s)))
+            .collect())
+    }
+
     // --- Messaging (message-content; client-runtime: Send status) ---
 
     /// Sends a text message (message-content: Text only). It is stored with
