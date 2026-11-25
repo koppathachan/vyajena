@@ -17,3 +17,13 @@ listen_address = "127.0.0.1:@SERVER_PORT@"
 public_address = "@RELAY_HOST@:@PUBLIC_PORT@"
 database_path = "/var/lib/vyajena/server.sqlite"
 key_dir = "/var/lib/vyajena/keys"
+
+# Optional operator-tunable limits (configurable-limits). Every field defaults to
+# the built-in value, so an absent [limits] table keeps today's behaviour; edit a
+# value and restart the service, no rebuild.
+# [limits]
+# video-messages: Config-driven limit. The one maximum blob ciphertext size the
+# server enforces on every upload and advertises to clients; it governs image and
+# video blobs alike. Clamped into [the image cap, 8 MiB]; absent, it is 5 MiB. A
+# 30-second 480p clip is about 4 MB. Raise to allow longer or larger clips.
+# max_video_blob_bytes = 5242880

@@ -65,6 +65,7 @@ pub(crate) enum Outcome {
 enum Noun {
     Picture,
     VoiceMessage,
+    Video,
 }
 
 impl Noun {
@@ -72,6 +73,7 @@ impl Noun {
         match self {
             Self::Picture => "picture",
             Self::VoiceMessage => "voice message",
+            Self::Video => "video",
         }
     }
 }
@@ -155,6 +157,7 @@ impl Engine {
         let blob = match decode(&message.content).body {
             Decoded::Image(image) => (image.blob_id, image.blob_key, Noun::Picture),
             Decoded::Audio(audio) => (audio.blob_id, audio.blob_key, Noun::VoiceMessage),
+            Decoded::Video(video) => (video.blob_id, video.blob_key, Noun::Video),
             _ => {
                 // Marked pending but carrying no blob: nothing to upload.
                 self.store().set_blob_pending(message.id, false)?;

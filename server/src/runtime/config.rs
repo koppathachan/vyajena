@@ -42,6 +42,10 @@
 //! sweep_interval = 60                    # seconds between periodic sweeps.
 //! max_blob_store_bytes = 1073741824      # 1 GiB blob-store ceiling.
 //! max_uploads_per_device_per_hour = 60
+//! max_video_blob_bytes = 5242880         # the one blob cap (video-messages);
+//!                                        #   clamped into [image cap, 8 MiB];
+//!                                        #   default 5 MiB. Edit + restart, no
+//!                                        #   rebuild. A 30 s clip is about 4 MB.
 //! ```
 //!
 //! The effective configuration (all limits and the non-secret base settings) is
@@ -121,6 +125,14 @@ pub struct Limits {
     pub max_blob_store_bytes: u64,
     /// Blob uploads allowed per device per hour (`MAX_UPLOADS_PER_DEVICE_PER_HOUR`).
     pub max_uploads_per_device_per_hour: u32,
+    /// The one maximum blob ciphertext size the server enforces on every
+    /// `Blobs.UploadBlob` and advertises in `ServerInfo.Limits`
+    /// (video-messages: Config-driven limit). The operator's
+    /// `max_video_blob_bytes` is clamped into
+    /// `[protocol::blob_store::MAX_BLOB_BYTES, protocol::video::MAX_VIDEO_BYTES]`;
+    /// an absent value uses `protocol::video::DEFAULT_MAX_VIDEO_BYTES`. Changing
+    /// it is a config edit and restart, no rebuild.
+    pub max_video_blob_bytes: u64,
 }
 
 /// The default sweep interval (server-local; no `protocol` const).
@@ -142,6 +154,8 @@ impl Default for Limits {
             sweep_interval: DEFAULT_SWEEP_INTERVAL,
             max_blob_store_bytes: protocol::blob_store::MAX_BLOB_STORE_BYTES,
             max_uploads_per_device_per_hour: protocol::blob_store::MAX_UPLOADS_PER_DEVICE_PER_HOUR,
+            // Unset config: the built-in default (video-messages: Config-driven limit).
+            max_video_blob_bytes: protocol::video::clamp_max_blob_bytes(None),
         }
     }
 }
@@ -210,6 +224,7 @@ pub mod field {
         "sweep_interval",
         "max_blob_store_bytes",
         "max_uploads_per_device_per_hour",
+        protocol::video::CONFIG_KEY,
     ];
 }
 
@@ -433,6 +448,13 @@ fn limits(table: &toml::Table) -> Result<Limits, ConfigError> {
     }
     if let Some(n) = pos_int(sub, "max_uploads_per_device_per_hour")? {
         limits.max_uploads_per_device_per_hour = bounded_u32("max_uploads_per_device_per_hour", n)?;
+    }
+    // video-messages: Config-driven limit. A present value is clamped into the
+    // safe range rather than rejected (the scenario "Config beyond the ceiling"
+    // clamps, and a value below the image cap is raised to it), so a generous
+    // config still starts the server.
+    if let Some(n) = pos_int(sub, protocol::video::CONFIG_KEY)? {
+        limits.max_video_blob_bytes = protocol::video::clamp_max_blob_bytes(Some(n));
     }
     Ok(limits)
 }
