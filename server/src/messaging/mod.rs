@@ -67,7 +67,11 @@ impl Messaging for MessagingService {
 
 /// New entries were stored for `devices`: wakes their open streams and sends
 /// a wake ping to the others that have a push token, at most once per device
-/// per minute (message-delivery: Content-free wake pings).
+/// per minute (message-delivery: Content-free wake pings). The wake ping is
+/// kind-aware (push-kind-aware: Only an application backlog alerts an offline
+/// device): an offline device is pinged only when it has a pending
+/// `APPLICATION` entry; control envelopes (commit/welcome/proposal) still wake
+/// an open stream here but fire no push.
 pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
     notify_in(state, devices, None);
 }
@@ -99,6 +103,14 @@ pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<
                     let Some(device) = records::device(conn, device_id.as_slice())? else {
                         continue;
                     };
+                    // push-kind-aware: Only an application backlog alerts an
+                    // offline device. The open streams were already woken above;
+                    // a device whose only backlog is control envelopes
+                    // (commit/welcome/proposal) has no new message to show, so it
+                    // gets no wake push and syncs on its next reconnect.
+                    if !log::has_application_backlog(conn, &device_id)? {
+                        continue;
+                    }
                     if crate::prefs::push_muted(conn, &device.username, group_id.as_deref())? {
                         continue;
                     }
