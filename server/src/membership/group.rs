@@ -1265,6 +1265,67 @@ pub fn row(conn: &Connection, group_id: &[u8]) -> Result<Option<GroupRow>, Store
     .transpose()
 }
 
+/// admin-recovery: Break-glass re-seed of the system lobby. Drops the lobby's
+/// server state entirely — its queued envelopes and their deliveries, the
+/// OpenMLS public state, the member rows, the server's pending Removes and the
+/// gap notices — and deletes the `mls_groups` row itself, so the recovered
+/// admin's next `Admin.CreateGroup` seeds a fresh lobby at epoch 0,
+/// unobstructed by the old (now revoked) admin leaf or any stale member leaf.
+/// Every member device is marked "never a member" again (`was_member = 0`), so
+/// the server re-announces it as waiting (group-membership: Automatic add of
+/// new users) and the recovered admin re-adds it with a fresh Welcome. Returns
+/// the number of non-revoked member devices that will rejoin, or `None` when
+/// there is no system lobby to re-seed (so an `admin-reset` on a server that
+/// never created the lobby is a no-op here). Pre-reset lobby history is dropped
+/// for the recovered admin, which is the accepted break-glass trade-off;
+/// members keep their own local history. Must run inside the reset transaction.
+pub fn reseed_system_group(tx: &Transaction<'_>) -> Result<Option<usize>, StoreError> {
+    let Some(system) = main_row(tx)? else {
+        return Ok(None);
+    };
+    let group_id = system.group_id;
+    // The members whose device is not revoked: these are re-announced as
+    // waiting and rejoin with a fresh Welcome (the revoked old admin leaf does
+    // not).
+    let to_rejoin: usize = tx.query_row(
+        "SELECT count(*) FROM mls_members m JOIN devices d ON d.device_id = m.device_id
+         WHERE m.group_id = ?1 AND d.revoked_at IS NULL",
+        params![group_id],
+        |row| row.get(0),
+    )?;
+    // Re-announce every member: its device "waits" for the fresh lobby again.
+    // Done before the member rows go.
+    tx.execute(
+        "UPDATE devices SET was_member = 0 WHERE device_id IN
+             (SELECT device_id FROM mls_members WHERE group_id = ?1)",
+        params![group_id],
+    )?;
+    // Drop the lobby's queued entries and their deliveries, then its public
+    // state, member rows, pending server Removes and gap notices. Order keeps
+    // the foreign keys satisfied (deliveries before envelopes; the children of
+    // `mls_groups` before the row itself).
+    tx.execute(
+        "DELETE FROM deliveries WHERE server_seq IN
+             (SELECT server_seq FROM envelopes WHERE group_id = ?1)",
+        params![group_id],
+    )?;
+    tx.execute(
+        "DELETE FROM envelopes WHERE group_id = ?1",
+        params![group_id],
+    )?;
+    for table in ["mls_public_state", "mls_members", "pi_removes", "gaps"] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE group_id = ?1"),
+            params![group_id],
+        )?;
+    }
+    tx.execute(
+        "DELETE FROM mls_groups WHERE group_id = ?1",
+        params![group_id],
+    )?;
+    Ok(Some(to_rejoin))
+}
+
 /// The main group's row, if it was created.
 pub fn main_row(conn: &Connection) -> Result<Option<GroupRow>, StoreError> {
     conn.query_row(

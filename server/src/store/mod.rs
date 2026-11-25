@@ -128,6 +128,25 @@ impl Store {
         Ok(Self { jobs })
     }
 
+    /// Opens an existing database at `path`, applies migrations and starts the
+    /// database thread. Unlike [`Store::open`] it never creates a new database:
+    /// if the file is absent it returns [`StoreError::Io`] with `NotFound` and
+    /// touches nothing. An operator tool (`server admin-reset`, admin-recovery)
+    /// uses this so that without genuine access to the server's data directory
+    /// it refuses rather than silently making an empty database.
+    pub fn open_existing(path: &Path) -> Result<Self, StoreError> {
+        if !path.exists() {
+            return Err(StoreError::Io {
+                path: path.to_path_buf(),
+                source: std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "no database at this path (no access to the server's data directory)",
+                ),
+            });
+        }
+        Self::open(path)
+    }
+
     /// Runs `job` on the database thread and returns its result. Jobs run one
     /// at a time in submission order.
     pub async fn call<R, F>(&self, job: F) -> Result<R, StoreError>

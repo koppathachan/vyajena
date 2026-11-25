@@ -271,4 +271,12 @@ class RustCoreService extends CoreService {
   @override
   Future<bool> acceptIdentityKey(UserRef user) =>
       _c.acceptIdentityKey(user: user);
+
+  @override
+  Future<bool> acknowledgeIdentityKey(UserRef user) =>
+      _c.acknowledgeIdentityKey(user: user);
+
+  @override
+  Future<List<UserRef>> identityRetrustPending() =>
+      _c.identityRetrustPending();
 }

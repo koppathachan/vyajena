@@ -97,6 +97,36 @@ pub fn admin_helpers(conn: &Connection, admin: &str) -> Result<Vec<DeviceId>, St
         .collect())
 }
 
+/// Every lobby `JoinNotice` owed right now: for each admin member device, one
+/// per device still waiting for its first add. The connect handler announces
+/// waiting devices only when an admin device connects; the admin re-creating
+/// the lobby after a break-glass re-seed (admin-recovery: Break-glass re-seeds
+/// the admin's lobby) connects *before* the group exists, so the connect-time
+/// announce fires with nothing waiting and is missed. `Admin.CreateGroup` calls
+/// this right after seeding the lobby to surface the re-announced members
+/// without a manual admin reconnect. Idempotent: [`waiting`] excludes any
+/// device already in the lobby, so a device that is already a leaf is never
+/// re-announced.
+pub fn waiting_notices(
+    conn: &Connection,
+    group_id: &[u8],
+    admin: &str,
+    server_id: &str,
+) -> Result<Vec<(DeviceId, pb::ServerFrame)>, StoreError> {
+    let helpers = admin_helpers(conn, admin)?;
+    if helpers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let waiting = waiting(conn)?;
+    let mut out = Vec::new();
+    for helper in helpers {
+        for (device, username) in &waiting {
+            out.push((helper, notice(group_id, device, username, server_id)));
+        }
+    }
+    Ok(out)
+}
+
 /// What to announce after `device` uploaded KeyPackages: one `JoinNotice` per
 /// admin member device, if `device` waits for its first add, and the DM
 /// notices about it (direct-messages: DM members kept complete).

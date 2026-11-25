@@ -887,4 +887,23 @@ class FakeCoreService extends CoreService {
     _call('acceptIdentityKey', user);
     return true;
   }
+
+  /// Users the fake reports as awaiting re-trust (admin-recovery).
+  List<UserRef> retrustPending = [];
+
+  @override
+  Future<bool> acknowledgeIdentityKey(UserRef user) async {
+    _call('acknowledgeIdentityKey', user);
+    retrustPending = [
+      for (final u in retrustPending)
+        if (_key(u) != _key(user)) u,
+    ];
+    return true;
+  }
+
+  @override
+  Future<List<UserRef>> identityRetrustPending() async {
+    _call('identityRetrustPending');
+    return retrustPending;
+  }
 }

@@ -8,6 +8,12 @@
 //! - `server backup --config <file.toml> --to <file>` writes a consistent
 //!   snapshot of the server's database to a new file (mode 0600) while the
 //!   Server keeps running (server-deployment: Backup to the Mac).
+//! - `server admin-reset --config <file.toml> [--passphrase <p>]` is the local
+//!   break-glass reset for a locked-out admin (admin-recovery: Operator
+//!   break-glass reset). It opens the configured database directly, marks the
+//!   admin removed and revokes the admin's devices and unused invites, so the
+//!   next start re-mints a bootstrap invite. Host access is the authority; it
+//!   has no network path.
 
 #![forbid(unsafe_code)]
 
@@ -29,6 +35,7 @@ fn main() -> Result<()> {
     // (server-runtime: Configuration).
     let (config, push) = match command_from_args()? {
         Command::EgressProxy { listen } => return egress_proxy(listen),
+        Command::AdminReset { config, passphrase } => return admin_reset(config, passphrase),
         Command::Backup { config, to } => {
             let config = Config::load(&config)?;
             let snapshot = backup::snapshot(&config.database_path, &to)
@@ -76,7 +83,47 @@ fn main() -> Result<()> {
 
 const USAGE: &str = "usage: Server --config <file.toml> [--push <push.toml>]
        server backup --config <file.toml> --to <file>
+       server admin-reset --config <file.toml> [--passphrase <p>]
        server egress-proxy --listen <addr>";
+
+/// admin-recovery: Operator break-glass reset, run locally on the box. Opens the
+/// configured database directly and marks the admin removed and
+/// re-bootstrappable; the next start re-mints a bootstrap invite.
+fn admin_reset(config: PathBuf, passphrase: Option<String>) -> Result<()> {
+    let config = Config::load(&config)?;
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("starting the async runtime")?
+        .block_on(async {
+            let report = server::runtime::admin_reset::run(
+                &config,
+                passphrase.as_deref(),
+                std::time::SystemTime::now(),
+            )
+            .await
+            .context("admin reset")?;
+            tracing::info!(
+                admin = %report.admin,
+                devices_revoked = report.devices_revoked,
+                invites_revoked = report.invites_revoked,
+                lobby_reseeded = report.lobby_reseeded,
+                members_to_rejoin = report.members_to_rejoin,
+                "admin reset: the admin is removed and re-bootstrappable"
+            );
+            // OQ2 (operator guidance only, no behaviour change): the next start
+            // re-mints one bootstrap invite; after the admin re-registers and
+            // re-creates the lobby, the members are re-added with a fresh
+            // Welcome and every member sees a "safety number changed" re-trust
+            // prompt.
+            tracing::info!(
+                "restart the server to re-mint the admin's bootstrap invite; after the admin \
+                 re-registers and re-creates the lobby, every member is re-added and will be \
+                 asked to re-trust the admin's new safety number, so warn them out of band"
+            );
+            Ok::<(), anyhow::Error>(())
+        })
+}
 
 /// server-runtime: Egress proxy, until `SIGTERM` or Ctrl-C.
 fn egress_proxy(listen: std::net::SocketAddr) -> Result<()> {
@@ -108,6 +155,11 @@ enum Command {
     EgressProxy { listen: std::net::SocketAddr },
     /// Write a database snapshot to `to`.
     Backup { config: PathBuf, to: PathBuf },
+    /// Break-glass reset of the admin (admin-recovery).
+    AdminReset {
+        config: PathBuf,
+        passphrase: Option<String>,
+    },
 }
 
 fn command_from_args() -> Result<Command> {
@@ -115,18 +167,25 @@ fn command_from_args() -> Result<Command> {
     let sub = args.peek().and_then(|a| a.to_str()).map(str::to_owned);
     let backup = sub.as_deref() == Some("backup");
     let egress = sub.as_deref() == Some("egress-proxy");
-    if backup || egress {
+    let reset = sub.as_deref() == Some("admin-reset");
+    if backup || egress || reset {
         args.next();
     }
     let mut config = None;
     let mut to = None;
     let mut push = None;
     let mut listen = None;
+    let mut passphrase = None;
     while let Some(arg) = args.next() {
         match arg.to_str() {
             Some("--config") if !egress => config = Some(path_after(&mut args, "--config")?),
             Some("--to") if backup => to = Some(path_after(&mut args, "--to")?),
-            Some("--push") if !backup && !egress => push = Some(path_after(&mut args, "--push")?),
+            Some("--passphrase") if reset => {
+                passphrase = Some(string_after(&mut args, "--passphrase")?)
+            }
+            Some("--push") if !backup && !egress && !reset => {
+                push = Some(path_after(&mut args, "--push")?)
+            }
             Some("--listen") if egress => {
                 let text = path_after(&mut args, "--listen")?;
                 listen =
@@ -152,9 +211,21 @@ fn command_from_args() -> Result<Command> {
             config,
             to: to.context("missing --to <file>")?,
         }
+    } else if reset {
+        Command::AdminReset { config, passphrase }
     } else {
         Command::Serve { config, push }
     })
+}
+
+/// The string value after `flag`.
+fn string_after(args: &mut impl Iterator<Item = std::ffi::OsString>, flag: &str) -> Result<String> {
+    match args.next() {
+        Some(value) => value
+            .into_string()
+            .map_err(|_| anyhow::anyhow!("{flag} needs a text value")),
+        None => bail!("{flag} needs a value"),
+    }
 }
 
 fn path_after(args: &mut impl Iterator<Item = std::ffi::OsString>, flag: &str) -> Result<PathBuf> {

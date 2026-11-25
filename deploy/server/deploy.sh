@@ -11,6 +11,19 @@
 #   deploy/server/deploy.sh --reset-review  wipe only the store reviewers' server
 #                                     (no backup; asks for its server id)
 #
+# To recover a LOCKED-OUT ADMIN (device key store lost), do NOT use --reset:
+# that wipes the whole server. Instead, on the server as the service user, run
+# the surgical break-glass reset (change admin-recovery):
+#   server admin-reset --config /etc/vyajena/config.toml [--passphrase <p>]
+# It needs host access to /var/lib/vyajena (that IS the authority; there is no
+# network reset path), marks only the admin removed and revokes the admin's
+# devices and unused invites, and leaves every other user, group, DM, the TLS
+# pin and stored messages intact. Restart the server (systemctl restart
+# vyajena) to re-mint the admin's bootstrap invite (saved to the owner-only
+# file in BACKUP_ROOT, as on first start), then re-register the admin from it.
+# The admin re-keys, so every member will be asked to re-trust the admin's new
+# safety number in the app — warn them out of band.
+#
 # SERVER=user@host overrides the target (default: SERVER in
 # ~/.vyajena-relay/network.conf, deploy/network.sh). The login
 # needs passwordless sudo. The server config, the tunnel and its token come

@@ -45,11 +45,13 @@ class RejoinedNotice extends Notice {
   const RejoinedNotice();
 }
 
-/// [user]'s identity key changed. [accepted] once the admin accepted it.
+/// [user]'s safety number (identity key) changed and must be re-trusted.
+/// [acknowledged] once the owner re-trusts it (admin-recovery: Admin re-key
+/// forces peer re-trust).
 class KeyChangedNotice extends Notice {
   KeyChangedNotice(this.user);
   final UserRef user;
-  bool accepted = false;
+  bool acknowledged = false;
 }
 
 /// A message from [sender] could not be read.
@@ -527,7 +529,7 @@ class ChatModel extends ChangeNotifier {
         final open = _notices.any(
           (n) =>
               n.notice is KeyChangedNotice &&
-              !(n.notice as KeyChangedNotice).accepted &&
+              !(n.notice as KeyChangedNotice).acknowledged &&
               _same((n.notice as KeyChangedNotice).user, user),
         );
         if (!open) {
@@ -660,12 +662,14 @@ class ChatModel extends ChangeNotifier {
     }
   }
 
-  /// Admin: accepts the changed key of [notice]'s user (the core then adds
-  /// their waiting devices, group-membership: Automatic add of new users).
-  Future<bool> accept(KeyChangedNotice notice) async {
-    final accepted = await core.acceptIdentityKey(notice.user);
-    notice.accepted = true;
+  /// Re-trusts the changed safety number of [notice]'s user (admin-recovery:
+  /// Admin re-key forces peer re-trust). On admin devices the core also accepts
+  /// a waiting key and re-adds the user (group-membership: Automatic add of new
+  /// users). The identity is unverified until this is called.
+  Future<bool> acknowledge(KeyChangedNotice notice) async {
+    final done = await core.acknowledgeIdentityKey(notice.user);
+    notice.acknowledged = true;
     _changed();
-    return accepted;
+    return done;
   }
 }

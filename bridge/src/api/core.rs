@@ -272,6 +272,22 @@ impl Core {
         forward(self.client.accept_identity_key(&map::user_id(&user)))
     }
 
+    /// The owner acknowledges `user`'s changed safety number (admin-recovery:
+    /// Admin re-key forces peer re-trust): the re-trust prompt is cleared and
+    /// the identity is verified again. On admin devices a key kept waiting is
+    /// also accepted and the user re-added. `false` if nothing was pending.
+    pub fn acknowledge_identity_key(&self, user: UserRef) -> Result<bool, CoreError> {
+        forward(self.client.acknowledge_identity_key(&map::user_id(&user)))
+    }
+
+    /// The users whose safety number changed and await the owner's re-trust
+    /// (admin-recovery: Admin re-key forces peer re-trust). The app shows a
+    /// prompt for each and withholds the verified state until acknowledged.
+    pub fn identity_retrust_pending(&self) -> Result<Vec<UserRef>, CoreError> {
+        let users = forward(self.client.identity_retrust_pending())?;
+        Ok(users.iter().map(map::user).collect())
+    }
+
     // --- Messaging (app-ui: Chat screen, Profile and members) ---
 
     /// Sends a text message; returns its local id. Its status arrives as

@@ -163,6 +163,11 @@ impl TestServer {
         let server = Self::start_server(self._dir.path(), &self.blobs, &self.clock, &self.pushes)
             .await
             .check("server restart");
+        if let Bootstrap::Created(invite) = server.bootstrap() {
+            // A re-minted bootstrap invite (e.g. after an admin reset): keep the
+            // latest code so tests can re-register the admin.
+            self.bootstrap_code = invite.invite.code.clone();
+        }
         self.addr = server.local_addr();
         self.state = server.state().clone();
         let (stop, stopped) = oneshot::channel::<()>();

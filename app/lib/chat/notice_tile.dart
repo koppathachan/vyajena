@@ -1,7 +1,8 @@
 // app-ui: Notices in the chat: gap, removed for inactivity (with the time
-// messages stop), rejoined, a changed identity key naming the user (with
-// Accept on admin devices), messages that could not be read, this device
-// removed, a group rename, and membership changes (qa-fixes design D5).
+// messages stop), rejoined, a changed safety number naming the user (with a
+// Re-trust action every member can take, admin-recovery), messages that could
+// not be read, this device removed, a group rename, and membership changes
+// (qa-fixes design D5).
 import 'package:flutter/material.dart';
 
 import 'chat_model.dart';
@@ -23,10 +24,10 @@ String noticeText(
     'This phone was away too long and was removed from the group. Messages '
         'since ${timeText(context, missedSinceMs)} were not kept.',
   RejoinedNotice() => 'This phone is back in the group.',
-  KeyChangedNotice(:final user, :final accepted) =>
-    accepted
-        ? "${name(user)}'s new key was accepted."
-        : "${name(user)}'s key changed. Make sure it is really them.",
+  KeyChangedNotice(:final user, :final acknowledged) =>
+    acknowledged
+        ? "You re-trusted ${name(user)}'s new safety number."
+        : "⚠️ ${name(user)}'s safety number changed — re-trust?",
   UnreadableNotice(:final sender) =>
     sender == null
         ? 'A message could not be read.'
@@ -67,7 +68,8 @@ class NoticeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final warning =
-        notice is KeyChangedNotice && !(notice as KeyChangedNotice).accepted ||
+        notice is KeyChangedNotice &&
+            !(notice as KeyChangedNotice).acknowledged ||
         notice is ServerIdentityNotice ||
         notice is DeviceRemovedNotice ||
         notice is CommitRefusedNotice;
@@ -94,12 +96,12 @@ class NoticeTile extends StatelessWidget {
                   ),
                 ],
               ),
-              if (onAccept case final accept?)
+              if (onAccept case final acknowledge?)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: accept,
-                    child: const Text('Accept new key'),
+                    onPressed: acknowledge,
+                    child: const Text('Re-trust'),
                   ),
                 ),
             ],

@@ -188,3 +188,103 @@ async fn members_follow_the_admins_re_add_of_a_reset_user() {
     alice.wait_members(&everyone).await;
     new_bob.wait_members(&everyone).await;
 }
+
+// A re-keyed peer (a reset user, or the recovered admin — the client path is
+// the same) is pinned to keep the group decrypting but left unverified /
+// pending re-trust: it is surfaced and never silently accepted, and only an
+// explicit acknowledgement marks it trusted again.
+//
+// spec: admin-recovery/admin-re-key-forces-peer-re-trust
+// spec: key-directory/clients-verify-the-identity-chain
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repinned_key_stays_pending_re_trust_until_acknowledged() {
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
+    let mut alice = device::member_of_group(&admin, "alice").await;
+    let bob = device::member_of_group(&admin, "bob").await;
+    alice
+        .wait_members(&[member(&admin), member(&alice), member(&bob)])
+        .await;
+    // Before any change, Alice has nobody pending re-trust.
+    assert!(
+        alice
+            .client
+            .identity_retrust_pending()
+            .check("none pending")
+            .is_empty()
+    );
+
+    // The admin resets Bob; Bob's new phone re-keys; the admin accepts and
+    // re-adds it, so Alice repins Bob's new key via the admin's commit.
+    admin
+        .client
+        .remove_user(&user("bob"))
+        .await
+        .check("remove bob");
+    drop(bob);
+    let mut new_bob = device::invited(&admin, "bob").await;
+    let _ = admin.client.add_user(&user("bob")).await;
+    assert!(
+        admin
+            .client
+            .accept_identity_key(&user("bob"))
+            .check("accept")
+    );
+    admin
+        .client
+        .add_user(&user("bob"))
+        .await
+        .check("add new bob");
+    new_bob
+        .wait_event("joined", |e| matches!(e, Event::JoinedGroup))
+        .await;
+    alice
+        .wait_event(
+            "the safety-number-changed warning",
+            |e| matches!(e, Event::IdentityKeyChanged { user: u } if *u == user("bob")),
+        )
+        .await;
+    alice
+        .wait_members(&[member(&admin), member(&alice), member(&new_bob)])
+        .await;
+
+    // Never silently accepted: Bob is pinned (Alice did not stall) yet still
+    // listed as pending re-trust, and no accept promoted anything.
+    assert_eq!(
+        alice.client.identity_retrust_pending().check("pending"),
+        vec![user("bob")],
+        "the re-keyed peer is unverified / pending re-trust"
+    );
+    assert!(
+        !alice
+            .client
+            .accept_identity_key(&user("bob"))
+            .check("no pending key to accept"),
+        "nothing was left to silently auto-accept"
+    );
+
+    // The owner acknowledges: Bob becomes trusted again, and acknowledging a
+    // second time is a no-op.
+    assert!(
+        alice
+            .client
+            .acknowledge_identity_key(&user("bob"))
+            .check("acknowledge"),
+        "the first acknowledgement clears the re-trust mark"
+    );
+    assert!(
+        alice
+            .client
+            .identity_retrust_pending()
+            .check("cleared")
+            .is_empty(),
+        "no one is pending re-trust after acknowledgement"
+    );
+    assert!(
+        !alice
+            .client
+            .acknowledge_identity_key(&user("bob"))
+            .check("second acknowledge"),
+        "acknowledging again changes nothing"
+    );
+}
