@@ -22,6 +22,7 @@ use openmls::prelude::{ContentType, MlsMessageBodyIn, MlsMessageIn, ProtocolMess
 use prost::Message as _;
 use protocol::device_identity::DeviceId;
 use protocol::message_delivery::MSG_ID_LEN;
+use protocol::message_deletion::{DeleteAuthority, may_delete};
 use protocol::wire_transport::{MAX_APPLICATION_CIPHERTEXT_BYTES, MAX_HANDSHAKE_ENVELOPE_BYTES};
 use rusqlite::Transaction;
 use sha2::{Digest, Sha256};
@@ -203,6 +204,7 @@ pub(crate) fn submit(
     if row.kind.is_closed() {
         return Ok(reject(RejectionReason::GroupClosed));
     }
+    let group_kind = row.kind.clone();
     let (group_id, epoch) = (row.group_id, row.epoch);
     if !framing_matches(envelope, kind) {
         return Ok(reject(RejectionReason::Malformed));
@@ -227,6 +229,27 @@ pub(crate) fn submit(
         .into_iter()
         .filter(|id| *id != caller.device_id)
         .collect();
+
+    // message-deletion: Who may delete. An `APPLICATION` envelope that names a
+    // delete target in `deletes` is authorised from the stream metadata before
+    // anything is stored: an admin device in the lobby or a named group, or
+    // (in a DM) the target's original sender, else `POLICY_VIOLATION` with
+    // nothing stored. The server never reads the encrypted `Content`.
+    if kind == Kind::Application
+        && let Some(target) = &envelope.deletes
+    {
+        let authority = match group_kind {
+            GroupKind::System | GroupKind::Named { .. } => DeleteAuthority::Group,
+            GroupKind::Dm { .. } => DeleteAuthority::Dm,
+        };
+        let is_target_sender = target
+            .target_sender
+            .as_ref()
+            .is_some_and(|sender| sender.device_id.as_slice() == caller.device_id.as_slice());
+        if !may_delete(authority, caller.is_admin, is_target_sender) {
+            return Ok(reject(RejectionReason::PolicyViolation));
+        }
+    }
 
     let mut group = None;
     let mut accepted_commit = None;
@@ -310,6 +333,21 @@ pub(crate) fn submit(
             }
             for device_id in &full {
                 notify.extend(mark_inactive(conn, ctx, device_id)?);
+            }
+            // message-deletion: Deletion retracts undelivered copies. After
+            // queuing the authorised Delete, drop the target's still-queued
+            // `APPLICATION` copies for every device that has not acked them, so
+            // a device not yet delivered the original never gets its plaintext,
+            // only the delete (design D4). The Delete itself was just queued
+            // above, so the retract is always paired with a delivered
+            // tombstone. The target need not still exist: an expired or
+            // unknown target simply has nothing to retract.
+            if let Some(target) = &envelope.deletes
+                && let Some(sender) = &target.target_sender
+                && let Some(target_sender) =
+                    crate::store::records::device_id_from(&sender.device_id)
+            {
+                log::retract_undelivered(conn, &target_sender, &target.target_msg_id)?;
             }
         }
         Kind::Proposal => {

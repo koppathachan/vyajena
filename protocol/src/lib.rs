@@ -16,6 +16,7 @@ pub mod device_identity;
 pub mod group_membership;
 pub mod key_directory;
 pub mod message_content;
+pub mod message_deletion;
 pub mod message_delivery;
 pub mod wire_transport;
 

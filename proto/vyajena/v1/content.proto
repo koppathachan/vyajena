@@ -27,7 +27,29 @@ message Content {
     // field after this one is 7 for the change that follows; `delete-messages`
     // takes it, so the two never collide.
     Audio audio = 6;
+    // message-deletion: Delete a message (change `delete-messages`). The next
+    // free field after this one is 8.
+    Delete delete = 7;
   }
+}
+
+// message-deletion: Who may delete; Tombstone, not erasure. A superseding
+// message that deletes another one, naming the target message's original
+// sender device and `msg_id`, the same way a `ReplyTo` names a reply's target.
+// It is the encrypted, MLS-authenticated statement that the target is deleted;
+// a receiving client honours it only when the delete's own MLS sender is
+// authorised (an admin device in the lobby or a named group, or the target's
+// original sender in a DM). It supersedes, never erasing history: the original
+// row stays and the client shows a tombstone. A client that predates this body
+// decodes it as unset and shows the "needs a newer app version" placeholder.
+// Only the Rust core reads it; the server never sees it (the retract is driven
+// by the plaintext `Envelope.deletes`).
+message Delete {
+  // The device that sent the message being deleted, as its envelope's `sender`
+  // named it.
+  DeviceRef target_sender = 1;
+  // The deleted message's `msg_id` (16 bytes).
+  bytes target_msg_id = 2;
 }
 
 // message-content: Image messages. One static image, stored as an encrypted blob

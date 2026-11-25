@@ -594,6 +594,23 @@ pub struct AckBlobRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct AckBlobResponse {}
+/// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+/// copy of `blob_id` immediately when its media message is deleted. The server
+/// authorises it with the same authority as the message delete (message-deletion:
+/// Who may delete): an admin device of `group_id` in the lobby or a named group,
+/// or the device that uploaded the blob in a DM; it rejects an unauthorised call
+/// with `PERMISSION_DENIED`, purging nothing. A call for an expired,
+/// already-deleted or unknown blob succeeds as a no-op; a later `DownloadBlob`
+/// answers `NOT_FOUND`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub group_id: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub blob_id: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteBlobResponse {}
 /// Generated client implementations.
 pub mod blobs_client {
     #![allow(
@@ -749,6 +766,33 @@ pub mod blobs_client {
             req.extensions_mut().insert(GrpcMethod::new("vyajena.v1.Blobs", "AckBlob"));
             self.inner.unary(req, path, codec).await
         }
+        /// blob-store: Delete a blob (change `delete-messages`). Purges the one stored
+        /// copy at once when a media message is deleted, authorised with the same
+        /// authority as the message delete.
+        pub async fn delete_blob(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteBlobRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteBlobResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Blobs/DeleteBlob",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Blobs", "DeleteBlob"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// message-content: Inner content format. A client send time and exactly one
@@ -760,7 +804,7 @@ pub struct Content {
     /// The sender's clock when the user sent the message.
     #[prost(message, optional, tag = "1")]
     pub sent_at: ::core::option::Option<::prost_types::Timestamp>,
-    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6")]
+    #[prost(oneof = "content::Body", tags = "2, 3, 4, 5, 6, 7")]
     pub body: ::core::option::Option<content::Body>,
 }
 /// Nested message and enum types in `Content`.
@@ -781,7 +825,32 @@ pub mod content {
         /// takes it, so the two never collide.
         #[prost(message, tag = "6")]
         Audio(super::Audio),
+        /// message-deletion: Delete a message (change `delete-messages`). The next
+        /// free field after this one is 8.
+        #[prost(message, tag = "7")]
+        Delete(super::Delete),
     }
+}
+/// message-deletion: Who may delete; Tombstone, not erasure. A superseding
+/// message that deletes another one, naming the target message's original
+/// sender device and `msg_id`, the same way a `ReplyTo` names a reply's target.
+/// It is the encrypted, MLS-authenticated statement that the target is deleted;
+/// a receiving client honours it only when the delete's own MLS sender is
+/// authorised (an admin device in the lobby or a named group, or the target's
+/// original sender in a DM). It supersedes, never erasing history: the original
+/// row stays and the client shows a tombstone. A client that predates this body
+/// decodes it as unset and shows the "needs a newer app version" placeholder.
+/// Only the Rust core reads it; the server never sees it (the retract is driven
+/// by the plaintext `Envelope.deletes`).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Delete {
+    /// The device that sent the message being deleted, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-content: Image messages. One static image, stored as an encrypted blob
 /// on the server (blob-store). This body is what a receiver needs to show a blurred
@@ -2183,6 +2252,17 @@ pub struct Envelope {
     /// on every other kind, and on every envelope the server sends.
     #[prost(message, optional, tag = "10")]
     pub welcome: ::core::option::Option<WelcomeBundle>,
+    /// message-deletion: Deletion retracts undelivered copies (change
+    /// `delete-messages`). Set by the deleting client on the `APPLICATION`
+    /// envelope that carries a `Content.Delete`, naming in server-visible metadata
+    /// the message the delete targets. The server reads it (it never reads the
+    /// encrypted `Content`), authorises the delete (message-deletion: Who may
+    /// delete) and drops the target's still-queued copies before delivering the
+    /// Delete envelope. Unset on every other envelope. A server that predates this
+    /// field ignores it, so the delete still tombstones everywhere but retracts
+    /// nothing.
+    #[prost(message, optional, tag = "11")]
+    pub deletes: ::core::option::Option<DeleteTarget>,
     /// The device that authenticated the sending stream, regardless of anything
     /// the client put here (message-delivery: Envelope). Unset when the server itself
     /// is the sender, as for its external Remove proposals.
@@ -2252,6 +2332,24 @@ pub mod envelope {
             }
         }
     }
+}
+/// message-deletion: Deletion retracts undelivered copies. The target a
+/// `Content.Delete` deletes, in server-visible plaintext on the carrying
+/// `APPLICATION` envelope, so the server can authorise the delete and drop the
+/// target's undelivered copies without reading content. The client sets the same
+/// target inside the encrypted `Content.Delete`; clients trust only that
+/// encrypted copy, so a server cannot forge a delete on any device by setting
+/// this field — it can only drop queue entries, which it already controls
+/// (design D2).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteTarget {
+    /// The device that sent the deleted message, as its envelope's `sender`
+    /// named it.
+    #[prost(message, optional, tag = "1")]
+    pub target_sender: ::core::option::Option<DeviceRef>,
+    /// The deleted message's `msg_id` (16 bytes).
+    #[prost(bytes = "vec", tag = "2")]
+    pub target_msg_id: ::prost::alloc::vec::Vec<u8>,
 }
 /// message-delivery: Welcome travels with its commit. The Welcome a `COMMIT`
 /// creates, sent inside that `COMMIT` envelope.
