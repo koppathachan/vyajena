@@ -907,6 +907,23 @@ class FakeCoreService extends CoreService {
   @override
   Future<bool> dmsAvailable() async => dms;
 
+  /// The conversations muted individually (notification-prefs: Mute a
+  /// conversation). Chat id 0 is the lobby.
+  final Set<int> mutedChats = {};
+
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+  bool appMutedValue = false;
+
+  /// `summary` with its `muted` flag taken from [mutedChats].
+  ChatSummary _withMuteState(ChatSummary summary) => ChatSummary(
+    chatId: summary.chatId,
+    kind: summary.kind,
+    unread: summary.unread,
+    unseenMentions: summary.unseenMentions,
+    lastMessageAtMs: summary.lastMessageAtMs,
+    muted: mutedChats.contains(summary.chatId),
+  );
+
   @override
   Future<List<ChatSummary>> chats() async => [
     if (epochValue != null)
@@ -915,10 +932,39 @@ class FakeCoreService extends CoreService {
         kind: const ChatKindInfo.lobby(),
         unread: 0,
         unseenMentions: (await unseenMentionsIn(0)).length,
+        muted: mutedChats.contains(0),
       ),
-    ...groupChats,
-    ...dmChats,
+    for (final c in groupChats) _withMuteState(c),
+    for (final c in dmChats) _withMuteState(c),
   ];
+
+  /// What [setConversationMuted] and [setAppMuted] throw, to test a failure.
+  Object? setMuteError;
+
+  @override
+  Future<void> setConversationMuted(int chatId, bool muted) async {
+    _call('setConversationMuted', [chatId, muted]);
+    final error = setMuteError;
+    if (error != null) throw error;
+    if (muted) {
+      mutedChats.add(chatId);
+    } else {
+      mutedChats.remove(chatId);
+    }
+    emit(const CoreEvent.mutePrefsChanged());
+  }
+
+  @override
+  Future<void> setAppMuted(bool muted) async {
+    _call('setAppMuted', muted);
+    final error = setMuteError;
+    if (error != null) throw error;
+    appMutedValue = muted;
+    emit(const CoreEvent.mutePrefsChanged());
+  }
+
+  @override
+  Future<bool> appMuted() async => appMutedValue;
 
   /// What [namedGroupsAvailable] returns.
   bool namedGroups = true;
@@ -942,6 +988,7 @@ class FakeCoreService extends CoreService {
         kind: ChatKindInfo.group(name: name, closed: false),
         unread: 0,
         unseenMentions: 0,
+        muted: false,
       ),
     );
     emit(const CoreEvent.chatsChanged());
@@ -975,6 +1022,7 @@ class FakeCoreService extends CoreService {
             ),
             unread: c.unread,
             unseenMentions: c.unseenMentions,
+            muted: c.muted,
           )
         else
           c,
@@ -1012,6 +1060,7 @@ class FakeCoreService extends CoreService {
             ),
             unread: c.unread,
             unseenMentions: c.unseenMentions,
+            muted: c.muted,
           )
         else
           c,
@@ -1040,6 +1089,7 @@ class FakeCoreService extends CoreService {
         kind: ChatKindInfo.dm(peer: user, waiting: true, closed: false),
         unread: 0,
         unseenMentions: 0,
+        muted: false,
       ),
     );
     emit(const CoreEvent.chatsChanged());

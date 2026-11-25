@@ -17,6 +17,7 @@ String eventLabel(CoreEvent event) => switch (event) {
   CoreEvent_Unreadable() => 'unreadable',
   CoreEvent_Gap() => 'gap',
   CoreEvent_ChatsChanged() => 'chats changed',
+  CoreEvent_MutePrefsChanged() => 'mute-prefs-changed',
   CoreEvent_RemovedForInactivity() => 'removed-for-inactivity',
   CoreEvent_Rejoined() => 'rejoined',
   CoreEvent_OutOfSync(:final chatId) => 'out-of-sync chat=$chatId',

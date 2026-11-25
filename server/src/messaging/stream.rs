@@ -184,6 +184,7 @@ impl Session {
 
     async fn on_envelope(&mut self, envelope: pb::Envelope) -> Result<(), Ended> {
         let msg_id = envelope.msg_id.clone();
+        let group_id = envelope.group_id.clone();
         let precheck = write::precheck(&envelope);
         let is_commit = matches!(precheck, Ok(Kind::Commit));
         let outcome = match precheck {
@@ -226,7 +227,7 @@ impl Session {
                     recipients = notify.len(),
                     "accepted an envelope"
                 );
-                super::notify(&self.state, notify);
+                super::notify_in(&self.state, notify, Some(group_id));
                 for (device, notice) in notices {
                     self.state.hub.send_frame(&device, notice);
                 }
@@ -390,6 +391,9 @@ fn connect_info(
         frames.extend(dms::closed_notices(conn, &device_id)?);
         // message-deletion: Removed-conversation sync. The caller's user's own set.
         frames.extend(dms::removed_frames(conn, &caller.username)?);
+        // notification-prefs: Mute preference sync. One snapshot of the caller's
+        // user's own mute set, after the close notices and the removed set.
+        frames.push(crate::prefs::mute_frame(conn, &caller.username)?);
     }
     // key-directory: Replenishment signal, for a count that dropped while
     // the device was away.

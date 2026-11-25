@@ -638,7 +638,10 @@ class ChatModel extends ChangeNotifier {
         _readd = null;
         _outOfSync = false;
         _reloadMembers();
-      case CoreEvent_Connection() || CoreEvent_Other():
+      case CoreEvent_Connection() ||
+          CoreEvent_MutePrefsChanged() ||
+          CoreEvent_Other():
+        // The chat screen tracks mute state through its own subscription.
         break;
     }
   }

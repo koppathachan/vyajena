@@ -69,6 +69,16 @@ impl Messaging for MessagingService {
 /// a wake ping to the others that have a push token, at most once per device
 /// per minute (message-delivery: Content-free wake pings).
 pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
+    notify_in(state, devices, None);
+}
+
+/// Like [`notify`], but for entries that belong to one conversation. The wake
+/// ping is suppressed for a device whose user muted `group_id` or set
+/// `muted_all` (notification-prefs: A muted conversation gets no wake push); the
+/// open-stream wake and the queued entry are unaffected. With `group_id` `None`
+/// (a general backlog or catch-up nudge, not one conversation), only `muted_all`
+/// suppresses the ping.
+pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<Vec<u8>>) {
     if devices.is_empty() {
         return;
     }
@@ -84,6 +94,14 @@ pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
             .call(move |conn| {
                 let mut tokens = Vec::new();
                 for device_id in wanted {
+                    // notification-prefs: A muted conversation gets no wake push.
+                    // The entry stays queued; only the ping is skipped.
+                    let Some(device) = records::device(conn, device_id.as_slice())? else {
+                        continue;
+                    };
+                    if crate::prefs::push_muted(conn, &device.username, group_id.as_deref())? {
+                        continue;
+                    }
                     if let Some(token) = records::push_token(conn, &device_id)? {
                         tokens.push((device_id, token));
                     }

@@ -470,6 +470,23 @@ abstract class CoreService {
   /// reached; nothing is deleted then.
   Future<void> removeClosedDm(int chatId);
 
+  // --- Notification prefs (notification-prefs; change `mute-notifications`) ---
+
+  /// Mutes or unmutes the conversation [chatId] (notification-prefs: Mute a
+  /// conversation): the core tells the server, then records it on this and the
+  /// user's other devices. A muted conversation raises no wake push and no
+  /// in-app notification while its messages still arrive. Throws (leaving it
+  /// unmuted) if the server does not support it or cannot be reached.
+  Future<void> setConversationMuted(int chatId, bool muted);
+
+  /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
+  /// while on, every conversation is silenced, overriding the per-conversation
+  /// mutes.
+  Future<void> setAppMuted(bool muted);
+
+  /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
+  Future<bool> appMuted();
+
   /// The member devices of the named group [chatId].
   Future<List<MemberDevice>> groupMembers(int chatId);
 

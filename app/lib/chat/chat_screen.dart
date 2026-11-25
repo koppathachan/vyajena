@@ -6,6 +6,7 @@
 // once its bubble was on screen while the app is in the foreground, or
 // when the badge takes the user to it. Tapping a reply's quote scrolls to
 // the original when it is among the loaded messages.
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -89,6 +90,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   int? _readUpTo;
 
+  /// Whether this conversation is muted individually (notification-prefs: Mute
+  /// a conversation), for the overflow menu's label.
+  bool _muted = false;
+  StreamSubscription<CoreEvent>? _muteSub;
+
   /// The read mark as it stood when this screen opened: the "New messages"
   /// divider pins to it, so it stays put while the stored mark advances
   /// (app-ui: Unread divider). Null until [_snapshotLoaded].
@@ -112,7 +118,31 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _model.ensureLoaded();
     _loadSnapshot();
+    _loadMuted();
+    _muteSub = widget.core.events.listen((event) {
+      if (event is CoreEvent_MutePrefsChanged) _loadMuted();
+    });
     _scroll.addListener(_onScroll);
+  }
+
+  /// Reads whether this conversation is muted, for the menu's label
+  /// (notification-prefs: Mute a conversation).
+  Future<void> _loadMuted() async {
+    try {
+      final chats = await widget.core.chats();
+      bool? muted;
+      for (final c in chats) {
+        if (c.chatId == _model.chatId) {
+          muted = c.muted;
+          break;
+        }
+      }
+      if (mounted && muted != null && muted != _muted) {
+        setState(() => _muted = muted!);
+      }
+    } on Object {
+      // The label falls back to "Mute"; not critical.
+    }
   }
 
   /// Reads the read mark once, before [_markRead] advances it, so the
@@ -174,10 +204,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _muteSub?.cancel();
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _playback?.dispose();
     super.dispose();
+  }
+
+  /// notification-prefs: Mute a conversation. Toggles this conversation's mute
+  /// from the overflow menu.
+  Future<void> _toggleMuted() async {
+    try {
+      await widget.core.setConversationMuted(_model.chatId, !_muted);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorText(error))));
+      }
+    }
   }
 
   String _name(Object user) => _model.names.of(user as UserRef);
@@ -578,11 +623,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 chatId: _model.chatId,
                 admin: widget.admin,
                 names: _model.names,
+                muted: _muted,
+                onToggleMute: _toggleMuted,
               )
             else
               ChatMenu(
                 admin: widget.admin && _model.isMain,
                 lobby: _model.isMain,
+                muted: _muted,
+                onToggleMute: _toggleMuted,
               ),
           ],
         ),
@@ -795,8 +844,18 @@ enum MenuEntry {
 
 /// The chat's menu: everyone's entries, and the admin's only on admin
 /// devices (the server rejects other devices' admin calls anyway).
+/// The mute/unmute entry's value in [ChatMenu] (it is not a route like the
+/// other entries).
+const String _muteAction = '__mute_toggle__';
+
 class ChatMenu extends StatelessWidget {
-  const ChatMenu({super.key, required this.admin, this.lobby = false});
+  const ChatMenu({
+    super.key,
+    required this.admin,
+    this.lobby = false,
+    this.muted = false,
+    this.onToggleMute,
+  });
 
   final bool admin;
 
@@ -805,22 +864,41 @@ class ChatMenu extends StatelessWidget {
   /// (app-ui: Lobby is fixed; change `lobby-multi-group`).
   final bool lobby;
 
+  /// Whether this conversation is muted (notification-prefs: Mute a
+  /// conversation).
+  final bool muted;
+
+  /// Mutes or unmutes this conversation.
+  final Future<void> Function()? onToggleMute;
+
   @override
-  Widget build(BuildContext context) => PopupMenuButton<MenuEntry>(
+  Widget build(BuildContext context) => PopupMenuButton<Object>(
     tooltip: 'Menu',
-    onSelected: (entry) => Navigator.of(context).pushNamed(entry.route),
+    onSelected: (entry) {
+      if (entry == _muteAction) {
+        onToggleMute?.call();
+      } else if (entry is MenuEntry) {
+        Navigator.of(context).pushNamed(entry.route);
+      }
+    },
     itemBuilder: (context) => [
+      if (onToggleMute != null)
+        PopupMenuItem<Object>(
+          key: const Key('conversation-mute-toggle'),
+          value: _muteAction,
+          child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+        ),
       for (final entry in MenuEntry.values)
         if (admin || !entry.adminOnly)
           PopupMenuItem(value: entry, child: Text(entry.label)),
       if (lobby) ...const [
         PopupMenuDivider(),
-        PopupMenuItem<MenuEntry>(
+        PopupMenuItem<Object>(
           key: ValueKey('lobby-rename-disabled'),
           enabled: false,
           child: Text('Rename group (the lobby is fixed)'),
         ),
-        PopupMenuItem<MenuEntry>(
+        PopupMenuItem<Object>(
           key: ValueKey('lobby-close-disabled'),
           enabled: false,
           child: Text('Close group (the lobby cannot be closed)'),

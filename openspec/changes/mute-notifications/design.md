@@ -114,6 +114,11 @@ sequenceDiagram
 
 Spec-only here (builds serialize on the shared external-disk cargo target; not
 implemented in this change). When built: add `prefs.proto` and `mute_prefs = 12`,
-regenerate; add migration `0009_mute_prefs.sql`; implement `Prefs.SetMutePref`,
+regenerate; add the mute-prefs migration — numbered `0010_mute_prefs.sql` on the
+server and `0011_mute_prefs.sql` on the client, since `0009`/`0010` were already
+taken on this branch (`0009_catchup.sql` on the server,
+`0010_identity_retrust.sql` on the client) by the time this change was built, so
+the proposal's `0009` is the next free slot, not that literal number; implement
+`Prefs.SetMutePref`,
 the connect-time `mute_prefs` snapshot, and the push-time mute check; add the
 core/bridge surface and the app controls. Server upgrades before the app.

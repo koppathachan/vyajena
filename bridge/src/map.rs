@@ -226,6 +226,7 @@ pub(crate) fn chat(chat: client::Chat) -> ChatSummary {
         unread: chat.unread,
         unseen_mentions: chat.unseen_mentions,
         last_message_at_ms: chat.last_message_at.map(millis),
+        muted: chat.muted,
     }
 }
 
@@ -280,6 +281,7 @@ pub(crate) fn event(event: Event) -> CoreEvent {
             chat_id: chat.0,
         },
         Event::ChatsChanged => CoreEvent::ChatsChanged,
+        Event::MutePrefsChanged => CoreEvent::MutePrefsChanged,
         Event::RemovedForInactivity { missed_since } => CoreEvent::RemovedForInactivity {
             missed_since_ms: millis(missed_since),
         },

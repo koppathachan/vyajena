@@ -332,6 +332,16 @@ class RustCoreService extends CoreService {
   Future<void> removeClosedDm(int chatId) => _c.removeClosedDm(chatId: chatId);
 
   @override
+  Future<void> setConversationMuted(int chatId, bool muted) =>
+      _c.setConversationMuted(chatId: chatId, muted: muted);
+
+  @override
+  Future<void> setAppMuted(bool muted) => _c.setAppMuted(muted: muted);
+
+  @override
+  Future<bool> appMuted() => _c.appMuted();
+
+  @override
   Future<List<MemberDevice>> groupMembers(int chatId) =>
       _c.groupMembers(chatId: chatId);
 

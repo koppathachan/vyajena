@@ -289,6 +289,9 @@ pub struct ChatSummary {
     pub unseen_mentions: u32,
     /// When its newest message was stored.
     pub last_message_at_ms: Option<i64>,
+    /// This conversation is individually muted (notification-prefs: Mute a
+    /// conversation); whole-app mute is shown globally via [`Core::app_muted`].
+    pub muted: bool,
 }
 
 /// The connection to the server.
@@ -373,6 +376,10 @@ pub enum CoreEvent {
     /// The chat list changed: a DM was opened, joined, got its peer's first
     /// device, or was closed (change `dms`).
     ChatsChanged,
+    /// The user's mute set changed (notification-prefs: Mute preference sync): a
+    /// snapshot was adopted from the server, or this device's own mute/unmute
+    /// took effect. The app re-reads the chats' `muted` flags and `app_muted`.
+    MutePrefsChanged,
     /// This device was removed for inactivity; messages since then were not
     /// kept for it.
     RemovedForInactivity {

@@ -1063,6 +1063,17 @@ impl Engine {
                 // message-deletion: Removed-conversation sync. A set, no ack.
                 Ok(self.apply_removed(&notice.group_id)?)
             }
+            Some(In::MutePrefs(prefs)) => {
+                // notification-prefs: Mute preference sync. One snapshot, no
+                // ack: the device adopts it wholesale as its complete mute set.
+                if self
+                    .store()
+                    .set_mute_snapshot(&prefs.muted_group_ids, prefs.muted_all)?
+                {
+                    self.emit(Event::MutePrefsChanged);
+                }
+                Ok(())
+            }
             Some(In::GapNotice(notice)) => {
                 if let Some(at) = notice.newest_expired_at.as_ref() {
                     let chat = crate::events::ChatId(self.store().chat_of(&notice.group_id)?);

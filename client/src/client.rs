@@ -23,7 +23,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
     self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
-    MessageId, Profile, PushPlatform, PushToken, ReplyOriginalKind, UserId,
+    MessageId, MutePrefs, MuteTarget, Profile, PushPlatform, PushToken, ReplyOriginalKind, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -1087,7 +1087,7 @@ impl Client {
     /// message first, closed ones last (app-ui: Chat list).
     pub fn chats(&self) -> Result<Vec<Chat>, ClientError> {
         let store = &self.shared.store;
-        let summary = |id: ChatId, kind: ChatKind| -> Result<Chat, ClientError> {
+        let summary = |id: ChatId, kind: ChatKind, group_id: &[u8]| -> Result<Chat, ClientError> {
             Ok(Chat {
                 id,
                 kind,
@@ -1095,11 +1095,14 @@ impl Client {
                 unseen_mentions: u32::try_from(store.unseen_mentions_in(id.0)?.len())
                     .unwrap_or(u32::MAX),
                 last_message_at: store.last_message_at(id.0)?,
+                // notification-prefs: Mute a conversation. Per-conversation
+                // marker; whole-app mute is shown globally, not per row.
+                muted: store.is_conversation_muted(group_id)?,
             })
         };
         let mut chats = Vec::new();
-        if store.group()?.is_some() {
-            chats.push(summary(ChatId::MAIN, ChatKind::Lobby)?);
+        if let Some(main) = store.group()? {
+            chats.push(summary(ChatId::MAIN, ChatKind::Lobby, &main.group_id)?);
         }
         let mut others = Vec::new();
         for dm in store.dms()? {
@@ -1111,6 +1114,7 @@ impl Client {
                         name: dm.name,
                         closed,
                     },
+                    &dm.group_id,
                 )?);
                 continue;
             }
@@ -1125,6 +1129,7 @@ impl Client {
                     waiting,
                     closed,
                 },
+                &dm.group_id,
             )?);
         }
         others.sort_by(|a, b| {
@@ -1256,6 +1261,69 @@ impl Client {
             reply,
         })
         .await
+    }
+
+    // --- Notification prefs (notification-prefs; change `mute-notifications`) ---
+
+    /// Mutes or unmutes `target` (notification-prefs: Mute a conversation; Mute
+    /// the whole app). Tells the server (`Prefs.SetMutePref`, so the preference
+    /// reaches this user's other devices), then records it here. Nothing changes
+    /// locally if the server call fails (an old server answers `UNIMPLEMENTED`,
+    /// surfaced as [`ClientError`], and the conversation stays unmuted).
+    /// [`ClientError::NoSuchChat`] for an unknown conversation.
+    pub async fn set_mute_pref(&self, target: MuteTarget, muted: bool) -> Result<(), ClientError> {
+        let (scope, group_id) = match target {
+            MuteTarget::Conversation(chat) => {
+                (pb::MuteScope::Conversation, self.group_id_of(chat)?)
+            }
+            MuteTarget::Global => (pb::MuteScope::Global, Vec::new()),
+        };
+        self.job(move |reply| Job::SetMutePref {
+            scope,
+            group_id,
+            muted,
+            reply,
+        })
+        .await
+    }
+
+    /// The user's mute preferences, as this device holds them
+    /// (notification-prefs: Mute preference sync).
+    pub fn mute_prefs(&self) -> Result<MutePrefs, ClientError> {
+        let store = &self.shared.store;
+        let mut muted_chats = Vec::new();
+        for group_id in store.muted_group_ids()? {
+            if let Some(chat) = self.chat_of_group(&group_id)? {
+                muted_chats.push(chat);
+            }
+        }
+        Ok(MutePrefs {
+            muted_chats,
+            muted_all: store.muted_all()?,
+        })
+    }
+
+    /// Whether notifications for `chat` are silenced right now: whole-app mute,
+    /// or this conversation muted individually (notification-prefs).
+    pub fn is_muted(&self, chat: ChatId) -> Result<bool, ClientError> {
+        if self.shared.store.muted_all()? {
+            return Ok(true);
+        }
+        match self.group_id_of(chat) {
+            Ok(group_id) => Ok(self.shared.store.is_conversation_muted(&group_id)?),
+            // An unknown or not-yet-joined conversation cannot be muted.
+            Err(ClientError::NoSuchChat | ClientError::NoGroup) => Ok(false),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// The chat `group_id` belongs to, or `None` for an unknown group.
+    fn chat_of_group(&self, group_id: &[u8]) -> Result<Option<ChatId>, ClientError> {
+        let store = &self.shared.store;
+        if store.is_main(group_id)? {
+            return Ok(Some(ChatId::MAIN));
+        }
+        Ok(store.dm_by_group(group_id)?.map(|dm| ChatId(dm.chat)))
     }
 
     /// The member devices of the named group `chat`, as this device sees

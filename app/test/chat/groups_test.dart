@@ -19,6 +19,7 @@ ChatSummary group(
   kind: ChatKindInfo.group(name: name, closed: closed),
   unread: unread,
   unseenMentions: 0,
+  muted: false,
 );
 
 FakeCoreService adminWithGroups() => FakeCoreService(storedUser: akhil)
@@ -79,6 +80,7 @@ void main() {
           kind: const ChatKindInfo.dm(peer: bob, waiting: false, closed: false),
           unread: 1,
           unseenMentions: 0,
+          muted: false,
         ),
       ];
     await openHome(tester, core);
