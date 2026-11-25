@@ -868,17 +868,17 @@ async fn admin_resets_a_user_who_lost_their_identity_device() {
     assert_eq!(accepted.added.len(), 1);
     assert_eq!(accepted.added[0].device_id, new_phone.device_id);
 
-    // A second invite while the new Bob exists is refused again.
-    let again = conn
-        .admin()
-        .create_invite(authed(
-            admin.token(),
-            pb::CreateInviteRequest {
-                username: "bob".to_owned(),
-            },
-        ))
-        .await;
-    assert_eq!(again.err().map(|s| s.code()), Some(Code::AlreadyExists));
+    // A second invite while the new Bob exists is now a re-invite, not a
+    // rejection: with reinvite-user a present, non-removed user can be
+    // re-invited to re-key on join (device-identity: Re-inviting an existing
+    // user), so CreateInvite returns a fresh invite bound to bob@chat instead
+    // of ALREADY_EXISTS.
+    // spec: device-identity/re-inviting-an-existing-user
+    let again = support::create_invite(&conn, &admin, "bob")
+        .await
+        .invite
+        .check("re-invite");
+    assert_eq!(again.user_id.check("user id").username, "bob");
 }
 
 // spec: group-membership/removing-a-user

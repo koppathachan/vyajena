@@ -64,6 +64,18 @@ impl Admin for AdminService {
         if let Some(problem) = user_id_part_problem(&username) {
             return Err(Status::invalid_argument(format!("username {problem}")));
         }
+        // device-identity: Re-inviting an existing user. A re-invite re-keys an
+        // existing user and revokes their old devices; for the admin that would
+        // revoke the lobby's only committer with no one able to re-add the new
+        // admin device. The admin re-keys through admin-recovery (operator reset
+        // re-seeds the lobby), never through a self-minted re-invite, so the
+        // admin's own username is not invitable here (cf. "the admin cannot be
+        // removed").
+        if username == self.state.config.admin_username {
+            return Err(Status::failed_precondition(
+                "the admin re-keys through recovery, not a re-invite",
+            ));
+        }
         let now = self.state.clock.now();
         let invite_ttl = self.state.config.limits.invite_ttl;
         let invite = self
@@ -71,18 +83,21 @@ impl Admin for AdminService {
             .store
             .call(move |conn| {
                 let tx = conn.transaction()?;
-                // A removed user's username is free again (group-membership:
-                // Removing a user).
-                if records::user(&tx, &username)?.is_some_and(|user| !user.removed) {
-                    return Ok(Err(Status::already_exists(
-                        "a user with this username exists",
-                    )));
-                }
+                // An invite for a present, non-removed user is a re-invite: it
+                // authorizes Devices.Register to re-key that user on join, with
+                // no prior Admin.RemoveUser (device-identity: Re-inviting an
+                // existing user). A removed user's username is likewise free
+                // again (group-membership: Removing a user). So any username is
+                // invitable here; the admin UI confirms a re-invite because it
+                // resets the user's devices.
                 // At most one pending invite per username: if one is still
                 // usable, return it instead of minting a duplicate
                 // (device-identity: At most one pending invite per username).
                 if let Some(existing) = invites::usable_for_username(&tx, &username, now)? {
-                    return Ok(Ok(existing));
+                    // No Status error path remains now that a present user is
+                    // invitable; annotate so the inner Result's error type is
+                    // still inferred for the `.await??` in the handler.
+                    return Ok(Ok::<_, Status>(existing));
                 }
                 let invite = invites::create(&tx, &username, now, invite_ttl, false)?;
                 tx.commit()?;

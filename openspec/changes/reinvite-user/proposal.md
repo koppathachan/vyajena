@@ -56,16 +56,18 @@ standalone-vs-fold recommendation. Root-cause background: shared note
   prompt and withholds the verified state until the owner acknowledges — the existing
   mechanism (`key-directory: Clients verify the identity chain`), nothing new and
   nothing auto-accepted.
-- **No orphaned old leaf.** The re-key revokes the old devices; the server evicts their
-  stale group leaves with the same server-issued external-Remove mechanism it already
-  uses for revoked/inactive devices, and the reinstalled device rejoins the lobby and
-  named groups through the normal `JoinNotice` → admin-Add → `Welcome` path
-  (`group-membership: Automatic add of new users`).
-- **App affordance:** a one-tap **"Re-invite `<name>`"** action on the contact/member
-  screen that calls `Admin.CreateInvite(sameUsername)` and shows the shareable code,
-  behind a confirm dialog warning that it resets the person's devices and that they
-  keep the same username but lose on-device history. No separate Remove step. (Whether
-  this ships in this change or a follow-up: `design.md` D8.)
+- **No orphaned old leaf (admin-driven).** The re-key revokes the old devices; the
+  reinstalled device rejoins the lobby and named groups through the normal `JoinNotice` →
+  admin-Add → `Welcome` path (`group-membership: Automatic add of new users`), and in
+  that same admin commit the admin device also Removes the re-keyed user's stale old
+  leaves — automatically, no hand-picking, no separate `Admin.RemoveUser` and no new
+  server eviction machinery (owner decision 2026-11-25, `design.md` D5).
+- **App affordance:** on the admin members screen, a one-tap **"Re-invite `<name>`"**
+  action (alongside the existing **Remove**) that calls `Admin.CreateInvite(sameUsername)`
+  and shows the shareable code, behind a confirm dialog warning that it resets the
+  person's devices and that they keep the same username but lose on-device history. The
+  screen SHOULD show a per-user activity hint so the admin can spot who has likely lost
+  access (`design.md` OQ4 / D8).
 
 ### Out of scope
 
@@ -86,12 +88,16 @@ standalone-vs-fold recommendation. Root-cause background: shared note
   re-key" flag or RPC) — resolved: yes (D1).
 - **Re-key with no prior `RemoveUser`** — resolved: yes; the present-user register
   branch re-keys directly (D2).
-- **Re-key invalidates all of the user's existing devices** — resolved: yes; the admin
-  UI must warn and confirm (D3).
+- **Re-key invalidates all of the user's existing devices, kicking any that survive** —
+  resolved by the owner 2026-11-25: yes; gated by an admin confirm screen, no server-side
+  refuse-if-active (D3).
+- **Who evicts the old leaves** — resolved by the owner 2026-11-25: admin-driven, in the
+  admin's re-add commit; no server-issued external Remove, no manual leaf-picking (D5).
 - **Standalone `reinvite-user` vs. folding into `replace-user`** — resolved: standalone,
   sequenced to reconcile the shared register re-key branch (D7).
 
-Owner still to confirm: OQ1–OQ3 in `design.md`.
+Owner still to confirm: OQ4 (the activity-hint scope on the members screen) in
+`design.md`.
 
 ## Proto files touched
 

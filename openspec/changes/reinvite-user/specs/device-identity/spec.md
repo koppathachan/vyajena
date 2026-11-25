@@ -20,6 +20,11 @@ this. Specifically:
   absent, used, revoked or expired invite is rejected before the user row is examined
   (unchanged `PERMISSION_DENIED`), and `Devices.Link` (device addition) continues to
   require the user's existing pinned identity key, never changing it.
+- The admin's own username SHALL NOT be re-invitable: `Admin.CreateInvite` for the admin
+  SHALL be rejected with `FAILED_PRECONDITION`, because re-keying the admin would revoke
+  the lobby's only committer with no device able to re-add the new admin device. The
+  admin re-keys through `admin-recovery` (operator reset, which re-seeds the lobby), not
+  a re-invite.
 - The removed-user re-key path and the new-user path SHALL be unchanged.
 
 #### Scenario: Admin re-invites a reinstalled user on the same name
@@ -45,6 +50,11 @@ this. Specifically:
   that is absent, used, revoked or expired
 - **THEN** the server rejects it with `PERMISSION_DENIED` and changes neither
   `bob@chat`'s identity key nor its devices
+
+#### Scenario: The admin cannot be re-invited
+- **WHEN** an admin device calls `Admin.CreateInvite` for the admin's own username
+- **THEN** the server rejects it with `FAILED_PRECONDITION`, re-keying nothing; the
+  admin re-keys through `admin-recovery` instead
 
 #### Scenario: Re-invite is single-use
 - **WHEN** a re-invite for `bob@chat` has been used once to re-key

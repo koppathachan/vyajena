@@ -91,23 +91,32 @@ is already there: only an **admin**-committed Add with a changed key is accepted
 same change in a non-admin commit is rejected — and the re-key's re-add is admin-driven
 (D5).
 
-### D5. No orphaned old leaf: server evicts the revoked leaves, the admin re-adds via the normal path.
+### D5. No orphaned old leaf: the admin removes the old leaves on re-add (owner decision 2026-11-25).
 After the re-key, the old devices are revoked but their leaves still sit in the lobby
 and named groups, and `RemoveUser`'s precondition ("the admin first commits Removes of
-all the user's devices") was never run. Two sub-decisions:
+all the user's devices") was never run. **Owner decision (2026-11-25):** eviction is
+**admin-driven**, not a server-issued external Remove and not a manual leaf-picker —
+"what action can the admins do from here realistically": the admin acts on the *user*
+(re-invite / remove), and the MLS leaf bookkeeping is automatic.
 
-- **Eviction of the stale leaves** reuses the server's existing external-Remove
-  machinery for revoked/inactive devices (`group-membership: Inactive devices are kept
-  out`): the server issues an MLS external Remove proposal for each revoked old leaf,
-  reissued each epoch until a member commits it. Implementation should mark the re-keyed
-  user's old leaves for removal in the same way a revocation does, rather than inventing
-  a second eviction path.
 - **Re-adding the reinstalled device** uses `group-membership: Automatic add of new
   users` unchanged: once the new device uploads its first KeyPackages, the server sends
-  the admin a `JoinNotice`; the admin's device fetches a KeyPackage, sees the changed
-  identity key, re-trusts (D4), and commits the Add — ideally **together** with the
-  pending Remove of the old leaf, Welcome in the same `COMMIT`, so there is never an
-  epoch with both leaves or a lingering orphan.
+  the admin a `JoinNotice`; the admin device fetches a KeyPackage, sees the changed
+  identity key, re-trusts (D4), and commits the Add.
+- **Eviction** happens in that **same commit**: the admin device also Removes the
+  re-keyed user's stale leaves — the leaves whose certificates no longer verify against
+  the user's new pinned identity key — with the Welcome in the same `COMMIT`. So there is
+  never an epoch holding both leaves, and no orphan lingers. This is the admin client's
+  existing per-user Remove capability (`client/src/engine/jobs.rs` drives MLS Removes
+  today for `RemoveUser`), applied automatically on re-add rather than through a separate
+  `Admin.RemoveUser` round trip.
+
+Rejected alternative: a server-issued external Remove for the revoked leaves (reusing
+the inactivity `pi_removes` path). It would be fully automatic server-side but is new
+server machinery beyond today's behaviour (the server does **not** external-Remove
+revoked-user leaves today — the admin app drives those), and the owner's steer is that
+the admin is the actor. Keeping eviction in the admin client means **no new server
+eviction code** — the whole server change is the re-key branch plus the device revoke.
 
 **DMs** are deliberately not covered normatively (D below): the lobby/named-group path
 above is the scope.
@@ -173,6 +182,20 @@ the server change (the two-step admin flow keeps working), but it is small enoug
 include. Recommendation: **include it**; mark its task deferrable so the owner may split
 it if they want the server change to ship first.
 
+### D9. The admin is not re-invitable; it re-keys through admin-recovery (found in implementation).
+Re-inviting a regular user revokes their old devices and lets the admin re-add the new
+device. The admin is special: it is the lobby's **only** committer, so revoking all
+admin devices on a self-minted re-invite would leave no device able to add the new admin
+leaf — the lobby would be bricked. This is exactly the case `admin-recovery` handles
+(the operator break-glass reset re-seeds the admin's lobby so a fresh admin device can
+re-create it). Therefore `Admin.CreateInvite` rejects the admin's own username with
+`FAILED_PRECONDITION` (mirroring `group-membership`'s "the admin cannot be removed"), and
+the admin re-key path stays `admin-recovery` only. `Devices.Register`'s present-user
+re-key branch is not reachable for the admin in practice (no re-invite can be minted for
+it, and bootstrap uses the removed-user branch), so the gate lives at `CreateInvite`.
+Found while running the existing `invites` test, which asserted the old
+`already_exists` for the admin; updated to assert the new guard.
+
 ### D (scoped out). DMs after a re-key.
 On re-key the user's old DM leaves go stale (old devices revoked). DMs are not in the
 baseline `openspec/specs/` (the `direct-messages` capability lives in the still-unarchived
@@ -196,32 +219,37 @@ sequenceDiagram
     Admin-->>Bob: hands over the invite
     Bob->>Server: Devices.Register(invite, fresh identity key, fresh cert)
     Note over Server: present-user branch (D2):<br/>UPDATE identity_public_key, same user_id<br/>revoke ALL prior devices, insert new device, mark invite used
-    Server->>Server: issue external Remove proposals for old leaves (D5)
+    Server-->>Bob: tear down any live stream of a revoked device (D3)
     Note over Bob: any surviving old device -> next Authenticate = PERMISSION_DENIED (D3)
     Bob->>Server: upload first KeyPackages
     Server-->>Admin: JoinNotice for Bob's new phone
-    Admin->>Server: commit Remove(old leaf) + Add(new phone), Welcome in same COMMIT
+    Admin->>Server: one COMMIT: Add(new phone) + Remove(old revoked leaf), Welcome in same COMMIT (D5, admin-driven)
     Server-->>Bob: Welcome -> Bob rejoins lobby + named groups
     Server-->>Peer: commit with Bob's new identity key
     Note over Peer: key-directory: pin new key, mark Bob unverified,<br/>"⚠️ Bob's safety number changed — re-trust?" (D4)
 ```
 
+## Resolved by the owner (2026-11-25)
+
+- **OQ1 / OQ2 (re-key guard) — RESOLVED: allow and hard-kick, gated by an admin confirm
+  screen.** A re-invite of a user who still has a working device is a lost-/reset-device
+  recovery; the admin confirms intent on a screen, then it proceeds and revokes (kicks)
+  any surviving device. No server-side "refuse if active" guard and no unconditional-vs-
+  gated distinction: `Admin.CreateInvite` and `Devices.Register` re-key any present user;
+  the UI confirm is the only guard (D1, D3).
+- **OQ3 (eviction) — RESOLVED: admin-driven, not server-issued and not a leaf-picker.**
+  The admin acts on the user (re-invite / remove) from an admin members screen; the admin
+  device Removes the stale old leaves automatically in its re-add commit (D5). No new
+  server eviction machinery.
+
 ## Open questions for the owner
 
-- **OQ1:** Confirm a re-invite should **hard-kick** any still-live devices of that user
-  (D3), rather than refusing when the user still has an active device. (Assumed: kick,
-  since the whole point is a lost-device recovery; a refuse-if-active variant would make
-  the common case need a remove again.)
-- **OQ2:** Should `Admin.CreateInvite` for a present user be allowed **unconditionally**
-  (any present user), or only when the user has **no active device** (server checks
-  `records::active_devices` is empty)? Unconditional is simpler and matches "the admin
-  knows what they're doing + confirm dialog"; the no-active-device guard is safer but
-  blocks re-keying a user whose old phone is merely online. (Assumed: unconditional,
-  gated by the UI confirm.)
-- **OQ3:** Reuse of the inactive-device external-Remove path for eviction (D5): confirm
-  that marking a re-keyed user's old leaves through the existing revocation/inactivity
-  machinery is acceptable, versus requiring the admin device to commit the old-leaf
-  Removes explicitly (as `RemoveUser`'s precondition does today).
+- **OQ4:** The admin members screen shows an activity hint per user (active / inactive-
+  since / "no active device"). The baseline exposes no per-user device-activity read to
+  the admin; a full hint may need a small admin read (e.g. extend an admin listing with
+  last-seen / active-device counts). This change specs the **Re-invite** action on the
+  existing members screen as the must-have; the activity hint is recommended and may be a
+  follow-up if it needs a new admin RPC. Confirm scope.
 
 ## Spikes
 
@@ -229,8 +257,10 @@ sequenceDiagram
   the user's active devices in the **same transaction** leaves no window with two valid
   identity keys and no `insert_device` collision (the reinstalled device mints a fresh
   `device_id`, so the `:52` same-`device_id` guard is not hit). Result → here.
-- **S2:** Prove the old leaves are evicted with no orphan: after the re-key, the server's
-  external Remove for each old leaf and the admin's combined Remove+Add (Welcome in the
-  same `COMMIT`) leave the group with exactly the new device's leaf, across the lobby and
-  a named group, with a member offline during the re-key catching up cleanly on
-  reconnect. Result → here.
+- **S2:** Prove the old leaves are evicted with no orphan: after the re-key, the admin's
+  combined Remove(old leaf)+Add(new leaf) on the `JoinNotice` re-add (Welcome in the same
+  `COMMIT`) leaves the group with exactly the new device's leaf, across the lobby and a
+  named group, with a member offline during the re-key catching up cleanly on reconnect.
+  Confirm the admin client recognises the stale leaves (certificate no longer verifies
+  against the new pinned identity key) without a separate `Admin.RemoveUser`. Result →
+  here.
