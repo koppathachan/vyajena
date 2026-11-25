@@ -10,6 +10,7 @@ pub mod audio;
 pub mod cache;
 pub mod crypto;
 pub mod encode;
+pub mod video;
 
 pub use audio::{AudioError, EncodedAudio};
 pub use cache::{DEFAULT_CACHE_BYTES, MediaCache, MediaKind};

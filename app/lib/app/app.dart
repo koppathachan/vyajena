@@ -7,6 +7,7 @@ import '../chat/chat_model.dart';
 import '../chat/group_gate.dart';
 import '../chat/picture_picker.dart';
 import '../chat/sticker_plugins.dart';
+import '../chat/video_plugins.dart';
 import '../chat/voice_plugins.dart';
 import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
@@ -31,6 +32,7 @@ class VyajenaApp extends StatefulWidget {
     this.pictures = const GalleryPicker(),
     this.voice = const DeviceVoicePlugins(),
     this.segmenter = const DeviceSegmenter(),
+    this.video = const DeviceVideoSource(),
   });
 
   final CoreService core;
@@ -46,6 +48,10 @@ class VyajenaApp extends StatefulWidget {
   /// The platform's on-device subject segmentation for stickers (app-ui:
   /// Create a sticker); the phone's, or a fake in widget tests.
   final Segmenter segmenter;
+
+  /// Where a video to send comes from and how it is normalized (app-ui: Send a
+  /// video); the phone's camera/gallery and native plugin, or a fake in tests.
+  final VideoSource video;
 
   /// The phone's network changes (see [CoreLifecycle.networkChanges]).
   final Stream<bool>? networkChanges;
@@ -94,16 +100,19 @@ class _VyajenaAppState extends State<VyajenaApp> {
         plugins: widget.voice,
         child: SegmenterScope(
           segmenter: widget.segmenter,
-          child: MaterialApp(
-            title: 'Vyajena',
-            // Never the debug banner, also in profile builds and screenshots
-            // (app-release design D7).
-            debugShowCheckedModeBanner: false,
-            theme: lightTheme,
-            darkTheme: darkTheme,
-            themeMode: themeMode,
-            home: HomeScreen(core: widget.core, chat: _chat),
-            routes: appRoutes(widget.core),
+          child: VideoScope(
+            source: widget.video,
+            child: MaterialApp(
+              title: 'Vyajena',
+              // Never the debug banner, also in profile builds and screenshots
+              // (app-release design D7).
+              debugShowCheckedModeBanner: false,
+              theme: lightTheme,
+              darkTheme: darkTheme,
+              themeMode: themeMode,
+              home: HomeScreen(core: widget.core, chat: _chat),
+              routes: appRoutes(widget.core),
+            ),
           ),
         ),
       ),

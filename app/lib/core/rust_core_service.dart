@@ -181,6 +181,37 @@ class RustCoreService extends CoreService {
       (await _c.resendAudio(id: id)).toInt();
 
   @override
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async => (await _c.sendVideoIn(
+    chatId: chatId,
+    mp4: mp4,
+    durationMs: durationMs,
+    width: width,
+    height: height,
+    firstFrameRgba: firstFrameRgba ?? Uint8List(0),
+    frameWidth: frameWidth,
+    frameHeight: frameHeight,
+  )).toInt();
+
+  @override
+  Future<String> downloadVideo(int id) => _c.downloadVideo(id: id);
+
+  @override
+  Future<String?> cachedVideo(int id) => _c.cachedVideo(id: id);
+
+  @override
+  Future<int> resendVideo(int id) async =>
+      (await _c.resendVideo(id: id)).toInt();
+
+  @override
   Uint8List? thumbhashPreview(Uint8List thumbhash) =>
       rust.thumbhashPreview(thumbhash: thumbhash);
 

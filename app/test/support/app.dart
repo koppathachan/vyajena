@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
 import 'package:vyajena/chat/picture_picker.dart';
 import 'package:vyajena/chat/sticker_plugins.dart';
+import 'package:vyajena/chat/video_plugins.dart';
 import 'package:vyajena/chat/voice_plugins.dart';
 import 'package:vyajena/core/core_service.dart';
 
@@ -107,6 +108,23 @@ Future<FakeCoreService> openAppWithVoice(
   VoicePlugins voice,
 ) async {
   await tester.pumpWidget(VyajenaApp(core: core, voice: voice));
+  await core.open();
+  await settle(tester);
+  final group = find.byKey(const ValueKey('chat-main'));
+  if (core.dmChats.isEmpty && group.evaluate().isNotEmpty) {
+    await tap(tester, group);
+  }
+  return core;
+}
+
+/// [openApp] with [video] as the camera/gallery and native normalize plugin
+/// (app-ui: Send a video).
+Future<FakeCoreService> openAppWithVideo(
+  WidgetTester tester,
+  FakeCoreService core,
+  VideoSource video,
+) async {
+  await tester.pumpWidget(VyajenaApp(core: core, video: video));
   await core.open();
   await settle(tester);
   final group = find.byKey(const ValueKey('chat-main'));

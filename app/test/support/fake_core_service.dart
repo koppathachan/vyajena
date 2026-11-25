@@ -91,6 +91,17 @@ class FakeCoreService extends CoreService {
   /// The recordings [sendAudio] was given, in order.
   final List<Uint8List> sentRecordings = [];
 
+  /// The clips this device has cached, by message id: the path [cachedVideo]
+  /// returns.
+  final Map<int, String> cachedVideoClips = {};
+
+  /// The video clips the server still has, by message id: what [downloadVideo]
+  /// downloads. A message not here has expired.
+  final Map<int, String> serverVideoClips = {};
+
+  /// The normalized clips [sendVideo] was given, in order.
+  final List<Uint8List> sentVideos = [];
+
   /// A new local id, after every id in [messages].
   int _newId() {
     for (final m in messages) {
@@ -178,6 +189,44 @@ class FakeCoreService extends CoreService {
     );
     messages.add(message);
     if (!expired) serverClips[id] = '/media/clip-$id.opus';
+    emit(CoreEvent.message(message: message));
+    return message;
+  }
+
+  /// A received video from [sender]. The server still has its clip
+  /// ([serverVideoClips]) unless [expired]; it is not cached yet.
+  ChatMessage receiveVideo(
+    UserRef sender, {
+    bool expired = false,
+    int durationMs = 12000,
+    int width = 854,
+    int height = 480,
+    int chatId = 0,
+  }) {
+    final id = _newId();
+    final message = ChatMessage(
+      id: id,
+      chatId: chatId,
+      sender: sender,
+      senderDevice: 'cd34',
+      outgoing: false,
+      ownUser: false,
+      body: ChatBody.video(
+        video: VideoView(
+          width: width,
+          height: height,
+          durationMs: durationMs,
+          thumbhash: Uint8List.fromList([1, 2, 3]),
+          size: BigInt.from(4 * 1024 * 1024),
+          state: expired ? MediaStatus.expired : MediaStatus.notDownloaded,
+        ),
+      ),
+      mentions: const [],
+      mentionsMe: false,
+      acceptedAtMs: 1,
+    );
+    messages.add(message);
+    if (!expired) serverVideoClips[id] = '/media/clip-$id.mp4';
     emit(CoreEvent.message(message: message));
     return message;
   }
@@ -699,6 +748,84 @@ class FakeCoreService extends CoreService {
       );
     }
     return sendAudio(Uint8List(0));
+  }
+
+  @override
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  }) async {
+    _call('sendVideo', (chatId: chatId, durationMs: durationMs));
+    sentVideos.add(mp4);
+    final id = _newId();
+    cachedVideoClips[id] = '/media/clip-$id.mp4';
+    messages.add(
+      ChatMessage(
+        id: id,
+        chatId: chatId,
+        sender: storedUser ?? newUser,
+        senderDevice: 'ab12',
+        outgoing: true,
+        ownUser: true,
+        body: ChatBody.video(
+          video: VideoView(
+            width: width,
+            height: height,
+            durationMs: durationMs,
+            thumbhash: Uint8List.fromList([1, 2, 3]),
+            size: BigInt.from(mp4.length),
+            state: MediaStatus.available,
+          ),
+        ),
+        mentions: const [],
+        mentionsMe: false,
+        sentAtMs: 1,
+        status: const SendState.sending(),
+      ),
+    );
+    return id;
+  }
+
+  @override
+  Future<String> downloadVideo(int id) async {
+    _call('downloadVideo', id);
+    final cached = cachedVideoClips[id];
+    if (cached != null) return cached;
+    final clip = serverVideoClips[id];
+    if (clip == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaExpired,
+        message: 'the video has expired',
+      );
+    }
+    cachedVideoClips[id] = clip;
+    return clip;
+  }
+
+  @override
+  Future<String?> cachedVideo(int id) async => cachedVideoClips[id];
+
+  @override
+  Future<int> resendVideo(int id) async {
+    _call('resendVideo', id);
+    if (cachedVideoClips[id] == null) {
+      throw const CoreError(
+        kind: CoreErrorKind.mediaNotOnDevice,
+        message: 'not on this device',
+      );
+    }
+    return sendVideo(
+      Uint8List(0),
+      durationMs: 12000,
+      width: 854,
+      height: 480,
+    );
   }
 
   @override

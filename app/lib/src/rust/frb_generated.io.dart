@@ -82,6 +82,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ImageView dco_decode_box_image_view(dynamic raw);
 
   @protected
+  VideoView dco_decode_box_video_view(dynamic raw);
+
+  @protected
   ChatBody dco_decode_chat_body(dynamic raw);
 
   @protected
@@ -223,6 +226,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt dco_decode_usize(dynamic raw);
 
   @protected
+  VideoView dco_decode_video_view(dynamic raw);
+
+  @protected
   AnyhowException sse_decode_AnyhowException(SseDeserializer deserializer);
 
   @protected
@@ -280,6 +286,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ImageView sse_decode_box_image_view(SseDeserializer deserializer);
+
+  @protected
+  VideoView sse_decode_box_video_view(SseDeserializer deserializer);
 
   @protected
   ChatBody sse_decode_chat_body(SseDeserializer deserializer);
@@ -431,6 +440,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   BigInt sse_decode_usize(SseDeserializer deserializer);
 
   @protected
+  VideoView sse_decode_video_view(SseDeserializer deserializer);
+
+  @protected
   void sse_encode_AnyhowException(
     AnyhowException self,
     SseSerializer serializer,
@@ -507,6 +519,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_box_image_view(ImageView self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_box_video_view(VideoView self, SseSerializer serializer);
 
   @protected
   void sse_encode_chat_body(ChatBody self, SseSerializer serializer);
@@ -690,6 +705,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_usize(BigInt self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_video_view(VideoView self, SseSerializer serializer);
 }
 
 // Section: wire_class

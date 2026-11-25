@@ -313,6 +313,45 @@ abstract class CoreService {
   /// new message's local id.
   Future<int> resendAudio(int id);
 
+  // --- Video messages (message-content: Video messages; app-ui: Send a video,
+  // Video bubble and player). The app's native plugin normalizes the clip to
+  // H.264/MP4 and extracts the first frame; the core does only the blob crypto,
+  // encrypts it, uploads it and decrypts what comes back. The app passes the
+  // normalized [mp4] and the [firstFrameRgba] in and plays the file path it gets
+  // out. ---
+
+  /// Sends the already-normalized clip [mp4] (H.264/MP4 at the 480p/~1 Mbps
+  /// target, ≤ 30 s) to chat [chatId]; returns its local id. [firstFrameRgba]
+  /// ([frameWidth] x [frameHeight] RGBA) is the first frame the core turns into
+  /// the bubble's ThumbHash; pass an empty list for no blur. Throws [CoreError]
+  /// with [CoreErrorKind.videoTooLong] over 30 s, [CoreErrorKind.videoTooLarge]
+  /// over the server's advertised cap, or [CoreErrorKind.notAVideo] for non-MP4
+  /// bytes. Like an image it is queued at once, connected or not.
+  Future<int> sendVideo(
+    Uint8List mp4, {
+    int chatId = 0,
+    required int durationMs,
+    required int width,
+    required int height,
+    Uint8List? firstFrameRgba,
+    int frameWidth = 0,
+    int frameHeight = 0,
+  });
+
+  /// The path of video message [id]'s clip, an MP4 file in the core's media
+  /// cache for a player to open: from the cache on this device, else downloaded
+  /// first. The app never copies or keeps the file. Throws [CoreError] with
+  /// [CoreErrorKind.mediaExpired] when the server no longer has it.
+  Future<String> downloadVideo(int id);
+
+  /// The path of video message [id]'s clip if this device has it cached; never
+  /// uses the network.
+  Future<String?> cachedVideo(int id);
+
+  /// Resends the clip of own video message [id] as a new message; returns the
+  /// new message's local id.
+  Future<int> resendVideo(int id);
+
   /// The blur a ThumbHash stands for, as a small PNG; null if the bytes are
   /// not a ThumbHash. Decoded by the core.
   Uint8List? thumbhashPreview(Uint8List thumbhash);

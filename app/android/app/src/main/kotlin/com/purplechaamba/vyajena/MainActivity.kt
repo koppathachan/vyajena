@@ -46,6 +46,10 @@ class MainActivity : FlutterActivity() {
             }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Sticker.CHANNEL)
             .setMethodCallHandler { call, result -> Sticker.handle(call, result) }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VideoNormalize.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                VideoNormalize.handle(call.method, call.arguments as? Map<*, *>, result)
+            }
         val push = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vyajena/push")
         PushChannel.channel = push
         push.setMethodCallHandler { call, result ->
