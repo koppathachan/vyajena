@@ -5,14 +5,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use client::net::NetError;
 use client::{
     ClientError, ConnectionState, DeviceId, Event, Member, Mention, Message, MessageBody, Presence,
-    ReaddOutcome, SendStatus, UserId,
+    ReaddOutcome, Report, ReportKind, SendStatus, UserId,
 };
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
     AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
     ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, PresenceStatus,
-    ReaddAnswer, ReplyKind, ReplyQuote, SendState, UserRef, VideoView,
+    ReaddAnswer, ReplyKind, ReplyQuote, ReportKindInfo, ReportView, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -24,6 +24,25 @@ pub(crate) fn user(user: &UserId) -> UserRef {
 
 pub(crate) fn user_id(user: &UserRef) -> UserId {
     UserId::new(user.username.clone(), user.server_id.clone())
+}
+
+/// A parsed report to the bridge view (moderation: The admin sees reports).
+pub(crate) fn report_view(report: &Report) -> ReportView {
+    let kind = match &report.kind {
+        ReportKind::Group { group_id, msg_id } => ReportKindInfo::Group {
+            group_id: hex(group_id),
+            msg_id: hex(msg_id),
+        },
+        ReportKind::Dm { quote } => ReportKindInfo::Dm {
+            quote: quote.clone(),
+        },
+        ReportKind::User => ReportKindInfo::User,
+    };
+    ReportView {
+        reported: user(&report.reported),
+        reason: report.reason.clone(),
+        kind,
+    }
 }
 
 pub(crate) fn hex(bytes: &[u8]) -> String {

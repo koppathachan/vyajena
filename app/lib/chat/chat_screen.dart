@@ -12,6 +12,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import '../app/errors.dart';
+import '../app/moderation.dart';
 import '../app/routes.dart';
 import '../app/connection_indicator.dart';
 import '../shell/avatars.dart';
@@ -23,6 +24,7 @@ import 'mentions.dart';
 import 'message_tile.dart';
 import 'notice_tile.dart';
 import 'picture_picker.dart';
+import 'report_tile.dart';
 import 'sticker_plugins.dart';
 import 'video_plugins.dart';
 import 'voice_playback.dart';
@@ -334,6 +336,49 @@ class _ChatScreenState extends State<ChatScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       await _model.deleteMessage(message.id);
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Whether Report and Block are offered on [message] (moderation: Report a
+  /// message; Block a user): only on another user's real message, never on an
+  /// own message, a tombstone, or a report block itself.
+  bool _canModerate(ChatMessage message) =>
+      !message.ownUser &&
+      message.body is! ChatBody_Deleted &&
+      _reportText(message) == null;
+
+  /// The report `Content.Text` of [message] if it is a report DM (moderation:
+  /// The admin sees reports), else `null`; only a text body can be a report.
+  String? _reportText(ChatMessage message) {
+    final body = message.body;
+    return body is ChatBody_Text && isReportText(body.text) ? body.text : null;
+  }
+
+  /// Reports [message] to the admin after asking for a short reason (moderation:
+  /// Report a message; app-ui: Report a message or a user).
+  Future<void> _reportMessage(ChatMessage message) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final reason = await askReportReason(context);
+    if (reason == null) return;
+    try {
+      await _model.report(message.id, reason);
+      messenger.showSnackBar(const SnackBar(content: Text('Report sent')));
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
+  /// Blocks [user] after a confirm that it hides them on this device only
+  /// (moderation: Block a user; app-ui: Block and unblock a user).
+  Future<void> _blockUser(UserRef user) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final name = _model.names.of(user);
+    if (!await confirmBlock(context, name)) return;
+    try {
+      await _model.block(user);
+      messenger.showSnackBar(SnackBar(content: Text('Blocked $name')));
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }
@@ -666,7 +711,12 @@ class _ChatScreenState extends State<ChatScreen> {
                               dividerBeforeId,
                               KeyedSubtree(
                                 key: _tileKey(message.id),
-                                child: MessageTile(
+                                child: switch (_reportText(message)) {
+                                  final String t => ReportTile(
+                                    core: widget.core,
+                                    text: t,
+                                  ),
+                                  null => MessageTile(
                                   key: ValueKey('message-${message.id}'),
                                   message: message,
                                   sender: _model.names.of(message.sender),
@@ -689,6 +739,14 @@ class _ChatScreenState extends State<ChatScreen> {
                                       _canDelete(message, peer == null)
                                       ? () => _deleteMessage(message)
                                       : null,
+                                  onReport:
+                                      _canModerate(message)
+                                      ? () => _reportMessage(message)
+                                      : null,
+                                  onBlock:
+                                      _canModerate(message)
+                                      ? () => _blockUser(message.sender)
+                                      : null,
                                   onReveal: message.body is ChatBody_Deleted
                                       ? () => _reveal(message)
                                       : null,
@@ -700,6 +758,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                     null => null,
                                   },
                                 ),
+                                },
                               ),
                             ),
                             NoticeItem(:final notice) => NoticeTile(

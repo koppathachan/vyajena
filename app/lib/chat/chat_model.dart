@@ -722,6 +722,26 @@ class ChatModel extends ChangeNotifier {
   /// (message-deletion: Receiver may reveal in a DM).
   Future<ChatMessage> reveal(int id) => core.reveal(chatId, id);
 
+  /// Reports message [id] to the admin (moderation: Report a message; Report a
+  /// DM message). The core composes the report and sends it over a DM.
+  Future<void> report(int id, String reason) => core.reportMessage(id, reason);
+
+  /// Blocks [user] on this device and refreshes the view (moderation: Block a
+  /// user); the blocked user's messages and any DM disappear.
+  Future<void> block(UserRef user) async {
+    await core.blockUser(user);
+    await _reloadChat();
+    await _reload();
+  }
+
+  /// Unblocks [user] and refreshes the view (moderation: Block a user —
+  /// Unblock); their messages and DM reappear.
+  Future<void> unblock(UserRef user) async {
+    await core.unblockUser(user);
+    await _reloadChat();
+    await _reload();
+  }
+
 
   /// Sends the recording [wav] as a voice message (app-ui: Record a voice
   /// message); returns once the core stored it.

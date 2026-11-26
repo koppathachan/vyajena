@@ -22,7 +22,7 @@
 use std::sync::Arc;
 
 use super::{Engine, EngineError, Job};
-use crate::events::{Event, MessageId, SendStatus};
+use crate::events::{Event, Message, MessageId, SendStatus};
 use crate::messaging::{Decoded, Received};
 use crate::mls::{MlsError, group as mls_group};
 use crate::pb;
@@ -31,9 +31,26 @@ use crate::pb::envelope::Kind;
 use crate::store::{OutgoingMessage, StoredMessage};
 
 impl Engine {
+    /// Whether `message` is from a user this device has blocked (moderation: A
+    /// blocked user is hidden, change `report-and-block`). Own messages are
+    /// never suppressed; the sender read here is the envelope's authenticated
+    /// `UserId`, never message text.
+    fn sender_blocked(&self, message: &Message) -> bool {
+        !message.own_user
+            && self
+                .store()
+                .is_user_blocked(&message.sender.to_string())
+                .unwrap_or(false)
+    }
+
     /// Emits what receiving an application message produced.
     pub(super) fn emit_received(&self, received: Received) {
         match received {
+            // A blocked sender's message is still stored (accepted means
+            // durable), but omitted from the emitted history, so the app shows
+            // nothing and raises no notification for it (moderation: A blocked
+            // user is hidden).
+            Received::Message(message) if self.sender_blocked(&message) => {}
             Received::Message(message) => self.emit(Event::Message(message)),
             Received::Profile { user, profile } => self.emit(Event::ProfileChanged {
                 user,
@@ -432,6 +449,7 @@ impl Engine {
             .store()
             .message(tombstone_id)?
             .and_then(|stored| crate::messaging::to_message(self.store(), &stored, &own_user))
+            && !self.sender_blocked(&message)
         {
             self.emit(Event::Message(message));
         }
