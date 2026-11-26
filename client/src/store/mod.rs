@@ -27,6 +27,7 @@ use rusqlite::Connection;
 use crate::keystore::{KeyName, KeyStore, KeyStoreError, get_or_create};
 use crate::mls::{EncryptedStorage, MlsProvider, MlsStorageError, STORAGE_KEY_LEN};
 
+mod blocked;
 mod content_state;
 mod device_state;
 mod dms;

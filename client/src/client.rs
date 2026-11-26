@@ -24,7 +24,7 @@ use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
     self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
     MessageId, MutePrefs, MuteTarget, Presence, Profile, PushPlatform, PushToken,
-    ReplyOriginalKind, UserId,
+    ReplyOriginalKind, ReportTarget, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -34,6 +34,7 @@ use crate::media::{MediaCache, MediaError};
 use crate::messaging::ContentError;
 use crate::mls::MlsError;
 use crate::mls::verify;
+use crate::moderation::{Report, ReportKind};
 use crate::net::{Conn, NetError, Session};
 use crate::pb;
 use crate::store::{AccountRow, OutgoingMessage, ProfileRow, Store, StoreError};
@@ -1125,6 +1126,11 @@ impl Client {
             let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
                 continue;
             };
+            // A DM with a blocked peer is hidden from the chat list (moderation:
+            // A blocked user is hidden); it reappears on unblock.
+            if store.is_user_blocked(&peer.to_string())? {
+                continue;
+            }
             let waiting = !closed && !self.dm_has_peer(&dm.group_id, &peer)?;
             others.push(summary(
                 ChatId(dm.chat),
@@ -1354,6 +1360,111 @@ impl Client {
             Err(ClientError::NoSuchChat | ClientError::NoGroup) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    // --- Moderation (block + report; change `report-and-block`) ---
+
+    /// Blocks `user` on this device (moderation: Block a user): records the id
+    /// in the local block list so the display and notification paths skip the
+    /// user's messages and DM. Local only — it writes no RPC and no server
+    /// marker, and never travels to the user's other devices or to the blocked
+    /// user (design D1). Idempotent; blocking never changes group membership or
+    /// MLS state.
+    pub fn block_user(&self, user: &UserId) -> Result<(), ClientError> {
+        self.shared.store.block_user(&user.to_string())?;
+        Ok(())
+    }
+
+    /// Unblocks `user` on this device (moderation: Block a user — Unblock): the
+    /// user's stored messages and any DM are shown again. Idempotent.
+    pub fn unblock_user(&self, user: &UserId) -> Result<(), ClientError> {
+        self.shared.store.unblock_user(&user.to_string())?;
+        Ok(())
+    }
+
+    /// Whether this device has blocked `user`.
+    pub fn is_blocked(&self, user: &UserId) -> Result<bool, ClientError> {
+        Ok(self.shared.store.is_user_blocked(&user.to_string())?)
+    }
+
+    /// The users this device has blocked, sorted (moderation: Block a user).
+    pub fn blocked_users(&self) -> Result<Vec<UserId>, ClientError> {
+        Ok(self
+            .shared
+            .store
+            .blocked_users()?
+            .iter()
+            .filter_map(|id| crate::messaging::parse_user(id))
+            .collect())
+    }
+
+    /// Reports `target` to the admin (moderation: Report a message; Report a DM
+    /// message; Report a user) by sending a report `Content.Text` over a DM with
+    /// the admin, reusing the existing DM path. A group/lobby message report
+    /// carries a reference (reported user + group id + wire `msg_id`); a DM
+    /// message report quotes the offending text (reply-quote rules); a user
+    /// report carries only the reported user and the reason. No new wire message
+    /// is added, and no DM key or ciphertext leaves this device.
+    pub async fn report(&self, target: ReportTarget, reason: &str) -> Result<(), ClientError> {
+        let report = self.compose_report(target, reason)?;
+        let admin = self.admin_user()?.ok_or(ClientError::NoGroup)?;
+        let text = crate::moderation::compose(&report);
+        let chat = self.open_dm(&admin).await?;
+        self.send_message_in(chat, &text, &[], None)?;
+        Ok(())
+    }
+
+    /// Builds the [`Report`] for `target`, reading the reported user from the
+    /// stored message's authenticated sender and referencing a group/lobby
+    /// message or quoting a DM one.
+    fn compose_report(&self, target: ReportTarget, reason: &str) -> Result<Report, ClientError> {
+        let reason = reason.to_string();
+        match target {
+            ReportTarget::User(user) => Ok(Report {
+                reported: user,
+                reason,
+                kind: ReportKind::User,
+            }),
+            ReportTarget::Message(id) => {
+                let stored = self
+                    .shared
+                    .store
+                    .message(id)?
+                    .ok_or(ClientError::NoSuchMessage)?;
+                let reported = crate::messaging::parse_user(&stored.sender_user)
+                    .ok_or(ClientError::NoSuchMessage)?;
+                // A DM chat (not the lobby, not a named group) means the admin
+                // is not a member, so the report must quote the content.
+                let is_dm = match self.shared.store.dm_by_chat(stored.chat)? {
+                    Some(dm) => !dm.named,
+                    None => false,
+                };
+                let kind = if is_dm {
+                    ReportKind::Dm {
+                        quote: protocol::message_content::reply_quote(&quotable_text(
+                            &stored.content,
+                        )),
+                    }
+                } else {
+                    ReportKind::Group {
+                        group_id: self.group_id_of(ChatId(stored.chat))?,
+                        msg_id: stored.msg_id.to_vec(),
+                    }
+                };
+                Ok(Report {
+                    reported,
+                    reason,
+                    kind,
+                })
+            }
+        }
+    }
+
+    /// Parses a report `Content.Text` the admin received (moderation: A report
+    /// reaches the admin), or `None` for an ordinary message. The admin's app
+    /// calls it to present a report distinctly from a DM.
+    pub fn parse_report(&self, text: &str) -> Option<Report> {
+        crate::moderation::parse(text)
     }
 
     /// The chat `group_id` belongs to, or `None` for an unknown group.
@@ -2326,13 +2437,21 @@ impl Client {
     /// [`Client::history`] of chat `chat` (change `dms`).
     pub fn history_in(&self, chat: ChatId, limit: usize) -> Result<Vec<Message>, ClientError> {
         let own = self.own_user()?;
+        let blocked = self.blocked_set()?;
         Ok(self
             .shared
             .store
             .history_in(chat.0, limit)?
             .iter()
             .filter_map(|stored| crate::messaging::to_message(&self.shared.store, stored, &own))
+            .filter(|message| !is_blocked_in(&blocked, message))
             .collect())
+    }
+
+    /// This device's block list as a set of `UserId` strings, for filtering a
+    /// batch of messages or chats (moderation: A blocked user is hidden).
+    fn blocked_set(&self) -> Result<std::collections::HashSet<String>, ClientError> {
+        Ok(self.shared.store.blocked_users()?.into_iter().collect())
     }
 
     /// Marks the mention in message `id` seen; `false` if it had none
@@ -2419,12 +2538,14 @@ impl Client {
     /// by `server_seq`, then own messages still sending or failed.
     pub fn history(&self, limit: usize) -> Result<Vec<Message>, ClientError> {
         let own = self.own_user()?;
+        let blocked = self.blocked_set()?;
         Ok(self
             .shared
             .store
             .history(limit)?
             .iter()
             .filter_map(|stored| crate::messaging::to_message(&self.shared.store, stored, &own))
+            .filter(|message| !is_blocked_in(&blocked, message))
             .collect())
     }
 
@@ -2522,6 +2643,23 @@ impl Client {
             Ok(crate::mls::group::load(store.mls(), &row.group_id)?)
         })?;
         Ok(group.map(|g| g.epoch().as_u64()))
+    }
+}
+
+/// Whether `message` should be hidden because its sender is blocked
+/// (moderation: A blocked user is hidden). Own messages are never hidden.
+fn is_blocked_in(blocked: &std::collections::HashSet<String>, message: &Message) -> bool {
+    !message.own_user && blocked.contains(&message.sender.to_string())
+}
+
+/// The text a report quotes for a stored message (moderation: Report a DM
+/// message): the text of a text message or an image's caption, else empty. The
+/// caller caps it with the reply-quote rules.
+fn quotable_text(content: &[u8]) -> String {
+    match crate::messaging::decode(content).body {
+        crate::messaging::Decoded::Text(text) => text.text,
+        crate::messaging::Decoded::Image(image) => image.caption.unwrap_or_default(),
+        _ => String::new(),
     }
 }
 

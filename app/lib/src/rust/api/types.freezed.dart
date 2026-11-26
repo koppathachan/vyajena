@@ -2593,6 +2593,341 @@ String toString() {
 
 
 /// @nodoc
+mixin _$ReportKindInfo {
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReportKindInfo);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'ReportKindInfo()';
+}
+
+
+}
+
+/// @nodoc
+class $ReportKindInfoCopyWith<$Res>  {
+$ReportKindInfoCopyWith(ReportKindInfo _, $Res Function(ReportKindInfo) __);
+}
+
+
+/// Adds pattern-matching-related methods to [ReportKindInfo].
+extension ReportKindInfoPatterns on ReportKindInfo {
+/// A variant of `map` that fallback to returning `orElse`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( ReportKindInfo_Group value)?  group,TResult Function( ReportKindInfo_Dm value)?  dm,TResult Function( ReportKindInfo_User value)?  user,required TResult orElse(),}){
+final _that = this;
+switch (_that) {
+case ReportKindInfo_Group() when group != null:
+return group(_that);case ReportKindInfo_Dm() when dm != null:
+return dm(_that);case ReportKindInfo_User() when user != null:
+return user(_that);case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// Callbacks receives the raw object, upcasted.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case final Subclass2 value:
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( ReportKindInfo_Group value)  group,required TResult Function( ReportKindInfo_Dm value)  dm,required TResult Function( ReportKindInfo_User value)  user,}){
+final _that = this;
+switch (_that) {
+case ReportKindInfo_Group():
+return group(_that);case ReportKindInfo_Dm():
+return dm(_that);case ReportKindInfo_User():
+return user(_that);}
+}
+/// A variant of `map` that fallback to returning `null`.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case final Subclass value:
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( ReportKindInfo_Group value)?  group,TResult? Function( ReportKindInfo_Dm value)?  dm,TResult? Function( ReportKindInfo_User value)?  user,}){
+final _that = this;
+switch (_that) {
+case ReportKindInfo_Group() when group != null:
+return group(_that);case ReportKindInfo_Dm() when dm != null:
+return dm(_that);case ReportKindInfo_User() when user != null:
+return user(_that);case _:
+  return null;
+
+}
+}
+/// A variant of `when` that fallback to an `orElse` callback.
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return orElse();
+/// }
+/// ```
+
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function( String groupId,  String msgId)?  group,TResult Function( String quote)?  dm,TResult Function()?  user,required TResult orElse(),}) {final _that = this;
+switch (_that) {
+case ReportKindInfo_Group() when group != null:
+return group(_that.groupId,_that.msgId);case ReportKindInfo_Dm() when dm != null:
+return dm(_that.quote);case ReportKindInfo_User() when user != null:
+return user();case _:
+  return orElse();
+
+}
+}
+/// A `switch`-like method, using callbacks.
+///
+/// As opposed to `map`, this offers destructuring.
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case Subclass2(:final field2):
+///     return ...;
+/// }
+/// ```
+
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function( String groupId,  String msgId)  group,required TResult Function( String quote)  dm,required TResult Function()  user,}) {final _that = this;
+switch (_that) {
+case ReportKindInfo_Group():
+return group(_that.groupId,_that.msgId);case ReportKindInfo_Dm():
+return dm(_that.quote);case ReportKindInfo_User():
+return user();}
+}
+/// A variant of `when` that fallback to returning `null`
+///
+/// It is equivalent to doing:
+/// ```dart
+/// switch (sealedClass) {
+///   case Subclass(:final field):
+///     return ...;
+///   case _:
+///     return null;
+/// }
+/// ```
+
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function( String groupId,  String msgId)?  group,TResult? Function( String quote)?  dm,TResult? Function()?  user,}) {final _that = this;
+switch (_that) {
+case ReportKindInfo_Group() when group != null:
+return group(_that.groupId,_that.msgId);case ReportKindInfo_Dm() when dm != null:
+return dm(_that.quote);case ReportKindInfo_User() when user != null:
+return user();case _:
+  return null;
+
+}
+}
+
+}
+
+/// @nodoc
+
+
+class ReportKindInfo_Group extends ReportKindInfo {
+  const ReportKindInfo_Group({required this.groupId, required this.msgId}): super._();
+  
+
+/// The MLS group id, hex.
+ final  String groupId;
+/// The offending message's wire id, hex.
+ final  String msgId;
+
+/// Create a copy of ReportKindInfo
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ReportKindInfo_GroupCopyWith<ReportKindInfo_Group> get copyWith => _$ReportKindInfo_GroupCopyWithImpl<ReportKindInfo_Group>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReportKindInfo_Group&&(identical(other.groupId, groupId) || other.groupId == groupId)&&(identical(other.msgId, msgId) || other.msgId == msgId));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,groupId,msgId);
+
+@override
+String toString() {
+  return 'ReportKindInfo.group(groupId: $groupId, msgId: $msgId)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ReportKindInfo_GroupCopyWith<$Res> implements $ReportKindInfoCopyWith<$Res> {
+  factory $ReportKindInfo_GroupCopyWith(ReportKindInfo_Group value, $Res Function(ReportKindInfo_Group) _then) = _$ReportKindInfo_GroupCopyWithImpl;
+@useResult
+$Res call({
+ String groupId, String msgId
+});
+
+
+
+
+}
+/// @nodoc
+class _$ReportKindInfo_GroupCopyWithImpl<$Res>
+    implements $ReportKindInfo_GroupCopyWith<$Res> {
+  _$ReportKindInfo_GroupCopyWithImpl(this._self, this._then);
+
+  final ReportKindInfo_Group _self;
+  final $Res Function(ReportKindInfo_Group) _then;
+
+/// Create a copy of ReportKindInfo
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? groupId = null,Object? msgId = null,}) {
+  return _then(ReportKindInfo_Group(
+groupId: null == groupId ? _self.groupId : groupId // ignore: cast_nullable_to_non_nullable
+as String,msgId: null == msgId ? _self.msgId : msgId // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ReportKindInfo_Dm extends ReportKindInfo {
+  const ReportKindInfo_Dm({required this.quote}): super._();
+  
+
+/// The quote of the offending message.
+ final  String quote;
+
+/// Create a copy of ReportKindInfo
+/// with the given fields replaced by the non-null parameter values.
+@JsonKey(includeFromJson: false, includeToJson: false)
+@pragma('vm:prefer-inline')
+$ReportKindInfo_DmCopyWith<ReportKindInfo_Dm> get copyWith => _$ReportKindInfo_DmCopyWithImpl<ReportKindInfo_Dm>(this, _$identity);
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReportKindInfo_Dm&&(identical(other.quote, quote) || other.quote == quote));
+}
+
+
+@override
+int get hashCode => Object.hash(runtimeType,quote);
+
+@override
+String toString() {
+  return 'ReportKindInfo.dm(quote: $quote)';
+}
+
+
+}
+
+/// @nodoc
+abstract mixin class $ReportKindInfo_DmCopyWith<$Res> implements $ReportKindInfoCopyWith<$Res> {
+  factory $ReportKindInfo_DmCopyWith(ReportKindInfo_Dm value, $Res Function(ReportKindInfo_Dm) _then) = _$ReportKindInfo_DmCopyWithImpl;
+@useResult
+$Res call({
+ String quote
+});
+
+
+
+
+}
+/// @nodoc
+class _$ReportKindInfo_DmCopyWithImpl<$Res>
+    implements $ReportKindInfo_DmCopyWith<$Res> {
+  _$ReportKindInfo_DmCopyWithImpl(this._self, this._then);
+
+  final ReportKindInfo_Dm _self;
+  final $Res Function(ReportKindInfo_Dm) _then;
+
+/// Create a copy of ReportKindInfo
+/// with the given fields replaced by the non-null parameter values.
+@pragma('vm:prefer-inline') $Res call({Object? quote = null,}) {
+  return _then(ReportKindInfo_Dm(
+quote: null == quote ? _self.quote : quote // ignore: cast_nullable_to_non_nullable
+as String,
+  ));
+}
+
+
+}
+
+/// @nodoc
+
+
+class ReportKindInfo_User extends ReportKindInfo {
+  const ReportKindInfo_User(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReportKindInfo_User);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'ReportKindInfo.user()';
+}
+
+
+}
+
+
+
+
+/// @nodoc
 mixin _$SendState {
 
 
