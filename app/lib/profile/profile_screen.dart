@@ -458,6 +458,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   Widget build(BuildContext context) {
     final error = Theme.of(context).colorScheme.error;
     return AlertDialog(
+      scrollable: true,
       title: const Text('Delete account'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

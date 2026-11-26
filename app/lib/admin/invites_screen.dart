@@ -44,6 +44,7 @@ class _InvitesScreenState extends State<InvitesScreen> {
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: const Text('Revoke this invite?'),
         content: Text('${userText(invite.user)} can no longer join with it.'),
         actions: [

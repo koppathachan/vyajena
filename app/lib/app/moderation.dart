@@ -46,6 +46,7 @@ Future<String?> askReportReason(BuildContext context) {
   return showDialog<String>(
     context: context,
     builder: (dialog) => AlertDialog(
+      scrollable: true,
       key: const Key('report-reason'),
       title: const Text('Report to the admin'),
       content: TextField(
@@ -80,6 +81,7 @@ Future<bool> confirmBlock(BuildContext context, String name) async {
   final ok = await showDialog<bool>(
     context: context,
     builder: (dialog) => AlertDialog(
+      scrollable: true,
       key: const Key('block-confirm'),
       title: Text('Block $name?'),
       content: const Text(

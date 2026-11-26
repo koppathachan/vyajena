@@ -24,6 +24,10 @@
 - [x] 3.4 Lobby row styling from `lobby-distinct` in the Arcade look.
 - [x] 3.5 New launcher icons (`app/store/icons.sh`).
 
+- [x] 3.6 Dialogs, bottom sheets, pop-up menus and the join screen reviewed on a
+  simulator in light and dark: dialogs scroll (no overflow under the keyboard),
+  menus use the body font, text buttons use the monospace body.
+
 ## 4. Review
 
 - [ ] 4.1 Owner views light and dark on a simulator before commit.

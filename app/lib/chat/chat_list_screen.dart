@@ -527,6 +527,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
+        scrollable: true,
         key: const Key('remove-closed-dm-dialog'),
         title: const Text('Remove this chat?'),
         content: Text(

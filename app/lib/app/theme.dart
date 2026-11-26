@@ -220,6 +220,7 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       selectionHandleColor: t.focus,
     ),
     dialogTheme: DialogThemeData(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
       backgroundColor: t.card,
       elevation: 0,
       surfaceTintColor: Colors.transparent,

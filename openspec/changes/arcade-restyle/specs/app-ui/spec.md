@@ -28,6 +28,12 @@ keeps the appearance choice.
   borders, white cards and purple `#764BA2` buttons, and the hard shadows are
   visible
 
+#### Scenario: Dialogs, sheets and menus
+- **WHEN** Alice opens a dialog, a bottom sheet, a pop-up menu or a snack bar
+- **THEN** it is square with the 2px border, its dialog title uses the pixel
+  font, its text the monospace body font, and a dialog that holds a text field
+  scrolls rather than overflowing under the keyboard
+
 #### Scenario: Body is never pixel
 - **WHEN** a chat message is shown
 - **THEN** its text uses the monospace body font

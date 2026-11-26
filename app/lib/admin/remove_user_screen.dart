@@ -51,6 +51,7 @@ class _RemoveUserScreenState extends State<RemoveUserScreen> {
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text('Remove $name?'),
         content: const Text(
           'Their devices leave the group and can no longer connect. You can '
@@ -91,6 +92,7 @@ class _RemoveUserScreenState extends State<RemoveUserScreen> {
     final sure = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
+        scrollable: true,
         title: Text('Re-invite $name?'),
         content: Text(
           'Use this if $name lost their phone or reinstalled the app. It '
@@ -122,6 +124,7 @@ class _RemoveUserScreenState extends State<RemoveUserScreen> {
         await showDialog<void>(
           context: context,
           builder: (context) => AlertDialog(
+            scrollable: true,
             key: const Key('reinvite-code'),
             title: Text('Invite for $name'),
             content: Column(

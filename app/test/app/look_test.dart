@@ -59,6 +59,27 @@ void main() {
   });
 
   // spec: app-ui/arcade-look
+  test('dialogs, sheets, menus and snack bars are square and bordered', () {
+    for (final theme in [lightTheme, darkTheme]) {
+      final dialog = theme.dialogTheme.shape! as ArcadeBorder;
+      expect(dialog.width, arcadeBorderWidth);
+      expect(dialog.shadow, cardShadow);
+      expect(theme.dialogTheme.titleTextStyle?.fontFamily, pixelFont);
+      expect(theme.dialogTheme.contentTextStyle?.fontFamily, bodyFont);
+      final sheet = theme.bottomSheetTheme.shape! as ArcadeBorder;
+      expect(sheet.width, arcadeBorderWidth);
+      expect(sheet.shadow, 0);
+      final menu = theme.popupMenuTheme.shape! as ArcadeBorder;
+      expect(menu.shadow, buttonShadow);
+      expect(
+        theme.popupMenuTheme.labelTextStyle!.resolve({})?.fontFamily,
+        bodyFont,
+      );
+      expect(theme.snackBarTheme.shape, isA<ArcadeBorder>());
+    }
+  });
+
+  // spec: app-ui/arcade-look
   test('headings are pixel with a red offset shadow; body is never pixel', () {
     for (final theme in [lightTheme, darkTheme]) {
       final text = theme.textTheme;
