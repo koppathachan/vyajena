@@ -8,6 +8,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'arcade/steps.dart';
+
 import '../core/core_service.dart';
 
 /// Shows whether the core is connected, and retries on tap.
@@ -65,7 +67,7 @@ class _ConnectionIndicatorState extends State<ConnectionIndicator>
   late final Animation<double> _opacity = Tween<double>(
     begin: 0.35,
     end: 1,
-  ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
+  ).animate(CurvedAnimation(parent: _pulse, curve: const Steps(4)));
 
   late final Listenable _listenable = Listenable.merge([
     widget.core.connection,
@@ -90,7 +92,13 @@ class _ConnectionIndicatorState extends State<ConnectionIndicator>
     final connecting =
         !widget.core.removed.value &&
         widget.core.connection.value == ConnectionStatus.connecting;
-    if (connecting) {
+    // No pulse under the system's reduce-motion setting (Arcade motion).
+    final reduce = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations;
+    if (connecting && !reduce) {
       if (!_pulse.isAnimating) _pulse.repeat(reverse: true);
     } else if (_pulse.isAnimating || _pulse.value != 1) {
       _pulse.stop();

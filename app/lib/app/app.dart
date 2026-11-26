@@ -1,6 +1,8 @@
 // The app shell: theme, lifecycle, the named routes (flutter-app design D3)
 // and the first screen, which follows the core's state: join or link when
 // this device has no user yet, the group (create, wait or chat) once it has.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../chat/chat_model.dart';
@@ -18,7 +20,9 @@ import 'errors.dart';
 import 'lifecycle.dart';
 import 'routes.dart';
 import 'shell_app_bar.dart';
+import 'arcade/tokens.dart';
 import 'theme.dart';
+import 'theme_mode.dart';
 
 /// The app, over [core]. Pump it before opening the core: its chat model
 /// follows the core's events from the start.
@@ -33,9 +37,14 @@ class VyajenaApp extends StatefulWidget {
     this.voice = const DeviceVoicePlugins(),
     this.segmenter = const DeviceSegmenter(),
     this.video = const DeviceVideoSource(),
+    this.themeStore = const DeviceThemeModeStore(),
   });
 
   final CoreService core;
+
+  /// Where the Auto/Light/Dark choice is kept (app-ui: Arcade look); the
+  /// phone's store, or a memory one in widget tests.
+  final ThemeModeStore themeStore;
 
   /// Where a picture to send comes from (app-ui: Send an image); the
   /// gallery, or a fake in widget tests.
@@ -70,11 +79,15 @@ class VyajenaApp extends StatefulWidget {
 
 class _VyajenaAppState extends State<VyajenaApp> {
   late final ChatModel _chat = ChatModel(widget.core);
+  late final ThemeModeController _theme = ThemeModeController(
+    widget.themeStore,
+  );
   PushService? _push;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_theme.restore());
     final api = widget.push;
     if (api != null) {
       _push = PushService(core: widget.core, api: api)..start();
@@ -85,6 +98,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
   void dispose() {
     _push?.dispose();
     _chat.dispose();
+    _theme.dispose();
     super.dispose();
   }
 
@@ -102,16 +116,31 @@ class _VyajenaAppState extends State<VyajenaApp> {
           segmenter: widget.segmenter,
           child: VideoScope(
             source: widget.video,
-            child: MaterialApp(
-              title: 'Vyajena',
-              // Never the debug banner, also in profile builds and screenshots
-              // (app-release design D7).
-              debugShowCheckedModeBanner: false,
-              theme: lightTheme,
-              darkTheme: darkTheme,
-              themeMode: themeMode,
-              home: HomeScreen(core: widget.core, chat: _chat),
-              routes: appRoutes(widget.core),
+            child: ThemeModeScope(
+              controller: _theme,
+              child: ValueListenableBuilder<ThemeMode>(
+                valueListenable: _theme,
+                builder: (context, mode, _) => MaterialApp(
+                  title: 'Vyajena',
+                  // Never the debug banner, also in profile builds and screenshots
+                  // (app-release design D7).
+                  debugShowCheckedModeBanner: false,
+                  theme: lightTheme,
+                  darkTheme: darkTheme,
+                  themeMode: mode,
+                  // The text scale is capped (app-ui: Arcade motion).
+                  builder: (context, child) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: maxTextScale),
+                    ),
+                    child: child!,
+                  ),
+                  home: HomeScreen(core: widget.core, chat: _chat),
+                  routes: appRoutes(widget.core),
+                ),
+              ),
             ),
           ),
         ),

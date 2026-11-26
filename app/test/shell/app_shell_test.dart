@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/core/core_service.dart';
+import 'package:vyajena/shell/avatars.dart';
 
 import '../chat/dms_test.dart' show aliceInGroup, dmWithBob;
 import '../chat/groups_test.dart' as g;
@@ -38,7 +39,7 @@ void tall(WidgetTester tester) {
 
 void main() {
   // spec: app-shell/bottom-navigation
-  testWidgets('three tabs; the third is the round avatar, not a gear', (
+  testWidgets('three tabs; the third is the square avatar, not a gear', (
     tester,
   ) async {
     await openHome(tester, aliceWithEverything());
@@ -55,12 +56,9 @@ void main() {
     );
     expect(find.byIcon(Icons.settings), findsNothing);
     expect(find.byIcon(Icons.settings_outlined), findsNothing);
-    // The avatar is a circle.
+    // The avatar is a square (Arcade look), the monogram box.
     expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-avatar')),
-        matching: find.byType(CircleAvatar),
-      ),
+      find.descendant(of: profileTab, matching: find.byType(NameAvatar)),
       findsOneWidget,
     );
   });
@@ -136,7 +134,7 @@ void main() {
     await openHome(tester, core);
     final rows = tester
         .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
+        .map(tileTitle)
         .toList();
     expect(rows, ['lobby', 'Weekend', 'Bobby (bob)']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);
@@ -167,7 +165,7 @@ void main() {
     await openHome(tester, core);
     final rows = tester
         .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
+        .map(tileTitle)
         .toList();
     expect(rows.last, 'Bobby (bob)');
   });

@@ -19,11 +19,13 @@ import '../app/shell_app_bar.dart';
 import '../shell/avatars.dart';
 import '../core/core_service.dart';
 import '../members/members_screen.dart';
+import '../app/arcade/motion.dart';
 import 'chat_model.dart';
 import 'chat_preview.dart';
 import 'chat_screen.dart';
 import 'dm_screen.dart';
 import 'group_screen.dart';
+import 'lobby_row.dart';
 import 'time_text.dart';
 
 /// The chat list.
@@ -378,7 +380,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         lobbyName,
         null,
         false,
-        const NameAvatar(name: lobbyName, icon: Icons.groups_outlined),
+        const LobbyHashTile(),
       ),
       ChatKindInfo_Group(:final name, :final closed) => (
         ValueKey('chat-${chat.chatId}'),
@@ -411,11 +413,18 @@ class _ChatListScreenState extends State<ChatListScreen> {
     // marker, unless whole-app mute is on (then the banner conveys it, per-row
     // markers would be misleading).
     final showMuteMarker = chat.muted && !_appMuted;
+    // lobby-distinct: the lobby, and only the lobby, is styled as the system
+    // space: italic name, a "system" pill and a faint accent tint.
+    final lobby = chat.kind is ChatKindInfo_Lobby;
     final titleText = Text(
       title,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: closed ? TextStyle(color: disabled) : null,
+      style: closed
+          ? TextStyle(color: disabled)
+          : lobby
+          ? const TextStyle(fontStyle: FontStyle.italic)
+          : null,
     );
     final tile = ListTile(
       key: key,
@@ -423,17 +432,21 @@ class _ChatListScreenState extends State<ChatListScreen> {
       enabled: true,
       // Keep a plain Text title when there is no marker, so the row reads the
       // same as before (tests and layout).
-      title: showMuteMarker
+      tileColor: lobby ? lobbyRowTint(context) : null,
+      title: showMuteMarker || lobby
           ? Row(
               children: [
-                Icon(
-                  Icons.notifications_off_outlined,
-                  key: ValueKey('chat-muted-${chat.chatId}'),
-                  size: 16,
-                  color: disabled,
-                ),
-                const SizedBox(width: 4),
+                if (showMuteMarker) ...[
+                  Icon(
+                    Icons.notifications_off_outlined,
+                    key: ValueKey('chat-muted-${chat.chatId}'),
+                    size: 16,
+                    color: disabled,
+                  ),
+                  const SizedBox(width: 4),
+                ],
                 Flexible(child: titleText),
+                if (lobby) ...[const SizedBox(width: 8), const SystemPill()],
               ],
             )
           : titleText,
@@ -485,7 +498,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     ? Icons.notifications_active_outlined
                     : Icons.notifications_off_outlined,
               ),
-              title: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+              title: Text(
+                muted ? 'Unmute notifications' : 'Mute notifications',
+              ),
               onTap: () => Navigator.of(sheet).pop(!muted),
             ),
           ],
@@ -550,11 +565,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
     builder: (context, _) => Scaffold(
       appBar: shellAppBar(widget.core, title: 'Chats'),
       floatingActionButton: (_dms || (widget.admin && _groups))
-          ? FloatingActionButton(
-              key: const Key('new-chat-fab'),
-              tooltip: 'New chat',
-              onPressed: _showNewMenu,
-              child: const Icon(Icons.add),
+          ? ArcadeFloat(
+              distance: 4,
+              child: FloatingActionButton(
+                key: const Key('new-chat-fab'),
+                tooltip: 'New chat',
+                onPressed: _showNewMenu,
+                child: const Icon(Icons.add),
+              ),
             )
           : null,
       // Pull down to retry the connection at once (connect-feedback D2);
@@ -575,7 +593,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 ),
                 actions: const [SizedBox.shrink()],
               ),
-            for (final chat in _chats) _row(chat),
+            // Arcade motion: the rows slide in once, 120ms apart (the first few).
+            for (final (i, chat) in _chats.indexed)
+              ArcadeEntrance(
+                id: 'chat-row-${chat.chatId}',
+                index: i,
+                child: _row(chat),
+              ),
           ],
         ),
       ),

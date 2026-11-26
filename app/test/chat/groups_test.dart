@@ -86,7 +86,7 @@ void main() {
     await openHome(tester, core);
     final rows = tester
         .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
+        .map(tileTitle)
         .toList();
     expect(rows, ['lobby', 'Weekend', 'Bobby (bob)']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);

@@ -18,6 +18,9 @@ import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
+
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
 import 'emoji.dart';
@@ -449,7 +452,7 @@ class MessageTile extends StatelessWidget {
           children: [
             if (blur != null)
               ClipRRect(
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: BorderRadius.zero,
                 child: Image.memory(
                   blur,
                   width: 28,
@@ -482,6 +485,33 @@ class MessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Inside a bubble the scheme's text colours follow the bubble's fill, so
+    // quotes, labels and media controls read on yellow, purple or card.
+    final theme = Theme.of(context);
+    final arcade = context.arcade;
+    final onBubble = message.ownUser
+        ? arcade.onBubbleMine
+        : arcade.onBubbleTheirs;
+    final scheme = theme.colorScheme;
+    return Theme(
+      data: theme.copyWith(
+        // The text styles carry their own colour, so recolour them too.
+        textTheme: theme.textTheme.apply(
+          bodyColor: onBubble,
+          displayColor: onBubble,
+        ),
+        colorScheme: scheme.copyWith(
+          onSurface: onBubble,
+          onSurfaceVariant: onBubble.withValues(alpha: 0.8),
+          primary: message.ownUser ? onBubble : scheme.primary,
+          surfaceContainerHighest: onBubble.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Builder(builder: _bubble),
+    );
+  }
+
+  Widget _bubble(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final own = message.ownUser;
@@ -548,6 +578,7 @@ class MessageTile extends StatelessWidget {
               body,
             ],
           );
+    final arcade = context.arcade;
     final bubble = Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -556,16 +587,19 @@ class MessageTile extends StatelessWidget {
           color: sticker
               ? Colors.transparent
               : own
-              ? scheme.secondaryContainer
-              : scheme.surfaceContainerHigh,
+              ? arcade.bubbleMine
+              : arcade.bubbleTheirs,
           elevation: 0,
-          shape: message.mentionsMe
-              ? RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: scheme.tertiary, width: 1.5),
-                )
-              : null,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          // Arcade look: a 4px border and a 6px hard shadow; a mention takes
+          // the mention colour as its border. A sticker has neither.
+          shape: sticker
+              ? const RoundedRectangleBorder()
+              : ArcadeBorder(
+                  color: message.mentionsMe ? arcade.mention : arcade.border,
+                  shadow: bubbleShadow,
+                  shadowColor: arcade.shadow,
+                ),
+          margin: const EdgeInsets.fromLTRB(12, 2, 12, 2 + bubbleShadow),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: IntrinsicWidth(

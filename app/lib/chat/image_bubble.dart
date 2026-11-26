@@ -195,7 +195,7 @@ class _ImageBubbleState extends State<ImageBubble> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: scheme.scrim.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.zero,
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -219,7 +219,7 @@ class _ImageBubbleState extends State<ImageBubble> {
         key: const Key('image-bubble'),
         onTap: _tap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.zero,
           child: SizedBox(
             width: size.width,
             height: size.height,

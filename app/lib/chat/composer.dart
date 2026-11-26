@@ -327,7 +327,7 @@ class _ComposerState extends State<Composer> {
           children: [
             if (blur != null)
               ClipRRect(
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: BorderRadius.zero,
                 child: Image.memory(
                   blur,
                   width: 20,
@@ -693,7 +693,7 @@ class _ComposerState extends State<Composer> {
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.zero,
             child: Container(
               width: 56,
               height: 56,
@@ -722,7 +722,7 @@ class _ComposerState extends State<Composer> {
       child: Row(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.zero,
             child: Image.memory(
               picture,
               width: 56,
@@ -896,7 +896,7 @@ class _ComposerState extends State<Composer> {
           width: 48,
           height: 48,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
+            border: Border.all(color: scheme.outline, width: 2),
             color: active
                 ? (_willCancel ? scheme.error : scheme.primary)
                 : scheme.primary,

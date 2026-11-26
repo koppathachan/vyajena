@@ -6,6 +6,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../app/theme.dart';
+
 import '../core/core_service.dart';
 
 /// The green of a presence dot for a user who set their status Online
@@ -57,17 +59,29 @@ class NameAvatar extends StatelessWidget {
     final base = HSLColor.fromAHSL(1, hue, 0.35, 0.42).toColor();
     final background = muted ? scheme.surfaceContainerHighest : base;
     final foreground = muted ? scheme.onSurfaceVariant : Colors.white;
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: background,
-      foregroundColor: foreground,
+    // Arcade look: a square with a thin border, not a circle.
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: scheme.outline, width: 2),
+      ),
       child: icon != null
-          ? Icon(icon, size: radius)
+          ? Icon(icon, size: radius, color: foreground)
           : Text(
               monogram(name),
+              // Explicit family and no shadow: an app-bar title's pixel
+              // font and red shadow must not leak into the monogram.
               style: TextStyle(
+                fontFamily: bodyFont,
+                fontFamilyFallback: bodyFontFallback,
+                shadows: const <Shadow>[],
+                letterSpacing: 0,
                 fontSize: radius * 0.9,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                color: foreground,
               ),
             ),
     );
@@ -142,8 +156,9 @@ class _PresenceAvatarState extends State<PresenceAvatar> {
       user == null ? null : '${user.username}@${user.serverId}';
 
   void _onEvent(CoreEvent event) {
-    if (event case CoreEvent_PresenceChanged(:final user)
-        when user != null && _key(user) == _key(widget.user)) {
+    if (event case CoreEvent_PresenceChanged(
+      :final user,
+    ) when user != null && _key(user) == _key(widget.user)) {
       _load();
     }
   }
@@ -186,9 +201,8 @@ class _PresenceAvatarState extends State<PresenceAvatar> {
             width: dotSize,
             height: dotSize,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
               color: online ? presenceOnlineColor : scheme.error,
-              border: Border.all(color: scheme.surface, width: 1.5),
+              border: Border.all(color: scheme.outline, width: 1.5),
             ),
           ),
         ),
