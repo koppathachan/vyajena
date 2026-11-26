@@ -8,9 +8,14 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 ## 0. Gate
 
-- [ ] 0.1 Owner has resolved decisions a (sender setting + default), b (count
-  semantics), c (admin-event set + wording + mute interaction), d (platform
-  mechanics; iOS NSE metadata-only vs decrypt). Record answers in design.md.
+- [x] 0.1 Owner resolved decisions a–d as recommended and added decision e
+  (Basic/More detail level) (owner, 2026-11-27; design.md decisions table).
+- [ ] 0.2 Owner confirms the default for decision e: **More** (recommended) vs Basic.
+  Ships either way; set the chosen default in task 3.2.
+- [ ] 0.3 Tracker pre-step: the unarchived `push` and `push-kind-aware` changes are
+  verified merged/complete and archived, so message-delivery's "Content-free wake
+  pings" can be a clean base (optionally fold this change's two added
+  message-delivery reqs into a MODIFY then). Coordinated by the tracker.
 
 ## 1. Server — content-free, metadata-minimal payload (decision d, invariant)
 
@@ -50,8 +55,11 @@ proto change is expected; if apply surfaces one, raise it to the owner first
   unread as the app badge. Tests (widget, on the fake core)
   `app-ui/type-aware-notification-wording`,
   `app-ui/a-notification-opens-its-conversation`.
-- [ ] 3.2 "Show who messaged" toggle in settings, default off. Test
-  `app-ui/show-who-messaged`.
+- [ ] 3.2 Settings: a "Notification detail" control (Basic / More, default per 0.2)
+  and a "Show who messaged" toggle (default off, active only at More). The core
+  summary always carries count/type/sender?; the app gates rendering on the level.
+  Tests `app-ui/notification-detail-level`, `app-ui/show-who-messaged`,
+  `local-notifications/respect-the-notification-detail-level`.
 - [ ] 3.3 Android: `VyajenaMessagingService.onMessageReceived` handles the
   high-priority data message, runs the core, posts the notification; fallback to
   catch-up-on-open documented.

@@ -226,6 +226,32 @@ Rejected: even "this is a DM" or "count = 3" in the payload leaks to the provide
 latency saved (showing richness ~1 wake-and-catch-up sooner) is not worth weakening
 the invariant. Everything stays on the device.
 
+### D10. Notification detail level — Basic vs More (owner, 2026-11-27)
+
+The owner asked for a customizable client option between **basic** and **more**
+notifications. A single **per-device** setting "Notification detail" with two levels:
+
+- **Basic** — the generic, content-free notification only: "New message" (today's
+  behavior); no count, no type name, no sender; the barest lock-screen information.
+- **More** — the rich local notification: per-conversation count and type ("3 new in
+  Work", "2 new messages"), still content-free and built entirely on the device (D1).
+
+The sender name stays the deeper, separate opt-in of D6 ("Show who messaged",
+default off) and applies **only** while detail is More; Basic never names anyone. So
+the ladder is **Basic → More → More + sender**.
+
+- **Default — recommend More.** The count and type the owner asked for (requirements
+  1–2) then appear out of the box; they leak nothing to any provider and never leave
+  the device, so the usual lock-screen privacy concern (the sender) is already its
+  own off-by-default opt-in. Basic is the opt-down for a user who wants the barest
+  lock screen. The one-line alternative is defaulting to **Basic** (most private out
+  of the box); both ship the identical setting, so this is purely which default to
+  pick — owner to confirm.
+- **No server/payload impact.** Basic and More both ride the same content-free server
+  push (D1); the level only changes how the device renders locally, so it needs no
+  server change, no payload change and no proto change. It composes with mute (D8)
+  and the sender setting (D6) rather than replacing them.
+
 ## Risks / Trade-offs
 
 - **[iOS force-quit]** → always at least the generic "New message" (D5); richness on
@@ -255,14 +281,18 @@ the invariant. Everything stays on the device.
   `notification` shape until the app is out).
 - No data migration, no proto regeneration, no new credentials.
 
-## Owner decisions to confirm before apply
+## Owner decisions — resolved (owner, 2026-11-27)
 
-| # | Decision | Recommendation |
+| # | Decision | Resolution |
 |---|---|---|
-| a | "Message from <username>" | A per-device setting, **default off** (generic); opt-in to show sender (D6) |
-| b | Count semantics | Per-conversation line + total-unread app badge (D3) |
-| c | Which admin-events notify + wording | Removed / group-closed / added-to-new-group only, fixed phrases; own-access events ignore per-conv mute, honor mute-all (D4) |
-| d | Platform mechanics | iOS alert+`mutable-content`+NSE (metadata-only for v1), Android high-priority data message, generic-alert/catch-up fallback (D5, D7) |
+| a | "Message from <username>" | **Accepted.** Per-device "Show who messaged", default off; opt-in to show sender, and only while detail is More (D6, D10) |
+| b | Count semantics | **Accepted.** Per-conversation line + total-unread app badge (D3) |
+| c | Which admin-events notify + wording | **Accepted.** Removed / group-closed / added-to-new-group only, fixed phrases; own-access events ignore per-conv mute, honor mute-all (D4) |
+| d | Platform mechanics | **Accepted.** iOS alert+`mutable-content`+NSE (metadata-only for v1), Android high-priority data message, generic-alert/catch-up fallback (D5, D7) |
+| e | Basic vs More detail level (owner added) | **Added & accepted.** Per-device "Notification detail" with Basic / More; default **More** recommended, Basic-default the alternative — owner to confirm the default (D10) |
 
-Implementation is **held** until the owner resolves a–d; the specs below are written
-to the recommended answers and will be revised if the owner chooses differently.
+The owner accepted a–d as recommended and added decision e (Basic/More). The specs
+are written to these answers. The only point left for the owner is the **default**
+for decision e (More vs Basic); the setting ships either way, so this does not block
+spec work. Implementation remains gated on the tracker's pre-step of archiving the
+unarchived `push` / `push-kind-aware` changes (see tasks.md gate 0).

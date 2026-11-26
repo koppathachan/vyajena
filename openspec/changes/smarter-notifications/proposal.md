@@ -41,11 +41,17 @@ builds the real notification.
   The group name is known locally (it rides encrypted `GroupSettings`), so it is
   safe in a **local** notification though never in the push payload. No message text
   ever appears.
+- **Customizable Basic vs More (owner, 2026-11-27).** A per-device setting
+  "Notification detail" lets the user pick **Basic** — the generic "New message"
+  only (no count, type or name) — or **More** — the rich per-conversation count and
+  type. Default **More** (recommended; the count/type leak nothing off-device), Basic
+  the opt-down; the level only changes local rendering, no server/payload change
+  (design D10).
 - **Sender names are opt-in, off by default (owner decision a).** A local
   per-device setting "Show who messaged" defaults off: notifications stay generic
-  ("New message" / "N new in <group>"). Turned on, a DM/group notification may read
-  "Message from Ali". Default off protects who-contacts-whom from a lock-screen
-  glance; see design D6.
+  ("New message" / "N new in <group>"). Turned on, and only while detail is More, a
+  DM/group notification may read "Message from Ali". Default off protects
+  who-contacts-whom from a lock-screen glance; see design D6, D10.
 - **Admin-events notify for a chosen, content-free set (owner decision c).** Events
   that materially affect the user and are already surfaced as core notices — you
   were removed from a group, a named group was closed, you were added to a new named
@@ -63,21 +69,21 @@ builds the real notification.
   change does not re-open that; admin-events that warrant a push are membership
   facts the server knows authoritatively, pushed content-free (design D4).
 
-## Open decisions (owner — each has a recommendation in design.md)
+## Open decisions — resolved (owner, 2026-11-27; detail in design.md)
 
-- **(a) "Message from <username>"** — recommend a per-device setting defaulting to
-  the generic form, opt-in to show sender names (design D6). Owner to confirm the
-  default and that it is a setting.
-- **(b) Count semantics** — recommend per-conversation count in the notification
-  ("3 new in Work") plus an app-icon badge of total unread; not a single "N new
-  messages" blob (design D3). Owner to confirm.
-- **(c) Which admin-events notify, and their wording** — recommend removed / group
-  closed / added-to-a-new-group only, with the fixed phrases in design D4. Owner to
-  confirm the set and the exact text.
-- **(d) Platform mechanics** — confirm iOS NSE + `mutable-content` and Android
-  high-priority data message are acceptable, with the generic-alert fallback, and
-  whether the iOS extension should decrypt (sender + exact count) or stay
-  metadata-only for v1 (design D5, D7). Owner to confirm.
+- **(a) "Message from <username>"** — **accepted:** per-device "Show who messaged",
+  default off, opt-in, and only while detail is More (design D6, D10).
+- **(b) Count semantics** — **accepted:** per-conversation count ("3 new in Work")
+  plus an app-icon badge of total unread (design D3).
+- **(c) Which admin-events notify, and their wording** — **accepted:** removed /
+  group-closed / added-to-a-new-group only, fixed phrases; own-access events ignore
+  per-conv mute but honor mute-all (design D4).
+- **(d) Platform mechanics** — **accepted:** iOS alert + `mutable-content` + NSE
+  (metadata-only for v1), Android high-priority data message, generic-alert /
+  catch-up fallback (design D5, D7).
+- **(e) Basic vs More (owner added)** — **accepted:** a per-device "Notification
+  detail" setting; default **More** recommended (owner to confirm vs Basic-default);
+  no server/payload change (design D10).
 
 ## Out of scope
 

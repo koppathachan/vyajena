@@ -71,6 +71,24 @@ the device's local name for the conversation. The client enforces this.
 - **WHEN** Carol joins "Work" and Bob's device learns of it
 - **THEN** Bob's phone shows the in-chat membership notice but raises no notification
 
+### Requirement: Respect the notification detail level
+The app SHALL honor the per-device notification detail level (app-ui: Notification
+detail level) when rendering a notification from the core summary: at **Basic** it
+SHALL show only the generic "New message" and SHALL NOT show the count, type name or
+sender, even though the summary carries them; at **More** it SHALL show the
+per-conversation count and type, and the sender only if "Show who messaged" is on.
+The level SHALL change only local rendering, and SHALL NOT change the server push or
+whether a wake is sent. The client enforces this.
+
+#### Scenario: Basic ignores the summary's detail
+- **WHEN** detail is Basic and the core summary says `{type: named_group, group:
+  "Work", unread: 3}`
+- **THEN** the app shows "New message", not "3 new in Work"
+
+#### Scenario: More renders the summary
+- **WHEN** detail is More and the same summary arrives
+- **THEN** the app shows "3 new in Work"
+
 ### Requirement: Sender name only when opted in
 The core SHALL include a sender display name in a notification summary only while the
 "Show who messaged" setting is on (app-ui: Show who messaged); while it is off the
