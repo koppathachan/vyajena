@@ -55,37 +55,61 @@ people: yes. Ratings contact: privacy@purplechaamba.com.
 
 Result: ESRB Everyone · PEGI Parental guidance · USK All ages · ClassInd All
 ages · IARC (rest of world) 12+, all with "Users interact". Re-answer if block,
-report or moderation is added.
+report or moderation is added. **⚠ Now stale: report/block shipped (#58), so
+block/report/moderation are YES — re-answer the questionnaire at the next
+submission.**
 
 ## Reviewer access (App Review / Play "App access")
 
-Possible since the relay (2026-11-16): invites name
-`vyajarelay.purplechaamba.com:443`, reachable from anywhere. An invite is
-one-time and expires after 7 days (`INVITE_TTL`), and a server holds one
-group.
+Reviewers never join the real group. They join a **separate review server** —
+`review@review.purplechaamba.com`, reachable at
+`vyajarelay.purplechaamba.com:53404`, with its own data, keys and pin — as an
+ordinary **member**, not an admin. (Model locked 2026-11-26; this replaces the
+earlier "the reviewer is the review server's admin / creates the group" flow,
+which is now wrong and would mislead a reviewer.)
 
-**Owner, 2026-11-16: reviewers never join the real group** ("we can't let
-reviewers access to internal chats"). They use a separate review server
-(change `review-server`): `vyajarelay.purplechaamba.com:<review-port>`, its own data,
-keys and pin. No code change (owner; review mode PR koppathachan/vyajena#1
-closed unmerged): **the reviewer is the review server's admin**,
-`review@review.purplechaamba.com`, joining with its bootstrap invite. So the
-reviewer reaches every feature, admin screens included.
+Set-up (owner, in the app — no code change, and no server reset per review):
 
-The invite is single-use and lasts 7 days (180 characters). It sits in the
-owner-only `~/vyajena-server-backups/review-bootstrap-invite-<UTC>.txt`; the owner
-pastes it into the store form, never into the repo. Before each submission, or
-once it is used or expired: `deploy/server/deploy.sh --no-build --reset-review`
-(owner's yes first) gives a new invite and review pin; update the form.
+- The owner redeems the review server's admin bootstrap invite, creates the
+  lobby, and **keeps an admin device online for the whole review window**.
+- For each store the owner mints a single-use, 7-day **member** invite from the
+  admin device (Invite a user → `ios` / `android`): the iOS reviewer joins as
+  `ios@review.purplechaamba.com`, the Android reviewer as
+  `android@review.purplechaamba.com`. The owner pastes the invite into the store
+  form, never into the repo. Minting the invite and any server reset stay the
+  owner's action — no submission session runs a server script.
 
-Play "Sign-in details" (Any other information, 500 max; 247 + the
-invite):
+Reviewer flow (what the store form tells the reviewer to do):
 
-> No sign-up or password. The invite below makes you admin of a review group. Open the app, paste it, tap Check invite, then Join, then Create the group. Send messages; the menu has Invite a user, Remove a user and Group name. The invite works once.
+1. Open the app and paste the member invite.
+2. Tap **Check invite**, then **Join**.
+3. Wait briefly to be admitted by the admin device.
+4. Use the app as a normal member: send text, photos, videos, voice messages
+   and stickers; open a direct message with another member from the members
+   list; report or block a user; and delete your own account from Profile.
+
+**CRITICAL — an admin device must stay online for the whole review**, or the
+reviewer stalls at "Waiting for the admin's device…" and may reject. The
+reviewer is a member only: they never become admin and never create a group.
+Run the account-deletion check from the member account — the admin account
+cannot self-delete (the control is disabled).
+
+Store-form text — one canonical version for Play "Sign-in details" and App
+Store "App access". Play caps this field at 500 characters including the
+invite, so trim the feature list if a longer invite would overflow:
+
+> No sign-up or password. Open the app, paste the invite below, tap Check
+> invite then Join, and wait briefly to be admitted. Then use it as a normal
+> member: send text, photos, videos and voice; open a DM from the members list;
+> report or block a user; delete your own account. The invite works once, on
+> one device.
 >
 > <invite>
 
 ## Screenshots
 
 `app/store/screenshots/` (from `integration_test/screenshots_test.dart` on the
-fake core, never a real group): iPhone 6.9" (1320×2868) and an Android phone.
+fake core, never a real group): iPhone 6.3" (1206×2622) and an Android phone.
+The committed `app/store/screenshots/ios/*.png` are still the pre-restyle
+shots; the refreshed 1206×2622 Arcade set used on App Store Connect is pending
+commit (the screenshot-test follow-up).
