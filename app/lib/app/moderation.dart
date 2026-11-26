@@ -11,7 +11,7 @@ import '../chat/message_tile.dart' show reportLabel, blockLabel;
 /// monitored safety address and replaces this token with it (one line, nothing
 /// else — the policy text and the tests read this constant) before the public
 /// release. Do not invent an address.
-const safetyContactPlaceholder = '<SAFETY_CONTACT_EMAIL>';
+const safetyContactPlaceholder = 'support@purplechaamba.com';
 
 /// The published moderation policy, shown in the Profile tab's "Safety &
 /// moderation" entry and copied to both store listings (moderation: Published
