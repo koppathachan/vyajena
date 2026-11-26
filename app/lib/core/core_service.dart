@@ -152,6 +152,21 @@ abstract class CoreService {
     _connection.value = ConnectionStatus.disconnected;
   }
 
+  /// account-deletion: User deletes their own account. Calls the core, which
+  /// deletes the account on the server and, on success, wipes this device — the
+  /// local store and the keystore keys (account-deletion: The initiating device
+  /// wipes itself on success). On success this returns to [CoreState.unregistered]
+  /// so the app shows onboarding; on failure the account is kept and the error
+  /// is rethrown for the caller to show.
+  Future<void> deleteAccount() async {
+    await deleteAccountCore();
+    _running = false;
+    _removed.value = false;
+    _user.value = null;
+    _connection.value = ConnectionStatus.disconnected;
+    _state.value = CoreState.unregistered;
+  }
+
   /// Records the user after [register] or [completeLink] and starts.
   @protected
   Future<void> becameUser(UserRef user) async {
@@ -202,6 +217,12 @@ abstract class CoreService {
   /// The core's stop.
   @protected
   Future<void> stopCore();
+
+  /// The core's account deletion (account-deletion: User deletes their own
+  /// account): calls `Devices.DeleteAccount` and, on an OK response, wipes this
+  /// device. Throws on failure, wiping nothing.
+  @protected
+  Future<void> deleteAccountCore();
 
   /// The phone's network changed: the core skips its reconnect backoff
   /// wait if it is disconnected, and does nothing otherwise (app-ui:

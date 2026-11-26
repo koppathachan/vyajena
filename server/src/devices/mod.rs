@@ -386,6 +386,110 @@ impl Devices for DevicesService {
             .await?;
         Ok(Response::new(pb::UpdatePushTokenResponse {}))
     }
+
+    // account-deletion: User deletes their own account. The request carries no
+    // user id; the server deletes the authenticated caller's own user.
+    async fn delete_account(
+        &self,
+        request: Request<pb::DeleteAccountRequest>,
+    ) -> Result<Response<pb::DeleteAccountResponse>, Status> {
+        let caller = caller(&request)?.clone();
+        // account-deletion: The admin cannot self-delete through the RPC. The
+        // admin's only reset path is the operator-only `server admin-reset`.
+        if !protocol::account_deletion::may_delete_account(caller.is_admin) {
+            return Err(Status::failed_precondition(
+                "the admin account cannot be deleted from the app; \
+                 reset it with `server admin-reset` on the server host",
+            ));
+        }
+        let now = self.state.clock.now();
+        let username = caller.username.clone();
+        let server_id = self.state.config.server_id.clone();
+        let keys = self.state.keys.clone();
+        let limits = self.state.config.limits;
+        let (revoked, notify, invites, closed) = self
+            .state
+            .store
+            .call(move |conn| {
+                let tx = conn.transaction()?;
+                if records::user(&tx, &username)?.is_none() {
+                    return Ok(Err(Status::not_found("unknown user")));
+                }
+                let devices = records::active_devices(&tx, &username)?;
+                // Revoke first, so the external-Remove proposals below go only to
+                // the group's remaining members (active_members skips revoked and
+                // inactive devices), never to the departing user's own devices.
+                for device in &devices {
+                    auth::revoke_device(&tx, &device.device_id, now)?;
+                }
+                // Keep only a minimal removed marker (users.removed_at + the
+                // username), which frees the username for a fresh invite and
+                // keeps the revoked devices revoked.
+                tx.execute(
+                    "UPDATE users SET removed_at = coalesce(removed_at, ?2) WHERE username = ?1",
+                    params![username, unix_millis(now)],
+                )?;
+                let invites = crate::admin::invites::revoke_unused_for(&tx, &username, now)?;
+                // account-deletion: DM peers are told (reuse close_dms_of). Close
+                // the DMs first, so the eviction below only runs for the lobby and
+                // named groups the user is still in.
+                let owed = crate::dms::close_dms_of(&tx, &username, now)?;
+                let closed = crate::dms::open_notices(&tx, &owed)?;
+                // account-deletion: Deletion evicts the user from every group.
+                // Reuse the inactivity external-Remove path for each device: it
+                // deletes the device's queued entries and issues the server's
+                // external Remove for its leaf in every group, owed to the
+                // remaining members who commit it on next connect.
+                let ctx = crate::messaging::Context {
+                    server_id: &server_id,
+                    keys: &keys,
+                    now,
+                    limits,
+                };
+                let mut notify = Vec::new();
+                for device in &devices {
+                    notify.extend(crate::messaging::mark_inactive(
+                        &tx,
+                        &ctx,
+                        &device.device_id,
+                    )?);
+                    // account-deletion: What the server deletes and what it
+                    // retains. The user's own key packages and push token go.
+                    tx.execute(
+                        "DELETE FROM key_packages WHERE device_id = ?1",
+                        params![device.device_id.as_slice()],
+                    )?;
+                    tx.execute(
+                        "UPDATE devices SET push_platform = NULL, push_token = NULL \
+                         WHERE device_id = ?1",
+                        params![device.device_id.as_slice()],
+                    )?;
+                }
+                tx.commit()?;
+                let revoked: Vec<DeviceId> = devices.into_iter().map(|d| d.device_id).collect();
+                Ok(Ok((revoked, notify, invites, closed)))
+            })
+            .await??;
+        // Tear down the user's live streams; deliver the external-Remove
+        // proposals to the remaining members and the DM-closed notices to peers.
+        for device_id in &revoked {
+            let _ = self.state.revocations.send(*device_id);
+        }
+        crate::messaging::notify(&self.state, notify);
+        for (device_id, notice) in closed {
+            self.state.hub.send_frame(&device_id, notice);
+        }
+        // account-deletion: purge the user's blobs (reuse Blobs.DeleteBlob
+        // semantics; a blob already gone is a safe no-op).
+        let uploader_ids = revoked.iter().map(|device_id| device_id.to_vec()).collect();
+        crate::blobs::purge_device_blobs(&self.state, uploader_ids).await;
+        tracing::info!(
+            devices = revoked.len(),
+            invites,
+            "a user deleted their own account"
+        );
+        Ok(Response::new(pb::DeleteAccountResponse {}))
+    }
 }
 
 /// device-identity: Signup with an invite; Admin-owned usernames; Re-inviting

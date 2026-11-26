@@ -116,20 +116,23 @@ to a clean no-account state by invoking the existing device reset (client-runtim
 Device reset, change `replace-user`): it erases the local account, every group and DM,
 message history and pending jobs, and the device's identity, auth, MLS and storage keys
 from the OS key store, then returns the app to first-run / onboarding. The wipe SHALL
-run only after the server confirms the deletion, and the user's other connected devices
-SHALL learn of the deletion in-band through the account-removal notice (device-identity:
-Account-removal notice, change `replace-user`) so they can reset too. The client
-enforces the on-success wipe.
+run only after the server confirms the deletion. The user's other devices learn of the
+deletion through the authoritative revocation signal, not a new in-band frame: each of
+the user's devices is revoked, so its next `Devices.Authenticate` returns
+`PERMISSION_DENIED`, which the core surfaces as `Removed` (client-runtime: Connection
+lifecycle), after which it can reset too. This change adds no account-removal
+`ServerFrame`; the design notes why (design D7). The client enforces the on-success wipe.
 
 #### Scenario: Local state is erased after deletion
 - **WHEN** the server returns OK to Bob's `Devices.DeleteAccount`
 - **THEN** Bob's device invokes `reset()`, erasing its account, chats, history and
   key-store keys, and the app returns to the invite / onboarding screen
 
-#### Scenario: A second device learns in-band
-- **WHEN** Bob deletes his account from his phone while his tablet is connected
-- **THEN** the server delivers the account-removal notice to the tablet before closing
-  its stream, and the tablet shows it was removed and can reset
+#### Scenario: A second device learns it was removed
+- **WHEN** Bob deletes his account from his phone and his tablet, now revoked too, next
+  tries to `Devices.Authenticate`
+- **THEN** the server answers `PERMISSION_DENIED`, which the tablet's core surfaces as
+  `Removed` so the tablet shows it was removed and can reset
 
 #### Scenario: No wipe without server confirmation
 - **WHEN** Bob's `Devices.DeleteAccount` fails (for example the network drops before a

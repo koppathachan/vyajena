@@ -31,8 +31,16 @@ is TLS 1.3 to a server whose key the invite pins.
 - **Does your app collect or share any of the required user data types?** Yes.
 - **Is all of the user data collected by your app encrypted in transit?** Yes.
 - **Do you provide a way for users to request that their data is deleted?** Yes:
-  the group's admin removes a user (and their devices) on request; the policy
-  says how to ask. (No in-app self-deletion yet: a public-release blocker.)
+  **in-app** — Profile › "Delete account" deletes the account and the data the
+  server holds for the user (account-deletion). It is immediate and irreversible
+  (type-to-confirm the username): the server removes the user's devices, key
+  packages, push tokens, queued messages and uploaded media and frees the
+  username, keeping only a minimal removed marker; the device wipes its local
+  account, chats, history and keys. Messages other members already received stay
+  on their devices (the server holds no history and cannot reach other members'
+  copies). The admin account is the one exception: it is reset only by the
+  operator on the server host (`server admin-reset`), not from the app. The
+  admin can also still remove any user on request.
 - **Data types collected:**
   - *Personal info › User IDs* (the username): collected, not shared,
     processed ephemerally: no; required; purpose: App functionality.

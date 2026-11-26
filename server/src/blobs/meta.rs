@@ -99,6 +99,25 @@ pub fn insert(conn: &Connection, row: &BlobRow) -> Result<(), StoreError> {
 }
 
 /// Forgets a blob and its acks.
+/// Every blob id uploaded by any of `uploader_device_ids` (account-deletion:
+/// What the server deletes and what it retains). Blobs are keyed by their
+/// uploading device, as `Blobs.DeleteBlob` is, so a user's blobs are the blobs
+/// of the user's devices.
+pub fn ids_of_uploaders(
+    conn: &Connection,
+    uploader_device_ids: &[Vec<u8>],
+) -> Result<Vec<Vec<u8>>, StoreError> {
+    let mut ids = Vec::new();
+    let mut stmt = conn.prepare("SELECT blob_id FROM blobs WHERE uploader_device_id = ?1")?;
+    for device in uploader_device_ids {
+        let rows = stmt.query_map(params![device], |row| row.get::<_, Vec<u8>>(0))?;
+        for id in rows {
+            ids.push(id?);
+        }
+    }
+    Ok(ids)
+}
+
 pub fn delete(conn: &Connection, blob_id: &[u8]) -> Result<(), StoreError> {
     conn.execute("DELETE FROM blobs WHERE blob_id = ?1", params![blob_id])?;
     Ok(())

@@ -57,6 +57,14 @@ service Devices {
   // Registers, replaces or clears the calling device's push token
   // (device-identity: Push token registration).
   rpc UpdatePushToken(UpdatePushTokenRequest) returns (UpdatePushTokenResponse);
+
+  // Deletes the caller's own account and the data the server holds for it
+  // (account-deletion: User deletes their own account). The request carries no
+  // user id: the server deletes the authenticated caller's own user, so it can
+  // never delete anyone else. The server rejects the call from the admin with
+  // `FAILED_PRECONDITION` (account-deletion: The admin cannot self-delete
+  // through the RPC). On success the caller wipes its own device.
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
 }
 
 message GetServerInfoRequest {}
@@ -208,6 +216,13 @@ message UpdatePushTokenRequest {
 }
 
 message UpdatePushTokenResponse {}
+
+// account-deletion: User deletes their own account. The request carries no user
+// id on purpose: the server deletes the authenticated caller's own user (read
+// from the session token), so the RPC can never target another account.
+message DeleteAccountRequest {}
+
+message DeleteAccountResponse {}
 
 message PushToken {
   PushPlatform platform = 1;

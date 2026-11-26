@@ -383,6 +383,34 @@ impl Blobs for BlobsService {
 
 /// Deletes a blob's bytes and then its row. A backend that cannot delete now
 /// leaves both for the expiry sweep to retry.
+/// account-deletion: What the server deletes and what it retains. Purges every
+/// blob the given devices uploaded, reusing `Blobs.DeleteBlob` semantics (one
+/// stored copy per blob, keyed by the uploading device); a blob already gone is
+/// a safe no-op. Does nothing when no blob store is configured. Called after the
+/// user's account record is removed, so the blobs are no longer reachable.
+pub(crate) async fn purge_device_blobs(state: &State, uploader_device_ids: Vec<Vec<u8>>) {
+    if uploader_device_ids.is_empty() {
+        return;
+    }
+    let Some(backend) = backend_for(&state.config) else {
+        return;
+    };
+    let ids = match state
+        .store
+        .call(move |conn| meta::ids_of_uploaders(conn, &uploader_device_ids))
+        .await
+    {
+        Ok(ids) => ids,
+        Err(error) => {
+            tracing::warn!(%error, "could not list a deleted user's blobs to purge");
+            return;
+        }
+    };
+    for id in ids {
+        delete_blob(state, &backend, &id).await;
+    }
+}
+
 async fn delete_blob(state: &State, backend: &Arc<dyn BlobStore>, blob_id_bytes: &[u8]) {
     let Ok(id) = BlobId::try_from(blob_id_bytes) else {
         return;

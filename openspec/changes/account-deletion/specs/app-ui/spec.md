@@ -14,8 +14,9 @@ so no single tap or swipe can delete the account. Only that explicit typed
 confirmation SHALL proceed to call the core's `delete_account()`. On success the app SHALL return to the
 first-run / onboarding screen after the device wipe (account-deletion: The initiating
 device wipes itself on success); on failure it SHALL keep the account and show the
-error. The action SHALL be gated on a server that advertises `Devices.DeleteAccount`
-(an older server hides it). The client enforces the confirmation and the on-success
+error. Against a server too old to implement `Devices.DeleteAccount` the call fails
+and the app shows that error rather than deleting (no new capability flag is added to
+the wire; design D7). The client enforces the confirmation and the on-success
 navigation.
 
 #### Scenario: Delete account from Profile
