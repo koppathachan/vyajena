@@ -5,14 +5,14 @@
 //! one runtime per app process, spike 1.3) or its thread pool.
 
 use client::keystore::{KeyStoreConfig, open_key_store};
-use client::{ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget};
+use client::{ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget, Presence, UserId};
 use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
-    ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, ProfileInfo,
-    PushPlatform, StickerSource, UserRef,
+    ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, PresenceStatus,
+    ProfileInfo, PushPlatform, StickerSource, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -715,6 +715,33 @@ impl Core {
     /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
     pub fn app_muted(&self) -> Result<bool, CoreError> {
         Ok(forward(self.client.mute_prefs())?.muted_all)
+    }
+
+    /// manual-presence: Setting your status. Sets this user's own manual flag —
+    /// `true` for Online, `false` for Offline — recording it on this device and
+    /// sending it to the server (now if connected, else on the next connect). The
+    /// server distributes it to everyone who shares a conversation with this user.
+    pub fn set_presence(&self, online: bool) -> Result<(), CoreError> {
+        let status = if online {
+            Presence::Online
+        } else {
+            Presence::Offline
+        };
+        forward(self.client.set_presence(status))
+    }
+
+    /// This user's own manual presence flag (manual-presence: Manual status,
+    /// never inferred).
+    pub fn my_presence(&self) -> Result<PresenceStatus, CoreError> {
+        Ok(map::presence(forward(self.client.my_presence())?))
+    }
+
+    /// The manual presence flag this device last learned for `user`, or `Unknown`
+    /// when it has learned none — the app then shows no dot (manual-presence:
+    /// Presence indicator on avatars).
+    pub fn presence_of(&self, user: UserRef) -> Result<PresenceStatus, CoreError> {
+        let user = UserId::new(user.username, user.server_id);
+        Ok(map::presence_opt(forward(self.client.presence_of(&user))?))
     }
 
     /// The member devices of the named group `chat_id`.

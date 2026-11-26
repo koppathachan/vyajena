@@ -48,6 +48,10 @@ message ClientFrame {
     Envelope envelope = 2;
     Ack ack = 3;
     Heartbeat heartbeat = 4;
+    // manual-presence: Setting your status (change `manual-presence`). The user
+    // sets their own manual online/offline flag; may be sent any time after
+    // `Hello`.
+    SetPresence set_presence = 5;
   }
 }
 
@@ -71,6 +75,10 @@ message ServerFrame {
     ConversationRemoved conversation_removed = 11;
     // notification-prefs: Mute preference sync (change `mute-notifications`).
     MutePrefs mute_prefs = 12;
+    // manual-presence: Broadcasting a status change; Status snapshot on connect
+    // (change `manual-presence`). The current manual flag of a user the viewer
+    // may see. Sent only to streams that negotiated protocol version 4+.
+    PresenceUpdate presence_update = 13;
   }
 }
 
@@ -362,4 +370,38 @@ message MutePrefs {
 message GroupClosed {
   bytes group_id = 1;
   google.protobuf.Timestamp closed_at = 2;
+}
+
+// manual-presence: Manual status, never inferred (change `manual-presence`). A
+// user's self-set presence flag. Exactly Online or Offline for the MVP; the
+// server stores it per user and never derives it from connection, heartbeats,
+// reads or any activity.
+enum PresenceStatus {
+  PRESENCE_STATUS_UNSPECIFIED = 0;
+  // The user chose to appear online (shown green).
+  PRESENCE_STATUS_ONLINE = 1;
+  // The user chose to appear offline (shown red). The first-launch default.
+  PRESENCE_STATUS_OFFLINE = 2;
+}
+
+// manual-presence: Setting your status. A device sets its user's manual flag by
+// sending this on the `Connect` stream. The server records it against the
+// authenticated device's user and stamps `updated_at` itself; it ignores a
+// `SetPresence` carrying `PRESENCE_STATUS_UNSPECIFIED`.
+message SetPresence {
+  PresenceStatus status = 1;
+}
+
+// manual-presence: Broadcasting a status change; Status snapshot on connect. The
+// server tells a device about a user's current manual flag — on a live change,
+// and once per visible user before live traffic on connect. It is state, not a
+// queued message: there is no `Ack`, and the client keeps only the latest value
+// per user, applying this one only when `updated_at` is newer than the one it
+// holds (manual-presence: Latest value wins).
+message PresenceUpdate {
+  // The user whose flag this is (presence is per user, not per device).
+  UserId user = 1;
+  PresenceStatus status = 2;
+  // When the server accepted the `SetPresence` that set it (server-stamped).
+  google.protobuf.Timestamp updated_at = 3;
 }

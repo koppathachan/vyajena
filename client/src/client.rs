@@ -23,7 +23,8 @@ use crate::clock::{Clock, SystemClock};
 use crate::engine::{Command, Engine, Job, Shared};
 use crate::events::{
     self, Chat, ChatId, ChatKind, DeviceId, Event, EventStream, InviteInfo, Member, Message,
-    MessageId, MutePrefs, MuteTarget, Profile, PushPlatform, PushToken, ReplyOriginalKind, UserId,
+    MessageId, MutePrefs, MuteTarget, Presence, Profile, PushPlatform, PushToken,
+    ReplyOriginalKind, UserId,
 };
 use crate::identity::certificate::{self, from_timestamp};
 use crate::identity::keys::{create_identity_key, identity_key};
@@ -349,6 +350,7 @@ impl Client {
                 session: Mutex::new(None),
                 server_knows_dms: std::sync::atomic::AtomicBool::new(false),
                 server_knows_named_groups: std::sync::atomic::AtomicBool::new(false),
+                server_knows_presence: std::sync::atomic::AtomicBool::new(false),
                 max_video_blob_bytes: std::sync::atomic::AtomicU64::new(0),
                 media,
             }),
@@ -1301,6 +1303,41 @@ impl Client {
             muted_chats,
             muted_all: store.muted_all()?,
         })
+    }
+
+    // --- Presence (manual-presence; change `manual-presence`) ---
+
+    /// Sets this user's own manual presence flag (manual-presence: Setting your
+    /// status): records it on this device at once, then sends it to the server —
+    /// now if connected to a server that knows presence, else on the next
+    /// connect. The flag is durable and manual: it is unaffected by connection
+    /// state and the server keeps it until the user changes it, distributing it
+    /// to everyone who shares a conversation with this user.
+    pub fn set_presence(&self, status: Presence) -> Result<(), ClientError> {
+        self.shared.store.set_self_presence(status.to_protocol())?;
+        if let Some(running) = self.running.lock().as_ref() {
+            let _ = running.commands.try_send(Command::SetPresence(status));
+        }
+        Ok(())
+    }
+
+    /// This user's own manual presence flag, as this device holds it
+    /// (manual-presence: Manual status, never inferred).
+    pub fn my_presence(&self) -> Result<Presence, ClientError> {
+        Ok(Presence::from_protocol(
+            self.shared.store.self_presence()?.status,
+        ))
+    }
+
+    /// The manual presence flag this device last learned for `user`, or `None`
+    /// when it has learned none — the UI then shows no dot rather than guess a
+    /// colour (manual-presence: Presence indicator on avatars).
+    pub fn presence_of(&self, user: &UserId) -> Result<Option<Presence>, ClientError> {
+        Ok(self
+            .shared
+            .store
+            .peer_presence(&user.to_string())?
+            .map(Presence::from_protocol))
     }
 
     /// Whether notifications for `chat` are silenced right now: whole-app mute,

@@ -467,9 +467,10 @@ async fn the_server_stores_kind_epoch_members_and_no_name() {
 
 // spec: wire-transport/protocol-version-negotiation
 #[tokio::test]
-async fn hello_accepts_versions_1_2_and_3_and_refuses_4() {
+async fn hello_accepts_versions_1_through_4_and_refuses_5() {
     let w = world().await;
-    for version in [1, 2, 3] {
+    // Version 4 adds manual presence (change `manual-presence`).
+    for version in [1, 2, 3, 4] {
         let hello = pb::ClientFrame {
             frame: Some(support::pb::client_frame::Frame::Hello(pb::Hello {
                 protocol_version: version,
@@ -482,7 +483,7 @@ async fn hello_accepts_versions_1_2_and_3_and_refuses_4() {
     }
     let hello = pb::ClientFrame {
         frame: Some(support::pb::client_frame::Frame::Hello(pb::Hello {
-            protocol_version: 4,
+            protocol_version: 5,
         })),
     };
     match Stream::open_with(&w.conn, w.phone.token(), Some(hello)).await {

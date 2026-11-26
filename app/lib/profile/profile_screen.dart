@@ -49,6 +49,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   /// Guards the mute switch while a toggle is in flight.
   bool _muteBusy = false;
+
+  /// Guards the presence switch while a toggle is in flight.
+  bool _presenceBusy = false;
   StreamSubscription<CoreEvent>? _subscription;
 
   @override
@@ -104,6 +107,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
     } finally {
       if (mounted) setState(() => _muteBusy = false);
+    }
+  }
+
+  /// manual-presence: Toggle your status on the Profile screen.
+  Future<void> _setOnline(bool online) async {
+    setState(() => _presenceBusy = true);
+    try {
+      await widget.core.setMyPresence(online);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorText(error))));
+      }
+    } finally {
+      if (mounted) setState(() => _presenceBusy = false);
     }
   }
 
@@ -225,6 +244,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// The server info and the settings entries (app-shell: Profile tab).
   List<Widget> _serverAndSettings(BuildContext context, UserRef? user) => [
     const SizedBox(height: 24),
+    Text('Presence', style: Theme.of(context).textTheme.titleSmall),
+    // manual-presence: Toggle your status on the Profile screen. A sliding
+    // toggle the user flips on to appear Online (green) and off to appear
+    // Offline (red). Manual and durable: it is never derived from the
+    // connection, and others see whatever the user chose.
+    ValueListenableBuilder<PresenceStatus>(
+      valueListenable: widget.core.myPresence,
+      builder: (context, status, _) {
+        final online = status == PresenceStatus.online;
+        return SwitchListTile(
+          key: const Key('presence-toggle'),
+          contentPadding: EdgeInsets.zero,
+          secondary: Icon(
+            online ? Icons.circle : Icons.circle_outlined,
+            color: online
+                ? presenceOnlineColor
+                : Theme.of(context).colorScheme.error,
+          ),
+          title: const Text('Appear online'),
+          subtitle: Text(
+            online
+                ? 'Others see you as online until you turn this off.'
+                : 'Others see you as offline.',
+          ),
+          value: online,
+          onChanged: _presenceBusy ? null : _setOnline,
+        );
+      },
+    ),
+    const SizedBox(height: 8),
     Text('Notifications', style: Theme.of(context).textTheme.titleSmall),
     // notification-prefs: Mute the whole app. A single switch; while on, every
     // conversation is silenced, overriding the per-conversation mutes.

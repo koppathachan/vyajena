@@ -17,10 +17,6 @@ import 'avatars.dart';
 /// The tabs, in bar order.
 enum ShellTab { chats, contacts, profile }
 
-/// The green of the Profile avatar's presence dot while this device is
-/// connected. Offline (the default) uses the theme's `error` colour instead.
-const _presenceOnline = Color(0xFF34C759);
-
 /// The app's home once this device is in the group.
 class HomeShell extends StatefulWidget {
   const HomeShell({
@@ -103,24 +99,26 @@ class _HomeShellState extends State<HomeShell> {
             ),
           ),
         ),
-        // This device's own online/offline presence: green while connected,
-        // the error colour otherwise (offline is the default). Only the
-        // Profile tab shows it; other NameAvatars are unchanged.
+        // This user's own MANUAL online/offline presence (manual-presence:
+        // Toggle your status on the Profile screen): green when the user set
+        // Online, the error colour when Offline. Driven by the user's chosen
+        // flag, never by the connection. Only the Profile tab shows it; other
+        // NameAvatars are unchanged.
         Positioned(
           right: -1,
           bottom: -1,
-          child: ValueListenableBuilder<ConnectionStatus>(
-            valueListenable: widget.core.connection,
+          child: ValueListenableBuilder<PresenceStatus>(
+            valueListenable: widget.core.myPresence,
             builder: (context, status, _) {
               final scheme = Theme.of(context).colorScheme;
-              final online = status == ConnectionStatus.connected;
+              final online = status == PresenceStatus.online;
               return Container(
                 key: const Key('profile-presence-dot'),
                 width: 11,
                 height: 11,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: online ? _presenceOnline : scheme.error,
+                  color: online ? presenceOnlineColor : scheme.error,
                   border: Border.all(color: scheme.surface, width: 1.5),
                 ),
               );

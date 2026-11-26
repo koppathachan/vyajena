@@ -51,6 +51,6 @@ pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
     AudioBody, Chat, ChatId, ChatKind, ConnectionState, DeviceId, Event, EventStream, ImageBody,
     InviteInfo, MediaState, Member, Mention, MentionTarget, Message, MessageBody, MessageId,
-    MutePrefs, MuteTarget, Profile, PushPlatform, PushToken, ReaddOutcome, Reply,
+    MutePrefs, MuteTarget, Presence, Profile, PushPlatform, PushToken, ReaddOutcome, Reply,
     ReplyOriginalKind, SendStatus, UserId, VideoBody,
 };

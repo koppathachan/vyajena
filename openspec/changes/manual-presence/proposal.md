@@ -23,9 +23,11 @@ notices out to the right devices.
 - **A manual presence flag per user:** Online or Offline, nothing else (no
   away/busy for the MVP). The user sets it; the server never infers it from
   activity or connection.
-- **Swipe the profile-tab avatar to toggle it** (owner interaction): a horizontal
-  swipe on the bottom-nav profile avatar sets Online (swipe right) or Offline
-  (swipe left); the oval shadow/ring renders green when Online and red when Offline.
+- **A sliding toggle on the Profile screen** (owner interaction, revised from the
+  original avatar-swipe — see `design.md` D8): a `Switch` the user flips on for
+  Online and off for Offline; the bottom-nav profile avatar carries a small dot that
+  renders green when Online and red when Offline, driven by this manual flag (not
+  the connection).
 - **A presence dot/ring on avatars across the app** — chat-list rows, the Contacts
   tab and conversation headers — showing green/red for each user whose status the
   viewer may see.
@@ -57,9 +59,10 @@ Details, the wire shapes, the snapshot flow and the privacy analysis: `design.md
   server**. The alternative is a narrower **contacts-only** set, which this server
   model does not yet distinguish from "all members". Flagged for the owner; the spec
   is written to the "shared-conversation" rule, which the server can already compute.
-- **D2 — Default flag on first launch / before the user ever sets it.** Proposed:
-  **Online (green)**, Discord-style, so a new user is reachable by default. The
-  alternative is **Offline (red)** (private by default). Flagged for the owner.
+- **D2 — Default flag on first launch / before the user ever sets it.** **Resolved
+  by the owner: Offline (red)** — private by default; a user who has never touched
+  the toggle is not advertised as online. (Originally proposed Online; the owner
+  chose the private-by-default alternative. See `design.md` D2.)
 
 ## Proto files touched
 

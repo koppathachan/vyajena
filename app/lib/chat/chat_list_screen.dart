@@ -396,7 +396,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
         _names.of(peer),
         closed ? dmClosedText(_names.short(peer)) : null,
         closed,
-        NameAvatar(
+        // manual-presence: Presence indicator on avatars. A DM row shows the
+        // peer's manual presence dot (none while the DM is closed).
+        PresenceAvatar(
+          core: widget.core,
+          user: closed ? null : peer,
           name: _names.short(peer),
           seed: peer.username,
           muted: closed,

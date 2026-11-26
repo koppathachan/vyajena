@@ -101,19 +101,23 @@ reported by any snapshot for that user. The server enforces this.
 - **WHEN** a freshly registered user has never set a status and a co-member connects
 - **THEN** the snapshot reports that user at the default status
 
-### Requirement: Swipe the profile avatar to set status
-The app SHALL make the bottom-navigation profile-tab avatar a swipe toggle for the
-user's own status: a horizontal swipe one way sets Online and the other way sets
-Offline (sending `SetPresence`), and the avatar's oval shadow/ring SHALL render green
-when the user is Online and red when Offline. The app enforces this.
+### Requirement: Toggle your status on the Profile screen
+The app SHALL offer a sliding toggle (a `Switch`) on the Profile screen for the
+user's own status: turning it on sets Online and turning it off sets Offline
+(sending the matching `SetPresence`), and the toggle SHALL reflect the user's
+current manual flag. The bottom-navigation profile-tab avatar SHALL carry a small
+presence dot driven by this manual flag — green when Online, red when Offline — and
+never by the connection state. The app enforces this.
 
-#### Scenario: Swipe to go Online
-- **WHEN** the user swipes the profile-tab avatar toward Online
-- **THEN** the core sends `SetPresence{ ONLINE }` and the avatar's ring turns green
+#### Scenario: Toggle on to go Online
+- **WHEN** the user turns the Profile presence toggle on
+- **THEN** the core sends `SetPresence{ ONLINE }` and the profile-tab avatar's dot
+  turns green
 
-#### Scenario: Swipe to go Offline
-- **WHEN** the user swipes the profile-tab avatar toward Offline
-- **THEN** the core sends `SetPresence{ OFFLINE }` and the avatar's ring turns red
+#### Scenario: Toggle off to go Offline
+- **WHEN** the user turns the Profile presence toggle off
+- **THEN** the core sends `SetPresence{ OFFLINE }` and the profile-tab avatar's dot
+  turns red
 
 ### Requirement: Presence indicator on avatars
 The app SHALL show a green (Online) or red (Offline) presence dot or ring on a

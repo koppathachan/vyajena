@@ -966,6 +966,37 @@ class FakeCoreService extends CoreService {
   @override
   Future<bool> appMuted() async => appMutedValue;
 
+  // --- Presence (manual-presence; change `manual-presence`) ---
+
+  /// This user's own manual flag (manual-presence). Offline by default.
+  PresenceStatus selfPresence = PresenceStatus.offline;
+
+  /// The flag this device "knows" for each peer, keyed by `username@serverId`.
+  /// A user not present here is [PresenceStatus.unknown] (no dot).
+  final Map<String, PresenceStatus> peerPresence = {};
+
+  static String _presenceKey(UserRef user) => '${user.username}@${user.serverId}';
+
+  @override
+  Future<void> setPresence(bool online) async {
+    _call('setPresence', online);
+    selfPresence = online ? PresenceStatus.online : PresenceStatus.offline;
+    emit(const CoreEvent.presenceChanged(user: null));
+  }
+
+  @override
+  Future<PresenceStatus> loadMyPresence() async => selfPresence;
+
+  @override
+  Future<PresenceStatus> presenceOf(UserRef user) async =>
+      peerPresence[_presenceKey(user)] ?? PresenceStatus.unknown;
+
+  /// Test helper: set a peer's flag and emit the matching event.
+  void setPeerPresence(UserRef user, PresenceStatus status) {
+    peerPresence[_presenceKey(user)] = status;
+    emit(CoreEvent.presenceChanged(user: user));
+  }
+
   /// What [namedGroupsAvailable] returns.
   bool namedGroups = true;
 

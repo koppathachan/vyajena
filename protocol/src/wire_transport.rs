@@ -10,11 +10,17 @@ use crate::device_identity::{ED25519_PUBLIC_KEY_LEN, ED25519_SIGNATURE_LEN};
 /// and listed in `ServerInfo.supported_protocol_versions`
 /// (Protocol version negotiation). Version 2 adds DMs (change `dms`): a server that
 /// lists it knows the `Dms` service. Version 3 adds named groups (change
-/// `lobby-multi-group`). On the stream all versions behave the same.
-pub const PROTOCOL_VERSION: u32 = 3;
+/// `lobby-multi-group`). Version 4 adds manual presence (change
+/// `manual-presence`): the server sends `PresenceUpdate` only to a stream that
+/// negotiated 4 or above. On the stream all versions behave the same otherwise.
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Every version the server accepts in `Hello`: version 1 is what 1.0.0 apps speak.
-pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 3] = [1, 2, 3];
+pub const SUPPORTED_PROTOCOL_VERSIONS: [u32; 4] = [1, 2, 3, 4];
+
+/// manual-presence: the server sends `PresenceUpdate` only to a stream whose
+/// `Hello.protocol_version` is at least this (change `manual-presence`, D7).
+pub const PRESENCE_MIN_PROTOCOL_VERSION: u32 = 4;
 
 /// The version a client speaks to a server that lists `supported`: the highest
 /// one this contract knows, or `None` if they share none.
@@ -34,6 +40,12 @@ pub fn server_knows_named_groups(supported: &[u32]) -> bool {
 /// Whether a server that lists `supported` knows DMs (direct-messages).
 pub fn server_knows_dms(supported: &[u32]) -> bool {
     supported.contains(&2)
+}
+
+/// Whether a server that lists `supported` knows manual presence (change
+/// `manual-presence`): it accepts `SetPresence` and sends `PresenceUpdate`.
+pub fn server_knows_presence(supported: &[u32]) -> bool {
+    supported.contains(&4)
 }
 
 /// Prefix of the bytes a device auth key signs to authenticate:

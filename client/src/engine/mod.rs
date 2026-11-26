@@ -105,6 +105,10 @@ pub(crate) enum Command {
     /// The network is back: skip the current backoff wait if disconnected
     /// (client-runtime: Connection lifecycle, `reconnect_now`).
     ReconnectNow,
+    /// manual-presence: Setting your status. The user set their own manual flag;
+    /// persist it and send it to the server (now if connected, else on the next
+    /// connect).
+    SetPresence(crate::events::Presence),
 }
 
 /// What every part of the client shares.
@@ -121,6 +125,9 @@ pub(crate) struct Shared {
     /// Whether it lists protocol version 3, so knows named groups (change
     /// `lobby-multi-group`).
     pub(crate) server_knows_named_groups: std::sync::atomic::AtomicBool,
+    /// Whether it lists protocol version 4, so knows manual presence (change
+    /// `manual-presence`): the core sends `SetPresence` only then.
+    pub(crate) server_knows_presence: std::sync::atomic::AtomicBool,
     /// The maximum blob ciphertext size the server last advertised in
     /// `ServerInfo.Limits.max_video_blob_bytes` (video-messages: Config-driven
     /// limit). Refreshed on every connect; 0 until the first one, when the core
@@ -566,6 +573,11 @@ impl Engine {
                         }
                     }
                     Some(Command::ReconnectNow) => self.reconnect_now(),
+                    Some(Command::SetPresence(status)) => {
+                        if let Err(error) = self.on_set_presence(status).await {
+                            self.on_error(error);
+                        }
+                    }
                     None => break,
                 },
                 _ = tick.tick() => {
@@ -617,6 +629,11 @@ impl Engine {
                     self.on_error(error);
                 }
                 if let Err(error) = self.flush_outbox().await {
+                    self.on_error(error);
+                }
+                // manual-presence: send a presence change the user made while
+                // offline, now that the stream is up.
+                if let Err(error) = self.send_pending_presence().await {
                     self.on_error(error);
                 }
             }
@@ -732,6 +749,12 @@ impl Engine {
             protocol::wire_transport::server_knows_dms(&info.supported_protocol_versions),
             std::sync::atomic::Ordering::Relaxed,
         );
+        // manual-presence: the server accepts `SetPresence` and sends
+        // `PresenceUpdate` only from protocol version 4.
+        self.shared.server_knows_presence.store(
+            protocol::wire_transport::server_knows_presence(&info.supported_protocol_versions),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         // video-messages: Config-driven limit. Remember the advertised blob cap
         // so a video send can refuse an over-limit clip without a round trip. An
         // older server leaves `limits` or the field unset (0); the core then uses
@@ -825,6 +848,42 @@ impl Engine {
             server_seq,
         }))
         .await
+    }
+
+    /// manual-presence: Setting your status. The [`crate::Client`] already stored
+    /// the user's choice (dirty) before sending this command; the engine tells
+    /// the UI and sends `SetPresence` on the stream if connected to a server that
+    /// knows presence, clearing the dirty bit. A toggle made while offline stays
+    /// dirty and is sent on the next connect ([`Engine::send_pending_presence`]).
+    async fn on_set_presence(
+        &mut self,
+        _status: crate::events::Presence,
+    ) -> Result<(), EngineError> {
+        self.emit(Event::PresenceChanged { user: None });
+        self.send_pending_presence().await
+    }
+
+    /// Sends this user's own pending (dirty) presence flag to the server and
+    /// clears the dirty bit. Nothing if there is no pending flag, the link is
+    /// down, or the server does not know presence (older than version 4).
+    async fn send_pending_presence(&mut self) -> Result<(), EngineError> {
+        if self.link.is_none()
+            || !self
+                .shared
+                .server_knows_presence
+                .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return Ok(());
+        }
+        let Some(status) = self.store().pending_self_presence()? else {
+            return Ok(());
+        };
+        self.send(Out::SetPresence(pb::SetPresence {
+            status: status.wire_value(),
+        }))
+        .await?;
+        self.store().clear_self_presence_dirty()?;
+        Ok(())
     }
 
     /// Heartbeats, liveness, token renewal and the timed checks.
@@ -1130,6 +1189,30 @@ impl Engine {
                     self.on_dm_join_notice(notice);
                 } else {
                     self.on_join_notice(notice);
+                }
+                Ok(())
+            }
+            Some(In::PresenceUpdate(update)) => {
+                // manual-presence: Latest value wins. Keep the latest flag per
+                // user and tell the UI once when it changes; ignore unknown
+                // values and a frame with no user.
+                let (Some(user), Some(status)) = (
+                    update.user,
+                    protocol::presence::Presence::from_wire(update.status),
+                ) else {
+                    return Ok(());
+                };
+                let user = UserId::from_pb(&user);
+                let updated_at_ms = update.updated_at.as_ref().map_or(0, |ts| {
+                    ts.seconds
+                        .saturating_mul(1000)
+                        .saturating_add(i64::from(ts.nanos) / 1_000_000)
+                });
+                if self
+                    .store()
+                    .apply_peer_presence(&user.to_string(), status, updated_at_ms)?
+                {
+                    self.emit(Event::PresenceChanged { user: Some(user) });
                 }
                 Ok(())
             }

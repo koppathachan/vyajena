@@ -120,7 +120,13 @@ class _ContactsTabState extends State<ContactsTab> {
         (me && widget.admin);
     return ListTile(
       key: ValueKey('contact-${m.user.username}'),
-      leading: NameAvatar(name: _names.short(m.user), seed: m.user.username),
+      // manual-presence: Presence indicator on avatars.
+      leading: PresenceAvatar(
+        core: widget.core,
+        user: m.user,
+        name: _names.short(m.user),
+        seed: m.user.username,
+      ),
       title: Row(
         children: [
           Flexible(child: Text(name, overflow: TextOverflow.ellipsis)),
