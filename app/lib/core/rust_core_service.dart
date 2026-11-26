@@ -78,6 +78,25 @@ class RustCoreService extends CoreService {
   }
 
   @override
+  Future<ServerOnboarding> serverOnboarding(String handleText) =>
+      _c.serverOnboarding(handleText: handleText);
+
+  @override
+  Future<UserRef> registerOpen(
+    String handleText,
+    String username,
+    String joinCode,
+  ) async {
+    final user = await _c.registerOpen(
+      handleText: handleText,
+      username: username,
+      joinCode: joinCode,
+    );
+    await becameUser(user);
+    return user;
+  }
+
+  @override
   Future<String> linkRequest() => _c.linkRequest();
 
   @override

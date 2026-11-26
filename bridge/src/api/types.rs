@@ -537,3 +537,19 @@ pub struct InvitePreview {
     /// The relay's `host:port`.
     pub relay_address: String,
 }
+
+/// dev-onboarding: a server's advertised onboarding configuration, so the app
+/// shows the right first-run screen (app-ui: Simplified onboarding in open mode).
+pub struct ServerOnboarding {
+    /// The server id (the `@<server_id>` of every user id on it).
+    pub server_id: String,
+    /// Whether the server is in open onboarding mode (self-register with a
+    /// username, no invite); false means invite-only.
+    pub open: bool,
+    /// Whether open registration must carry a join code.
+    pub join_code_required: bool,
+    /// The maximum number of active users, or 0 when there is no cap.
+    pub max_users: u32,
+    /// The admin's username, so the app can offer "join as the admin".
+    pub admin_username: String,
+}

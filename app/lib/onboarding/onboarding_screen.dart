@@ -21,26 +21,68 @@ class OnboardingScreen extends StatefulWidget {
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
   final _invite = TextEditingController();
+  final _username = TextEditingController();
+  final _joinCode = TextEditingController();
   InvitePreview? _preview;
+  // dev-onboarding: the server's advertised onboarding, once checked. When it
+  // reports open mode, the simplified username screen is shown instead of the
+  // invite preview (app-ui: Simplified onboarding in open mode).
+  ServerOnboarding? _onboarding;
   String? _error;
   bool _joining = false;
+  bool _checking = false;
 
   @override
   void dispose() {
     _invite.dispose();
+    _username.dispose();
+    _joinCode.dispose();
     super.dispose();
   }
 
-  void _check() {
+  void _reset() {
+    if (_preview != null || _onboarding != null || _error != null) {
+      setState(() {
+        _preview = null;
+        _onboarding = null;
+        _error = null;
+      });
+    }
+  }
+
+  Future<void> _check() async {
+    final text = _invite.text.trim();
     setState(() {
       _preview = null;
+      _onboarding = null;
       _error = null;
-      try {
-        _preview = widget.core.parseInvite(_invite.text.trim());
-      } on CoreError catch (error) {
-        _error = 'This is not a valid invite: ${error.message}';
-      }
+      _checking = true;
     });
+    try {
+      // Offline validation + preview (app-ui: Join from an invite).
+      final preview = widget.core.parseInvite(text);
+      // dev-onboarding: probe the server so an open/dev server can offer the
+      // simplified username screen. A failure here (e.g. the server is
+      // unreachable) just falls back to the ordinary invite flow.
+      ServerOnboarding? onboarding;
+      try {
+        onboarding = await widget.core.serverOnboarding(text);
+      } catch (_) {
+        onboarding = null;
+      }
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _preview = preview;
+        _onboarding = onboarding;
+      });
+    } on CoreError catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _checking = false;
+        _error = 'This is not a valid invite: ${error.message}';
+      });
+    }
   }
 
   Future<void> _join() async {
@@ -52,25 +94,52 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       await widget.core.register(_invite.text.trim());
       // The core's state turns ready and the home screen shows the group.
     } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _joining = false;
-        // A network error or an expired invite speak for themselves; anything
-        // else is prefixed so the user knows the join did not go through
-        // (app-ui: Invite expiry is surfaced).
-        _error =
-            error is CoreError &&
-                (error.kind == CoreErrorKind.network ||
-                    error.kind == CoreErrorKind.inviteExpired)
-            ? errorText(error)
-            : 'Could not join. ${errorText(error)}';
-      });
+      _showJoinError(error);
     }
+  }
+
+  // dev-onboarding: open registration with a chosen username (app-ui:
+  // Simplified onboarding in open mode).
+  Future<void> _joinOpen(String username) async {
+    if (username.isEmpty) {
+      setState(() => _error = 'Choose a username to join.');
+      return;
+    }
+    setState(() {
+      _joining = true;
+      _error = null;
+    });
+    try {
+      await widget.core.registerOpen(
+        _invite.text.trim(),
+        username,
+        _joinCode.text.trim(),
+      );
+    } catch (error) {
+      _showJoinError(error);
+    }
+  }
+
+  void _showJoinError(Object error) {
+    if (!mounted) return;
+    setState(() {
+      _joining = false;
+      // A network error or an expired invite speak for themselves; anything
+      // else is prefixed so the user knows the join did not go through
+      // (app-ui: Invite expiry is surfaced).
+      _error =
+          error is CoreError &&
+              (error.kind == CoreErrorKind.network ||
+                  error.kind == CoreErrorKind.inviteExpired)
+          ? errorText(error)
+          : 'Could not join. ${errorText(error)}';
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final preview = _preview;
+    final onboarding = _onboarding;
     final text = Theme.of(context).textTheme;
     return Scaffold(
       appBar: shellAppBar(widget.core),
@@ -97,25 +166,76 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               border: OutlineInputBorder(),
               labelText: 'Invite',
             ),
-            onChanged: (_) {
-              if (_preview != null || _error != null) {
-                setState(() {
-                  _preview = null;
-                  _error = null;
-                });
-              }
-            },
+            onChanged: (_) => _reset(),
           ),
           const SizedBox(height: 12),
           if (preview == null)
             Align(
               alignment: Alignment.centerRight,
               child: FilledButton(
-                onPressed: _check,
-                child: const Text('Check invite'),
+                onPressed: _checking ? null : _check,
+                child: Text(_checking ? 'Checking…' : 'Check invite'),
               ),
             )
-          else ...[
+          else if (onboarding != null && onboarding.open) ...[
+            // dev-onboarding: open mode — pick a username, no invite needed
+            // (app-ui: Simplified onboarding in open mode).
+            Card.outlined(
+              child: ListTile(
+                leading: const Icon(Icons.dns_outlined),
+                title: Text('Open sign-up on ${onboarding.serverId}'),
+                subtitle: const Text('Pick a username to join — no invite needed.'),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('username'),
+              controller: _username,
+              autocorrect: false,
+              enableSuggestions: false,
+              textCapitalization: TextCapitalization.none,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                labelText: 'Username',
+              ),
+            ),
+            if (onboarding.joinCodeRequired) ...[
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('joinCode'),
+                controller: _joinCode,
+                autocorrect: false,
+                enableSuggestions: false,
+                textCapitalization: TextCapitalization.none,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  labelText: 'Join code',
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  key: const Key('joinAsAdmin'),
+                  onPressed: _joining
+                      ? null
+                      : () => _joinOpen(onboarding.adminUsername),
+                  child: Text('Join as the admin (${onboarding.adminUsername})'),
+                ),
+                FilledButton(
+                  onPressed: _joining
+                      ? null
+                      : () => _joinOpen(_username.text.trim()),
+                  child: Text(_joining ? 'Joining…' : 'Join'),
+                ),
+              ],
+            ),
+          ] else ...[
             Card.outlined(
               child: ListTile(
                 leading: const Icon(Icons.person_outline),

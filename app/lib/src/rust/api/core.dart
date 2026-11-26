@@ -260,6 +260,16 @@ abstract class Core implements RustOpaqueInterface {
   /// invite). Call [`Core::start`] next.
   Future<UserRef> register({required String inviteText});
 
+  /// dev-onboarding: open registration (app-ui: Simplified onboarding in open
+  /// mode). Self-registers this device as `username` with no invite, against
+  /// the open-mode server named by `handle_text`, carrying `join_code` if the
+  /// server requires one. Call [`Core::start`] next.
+  Future<UserRef> registerOpen({
+    required String handleText,
+    required String username,
+    required String joinCode,
+  });
+
   /// Removes the closed DM `chat_id` (its peer was removed from the server):
   /// tells the server, then deletes the chat and its messages here; the
   /// user's other devices follow on their next connect. `NoSuchChat` unless it
@@ -434,6 +444,14 @@ abstract class Core implements RustOpaqueInterface {
     required int frameWidth,
     required int frameHeight,
   });
+
+  /// dev-onboarding: reads a server handle (an invite text from the server,
+  /// e.g. the bootstrap invite the operator shares) and returns the server's
+  /// onboarding advertisement, so the app shows the right first-run screen
+  /// (app-ui: Simplified onboarding in open mode). The handle carries the
+  /// relay address and TLS pin; its invite code and bound username are not
+  /// used here.
+  Future<ServerOnboarding> serverOnboarding({required String handleText});
 
   /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):
   /// while on, every conversation is silenced, overriding the per-conversation

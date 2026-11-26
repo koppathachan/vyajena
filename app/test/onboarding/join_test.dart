@@ -197,7 +197,76 @@ void main() {
     await paste(tester, 'hello, this is not an invite');
     expect(find.textContaining('This is not a valid invite'), findsOneWidget);
     expect(find.text('Join'), findsNothing);
-    // Only the local parse; nothing that reaches the server.
+    // Only the local parse; nothing that reaches the server (the onboarding
+    // probe only runs for a valid handle).
     expect(core.calls, ['open', 'parseInvite']);
+  });
+
+  // dev-onboarding.
+
+  FakeCoreService openCore({bool joinCodeRequired = false}) => FakeCoreService()
+    ..onboarding = ServerOnboarding(
+      serverId: 'demo',
+      open: true,
+      joinCodeRequired: joinCodeRequired,
+      maxUsers: 10,
+      adminUsername: 'akhil',
+    );
+
+  // spec: app-ui/simplified-onboarding-in-open-mode
+  testWidgets('open mode: a server handle shows the username screen and '
+      'registers openly with the typed username', (tester) async {
+    final core = openCore();
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:handle');
+
+    // The simplified screen, not the paste-invite preview.
+    expect(find.byKey(const Key('username')), findsOneWidget);
+    expect(find.text('Join as the admin (akhil)'), findsOneWidget);
+    expect(find.byKey(const Key('joinCode')), findsNothing);
+
+    await tester.enterText(find.byKey(const Key('username')), 'reviewer');
+    await tap(tester, find.text('Join'));
+    expect(core.calls, containsAllInOrder(['serverOnboarding', 'registerOpen']));
+    expect(core.args['registerOpen'], 'reviewer/');
+    expect(core.state.value, CoreState.ready);
+  });
+
+  // spec: app-ui/simplified-onboarding-in-open-mode
+  testWidgets('open mode: "join as the admin" registers the admin username', (
+    tester,
+  ) async {
+    final core = openCore();
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:handle');
+    await tap(tester, find.text('Join as the admin (akhil)'));
+    expect(core.args['registerOpen'], 'akhil/');
+    expect(core.state.value, CoreState.ready);
+  });
+
+  // spec: app-ui/simplified-onboarding-in-open-mode
+  testWidgets('open mode: a required join code shows a join-code field', (
+    tester,
+  ) async {
+    final core = openCore(joinCodeRequired: true);
+    await openApp(tester, core);
+    await paste(tester, 'vyajena-invite:handle');
+    expect(find.byKey(const Key('joinCode')), findsOneWidget);
+    await tester.enterText(find.byKey(const Key('username')), 'reviewer');
+    await tester.enterText(find.byKey(const Key('joinCode')), 'letmein');
+    await tap(tester, find.text('Join'));
+    expect(core.args['registerOpen'], 'reviewer/letmein');
+  });
+
+  // spec: app-ui/simplified-onboarding-in-open-mode
+  testWidgets('invite mode shows the paste-invite preview, not a username '
+      'field', (tester) async {
+    final core = await openApp(tester); // default fake: invite mode
+    await paste(tester, 'vyajena-invite:bob');
+    expect(find.byKey(const Key('username')), findsNothing);
+    expect(find.text('bob@chat'), findsOneWidget);
+    await tap(tester, find.text('Join'));
+    expect(core.calls, isNot(contains('registerOpen')));
+    expect(core.calls, contains('register'));
   });
 }

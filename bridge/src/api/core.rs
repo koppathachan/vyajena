@@ -15,8 +15,9 @@ use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, PresenceStatus,
-    ProfileInfo, PushPlatform, ReportView, StickerSource, UserRef,
+    ProfileInfo, PushPlatform, ReportView, ServerOnboarding, StickerSource, UserRef,
 };
+use client::identity::Invite;
 use crate::frb_generated::StreamSink;
 use crate::map;
 
@@ -154,6 +155,49 @@ impl Core {
     pub async fn register(&self, invite_text: String) -> Result<UserRef, CoreError> {
         let invite = text::invite_bytes(&invite_text)?;
         Ok(map::user(&forward(self.client.register(&invite).await)?))
+    }
+
+    /// dev-onboarding: reads a server handle (an invite text from the server,
+    /// e.g. the bootstrap invite the operator shares) and returns the server's
+    /// onboarding advertisement, so the app shows the right first-run screen
+    /// (app-ui: Simplified onboarding in open mode). The handle carries the
+    /// relay address and TLS pin; its invite code and bound username are not
+    /// used here.
+    pub async fn server_onboarding(
+        &self,
+        handle_text: String,
+    ) -> Result<ServerOnboarding, CoreError> {
+        let handle = Invite::decode(&text::invite_bytes(&handle_text)?).map_err(text::invalid)?;
+        let onboarding = forward(
+            self.client
+                .server_onboarding(&handle.relay_address, handle.tls_pin)
+                .await,
+        )?;
+        Ok(ServerOnboarding {
+            server_id: onboarding.server_id,
+            open: onboarding.open,
+            join_code_required: onboarding.join_code_required,
+            max_users: onboarding.max_users,
+            admin_username: onboarding.admin_username,
+        })
+    }
+
+    /// dev-onboarding: open registration (app-ui: Simplified onboarding in open
+    /// mode). Self-registers this device as `username` with no invite, against
+    /// the open-mode server named by `handle_text`, carrying `join_code` if the
+    /// server requires one. Call [`Core::start`] next.
+    pub async fn register_open(
+        &self,
+        handle_text: String,
+        username: String,
+        join_code: String,
+    ) -> Result<UserRef, CoreError> {
+        let handle = Invite::decode(&text::invite_bytes(&handle_text)?).map_err(text::invalid)?;
+        Ok(map::user(&forward(
+            self.client
+                .register_open(&handle.relay_address, handle.tls_pin, &username, &join_code)
+                .await,
+        )?))
     }
 
     /// New device, step 1: the link request text to show (app-ui: Link a

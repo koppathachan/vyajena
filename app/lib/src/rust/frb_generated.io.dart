@@ -220,6 +220,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   SendState dco_decode_send_state(dynamic raw);
 
   @protected
+  ServerOnboarding dco_decode_server_onboarding(dynamic raw);
+
+  @protected
   StickerSource dco_decode_sticker_source(dynamic raw);
 
   @protected
@@ -449,6 +452,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SendState sse_decode_send_state(SseDeserializer deserializer);
+
+  @protected
+  ServerOnboarding sse_decode_server_onboarding(SseDeserializer deserializer);
 
   @protected
   StickerSource sse_decode_sticker_source(SseDeserializer deserializer);
@@ -743,6 +749,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_send_state(SendState self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_server_onboarding(
+    ServerOnboarding self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_sticker_source(StickerSource self, SseSerializer serializer);

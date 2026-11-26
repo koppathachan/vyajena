@@ -851,6 +851,53 @@ sealed class SendState with _$SendState {
   const factory SendState.outOfSync() = SendState_OutOfSync;
 }
 
+/// dev-onboarding: a server's advertised onboarding configuration, so the app
+/// shows the right first-run screen (app-ui: Simplified onboarding in open mode).
+class ServerOnboarding {
+  /// The server id (the `@<server_id>` of every user id on it).
+  final String serverId;
+
+  /// Whether the server is in open onboarding mode (self-register with a
+  /// username, no invite); false means invite-only.
+  final bool open;
+
+  /// Whether open registration must carry a join code.
+  final bool joinCodeRequired;
+
+  /// The maximum number of active users, or 0 when there is no cap.
+  final int maxUsers;
+
+  /// The admin's username, so the app can offer "join as the admin".
+  final String adminUsername;
+
+  const ServerOnboarding({
+    required this.serverId,
+    required this.open,
+    required this.joinCodeRequired,
+    required this.maxUsers,
+    required this.adminUsername,
+  });
+
+  @override
+  int get hashCode =>
+      serverId.hashCode ^
+      open.hashCode ^
+      joinCodeRequired.hashCode ^
+      maxUsers.hashCode ^
+      adminUsername.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ServerOnboarding &&
+          runtimeType == other.runtimeType &&
+          serverId == other.serverId &&
+          open == other.open &&
+          joinCodeRequired == other.joinCodeRequired &&
+          maxUsers == other.maxUsers &&
+          adminUsername == other.adminUsername;
+}
+
 /// Which on-device engine produced a subject cutout (photo-sticker:
 /// Segmentation seam and RGBA contract). The app passes the source its platform
 /// plugin used; the core encodes every source identically, so this only names

@@ -75,13 +75,15 @@ the live simulator (stages 6–8). Proto first.
       the invite-mode error. // spec: client-runtime/open-registration-in-the-core
 
 ## 7. App (Flutter)
-- [ ] 7.1 Regenerate the bridge after the core API change: in `app/`,
+- [x] 7.1 Regenerate the bridge after the core API change: in `app/`,
       `flutter_rust_bridge_codegen generate`; commit `bridge/src/frb_generated.rs`
-      and `app/lib/src/rust/`.
-- [ ] 7.2 In onboarding, read `ServerInfo.onboarding`; when `OPEN`, show the
-      username (+ join code if required) screen and the "join as the admin" path,
-      calling `register_open`; when `INVITE`, keep the paste-an-invite screen.
-- [ ] 7.3 Widget test on the fake core: open mode shows the simplified screen and
+      and `app/lib/src/rust/`. Added bridge `Core::server_onboarding` and
+      `Core::register_open` (handle text = an invite from the server).
+- [x] 7.2 In onboarding, probe the server's onboarding (`server_onboarding`) after
+      a valid handle; when open, show the username (+ join code if required) screen
+      and the "join as the admin" path, calling `register_open`; otherwise keep the
+      paste-an-invite screen. CoreService (abstract + rust + fake) updated.
+- [x] 7.3 Widget test on the fake core: open mode shows the simplified screen and
       "join as admin"; invite mode shows paste-invite.
       // spec: app-ui/simplified-onboarding-in-open-mode
 

@@ -18,6 +18,15 @@ class FakeCoreService extends CoreService {
   /// The user [register] and [completeLink] return.
   UserRef newUser = const UserRef(username: 'bob', serverId: 'chat');
 
+  /// dev-onboarding: what [serverOnboarding] reports (default: invite-only).
+  ServerOnboarding onboarding = const ServerOnboarding(
+    serverId: 'chat',
+    open: false,
+    joinCodeRequired: false,
+    maxUsers: 0,
+    adminUsername: 'akhil',
+  );
+
   /// Every core call that acts, by name, in order (reads such as history,
   /// members or names are not recorded).
   final List<String> calls = [];
@@ -375,6 +384,25 @@ class FakeCoreService extends CoreService {
     storedUser = newUser;
     await becameUser(newUser);
     return newUser;
+  }
+
+  @override
+  Future<ServerOnboarding> serverOnboarding(String handleText) async {
+    calls.add('serverOnboarding');
+    return onboarding;
+  }
+
+  @override
+  Future<UserRef> registerOpen(
+    String handleText,
+    String username,
+    String joinCode,
+  ) async {
+    _call('registerOpen', '$username/$joinCode');
+    final user = UserRef(username: username, serverId: onboarding.serverId);
+    storedUser = user;
+    await becameUser(user);
+    return user;
   }
 
   @override

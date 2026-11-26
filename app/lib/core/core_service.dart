@@ -250,6 +250,16 @@ abstract class CoreService {
   /// Signs up this device from an invite text, then starts.
   Future<UserRef> register(String inviteText);
 
+  /// dev-onboarding: reads a server handle (an invite text from the server) and
+  /// returns its onboarding advertisement, so the UI shows the right first-run
+  /// screen (app-ui: Simplified onboarding in open mode).
+  Future<ServerOnboarding> serverOnboarding(String handleText);
+
+  /// dev-onboarding: open registration — self-registers this device as
+  /// [username] with no invite (carrying [joinCode] if the server requires
+  /// one), then starts.
+  Future<UserRef> registerOpen(String handleText, String username, String joinCode);
+
   /// New device, step 1: the link request text to show.
   Future<String> linkRequest();
 
