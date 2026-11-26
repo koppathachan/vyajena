@@ -11,6 +11,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
 import '../app/moderation.dart';
 import '../app/routes.dart';
@@ -874,7 +875,7 @@ class _NewMessagesDivider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Expanded(child: Divider(color: scheme.primary)),
+          Expanded(child: SketchDivider(seed: 1, color: scheme.primary)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
@@ -885,7 +886,7 @@ class _NewMessagesDivider extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: Divider(color: scheme.primary)),
+          Expanded(child: SketchDivider(seed: 2, color: scheme.primary)),
         ],
       ),
     );

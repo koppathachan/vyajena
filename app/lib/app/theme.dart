@@ -36,9 +36,16 @@ TextStyle _mono(double size, Color color, {FontWeight? weight}) => TextStyle(
   fontWeight: weight,
 );
 
-/// A heading's red hard shadow.
+/// A heading's red hard shadow. Dark text on a light background reads
+/// thinner than light on dark, so in light mode the heading is also drawn a
+/// second time 0.6px to the right (a faux bold that keeps the gaps inside
+/// letters such as "m" open) to match the dark mode's weight.
 List<Shadow> headingShadows(ArcadeTokens t, [double offset = headingShadow]) =>
-    [Shadow(offset: Offset(offset, offset), color: t.headingShadowColor)];
+    [
+      Shadow(offset: Offset(offset, offset), color: t.headingShadowColor),
+      if (t.brightness == Brightness.light)
+        Shadow(offset: const Offset(0.6, 0), color: t.heading),
+    ];
 
 /// The text theme: pixel headings and labels, monospace body, never a pixel
 /// body.
@@ -64,16 +71,21 @@ TextTheme textThemeFor(ArcadeTokens t) {
   );
 }
 
-ArcadeBorder _box(ArcadeTokens t, {double shadow = 0, Color? color}) =>
-    ArcadeBorder(
-      color: color ?? t.border,
-      shadow: shadow,
-      shadowColor: t.shadow,
-    );
+ArcadeBorder _box(
+  ArcadeTokens t, {
+  double shadow = 0,
+  Color? color,
+  int seed = 0,
+}) => ArcadeBorder(
+  color: color ?? t.border,
+  shadow: shadow,
+  shadowColor: t.shadow,
+  seed: seed,
+);
 
-OutlineInputBorder _field(Color color) => OutlineInputBorder(
-  borderRadius: BorderRadius.zero,
+SketchInputBorder _field(Color color) => SketchInputBorder(
   borderSide: BorderSide(color: color, width: arcadeBorderWidth),
+  seed: 11,
 );
 
 ButtonStyle _buttonStyle(
@@ -149,16 +161,14 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       scrolledUnderElevation: 0,
       centerTitle: false,
       titleTextStyle: text.titleLarge,
-      shape: Border(
-        bottom: BorderSide(color: t.border, width: arcadeBorderWidth),
-      ),
+      shape: SketchEdgeBorder(color: t.border, bottom: true, seed: 3),
     ),
     cardTheme: CardThemeData(
       color: t.card,
       elevation: 0,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
-      shape: _box(t, shadow: cardShadow),
+      shape: _box(t, shadow: cardShadow, seed: 1),
       margin: const EdgeInsets.fromLTRB(2, 2, cardShadow + 2, cardShadow + 2),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -199,7 +209,7 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       focusElevation: 0,
       hoverElevation: 0,
       highlightElevation: 0,
-      shape: _box(t, shadow: buttonShadow),
+      shape: _box(t, shadow: buttonShadow, seed: 5),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -224,7 +234,7 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       backgroundColor: t.card,
       elevation: 0,
       surfaceTintColor: Colors.transparent,
-      shape: _box(t, shadow: cardShadow),
+      shape: _box(t, shadow: cardShadow, seed: 7),
       titleTextStyle: text.titleLarge,
       contentTextStyle: text.bodyMedium,
     ),
@@ -265,7 +275,7 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       indicatorColor: t.button,
-      indicatorShape: const RoundedRectangleBorder(),
+      indicatorShape: _box(t, seed: 17),
       labelTextStyle: WidgetStatePropertyAll(_pixel(8, t.text)),
       iconTheme: WidgetStateProperty.resolveWith(
         (s) => IconThemeData(
@@ -278,10 +288,7 @@ ThemeData arcadeTheme(ArcadeTokens t) {
       circularTrackColor: Colors.transparent,
     ),
     tooltipTheme: TooltipThemeData(
-      decoration: BoxDecoration(
-        color: t.card,
-        border: Border.all(color: t.border, width: 2),
-      ),
+      decoration: sketchBox(border: t.border, fill: t.card, seed: 13),
       textStyle: text.bodySmall?.copyWith(color: t.text),
     ),
     segmentedButtonTheme: SegmentedButtonThemeData(

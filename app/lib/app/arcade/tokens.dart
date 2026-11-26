@@ -23,7 +23,10 @@ const double maxTextScale = 1.3;
 
 const Color _navy = Color(0xFF0F0F23);
 const Color _cardDark = Color(0xFF1B1B3A);
-const Color _yellow = Color(0xFFFFFF00);
+
+/// The dark mode's yellow, a little duller than pure #FFFF00 (owner review 2:
+/// full yellow on navy was too harsh for some eyes).
+const Color _yellow = Color(0xFFE6D84D);
 const Color _red = Color(0xFFFF0000);
 const Color _purple = Color(0xFF764BA2);
 const Color _cream = Color(0xFFFFF8E7);

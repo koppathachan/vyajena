@@ -140,7 +140,12 @@ void main() {
       find.descendant(of: tile(long), matching: find.byType(Card)),
     );
     expect(bubble.right, closeTo(screen.width, 1));
-    expect(bubble.width, lessThanOrEqualTo(480));
+    // The laid-out width (a bubble is turned a hair, which widens its
+    // on-screen bounds but not its box).
+    final width = tester
+        .getSize(find.descendant(of: tile(long), matching: find.byType(Card)))
+        .width;
+    expect(width, lessThanOrEqualTo(480));
     final mark = find.descendant(of: tile(long), matching: find.text('⏳'));
     expect(mark, findsOneWidget);
     expect(tester.getBottomRight(mark).dy, lessThanOrEqualTo(bubble.bottom));

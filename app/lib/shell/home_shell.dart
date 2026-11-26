@@ -7,7 +7,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../app/arcade/tokens.dart';
+import '../app/arcade/arcade_border.dart';
 
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_model.dart';
@@ -82,13 +82,11 @@ class _HomeShellState extends State<HomeShell> {
       clipBehavior: Clip.none,
       children: [
         DecoratedBox(
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.transparent,
-              width: 2,
-            ),
+          decoration: sketchBox(
+            border: selected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.transparent,
+            seed: 21,
           ),
           child: Padding(
             padding: const EdgeInsets.all(1),
@@ -117,9 +115,11 @@ class _HomeShellState extends State<HomeShell> {
                 key: const Key('profile-presence-dot'),
                 width: 11,
                 height: 11,
-                decoration: BoxDecoration(
-                  color: online ? presenceOnlineColor : scheme.error,
-                  border: Border.all(color: scheme.outline, width: 1.5),
+                decoration: sketchBox(
+                  fill: online ? presenceOnlineColor : scheme.error,
+                  border: scheme.outline,
+                  width: 1.5,
+                  seed: 23,
                 ),
               );
             },
@@ -136,17 +136,23 @@ class _HomeShellState extends State<HomeShell> {
             chat: widget.chat,
             admin: widget.admin,
           ),
-          ContactsTab(core: widget.core, admin: widget.admin),
+          ContactsTab(
+            core: widget.core,
+            admin: widget.admin,
+            onOpenProfile: () => setState(() => _tab = ShellTab.profile),
+          ),
           ProfileScreen(core: widget.core, embedded: true, admin: widget.admin),
         ],
       ),
       bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).colorScheme.outline,
-              width: arcadeBorderWidth,
-            ),
+        // Hand-drawn lines: the bar's top edge is drawn, not ruled (in front,
+        // or the bar's own fill would hide it).
+        position: DecorationPosition.foreground,
+        decoration: ShapeDecoration(
+          shape: SketchEdgeBorder(
+            color: Theme.of(context).colorScheme.outline,
+            top: true,
+            seed: 9,
           ),
         ),
         child: NavigationBar(

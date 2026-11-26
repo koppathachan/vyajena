@@ -3,6 +3,8 @@
 // existing user is linked instead (app-ui: Link a device).
 import 'package:flutter/material.dart';
 
+import '../app/arcade/sketch.dart';
+
 import '../app/arcade/motion.dart';
 import '../app/errors.dart';
 import '../app/routes.dart';
@@ -140,7 +142,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
           ],
           const SizedBox(height: 32),
-          const Divider(),
+          const SketchDivider(seed: 2),
           TextButton.icon(
             onPressed: () =>
                 Navigator.of(context).pushNamed(Routes.linkThisDevice),
