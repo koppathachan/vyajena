@@ -323,13 +323,15 @@ async fn a_message_typed_while_removed_goes_out_after_the_re_add() {
     // chat as out of sync, the held send as out of sync (not a silent hourglass
     // and not failed), and self-requests re-add even though it holds group
     // state.
-    bob.wait_event("the chat is out of sync", |e| {
-        matches!(e, Event::OutOfSync { chat } if *chat == client::ChatId::MAIN)
-    })
+    bob.wait_event(
+        "the chat is out of sync",
+        |e| matches!(e, Event::OutOfSync { chat } if *chat == client::ChatId::MAIN),
+    )
     .await;
-    bob.wait_event("the held send is out of sync", |e| {
-        matches!(e, Event::SendStatus { id: i, status: SendStatus::OutOfSync } if *i == id)
-    })
+    bob.wait_event(
+        "the held send is out of sync",
+        |e| matches!(e, Event::SendStatus { id: i, status: SendStatus::OutOfSync } if *i == id),
+    )
     .await;
     bob.wait_event("asked to be re-added", |e| {
         matches!(e, Event::ReaddRequested { .. })

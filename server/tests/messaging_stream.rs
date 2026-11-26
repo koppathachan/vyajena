@@ -112,7 +112,9 @@ async fn unsupported_version_is_failed_precondition_listing_supported_versions()
     let status = stream.ended().await.err().check("an error status");
     assert_eq!(status.code(), Code::FailedPrecondition);
     assert!(
-        status.message().contains("supported versions: [1, 2, 3, 4]"),
+        status
+            .message()
+            .contains("supported versions: [1, 2, 3, 4]"),
         "{}",
         status.message()
     );
