@@ -283,6 +283,16 @@ impl Core {
         forward(self.client.revoke_device(&device).await)
     }
 
+    /// account-deletion: User deletes their own account. Calls the self-service
+    /// delete RPC and, on an OK response, wipes this device — the local store
+    /// and the keystore keys — so the core returns to a no-account state and the
+    /// app shows onboarding (account-deletion: The initiating device wipes
+    /// itself on success). Wipes nothing on failure, and refuses on the admin's
+    /// device (account-deletion: The admin cannot self-delete through the RPC).
+    pub async fn delete_account(&self) -> Result<(), CoreError> {
+        forward(self.client.delete_account().await)
+    }
+
     /// The admin accepted `user`'s changed identity key (app-ui: Notices in
     /// the chat). `false` if no new key is pending.
     pub fn accept_identity_key(&self, user: UserRef) -> Result<bool, CoreError> {

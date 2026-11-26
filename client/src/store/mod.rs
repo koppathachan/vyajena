@@ -205,6 +205,38 @@ impl Store {
     {
         self.db.transaction(f)
     }
+
+    /// Deletes every row from every table, returning the database to its freshly
+    /// opened, empty state (account-deletion: The initiating device wipes itself
+    /// on success; client-runtime: Device reset). The schema (its migration
+    /// version) and the storage key are kept, so the same open database is
+    /// reused for a later signup; only the data goes — the account, groups, DMs,
+    /// message history, pending jobs and the OpenMLS group state. After it
+    /// [`Store::account`] is `None`.
+    pub fn wipe(&self) -> Result<(), StoreError> {
+        self.db.with(|conn| {
+            let tables: Vec<String> = {
+                let mut stmt = conn.prepare(
+                    "SELECT name FROM sqlite_master
+                     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+                )?;
+                let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            // Drop foreign-key enforcement for the wipe so table order never
+            // matters; it is re-enabled afterwards (it is a no-op inside a
+            // transaction, and `with` hands out the connection in autocommit).
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
+            let result = (|| {
+                for table in &tables {
+                    conn.execute(&format!("DELETE FROM \"{table}\""), [])?;
+                }
+                Ok::<(), StoreError>(())
+            })();
+            conn.pragma_update(None, "foreign_keys", "ON")?;
+            result
+        })
+    }
 }
 
 /// Creates the database file with mode 0600 before SQLite opens it, and

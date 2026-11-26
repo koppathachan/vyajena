@@ -241,6 +241,12 @@ pub enum ClientError {
     /// message in a DM.
     #[error("this device may not delete that message")]
     CannotDelete,
+
+    /// The admin account cannot be deleted from the app (account-deletion: The
+    /// admin cannot self-delete through the RPC): its only reset path is the
+    /// operator-only `server admin-reset` on the host.
+    #[error("the admin account cannot be deleted from the app")]
+    AdminCannotDelete,
 }
 
 struct Running {
@@ -887,6 +893,64 @@ impl Client {
         self.shared.store.remove_pending_link(device)?;
         let device = *device;
         self.job(|reply| Job::RemoveDevice { device, reply }).await
+    }
+
+    /// account-deletion: User deletes their own account. Calls the self-service
+    /// `Devices.DeleteAccount` — which targets this caller's own user, since the
+    /// request carries no user id — and on an OK response wipes this device with
+    /// [`Client::reset`]. On any error nothing is wiped and the account stays
+    /// usable (account-deletion: No wipe without server confirmation). The admin
+    /// device never calls the RPC and gets [`ClientError::AdminCannotDelete`]
+    /// (account-deletion: The admin cannot self-delete through the RPC); the
+    /// server refuses the admin as the backstop.
+    pub async fn delete_account(&self) -> Result<(), ClientError> {
+        if self.is_admin()? {
+            return Err(ClientError::AdminCannotDelete);
+        }
+        let session = self.session()?;
+        session
+            .conn()
+            .devices()
+            .delete_account(session.request(pb::DeleteAccountRequest {})?)
+            .await
+            .map_err(NetError::from)?;
+        self.reset().await
+    }
+
+    /// client-runtime: Device reset. Returns this device to a clean no-account
+    /// state: stops the engine and connection, forgets the session, wipes every
+    /// local table (account, groups, DMs, message history, pending jobs and the
+    /// OpenMLS group state) and deletes the device's identity, auth and MLS
+    /// signature keys and its saved session token from the key store. The
+    /// storage key that seals the now-empty local database at rest is kept — it
+    /// holds no account or identity material, and removing it without recreating
+    /// the database would strand it (design D7). Afterwards [`Client::user_id`]
+    /// is `None` and the app returns to onboarding. Used after a successful
+    /// [`Client::delete_account`] (account-deletion: The initiating device wipes
+    /// itself on success).
+    pub async fn reset(&self) -> Result<(), ClientError> {
+        use std::sync::atomic::Ordering::Relaxed;
+        self.stop();
+        *self.shared.session.lock() = None;
+        self.shared.server_knows_dms.store(false, Relaxed);
+        self.shared.server_knows_named_groups.store(false, Relaxed);
+        self.shared.server_knows_presence.store(false, Relaxed);
+        self.shared.max_video_blob_bytes.store(0, Relaxed);
+        let store = Arc::clone(&self.shared.store);
+        let key_store = Arc::clone(&self.shared.key_store);
+        blocking(move || {
+            store.wipe()?;
+            for name in [
+                KeyName::IdentityKey,
+                KeyName::DeviceAuthKey,
+                KeyName::MlsSignatureKey,
+                KeyName::SessionToken,
+            ] {
+                key_store.delete(name)?;
+            }
+            Ok(())
+        })
+        .await
     }
 
     /// Registers, replaces or (with `None`) clears this device's push token

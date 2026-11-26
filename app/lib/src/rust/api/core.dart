@@ -109,6 +109,14 @@ abstract class Core implements RustOpaqueInterface {
     required List<UserRef> members,
   });
 
+  /// account-deletion: User deletes their own account. Calls the self-service
+  /// delete RPC and, on an OK response, wipes this device — the local store
+  /// and the keystore keys — so the core returns to a no-account state and the
+  /// app shows onboarding (account-deletion: The initiating device wipes
+  /// itself on success). Wipes nothing on failure, and refuses on the admin's
+  /// device (account-deletion: The admin cannot self-delete through the RPC).
+  Future<void> deleteAccount();
+
   /// message-deletion: Who may delete. Deletes the stored chat message `id`
   /// in chat `chat_id` for everyone: an admin may delete any message in the
   /// lobby or a named group, and in a DM a user may delete their own. Returns

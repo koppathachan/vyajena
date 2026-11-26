@@ -340,6 +340,9 @@ class FakeCoreService extends CoreService {
   Future<void> stopCore() async => calls.add('stop');
 
   @override
+  Future<void> deleteAccountCore() async => _call('deleteAccount');
+
+  @override
   Future<void> reconnectNow() async => calls.add('reconnectNow');
 
   @override

@@ -139,6 +139,40 @@
   action on a server that advertises it (as other wire changes gate their actions), so
   the button appears only against a server that honours it.
 
+### D7. `reset()` is added here; other devices learn via `PERMISSION_DENIED` (not a new frame)
+
+This change was specced assuming `replace-user` had shipped two reusable pieces: a client
+`reset()` device-wipe (client-runtime: Device reset) and an account-removal `ServerFrame`
+notice (device-identity: Account-removal notice). **At implementation (2026-11-26)
+neither existed on `main`.** `replace-user` was merged as `reinvite-user` (#37), which
+took a deliberately proto-free, admin-driven re-key design (shared note
+`reinvite-user-reintegrated.md`: "added NO proto fields and NO migrations"): it delivered
+no `reset()` API and no account-removal frame. The earlier spec text ("reuse `reset()`",
+"reuse the account-removal notice") was therefore wrong about the dependency. Per CLAUDE.md
+rule 5 the spec is corrected here, owner/tracker approved:
+
+- **Local wipe:** this change adds the `reset()` core API itself (delete the device's five
+  key-store keys — identity, device-auth, MLS signature, storage, session token — wipe the
+  local store, and return the core to `NotRegistered` so the app shows onboarding). It is
+  the behaviour D5 and the "Device reset" requirement text already describe; only the
+  *owner* of the code moved from `replace-user` to this change.
+- **Other devices:** no new `ServerFrame` is added. The user's other devices are revoked
+  by the same removal, so each one's next `Devices.Authenticate` returns `PERMISSION_DENIED`,
+  which the core already surfaces as `Removed` (client-runtime: Connection lifecycle). That
+  authoritative signal — the fallback the `replace-user` design itself called the reliable
+  path (its D1) — replaces the best-effort in-band notice. The spec's "second device"
+  scenario is reworded to it. This keeps the wire **purely additive**: the only addition is
+  the `Devices.DeleteAccount` RPC and its two messages, so `buf breaking` stays clean and
+  no protocol-version bump is needed.
+- **UI gate:** keeping the wire to just the RPC means there is no `server_knows_…`
+  capability flag for the app to read (those come from protocol-version negotiation, and
+  no version is bumped). So the Profile action is shown and, against a server too old to
+  implement the RPC, the call returns `UNIMPLEMENTED`, which the app surfaces as an error
+  instead of a dead delete. The owner's single server is upgraded before the app ships
+  the action (server-first deploy), so no reachable server is too old in practice. This
+  is the one deviation from the earlier "advertises / hides it" wording, reworded in the
+  app-ui spec.
+
 ### Flow
 
 ```mermaid

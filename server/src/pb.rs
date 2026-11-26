@@ -1694,6 +1694,13 @@ pub struct UpdatePushTokenRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdatePushTokenResponse {}
+/// account-deletion: User deletes their own account. The request carries no user
+/// id on purpose: the server deletes the authenticated caller's own user (read
+/// from the session token), so the RPC can never target another account.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAccountRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAccountResponse {}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PushToken {
     #[prost(enumeration = "PushPlatform", tag = "1")]
@@ -1815,6 +1822,19 @@ pub mod devices_server {
             request: tonic::Request<super::UpdatePushTokenRequest>,
         ) -> std::result::Result<
             tonic::Response<super::UpdatePushTokenResponse>,
+            tonic::Status,
+        >;
+        /// Deletes the caller's own account and the data the server holds for it
+        /// (account-deletion: User deletes their own account). The request carries no
+        /// user id: the server deletes the authenticated caller's own user, so it can
+        /// never delete anyone else. The server rejects the call from the admin with
+        /// `FAILED_PRECONDITION` (account-deletion: The admin cannot self-delete
+        /// through the RPC). On success the caller wipes its own device.
+        async fn delete_account(
+            &self,
+            request: tonic::Request<super::DeleteAccountRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteAccountResponse>,
             tonic::Status,
         >;
     }
@@ -2238,6 +2258,51 @@ pub mod devices_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdatePushTokenSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/vyajena.v1.Devices/DeleteAccount" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteAccountSvc<T: Devices>(pub Arc<T>);
+                    impl<
+                        T: Devices,
+                    > tonic::server::UnaryService<super::DeleteAccountRequest>
+                    for DeleteAccountSvc<T> {
+                        type Response = super::DeleteAccountResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteAccountRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Devices>::delete_account(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DeleteAccountSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

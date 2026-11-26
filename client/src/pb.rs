@@ -1304,6 +1304,13 @@ pub struct UpdatePushTokenRequest {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdatePushTokenResponse {}
+/// account-deletion: User deletes their own account. The request carries no user
+/// id on purpose: the server deletes the authenticated caller's own user (read
+/// from the session token), so the RPC can never target another account.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAccountRequest {}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteAccountResponse {}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PushToken {
     #[prost(enumeration = "PushPlatform", tag = "1")]
@@ -1634,6 +1641,36 @@ pub mod devices_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("vyajena.v1.Devices", "UpdatePushToken"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Deletes the caller's own account and the data the server holds for it
+        /// (account-deletion: User deletes their own account). The request carries no
+        /// user id: the server deletes the authenticated caller's own user, so it can
+        /// never delete anyone else. The server rejects the call from the admin with
+        /// `FAILED_PRECONDITION` (account-deletion: The admin cannot self-delete
+        /// through the RPC). On success the caller wipes its own device.
+        pub async fn delete_account(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteAccountRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteAccountResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/vyajena.v1.Devices/DeleteAccount",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("vyajena.v1.Devices", "DeleteAccount"));
             self.inner.unary(req, path, codec).await
         }
     }

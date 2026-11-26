@@ -325,5 +325,136 @@ class _ProfileScreenState extends State<ProfileScreen> {
       title: const Text('Members and devices'),
       onTap: () => Navigator.of(context).pushNamed(Routes.members),
     ),
+    const SizedBox(height: 8),
+    Text('Account', style: Theme.of(context).textTheme.titleSmall),
+    // account-deletion: Deleting your account; The admin sees no self-delete.
+    // The admin's entry is greyed-out with a note pointing to the operator
+    // reset path; an ordinary member gets a working, destructive action.
+    if (widget.admin)
+      ListTile(
+        key: const Key('settings-delete-account'),
+        contentPadding: EdgeInsets.zero,
+        enabled: false,
+        leading: const Icon(Icons.delete_forever_outlined),
+        title: const Text('Delete account'),
+        subtitle: const Text(
+          "The admin account can't be deleted from the app. To reset it, run "
+          '`server admin-reset` on the server host (see admin-recovery).',
+        ),
+      )
+    else
+      ListTile(
+        key: const Key('settings-delete-account'),
+        contentPadding: EdgeInsets.zero,
+        leading: Icon(
+          Icons.delete_forever_outlined,
+          color: Theme.of(context).colorScheme.error,
+        ),
+        title: Text(
+          'Delete account',
+          style: TextStyle(color: Theme.of(context).colorScheme.error),
+        ),
+        subtitle: const Text('Permanently delete your account and data.'),
+        onTap: user == null ? null : () => _confirmDeleteAccount(user),
+      ),
   ];
+
+  /// account-deletion: Deleting your account. Opens the irreversible-delete
+  /// confirmation (type-to-confirm the username); on confirm calls the core,
+  /// which wipes the device on success (the app then shows onboarding) and
+  /// keeps the account on failure.
+  Future<void> _confirmDeleteAccount(UserRef user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _DeleteAccountDialog(username: user.username),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await widget.core.deleteAccount();
+      // On success the core moves to the unregistered state and the app shows
+      // onboarding; this screen is gone, so there is nothing more to do.
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorText(error))));
+      }
+    }
+  }
+}
+
+/// account-deletion: Deleting your account. The irreversible-delete
+/// confirmation: it names what is deleted, that it is immediate and cannot be
+/// undone, and requires the user to type their own username — the confirm
+/// button stays disabled until the typed text matches, so no single tap deletes
+/// the account.
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog({required this.username});
+
+  final String username;
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _confirm = TextEditingController();
+
+  bool get _matches => _confirm.text.trim() == widget.username;
+
+  @override
+  void dispose() {
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final error = Theme.of(context).colorScheme.error;
+    return AlertDialog(
+      title: const Text('Delete account'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This permanently deletes your account and the data held for you: '
+            'your groups and DMs on this device, and your key packages, push '
+            'tokens, queued messages and uploaded media on the server. It is '
+            'immediate and cannot be undone — there is no deactivation and no '
+            'grace period. Messages other people have already received stay on '
+            'their devices.',
+          ),
+          const SizedBox(height: 16),
+          Text('Type your username "${widget.username}" to confirm.'),
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('delete-account-confirm-field'),
+            controller: _confirm,
+            autofocus: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: 'Username',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          key: const Key('delete-account-cancel'),
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const Key('delete-account-confirm'),
+          style: FilledButton.styleFrom(backgroundColor: error),
+          onPressed: _matches ? () => Navigator.of(context).pop(true) : null,
+          child: const Text('Delete account'),
+        ),
+      ],
+    );
+  }
 }

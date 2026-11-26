@@ -391,6 +391,9 @@ pub(crate) fn error(error: ClientError) -> CoreError {
             }
             _ => K::AudioUnsupported,
         },
+        // account-deletion: The admin cannot self-delete through the RPC. The
+        // app greys the action out for the admin, so this is only a backstop.
+        ClientError::AdminCannotDelete => K::Refused,
         _ => K::Internal,
     };
     CoreError::new(kind, error.to_string())
