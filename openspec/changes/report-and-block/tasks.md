@@ -59,8 +59,10 @@
 ## 5. Policy / docs (store blocker)
 
 - [ ] 5.1 Record the moderation policy text (design.md) as the in-app "Safety &
-  moderation" content and in the App Store + Play listing copy; owner confirms the
-  final safety contact address before the public release.
+  moderation" content and in the App Store + Play listing copy; the contact email
+  carries the `<SAFETY_CONTACT_EMAIL>` placeholder token, which the owner MUST
+  replace with the real safety address everywhere the policy is shown before the
+  public release.
   Tests: `moderation/published-moderation-policy` (the in-app entry renders the
   policy and contact email).
 

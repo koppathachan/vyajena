@@ -156,15 +156,20 @@ The change SHALL ship a short written moderation policy, published in the app an
 both store listings, stating that reports are reviewed and acted on — the offending
 content removed and the user ejected where warranted — within 24 hours, and giving a
 contact email for safety reports. The policy text SHALL be recorded in this change's
-design.md so it ships with the change and can be copied to the listings. This is a
+design.md so it ships with the change and can be copied to the listings. The contact
+email SHALL appear as the placeholder token `<SAFETY_CONTACT_EMAIL>`, which MUST be
+replaced with the owner's real safety contact address in every place the policy is
+shown (in-app and both store listings) before the policy is published. This is a
 documentation requirement; no runtime component enforces the 24-hour commitment.
 
 #### Scenario: Policy is reachable in the app
 - **WHEN** Alice opens the Profile tab's "Safety & moderation" entry
 - **THEN** she sees the policy: how to report, that the admin reviews and acts within
-  24 hours, and the safety contact email
+  24 hours, and the safety contact email (the `<SAFETY_CONTACT_EMAIL>` token until the
+  owner's real address replaces it)
 
 #### Scenario: Policy is on the store listings
 - **WHEN** the App Store and Play listings are prepared for the public release
-- **THEN** the same policy text and contact email are included, satisfying the
-  stores' "act on reports" requirement
+- **THEN** the same policy text and contact email are included — with
+  `<SAFETY_CONTACT_EMAIL>` replaced by the owner's real address before publishing —
+  satisfying the stores' "act on reports" requirement

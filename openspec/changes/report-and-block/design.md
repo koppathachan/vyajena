@@ -166,11 +166,14 @@ states both, satisfying both stores.
 > **No tolerance** for harassment, threats, sexual content involving minors, or other
 > illegal or abusive content.
 >
-> **Contact.** Report safety concerns to **safety@purplechaamba.com**. (The owner
-> sets the final address before the public release.)
+> **Contact.** Report safety concerns to **`<SAFETY_CONTACT_EMAIL>`**.
 
-The exact contact address is the owner's to confirm; the policy text and the 24-hour
-commitment are fixed by this change.
+**`<SAFETY_CONTACT_EMAIL>` is a placeholder token.** It MUST be replaced with the
+owner's real safety/abuse contact address — in this policy text, the in-app "Safety &
+moderation" entry, and the App Store and Play listing policy text — **before the
+policy is published**. The owner has not yet supplied the address (approved
+2026-11-26); the policy text and the 24-hour commitment are otherwise fixed by this
+change.
 
 ## What this change does NOT touch
 

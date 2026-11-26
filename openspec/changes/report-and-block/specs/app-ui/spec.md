@@ -55,10 +55,12 @@ the presentation.
 ### Requirement: Safety and moderation entry
 The Profile tab SHALL include a "Safety & moderation" entry that shows the published
 moderation policy (moderation: Published moderation policy): how to report and block,
-that the admin reviews and acts within 24 hours, and the safety contact email. The
-app enforces this.
+that the admin reviews and acts within 24 hours, and the safety contact email, shown
+as the `<SAFETY_CONTACT_EMAIL>` placeholder token until the owner's real address
+replaces it before publishing. The app enforces this.
 
 #### Scenario: Open the policy
 - **WHEN** Alice opens "Safety & moderation" in the Profile tab
 - **THEN** she sees how to report and block, the 24-hour review commitment, and the
-  contact email
+  contact email (the `<SAFETY_CONTACT_EMAIL>` token until the owner's real address
+  replaces it)
