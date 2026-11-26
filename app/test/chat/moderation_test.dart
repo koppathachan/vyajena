@@ -144,4 +144,25 @@ void main() {
     expect(find.byKey(const Key('report-card')), findsOneWidget);
     expect(find.byKey(const Key('report-remove')), findsNothing);
   });
+
+  // spec: app-ui/the-admin-sees-reports
+  testWidgets('the chat list shows a plain line for a report, not the block', (
+    tester,
+  ) async {
+    final core = group()
+      ..admin = true
+      ..dmChats = [dmWithBob()];
+    const report =
+        '[vyajena-report v1]\n'
+        'reported: mallory@chat\n'
+        'reason: harassment\n'
+        'kind: user\n';
+    core.receive(bob, report, chatId: 1);
+    await openHome(tester, core);
+
+    final preview = find.byKey(const ValueKey('chat-preview-1'));
+    expect(preview, findsOneWidget);
+    expect(tester.widget<Text>(preview).data, '⚠️ Report received');
+    expect(find.textContaining('vyajena-report'), findsNothing);
+  });
 }

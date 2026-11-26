@@ -307,7 +307,11 @@ class _ChatScreenState extends State<ChatScreen> {
     Uint8List picked,
     String? caption,
     List<MentionSpan> mentions,
-  ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+  ) async {
+    await _model.sendImage(picked, caption: caption, mentions: mentions);
+    // Picking a picture keeps the reply pending; sending it consumes the reply.
+    if (mounted) setState(() => _reply = null);
+  }
 
   Future<void> _sendSticker(Cutout cutout) => _model.sendSticker(cutout);
 
@@ -430,6 +434,8 @@ class _ChatScreenState extends State<ChatScreen> {
         frameWidth: clip.frameWidth,
         frameHeight: clip.frameHeight,
       );
+      // The reply bar goes once the video is sent, as for a text or voice send.
+      if (mounted) setState(() => _reply = null);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }

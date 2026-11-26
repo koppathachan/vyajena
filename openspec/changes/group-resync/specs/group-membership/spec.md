@@ -92,8 +92,9 @@ enforces the notification; the app surfaces it.
 #### Scenario: Admin learns a user went inactive
 - **WHEN** the server marks `thalasserykalaapam`'s only device inactive after 7 days
   and removes it from the lobby, and the admin's device is connected
-- **THEN** the admin's app shows that `thalasserykalaapam` went inactive and was
-  removed (and since when), where today the admin got no signal at all
+- **THEN** the admin's app shows that `thalasserykalaapam` was removed automatically
+  (inactive or account deleted; the app cannot tell the two apart, as both are the
+  server's external Remove), where today the admin got no signal at all
 
 #### Scenario: Admin learns they returned and were re-added
 - **WHEN** `thalasserykalaapam` later reconnects and the admin's device re-adds them

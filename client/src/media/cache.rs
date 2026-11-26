@@ -202,6 +202,25 @@ impl MediaCache {
         Ok(())
     }
 
+    /// Deletes every file in the cache directory (pictures, voice messages,
+    /// clips and a half-written temp file), for a device reset. The directory
+    /// itself stays; a missing one is already clear. The index entries go with
+    /// the rest of the local database.
+    pub fn clear(&self) -> Result<(), MediaError> {
+        let entries = match std::fs::read_dir(&self.dir) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        for entry in entries {
+            let path = entry?.path();
+            if path.is_file() {
+                std::fs::remove_file(path)?;
+            }
+        }
+        Ok(())
+    }
+
     fn remove_files(&self, id: &BlobId) -> Result<(), MediaError> {
         for kind in MediaKind::ALL {
             match std::fs::remove_file(self.path(id, kind)) {

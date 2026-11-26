@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/core_service.dart';
+import 'report_tile.dart' show isReportText;
 
 /// What a preview row shows: an optional media [icon], then [text].
 class ChatPreview {
@@ -19,6 +20,11 @@ class ChatPreview {
 ChatPreview previewOf(ChatMessage message, {String? from}) {
   final lead = message.ownUser ? 'You: ' : (from == null ? '' : '$from: ');
   return switch (message.body) {
+    // A report block is a machine payload (moderation: A report reaches the
+    // admin): the list shows a plain line, the message body stays untouched.
+    ChatBody_Text(:final text) when isReportText(text) => ChatPreview(
+      message.ownUser ? '⚠️ Report sent' : '⚠️ Report received',
+    ),
     ChatBody_Text(:final text) => ChatPreview('$lead${_oneLine(text)}'),
     ChatBody_Image(:final image) => ChatPreview(
       '$lead${_caption(image.caption)}',

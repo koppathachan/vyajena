@@ -67,6 +67,25 @@ void main() {
   });
 
   // spec: app-ui/send-a-video
+  testWidgets('sending a video while replying clears the reply bar', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithVideo(tester, core, FakeVideoSource());
+    core.receive(alice, 'dinner at 8?');
+    await settle(tester);
+    await tester.drag(find.text('dinner at 8?'), const Offset(300, 0));
+    await settle(tester);
+    expect(find.byKey(const Key('reply-bar')), findsOneWidget);
+
+    await attachVideo(tester, 'record');
+    await settle(tester);
+
+    expect(core.calls, contains('sendVideo'));
+    expect(find.byKey(const Key('reply-bar')), findsNothing);
+  });
+
+  // spec: app-ui/send-a-video
   testWidgets('backing out of the picker sends nothing', (tester) async {
     final core = groupAsBob();
     final video = FakeVideoSource(backsOut: true);

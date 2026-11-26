@@ -91,3 +91,33 @@ async fn a_failed_delete_wipes_nothing() {
     bob.restart().await;
     assert!(bob.client.user_id().check("user_id").is_some());
 }
+
+/// A small picture as a PNG file, as a picker could hand it over.
+fn picture() -> Vec<u8> {
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
+    let image = RgbaImage::from_fn(64, 48, |x, y| Rgba([x as u8, y as u8, 120, 255]));
+    let mut out = Vec::new();
+    DynamicImage::ImageRgba8(image)
+        .write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)
+        .check("png");
+    out
+}
+
+// spec: account-deletion/the-initiating-device-wipes-itself-on-success
+#[tokio::test(flavor = "multi_thread")]
+async fn deleting_the_account_clears_the_media_cache_files() {
+    let server = TestServer::start().await;
+    let admin = device::admin_with_group(&server).await;
+    let bob = device::member_of_group(&admin, "bob").await;
+    bob.client
+        .send_image(&picture(), None, &[])
+        .await
+        .check("send_image");
+    let media = bob.data_dir().join("media");
+    let cached = |dir: &std::path::Path| std::fs::read_dir(dir).map(|d| d.count()).unwrap_or(0);
+    assert!(cached(&media) > 0, "the picture is cached on disk");
+
+    bob.client.delete_account().await.check("delete_account");
+
+    assert_eq!(cached(&media), 0, "no decrypted media is left on disk");
+}
