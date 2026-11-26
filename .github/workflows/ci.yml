@@ -126,3 +126,34 @@ jobs:
 
       - name: flutter test
         run: flutter test
+
+  # Definition of done (CLAUDE.md): formatting, lints and strict spec
+  # validation gate every change. Kept in one standalone job so it always runs,
+  # independent of the per-area change detection above.
+  lint:
+    name: fmt, clippy and openspec
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # fmt first — it needs no build and fails fastest.
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
+      # openspec validation of every active change; pinned to the version
+      # developers run locally so CI and the local gate agree.
+      - name: openspec validate --strict
+        run: npx --yes @fission-ai/openspec@1.2.0 validate --changes --strict --no-interactive
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings

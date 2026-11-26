@@ -967,10 +967,7 @@ impl Client {
     /// yet acknowledged (admin-recovery: Admin re-key forces peer re-trust).
     pub fn identity_retrust_pending(&self) -> Result<Vec<UserId>, ClientError> {
         let ids = self.shared.store.identity_retrust_pending()?;
-        Ok(ids
-            .iter()
-            .filter_map(|id| UserId::parse(id))
-            .collect())
+        Ok(ids.iter().filter_map(|id| UserId::parse(id)).collect())
     }
 
     // --- Messaging (message-content; client-runtime: Send status) ---
@@ -1045,8 +1042,7 @@ impl Client {
                     return Err(ClientError::NoSuchMessage);
                 }
             };
-        let user =
-            UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+        let user = UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
         Ok(crate::messaging::ReplyTo {
             user,
             device: stored.sender_device,
@@ -1636,8 +1632,7 @@ impl Client {
             }
             dm.named
         };
-        let target_user =
-            UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+        let target_user = UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
         if is_group {
             if !account.is_admin {
                 return Err(ClientError::CannotDelete);

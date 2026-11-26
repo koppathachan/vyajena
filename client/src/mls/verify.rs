@@ -430,8 +430,7 @@ pub fn check_dm_welcome(
         (false, true) => a,
         _ => return Err(LeafProblem::Context("a DM that does not name this user")),
     };
-    let peer = UserId::parse(&peer)
-        .ok_or(LeafProblem::Context("a DM peer without a server id"))?;
+    let peer = UserId::parse(&peer).ok_or(LeafProblem::Context("a DM peer without a server id"))?;
     if super::group::pi_sender_index(context_extensions, server).is_none() {
         return Err(LeafProblem::Context("the server is not an external sender"));
     }
