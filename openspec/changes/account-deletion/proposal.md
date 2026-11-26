@@ -33,8 +33,10 @@ removal and wires the in-app UI.
 
 - **In-app "Delete account" action** (app-ui). A destructive entry in the Profile
   tab opens an explicit confirmation that names what is deleted and that it is
-  **irreversible and immediate** (no deactivation, no undo). Only an explicit
-  confirmation proceeds.
+  **irreversible and immediate** (no deactivation, no cancellable grace period, no
+  undo). Because it is irreversible the user must **type their own username** to
+  confirm (the confirm control stays disabled until it matches); no single tap
+  deletes the account.
 - **A self-delete RPC** (proto-first): a new authenticated `Devices.DeleteAccount`
   that always targets **the caller's own user** (no `user_id` argument, so it can
   never delete anyone else), authorised by the caller's own device session token.
@@ -79,8 +81,14 @@ Details and decisions: `design.md`.
 
 ## Open decisions resolved
 
-- **Immediate delete, not deactivation** (no reversible "deactivate" state); a
-  grace period is allowed by the stores but not added here.
+- **Immediate delete, not deactivation** (owner, 2026-11-26): no reversible
+  "deactivate" state and **no cancellable grace period** (a grace period is allowed by
+  the stores but not added here).
+- **Confirmation friction: type-to-confirm** (owner, 2026-11-26): the user types their
+  own username to confirm the irreversible delete (app-ui: Deleting your account).
+- **Admin-disabled copy** (owner, 2026-11-26): the admin's entry is greyed-out with a
+  short note pointing to the operator `server admin-reset` path (D4; app-ui: The admin
+  sees no self-delete).
 - **Admin self-deletion: disallowed**, routed to the operator `admin-reset` path
   (D4), not an RPC — this also upholds admin-recovery: "no network-reachable way to
   reset the admin".

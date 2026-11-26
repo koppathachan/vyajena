@@ -209,11 +209,17 @@ sequenceDiagram
 **Rollback:** rolling the server back to a build without `DeleteAccount` makes the RPC
 `UNIMPLEMENTED`; the app's gate hides the action again. No data migration either way.
 
-## Open Questions (owner)
+## Open Questions (owner) — RESOLVED 2026-11-26
 
-1. **Grace period:** keep deletion immediate, or add a short cancellable window (both
-   stores allow a grace period)? Default here: immediate.
-2. **Admin-disabled copy:** exact wording of the admin's disabled "Delete account" note
-   (points them at the operator host reset).
-3. **Confirmation friction:** a plain confirm dialog, or type-to-confirm the username for
-   such an irreversible action?
+1. **Grace period — RESOLVED: immediate.** Deletion is immediate with **no
+   cancellable window** or deactivated state (both stores allow a grace period; the
+   owner chose not to add one). The spec states immediate throughout (D2; proposal
+   "What Changes"; app-ui: Deleting your account).
+2. **Admin-disabled copy — RESOLVED: short, honest note.** The admin's "Delete
+   account" entry is shown **greyed-out** with the note: *"The admin account can't be
+   deleted from the app. To reset it, run `server admin-reset` on the server host (see
+   admin-recovery)."* (D4; app-ui: The admin sees no self-delete.)
+3. **Confirmation friction — RESOLVED: type-to-confirm.** Because the action is
+   irreversible, the confirmation requires the user to **type their own username**;
+   the confirm control stays disabled until the typed text matches, so no single tap
+   can delete the account (app-ui: Deleting your account).

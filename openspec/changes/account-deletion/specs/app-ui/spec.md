@@ -6,9 +6,12 @@ delete their own account and data from within the app (Apple Guideline 5.1.1(v);
 Google Play account-deletion policy). Tapping it SHALL open an explicit confirmation
 that names what is deleted — the account, the user's groups and DMs on this device,
 and the server-held key packages, push tokens, queued messages and uploaded media —
-and states that the deletion is **irreversible and immediate**, with no deactivation
-and no undo. Only an explicit confirming action (not a bare tap or swipe) SHALL
-proceed to call the core's `delete_account()`. On success the app SHALL return to the
+and states that the deletion is **irreversible and immediate**, with no deactivation,
+no cancellable grace period and no undo. Because the action is irreversible, the
+confirmation SHALL require the user to **type their own username** to confirm: the
+confirm control SHALL stay disabled until the typed text matches the user's username,
+so no single tap or swipe can delete the account. Only that explicit typed
+confirmation SHALL proceed to call the core's `delete_account()`. On success the app SHALL return to the
 first-run / onboarding screen after the device wipe (account-deletion: The initiating
 device wipes itself on success); on failure it SHALL keep the account and show the
 error. The action SHALL be gated on a server that advertises `Devices.DeleteAccount`
@@ -16,10 +19,15 @@ error. The action SHALL be gated on a server that advertises `Devices.DeleteAcco
 navigation.
 
 #### Scenario: Delete account from Profile
-- **WHEN** Bob opens Profile, taps "Delete account", reads the confirmation and
-  confirms
+- **WHEN** Bob opens Profile, taps "Delete account", reads the confirmation, types his
+  username `bob` and confirms
 - **THEN** the app calls `delete_account()`, and on an OK response wipes the device and
   returns to the onboarding screen
+
+#### Scenario: Type-to-confirm gates the delete
+- **WHEN** Bob taps "Delete account" but has not typed his username, or typed something
+  that does not match it
+- **THEN** the confirm control stays disabled and the app calls nothing
 
 #### Scenario: Confirmation is required
 - **WHEN** Bob taps "Delete account" but dismisses the confirmation without confirming
@@ -33,15 +41,17 @@ navigation.
 ### Requirement: The admin sees no self-delete
 The app SHALL NOT offer a working "Delete account" action to the admin's device
 (account-deletion: The admin cannot self-delete through the RPC). The Profile tab on
-the admin's device SHALL either hide the action or show it disabled with a short note
-that the admin account is reset only by the operator on the server host, so the admin
-cannot lock themselves out from inside the app. The client enforces this using its
-admin awareness (device-identity: Admin awareness).
+the admin's device SHALL show the "Delete account" entry **greyed-out** with a short,
+honest note — *"The admin account can't be deleted from the app. To reset it, run
+`server admin-reset` on the server host (see admin-recovery)."* — so the admin cannot
+lock themselves out from inside the app. The client enforces this using its admin
+awareness (device-identity: Admin awareness).
 
 #### Scenario: Admin's Profile has no delete
 - **WHEN** the admin opens Profile
-- **THEN** there is no working "Delete account" action; any shown entry is disabled with
-  a note that admin reset is an operator action on the host
+- **THEN** the "Delete account" entry is disabled (greyed-out) with the note that the
+  admin account can't be deleted from the app and is reset by running `server
+  admin-reset` on the host, and tapping it does nothing
 
 #### Scenario: Member's Profile has delete
 - **WHEN** an ordinary member opens Profile

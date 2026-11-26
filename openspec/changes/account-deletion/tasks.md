@@ -1,8 +1,8 @@
 ## 0. Before starting
 
-- [ ] 0.1 Owner approves in-app account deletion as the B2 public-release blocker fix,
-      and the immediate-delete (no grace period) and admin-disallowed decisions (D1,
-      D4): pending owner
+- [x] 0.1 Owner approves in-app account deletion as the B2 public-release blocker fix,
+      and the immediate-delete (no grace period), type-to-confirm, admin-disabled-copy
+      and admin-disallowed decisions (D1, D4): approved 2026-11-26
 - [ ] 0.2 `replace-user` merged (provides `reset()` and the account-removal
       `ServerFrame` notice this change reuses) and `delete-messages` merged (provides
       `Blobs.DeleteBlob`); the trigger + UI do not need them, the full flow does
@@ -62,11 +62,12 @@
 ## 6. App
 
 - [ ] 6.1 A "Delete account" entry in the Profile tab, gated on a server that advertises
-      the RPC and hidden/disabled for the admin device; widget tests
-      `app-ui/the-admin-sees-no-self-delete`
+      the RPC; on the admin device greyed-out with the note pointing to `server
+      admin-reset`; widget tests `app-ui/the-admin-sees-no-self-delete`
 - [ ] 6.2 The irreversible-delete confirmation (names what is deleted; immediate, no
-      undo); on OK wipe and route to onboarding, on failure keep the account and show
-      the error; widget tests `app-ui/deleting-your-account`
+      grace period, no undo) with **type-to-confirm** (confirm disabled until the typed
+      text matches the user's username); on OK wipe and route to onboarding, on failure
+      keep the account and show the error; widget tests `app-ui/deleting-your-account`
 
 ## 7. Docs and check
 
