@@ -969,7 +969,7 @@ impl Client {
         let ids = self.shared.store.identity_retrust_pending()?;
         Ok(ids
             .iter()
-            .filter_map(|id| id.split_once('@').map(|(u, s)| UserId::new(u, s)))
+            .filter_map(|id| UserId::parse(id))
             .collect())
     }
 
@@ -1046,7 +1046,7 @@ impl Client {
                 }
             };
         let user =
-            crate::messaging::parse_user(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+            UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
         Ok(crate::messaging::ReplyTo {
             user,
             device: stored.sender_device,
@@ -1123,7 +1123,7 @@ impl Client {
                 )?);
                 continue;
             }
-            let Some(peer) = crate::messaging::parse_user(&dm.peer) else {
+            let Some(peer) = UserId::parse(&dm.peer) else {
                 continue;
             };
             // A DM with a blocked peer is hidden from the chat list (moderation:
@@ -1539,7 +1539,7 @@ impl Client {
             .store
             .dm_by_chat(chat.0)?
             .ok_or(ClientError::NoSuchChat)?;
-        Ok(crate::messaging::parse_user(&dm.peer))
+        Ok(UserId::parse(&dm.peer))
     }
 
     /// The user has seen chat `chat` up to its newest message (app-ui: Chat
@@ -1637,7 +1637,7 @@ impl Client {
             dm.named
         };
         let target_user =
-            crate::messaging::parse_user(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
+            UserId::parse(&stored.sender_user).ok_or(ClientError::NoSuchMessage)?;
         if is_group {
             if !account.is_admin {
                 return Err(ClientError::CannotDelete);
@@ -2627,10 +2627,7 @@ impl Client {
         })?;
         Ok(group
             .and_then(|g| crate::mls::group::admin_user_id(g.extensions()))
-            .and_then(|text| {
-                let (name, server) = text.split_once('@')?;
-                Some(UserId::new(name, server))
-            }))
+            .and_then(|text| UserId::parse(&text)))
     }
 
     /// The group's epoch on this device, once it is in the group.

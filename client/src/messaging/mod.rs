@@ -614,10 +614,11 @@ pub(crate) fn delete_target(content: &[u8]) -> Option<pb::DeleteTarget> {
     }
 }
 
-/// `<username>@<server_id>` as a [`UserId`].
+/// `<username>@<server_id>` as a [`UserId`]. Thin shim over [`UserId::parse`],
+/// kept only for the `engine` call sites (`outbox`, `jobs`) still to adopt the
+/// canonical parser; new code should call [`UserId::parse`] directly.
 pub(crate) fn parse_user(text: &str) -> Option<UserId> {
-    let (username, server_id) = text.split_once('@')?;
-    Some(UserId::new(username, server_id))
+    UserId::parse(text)
 }
 
 /// The UI `Reply` for a decoded `ReplyTo`, with the original looked up in
@@ -770,7 +771,7 @@ pub(crate) fn to_message(
     own_user: &UserId,
 ) -> Option<Message> {
     let decoded = decode(&stored.content);
-    let sender = parse_user(&stored.sender_user)?;
+    let sender = UserId::parse(&stored.sender_user)?;
     let own = stored.outgoing || sender == *own_user;
     let (body, mentions, reply) = if stored.deleted {
         // message-deletion: Tombstone, not erasure; Receiver may reveal in a DM.
@@ -817,7 +818,7 @@ pub(crate) fn revealed_message(
 ) -> Option<Message> {
     let decoded = decode(&stored.content);
     let (body, mentions, reply) = chat_parts(store, decoded.body)?;
-    let sender = parse_user(&stored.sender_user)?;
+    let sender = UserId::parse(&stored.sender_user)?;
     let own = stored.outgoing || sender == *own_user;
     Some(Message {
         id: stored.id,
