@@ -921,7 +921,7 @@ impl Client {
     /// client-runtime: Device reset. Returns this device to a clean no-account
     /// state: stops the engine and connection, forgets the session, wipes every
     /// local table (account, groups, DMs, message history, pending jobs and the
-    /// OpenMLS group state) and deletes the device's identity, auth and MLS
+    /// OpenMLS group state), clears the media cache files and deletes the device's identity, auth and MLS
     /// signature keys and its saved session token from the key store. The
     /// storage key that seals the now-empty local database at rest is kept — it
     /// holds no account or identity material, and removing it without recreating
@@ -939,8 +939,12 @@ impl Client {
         self.shared.max_video_blob_bytes.store(0, Relaxed);
         let store = Arc::clone(&self.shared.store);
         let key_store = Arc::clone(&self.shared.key_store);
+        let media = self.shared.media.clone();
         blocking(move || {
             store.wipe()?;
+            // The decrypted pictures, voice messages and clips are files outside
+            // the database: they go too.
+            media.clear()?;
             for name in [
                 KeyName::IdentityKey,
                 KeyName::DeviceAuthKey,

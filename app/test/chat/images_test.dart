@@ -404,6 +404,27 @@ void main() {
     // The reply is still pending alongside the picked picture.
     expect(find.byKey(const Key('reply-bar')), findsOneWidget);
   });
+
+  // spec: app-ui/image-bubble-and-viewer
+  testWidgets('sending a picture while replying clears the reply bar', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithPictures(tester, core, FakePicker(picked));
+    core.receiveImage(alice, caption: 'the view');
+    await settle(tester);
+    await tester.drag(bubble, const Offset(300, 0));
+    await settle(tester);
+    await attachPhoto(tester);
+    await settle(tester);
+    // Picking leaves the reply pending; only sending consumes it.
+    expect(find.byKey(const Key('reply-bar')), findsOneWidget);
+
+    await tap(tester, send);
+    await settle(tester);
+    expect(core.calls, contains('sendImage'));
+    expect(find.byKey(const Key('reply-bar')), findsNothing);
+  });
 }
 
 String composerText(WidgetTester tester) =>
