@@ -3,8 +3,9 @@
 # outputs, one per check:
 #
 #   proto=true|false     buf lint and breaking
-#   rust=true|false      cargo build and test
+#   rust=true|false      cargo build, test, fmt and clippy
 #   flutter=true|false   flutter analyze and test
+#   openspec=true|false  openspec validate --strict
 #
 #   CI_BASE=<commit or ref> ci-changes.sh    compares CI_BASE...HEAD
 #
@@ -12,7 +13,7 @@
 # in doubt, test. ci.yml itself turns every check on.
 set -euo pipefail
 
-all() { printf 'proto=true\nrust=true\nflutter=true\n'; exit 0; }
+all() { printf 'proto=true\nrust=true\nflutter=true\nopenspec=true\n'; exit 0; }
 
 base="${CI_BASE:-}"
 if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] ||
@@ -21,7 +22,7 @@ if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] ||
   all
 fi
 
-proto=false rust=false flutter=false
+proto=false rust=false flutter=false openspec=false
 while IFS= read -r path; do
   case "$path" in
     .github/workflows/ci.yml | .github/scripts/ci-changes.sh) all ;;
@@ -38,7 +39,10 @@ while IFS= read -r path; do
   case "$path" in
     app/*) flutter=true ;;
   esac
+  case "$path" in
+    openspec/*) openspec=true ;;
+  esac
 done < <(git diff --name-only "$base...HEAD")
 
-echo "ci-changes: proto=$proto rust=$rust flutter=$flutter" >&2
-printf 'proto=%s\nrust=%s\nflutter=%s\n' "$proto" "$rust" "$flutter"
+echo "ci-changes: proto=$proto rust=$rust flutter=$flutter openspec=$openspec" >&2
+printf 'proto=%s\nrust=%s\nflutter=%s\nopenspec=%s\n' "$proto" "$rust" "$flutter" "$openspec"

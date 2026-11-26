@@ -21,6 +21,7 @@ jobs:
       proto: ${{ steps.diff.outputs.proto }}
       rust: ${{ steps.diff.outputs.rust }}
       flutter: ${{ steps.diff.outputs.flutter }}
+      openspec: ${{ steps.diff.outputs.openspec }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -88,11 +89,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@v2
 
+      # Definition of done (CLAUDE.md): formatting, lints, build and tests all
+      # gate a change. fmt runs first — it needs no build and fails fastest.
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+
       - name: cargo build
         run: cargo build --workspace --locked
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: cargo test
         run: cargo test --workspace --locked
@@ -126,3 +137,21 @@ jobs:
 
       - name: flutter test
         run: flutter test
+
+  # Definition of done (CLAUDE.md): every active change under openspec/changes/
+  # must pass strict validation. Pinned to the openspec version developers run
+  # locally so CI and the local gate agree.
+  openspec:
+    name: openspec validate
+    needs: changes
+    if: needs.changes.outputs.openspec == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: openspec validate --strict
+        run: npx --yes @fission-ai/openspec@1.2.0 validate --changes --strict --no-interactive
