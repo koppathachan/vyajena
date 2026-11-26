@@ -63,7 +63,7 @@ submission.**
 
 Reviewers never join the real group. They join a **separate review server** —
 `review@review.purplechaamba.com`, reachable at
-`vyajarelay.purplechaamba.com:53404`, with its own data, keys and pin — as an
+`vyajarelay.purplechaamba.com:<review-port>`, with its own data, keys and pin — as an
 ordinary **member**, not an admin. (Model locked 2026-11-26; this replaces the
 earlier "the reviewer is the review server's admin / creates the group" flow,
 which is now wrong and would mislead a reviewer.)
