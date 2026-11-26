@@ -10,8 +10,8 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 - [x] 0.1 Owner resolved decisions a–d as recommended and added decision e
   (Basic/More detail level) (owner, 2026-11-27; design.md decisions table).
-- [ ] 0.2 Owner confirms the default for decision e: **More** (recommended) vs Basic.
-  Ships either way; set the chosen default in task 3.2.
+- [x] 0.2 Owner chose the default for decision e: **Basic** (owner, 2026-11-27). Set
+  the default to Basic in task 3.2.
 - [ ] 0.3 Tracker pre-step: the unarchived `push` and `push-kind-aware` changes are
   verified merged/complete and archived, so message-delivery's "Content-free wake
   pings" can be a clean base (optionally fold this change's two added

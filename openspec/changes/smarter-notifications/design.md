@@ -240,13 +240,12 @@ The sender name stays the deeper, separate opt-in of D6 ("Show who messaged",
 default off) and applies **only** while detail is More; Basic never names anyone. So
 the ladder is **Basic → More → More + sender**.
 
-- **Default — recommend More.** The count and type the owner asked for (requirements
-  1–2) then appear out of the box; they leak nothing to any provider and never leave
-  the device, so the usual lock-screen privacy concern (the sender) is already its
-  own off-by-default opt-in. Basic is the opt-down for a user who wants the barest
-  lock screen. The one-line alternative is defaulting to **Basic** (most private out
-  of the box); both ship the identical setting, so this is purely which default to
-  pick — owner to confirm.
+- **Default — Basic (owner, 2026-11-27).** The owner chose **Basic** as the default:
+  the barest lock screen out of the box ("New message"), most in keeping with the
+  app's privacy-first stance, and the user opts up to More to get the count and type.
+  (More was the alternative; the count/type leak nothing off-device, but Basic is the
+  more conservative default.) Both ship the identical setting; only the default
+  differs.
 - **No server/payload impact.** Basic and More both ride the same content-free server
   push (D1); the level only changes how the device renders locally, so it needs no
   server change, no payload change and no proto change. It composes with mute (D8)
@@ -289,10 +288,9 @@ the ladder is **Basic → More → More + sender**.
 | b | Count semantics | **Accepted.** Per-conversation line + total-unread app badge (D3) |
 | c | Which admin-events notify + wording | **Accepted.** Removed / group-closed / added-to-new-group only, fixed phrases; own-access events ignore per-conv mute, honor mute-all (D4) |
 | d | Platform mechanics | **Accepted.** iOS alert+`mutable-content`+NSE (metadata-only for v1), Android high-priority data message, generic-alert/catch-up fallback (D5, D7) |
-| e | Basic vs More detail level (owner added) | **Added & accepted.** Per-device "Notification detail" with Basic / More; default **More** recommended, Basic-default the alternative — owner to confirm the default (D10) |
+| e | Basic vs More detail level (owner added) | **Added & accepted.** Per-device "Notification detail" with Basic / More; default **Basic** (owner, 2026-11-27) (D10) |
 
-The owner accepted a–d as recommended and added decision e (Basic/More). The specs
-are written to these answers. The only point left for the owner is the **default**
-for decision e (More vs Basic); the setting ships either way, so this does not block
-spec work. Implementation remains gated on the tracker's pre-step of archiving the
-unarchived `push` / `push-kind-aware` changes (see tasks.md gate 0).
+The owner accepted a–d as recommended, added decision e (Basic/More), and chose
+**Basic** as its default (2026-11-27). The specs are written to these answers and no
+owner decision is outstanding. Implementation remains gated on the tracker's pre-step
+of archiving the unarchived `push` / `push-kind-aware` changes (see tasks.md gate 0).

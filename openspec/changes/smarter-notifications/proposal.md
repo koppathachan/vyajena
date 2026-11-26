@@ -44,8 +44,8 @@ builds the real notification.
 - **Customizable Basic vs More (owner, 2026-11-27).** A per-device setting
   "Notification detail" lets the user pick **Basic** — the generic "New message"
   only (no count, type or name) — or **More** — the rich per-conversation count and
-  type. Default **More** (recommended; the count/type leak nothing off-device), Basic
-  the opt-down; the level only changes local rendering, no server/payload change
+  type. Default **Basic** (owner, 2026-11-27; barest lock screen out of the box),
+  More the opt-up; the level only changes local rendering, no server/payload change
   (design D10).
 - **Sender names are opt-in, off by default (owner decision a).** A local
   per-device setting "Show who messaged" defaults off: notifications stay generic
@@ -82,8 +82,8 @@ builds the real notification.
   (metadata-only for v1), Android high-priority data message, generic-alert /
   catch-up fallback (design D5, D7).
 - **(e) Basic vs More (owner added)** — **accepted:** a per-device "Notification
-  detail" setting; default **More** recommended (owner to confirm vs Basic-default);
-  no server/payload change (design D10).
+  detail" setting; default **Basic** (owner, 2026-11-27); no server/payload change
+  (design D10).
 
 ## Out of scope
 

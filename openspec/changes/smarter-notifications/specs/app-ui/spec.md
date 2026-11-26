@@ -2,7 +2,7 @@
 
 ### Requirement: Notification detail level
 The app SHALL offer a per-device setting "Notification detail" with two levels,
-**Basic** and **More**, default **More**. At Basic the app SHALL show only the
+**Basic** and **More**, default **Basic**. At Basic the app SHALL show only the
 generic content-free notification ("New message") with no count, type name or
 sender. At More the app SHALL show the per-conversation count and type
 (Type-aware notification wording), and the sender only when "Show who messaged" is
@@ -10,13 +10,13 @@ on. The setting SHALL change only how this device renders its own local
 notifications — not the server push, not whether a wake is sent — and SHALL NOT be
 sent to the server. The app enforces this.
 
-#### Scenario: Basic shows only the generic text
-- **WHEN** Bob sets "Notification detail" to Basic and three messages arrive in the
-  group "Work"
+#### Scenario: Basic is the default
+- **WHEN** Bob installs the app, leaves "Notification detail" at its default, and
+  three messages arrive in the group "Work"
 - **THEN** his phone shows "New message", with no count, group name or sender
 
 #### Scenario: More shows count and type
-- **WHEN** "Notification detail" is More (the default) and three messages arrive in
+- **WHEN** Bob switches "Notification detail" to More and three messages arrive in
   "Work"
 - **THEN** his phone shows "3 new in Work"
 
