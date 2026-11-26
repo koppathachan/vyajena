@@ -139,30 +139,136 @@ pub(crate) enum Job {
     PurgeBlob { group_id: Vec<u8>, blob_id: Vec<u8> },
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn unhex(text: &str) -> Option<Vec<u8>> {
-    if !text.len().is_multiple_of(2) {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|i| {
-            text.get(i..i + 2)
-                .and_then(|b| u8::from_str_radix(b, 16).ok())
-        })
-        .collect()
-}
-
 fn parse_user(text: &str) -> Option<UserId> {
     let (username, server_id) = text.split_once('@')?;
     Some(UserId::new(username, server_id))
 }
 
-fn parse_device(text: &str) -> Option<DeviceId> {
-    DeviceId::try_from(unhex(text)?.as_slice()).ok()
+fn to_device(bytes: &[u8]) -> Option<DeviceId> {
+    DeviceId::try_from(bytes).ok()
+}
+
+/// The recoverable record of an own commit left in flight: the job that staged
+/// it, carrying just the fields [`Engine::prepare`] re-reads to redo it. It is
+/// serialised (serde JSON) into the `outgoing_commit.purpose` column so a
+/// restart can finish exactly the same commit. There is one variant per job
+/// that can stage a commit (the `Prepared::Commit` set); `after` carries the
+/// follow-up chained after a named-group removal, so the chain round-trips.
+///
+/// This enum, [`Job::commit_purpose`] and [`CommitPurpose::into_job`] are the
+/// two halves of one codec: keep them total over the commit-staging jobs. The
+/// round-trip is asserted by `client/tests/resume_across_restart.rs`.
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) enum CommitPurpose {
+    AddUser {
+        user: String,
+    },
+    RemoveUser {
+        user: String,
+    },
+    RemoveDevice {
+        device: Vec<u8>,
+    },
+    Readd {
+        user: String,
+        device: Vec<u8>,
+        seen: Option<Vec<u8>>,
+    },
+    AddNew {
+        user: String,
+        device: Vec<u8>,
+    },
+    AddLinked {
+        device: Vec<u8>,
+    },
+    CommitServerRemoves,
+    Rotate,
+    AddToDm {
+        group_id: Vec<u8>,
+        user: String,
+        device: Vec<u8>,
+    },
+    CommitServerRemovesIn {
+        group_id: Vec<u8>,
+    },
+    RotateIn {
+        group_id: Vec<u8>,
+    },
+    AddToGroup {
+        group_id: Vec<u8>,
+        user: String,
+    },
+    RemoveFromGroup {
+        group_id: Vec<u8>,
+        user: String,
+        after: Option<Box<CommitPurpose>>,
+    },
+}
+
+impl CommitPurpose {
+    /// Rebuilds the reply-less job behind the record (nobody waits for its
+    /// reply after a crash). `None` if a field no longer parses.
+    fn into_job(self) -> Option<Job> {
+        Some(match self {
+            CommitPurpose::AddUser { user } => Job::AddUser {
+                user: parse_user(&user)?,
+                reply: None,
+            },
+            CommitPurpose::RemoveUser { user } => Job::RemoveUser {
+                user: parse_user(&user)?,
+                reply: None,
+            },
+            CommitPurpose::RemoveDevice { device } => Job::RemoveDevice {
+                device: to_device(&device)?,
+                reply: None,
+            },
+            CommitPurpose::Readd { user, device, seen } => Job::Readd {
+                user: parse_user(&user)?,
+                device: to_device(&device)?,
+                seen,
+            },
+            CommitPurpose::AddNew { user, device } => Job::AddNew {
+                user: parse_user(&user)?,
+                device: to_device(&device)?,
+            },
+            CommitPurpose::AddLinked { device } => Job::AddLinked {
+                device: to_device(&device)?,
+            },
+            CommitPurpose::CommitServerRemoves => Job::CommitServerRemoves,
+            CommitPurpose::Rotate => Job::Rotate,
+            CommitPurpose::AddToDm {
+                group_id,
+                user,
+                device,
+            } => Job::AddToDm {
+                group_id,
+                user: parse_user(&user)?,
+                device: to_device(&device)?,
+            },
+            CommitPurpose::CommitServerRemovesIn { group_id } => {
+                Job::CommitServerRemovesIn { group_id }
+            }
+            CommitPurpose::RotateIn { group_id } => Job::RotateIn { group_id },
+            CommitPurpose::AddToGroup { group_id, user } => Job::AddToGroup {
+                group_id,
+                user: parse_user(&user)?,
+                reply: None,
+            },
+            CommitPurpose::RemoveFromGroup {
+                group_id,
+                user,
+                after,
+            } => Job::RemoveFromGroup {
+                group_id,
+                user: parse_user(&user)?,
+                reply: None,
+                after: match after {
+                    Some(after) => Some(Box::new(after.into_job()?)),
+                    None => None,
+                },
+            },
+        })
+    }
 }
 
 /// What preparing a job produced.
@@ -231,111 +337,126 @@ impl Job {
         }
     }
 
-    /// What the stored commit was for, so a restart can finish it.
-    pub(crate) fn purpose(&self) -> String {
-        match self {
-            Job::CreateGroup { .. } => "create_group".into(),
-            Job::AddUser { user, .. } => format!("add_user|{user}"),
-            Job::RemoveUser { user, .. } => format!("remove_user|{user}"),
-            Job::RemoveDevice { device, .. } => format!("remove_device|{}", hex(device)),
-            Job::Readd { user, device, seen } => format!(
-                "readd|{user}|{}|{}",
-                hex(device),
-                seen.as_deref().map(hex).unwrap_or_default()
-            ),
-            Job::AddNew { user, device } => format!("add_new|{user}|{}", hex(device)),
-            Job::AddLinked { device } => format!("add_linked|{}", hex(device)),
-            Job::CommitServerRemoves => "pi_removes".into(),
-            Job::Rotate => "rotate".into(),
-            Job::UploadKeyPackages { .. } => "upload_key_packages".into(),
-            Job::RequestReadd { .. } => "request_readd".into(),
-            Job::OpenDm { peer, .. } => format!("open_dm|{peer}"),
+    /// The recoverable record of this job's staged commit, or `None` for a job
+    /// that never stages a commit (so never reaches the `outgoing_commit` row).
+    /// Exhaustive over `Job`: adding a variant forces a decision here, and the
+    /// `Some` arms are exactly the `Prepared::Commit` set.
+    pub(crate) fn commit_purpose(&self) -> Option<CommitPurpose> {
+        Some(match self {
+            Job::AddUser { user, .. } => CommitPurpose::AddUser {
+                user: user.to_string(),
+            },
+            Job::RemoveUser { user, .. } => CommitPurpose::RemoveUser {
+                user: user.to_string(),
+            },
+            Job::RemoveDevice { device, .. } => CommitPurpose::RemoveDevice {
+                device: device.to_vec(),
+            },
+            Job::Readd { user, device, seen } => CommitPurpose::Readd {
+                user: user.to_string(),
+                device: device.to_vec(),
+                seen: seen.clone(),
+            },
+            Job::AddNew { user, device } => CommitPurpose::AddNew {
+                user: user.to_string(),
+                device: device.to_vec(),
+            },
+            Job::AddLinked { device } => CommitPurpose::AddLinked {
+                device: device.to_vec(),
+            },
+            Job::CommitServerRemoves => CommitPurpose::CommitServerRemoves,
+            Job::Rotate => CommitPurpose::Rotate,
             Job::AddToDm {
                 group_id,
                 user,
                 device,
-            } => format!("dm_add|{}|{user}|{}", hex(group_id), hex(device)),
-            Job::CommitServerRemovesIn { group_id } => {
-                format!("dm_server_removes|{}", hex(group_id))
-            }
-            Job::RotateIn { group_id } => format!("dm_rotate|{}", hex(group_id)),
-            Job::CreateNamedGroup { group_id, .. } => format!("ng_create|{}", hex(group_id)),
-            Job::AddToGroup { group_id, user, .. } => {
-                format!("ng_add|{}|{user}", hex(group_id))
-            }
-            Job::RemoveFromGroup { group_id, user, .. } => {
-                format!("ng_remove|{}|{user}", hex(group_id))
-            }
-            Job::CloseGroup { group_id, .. } => format!("ng_close|{}", hex(group_id)),
-            Job::RemoveClosedDm { group_id, .. } => format!("dm_remove|{}", hex(group_id)),
-            Job::SetMutePref {
-                scope, group_id, ..
-            } => format!("mute|{}|{}", scope.as_str_name(), hex(group_id)),
-            Job::PurgeBlob { group_id, .. } => format!("purge_blob|{}", hex(group_id)),
+            } => CommitPurpose::AddToDm {
+                group_id: group_id.clone(),
+                user: user.to_string(),
+                device: device.to_vec(),
+            },
+            Job::CommitServerRemovesIn { group_id } => CommitPurpose::CommitServerRemovesIn {
+                group_id: group_id.clone(),
+            },
+            Job::RotateIn { group_id } => CommitPurpose::RotateIn {
+                group_id: group_id.clone(),
+            },
+            Job::AddToGroup { group_id, user, .. } => CommitPurpose::AddToGroup {
+                group_id: group_id.clone(),
+                user: user.to_string(),
+            },
+            Job::RemoveFromGroup {
+                group_id,
+                user,
+                after,
+                ..
+            } => CommitPurpose::RemoveFromGroup {
+                group_id: group_id.clone(),
+                user: user.to_string(),
+                after: after.as_deref().and_then(Job::commit_purpose).map(Box::new),
+            },
+            // Jobs handled directly in `run_job`: they never stage a commit, so
+            // they never reach `send_commit` or the `outgoing_commit` row.
+            Job::CreateGroup { .. }
+            | Job::UploadKeyPackages { .. }
+            | Job::RequestReadd { .. }
+            | Job::OpenDm { .. }
+            | Job::CreateNamedGroup { .. }
+            | Job::CloseGroup { .. }
+            | Job::RemoveClosedDm { .. }
+            | Job::SetMutePref { .. }
+            | Job::PurgeBlob { .. } => return None,
+        })
+    }
+
+    /// The stored record of a staged commit, for the `outgoing_commit` row, so
+    /// a restart can finish exactly this commit. Only called for a job that
+    /// staged a commit (its `commit_purpose` is `Some`); an unexpected `None`
+    /// yields an empty record, which [`Job::recovered`] rejects.
+    pub(crate) fn stored_purpose(&self) -> String {
+        match self.commit_purpose() {
+            Some(purpose) => serde_json::to_string(&purpose).unwrap_or_default(),
+            None => String::new(),
         }
     }
 
-    /// The job behind a stored commit's purpose (after a crash; nobody waits
-    /// for its reply any more).
-    pub(crate) fn recovered(purpose: &str) -> Job {
-        let parts: Vec<&str> = purpose.split('|').collect();
-        let job = match parts.as_slice() {
-            ["add_user", user] => parse_user(user).map(|user| Job::AddUser { user, reply: None }),
-            ["remove_user", user] => {
-                parse_user(user).map(|user| Job::RemoveUser { user, reply: None })
-            }
-            ["remove_device", device] => parse_device(device).map(|device| Job::RemoveDevice {
-                device,
-                reply: None,
-            }),
-            ["readd", user, device, seen] => match (parse_user(user), parse_device(device)) {
-                (Some(user), Some(device)) => Some(Job::Readd {
-                    user,
-                    device,
-                    seen: (!seen.is_empty()).then(|| unhex(seen)).flatten(),
-                }),
-                _ => None,
-            },
-            ["add_new", user, device] => match (parse_user(user), parse_device(device)) {
-                (Some(user), Some(device)) => Some(Job::AddNew { user, device }),
-                _ => None,
-            },
-            ["add_linked", device] => parse_device(device).map(|device| Job::AddLinked { device }),
-            ["pi_removes"] => Some(Job::CommitServerRemoves),
-            ["dm_add", group, user, device] => {
-                match (unhex(group), parse_user(user), parse_device(device)) {
-                    (Some(group_id), Some(user), Some(device)) => Some(Job::AddToDm {
-                        group_id,
-                        user,
-                        device,
-                    }),
-                    _ => None,
-                }
-            }
-            ["dm_server_removes", group] => {
-                unhex(group).map(|group_id| Job::CommitServerRemovesIn { group_id })
-            }
-            ["dm_rotate", group] => unhex(group).map(|group_id| Job::RotateIn { group_id }),
-            ["ng_add", group, user] => match (unhex(group), parse_user(user)) {
-                (Some(group_id), Some(user)) => Some(Job::AddToGroup {
-                    group_id,
-                    user,
-                    reply: None,
-                }),
-                _ => None,
-            },
-            ["ng_remove", group, user] => match (unhex(group), parse_user(user)) {
-                (Some(group_id), Some(user)) => Some(Job::RemoveFromGroup {
-                    group_id,
-                    user,
-                    reply: None,
-                    after: None,
-                }),
-                _ => None,
-            },
-            _ => None,
-        };
-        job.unwrap_or(Job::Rotate)
+    /// The job behind a stored commit record (after a crash; nobody waits for
+    /// its reply any more), or `None` if the record does not parse into a known
+    /// job — in which case the caller clears the stale commit rather than
+    /// resuming a different one.
+    pub(crate) fn recovered(purpose: &str) -> Option<Job> {
+        serde_json::from_str::<CommitPurpose>(purpose)
+            .ok()
+            .and_then(CommitPurpose::into_job)
+    }
+
+    /// A short, stable name for logs, total over every job (unlike the commit
+    /// record, which exists only for commit-staging jobs).
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            Job::CreateGroup { .. } => "create_group",
+            Job::AddUser { .. } => "add_user",
+            Job::RemoveUser { .. } => "remove_user",
+            Job::RemoveDevice { .. } => "remove_device",
+            Job::Readd { .. } => "readd",
+            Job::AddNew { .. } => "add_new",
+            Job::AddLinked { .. } => "add_linked",
+            Job::CommitServerRemoves => "commit_server_removes",
+            Job::Rotate => "rotate",
+            Job::UploadKeyPackages { .. } => "upload_key_packages",
+            Job::RequestReadd { .. } => "request_readd",
+            Job::OpenDm { .. } => "open_dm",
+            Job::AddToDm { .. } => "dm_add",
+            Job::CommitServerRemovesIn { .. } => "dm_server_removes",
+            Job::RotateIn { .. } => "dm_rotate",
+            Job::CreateNamedGroup { .. } => "ng_create",
+            Job::AddToGroup { .. } => "ng_add",
+            Job::RemoveFromGroup { .. } => "ng_remove",
+            Job::CloseGroup { .. } => "ng_close",
+            Job::RemoveClosedDm { .. } => "dm_remove",
+            Job::SetMutePref { .. } => "mute",
+            Job::PurgeBlob { .. } => "purge_blob",
+        }
     }
 
     fn take_reply(&mut self) -> Option<Reply> {
@@ -369,7 +490,7 @@ impl Job {
             Some(reply) => {
                 let _ = reply.send(Err(error));
             }
-            None => tracing::warn!(purpose = %self.purpose(), %error, "job failed"),
+            None => tracing::warn!(job = self.label(), %error, "job failed"),
         }
     }
 

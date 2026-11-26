@@ -385,15 +385,30 @@ impl Engine {
                 .group_ref(&group_id)
                 .is_some_and(|g| g.pending_commit().is_some());
             if pending {
-                tracing::info!("resending the own commit left in flight");
-                let job = Job::recovered(&row.purpose);
-                engine.inflight = Some(InFlight {
-                    row,
-                    job,
-                    group_id,
-                    sent: false,
-                    accepted: None,
-                });
+                match Job::recovered(&row.purpose) {
+                    Some(job) => {
+                        tracing::info!(
+                            job = job.label(),
+                            "resending the own commit left in flight"
+                        );
+                        engine.inflight = Some(InFlight {
+                            row,
+                            job,
+                            group_id,
+                            sent: false,
+                            accepted: None,
+                        });
+                    }
+                    // An unrecognised record must never be reinterpreted as a
+                    // different commit (the old codec resumed it as a rotation).
+                    // Drop the staged commit and the row instead.
+                    None => {
+                        tracing::warn!(
+                            "the own commit left in flight has an unreadable record; clearing it"
+                        );
+                        engine.clear_pending_in(&group_id)?;
+                    }
+                }
             } else {
                 engine.shared.store.clear_outgoing_commit()?;
             }
@@ -2087,13 +2102,20 @@ impl Engine {
                     return Ok(());
                 }
             };
+        // Only commit-staging jobs reach here (via `Prepared::Commit`), so the
+        // job always has a recoverable record; the assert documents the invariant.
+        debug_assert!(
+            job.commit_purpose().is_some(),
+            "a job that reached send_commit has no commit_purpose: {}",
+            job.label()
+        );
         let row = OutgoingCommitRow {
             msg_id,
             envelope: encoded,
-            purpose: job.purpose(),
+            purpose: job.stored_purpose(),
         };
         self.store().set_outgoing_commit(&row)?;
-        tracing::info!(epoch, purpose = %row.purpose, "sending a commit");
+        tracing::info!(epoch, job = job.label(), "sending a commit");
         self.inflight = Some(InFlight {
             row,
             job,
