@@ -184,16 +184,30 @@ object VideoNormalize {
             // writes whatever the encoder produces as H.264 in an MP4.
             val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
+            // Audio pass-through: a phone recording's AAC track is copied into the
+            // normalized clip unchanged (not re-encoded), so the output keeps its
+            // sound (video-messages: Video messages — H.264 + AAC). iOS's
+            // AVAssetExportSession carries audio for free; here the muxer must be
+            // given the audio track explicitly or the clip is silent. A clip with
+            // no audio track (`audioTrack < 0`) is muxed video-only as before.
+            val audioExtractor = MediaExtractor()
+            audioExtractor.setDataSource(inputPath)
+            val audioTrack = selectTrack(audioExtractor, "audio/")
+            val audioFormat =
+                if (audioTrack >= 0) audioExtractor.getTrackFormat(audioTrack) else null
+            if (audioTrack >= 0) audioExtractor.selectTrack(audioTrack)
+
             extractor.selectTrack(videoTrack)
             decoder.configure(inFormat, inputSurface, null, 0)
             decoder.start()
             encoder.start()
-            drive(extractor, decoder, encoder, muxer, durationUs)
+            drive(extractor, decoder, encoder, muxer, durationUs, audioExtractor, audioFormat)
 
             encoder.stop(); encoder.release()
             decoder.stop(); decoder.release()
             inputSurface.release()
             extractor.release()
+            audioExtractor.release()
             muxer.stop(); muxer.release()
             return durationUs / 1000
         }
@@ -217,9 +231,12 @@ object VideoNormalize {
             encoder: MediaCodec,
             muxer: MediaMuxer,
             durationUs: Long,
+            audioExtractor: MediaExtractor,
+            audioFormat: MediaFormat?,
         ) {
             val info = MediaCodec.BufferInfo()
             var muxVideoTrack = -1
+            var muxAudioTrack = -1
             var muxerStarted = false
             var done = false
             while (!done) {
@@ -240,6 +257,10 @@ object VideoNormalize {
                 when {
                     outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         muxVideoTrack = muxer.addTrack(encoder.outputFormat)
+                        // Every track must be added before the muxer starts; the
+                        // audio format is known up front, so the AAC track joins
+                        // here alongside the encoded video track.
+                        if (audioFormat != null) muxAudioTrack = muxer.addTrack(audioFormat)
                         muxer.start()
                         muxerStarted = true
                     }
@@ -263,6 +284,46 @@ object VideoNormalize {
                         encoder.signalEndOfInputStream()
                     }
                 }
+            }
+            // The video track is complete; copy the AAC audio samples through,
+            // trimmed to the same window. MediaMuxer accepts each track's samples
+            // independently as long as they are in order within the track.
+            if (muxerStarted && muxAudioTrack >= 0) {
+                copyAudio(audioExtractor, muxer, muxAudioTrack, durationUs)
+            }
+        }
+
+        /**
+         * Copies the already-AAC audio samples from [audioExtractor] into
+         * [muxTrack] of [muxer] unchanged (no re-encode), up to [durationUs] so the
+         * sound matches the trimmed video. The extractor is positioned at the start
+         * of its selected audio track.
+         */
+        private fun copyAudio(
+            audioExtractor: MediaExtractor,
+            muxer: MediaMuxer,
+            muxTrack: Int,
+            durationUs: Long,
+        ) {
+            // A generous buffer for one AAC frame (a few hundred bytes in practice).
+            val buffer = ByteBuffer.allocate(256 * 1024)
+            val info = MediaCodec.BufferInfo()
+            audioExtractor.seekTo(0, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
+            while (true) {
+                val size = audioExtractor.readSampleData(buffer, 0)
+                val time = audioExtractor.sampleTime
+                if (size < 0 || time < 0 || time > durationUs) break
+                info.offset = 0
+                info.size = size
+                info.presentationTimeUs = time
+                info.flags =
+                    if (audioExtractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) {
+                        MediaCodec.BUFFER_FLAG_KEY_FRAME
+                    } else {
+                        0
+                    }
+                muxer.writeSampleData(muxTrack, buffer, info)
+                if (!audioExtractor.advance()) break
             }
         }
     }
