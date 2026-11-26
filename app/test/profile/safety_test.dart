@@ -5,6 +5,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:vyajena/app/moderation.dart' show safetyContactPlaceholder;
+
 import '../support/app.dart';
 import '../support/fake_core_service.dart';
 
@@ -33,6 +35,6 @@ void main() {
     expect(find.byKey(const Key('safety-screen')), findsOneWidget);
     expect(find.textContaining('24 hours'), findsOneWidget);
     expect(find.textContaining('block'), findsWidgets);
-    expect(find.textContaining('<SAFETY_CONTACT_EMAIL>'), findsOneWidget);
+    expect(find.textContaining(safetyContactPlaceholder), findsOneWidget);
   });
 }

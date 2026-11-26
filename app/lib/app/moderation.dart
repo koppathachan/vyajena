@@ -6,9 +6,11 @@ import 'package:flutter/material.dart';
 
 import '../chat/message_tile.dart' show reportLabel, blockLabel;
 
-/// The safety contact placeholder (moderation: Published moderation policy). The
-/// owner MUST replace this token with the real safety address everywhere the
-/// policy is shown before the public release.
+/// The safety contact shown in the policy (moderation: Published moderation
+/// policy). This is the ONE place to change it: the owner supplies the real,
+/// monitored safety address and replaces this token with it (one line, nothing
+/// else — the policy text and the tests read this constant) before the public
+/// release. Do not invent an address.
 const safetyContactPlaceholder = '<SAFETY_CONTACT_EMAIL>';
 
 /// The published moderation policy, shown in the Profile tab's "Safety &
@@ -19,8 +21,10 @@ const moderationPolicy =
     'vyajena2 is an invite-only, end-to-end encrypted chat. Messages are '
     'encrypted on your device; we (the operators) cannot read them.\n\n'
     'Block. You can block any user from a message or from their profile. '
-    'Blocking hides that user’s messages and direct messages on your '
-    'device and stops their notifications. You can unblock them at any time.\n\n'
+    'Blocking hides that user’s messages and direct messages in the app on '
+    'your device. It does not yet stop notifications: a push from a blocked '
+    'user can still show a generic “New message”. You can unblock them at any '
+    'time.\n\n'
     'Report. You can report a message or a user to the group’s '
     'administrator from the message menu or the user’s profile. Your '
     'report is sent privately to the administrator; for a direct message it '
