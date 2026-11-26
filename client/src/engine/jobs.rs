@@ -18,7 +18,7 @@ use crate::events::{DeviceId, ReaddOutcome, UserId};
 use crate::identity::certificate::credential_with_key;
 use crate::membership::{
     self, CommitPlan, StagedOwnCommit, check_fetched, device_ref, leaf_fingerprint, leaves_of_user,
-    pending_removals,
+    pending_removals, stale_leaves,
 };
 use crate::mls::group as mls_group;
 use crate::mls::verify::leaf_of;
@@ -694,8 +694,16 @@ impl Engine {
                     };
                 }
                 let (adds, recipients): (Vec<_>, Vec<_>) = checked.into_iter().unzip();
+                // reinvite-user: Re-key evicts the user's old group leaves. If
+                // this add re-admits a re-keyed user, drop their stale leaves
+                // (certificates that no longer verify against the new pinned
+                // key) in the same COMMIT, so no epoch holds both leaves. A
+                // normal add of a user with no stale leaves removes nothing.
+                let group = self.group.as_ref().ok_or(ClientError::NoGroup)?;
+                let removes = stale_leaves(group, user, &response.identity_public_key);
                 let staged = self.stage(CommitPlan {
                     adds,
+                    removes,
                     ..Default::default()
                 })?;
                 Ok(Prepared::Commit(staged, recipients))
@@ -808,8 +816,16 @@ impl Engine {
                 else {
                     return Ok(Prepared::Nothing);
                 };
+                // reinvite-user: Re-key evicts the user's old group leaves. When
+                // the JoinNotice is for a re-keyed user, Remove their stale
+                // leaves (certificates that no longer verify against the new
+                // pinned key) in the same COMMIT as the Add. A first-time join
+                // with no prior leaves removes nothing.
+                let group = self.group.as_ref().ok_or(ClientError::NoGroup)?;
+                let removes = stale_leaves(group, user, &response.identity_public_key);
                 let staged = self.stage(CommitPlan {
                     adds: vec![key_package],
+                    removes,
                     ..Default::default()
                 })?;
                 Ok(Prepared::Commit(staged, vec![recipient]))
@@ -979,10 +995,18 @@ impl Engine {
                     };
                 }
                 let (adds, recipients): (Vec<_>, Vec<_>) = checked.into_iter().unzip();
+                // reinvite-user: Re-key evicts the user's old group leaves — in
+                // named groups too. When the admin re-adds a re-keyed user to a
+                // named group, drop their stale leaves there (certificates that
+                // no longer verify against the new pinned key) in the same
+                // COMMIT. A normal add removes nothing.
+                let group = self.dms.get(group_id).ok_or(ClientError::NoSuchChat)?;
+                let removes = stale_leaves(group, user, &response.identity_public_key);
                 let staged = self.stage_in(
                     group_id,
                     CommitPlan {
                         adds,
+                        removes,
                         ..Default::default()
                     },
                 )?;

@@ -114,7 +114,7 @@ impl Devices for DevicesService {
             .ok_or_else(|| Status::invalid_argument("certificate is required"))?;
         let server_id = self.state.config.server_id.clone();
         let now = self.state.clock.now();
-        let username = self
+        let (username, revoked) = self
             .state
             .store
             .call(move |conn| {
@@ -133,7 +133,18 @@ impl Devices for DevicesService {
                 Ok(result)
             })
             .await??;
-        tracing::info!(%username, "registered a user and their first device");
+        // device-identity: Re-inviting an existing user. A re-key revokes the
+        // user's prior devices; tear down any live Connect stream now so a
+        // surviving device stops at once instead of only on its next
+        // Authenticate.
+        for device_id in &revoked {
+            let _ = self.state.revocations.send(*device_id);
+        }
+        if revoked.is_empty() {
+            tracing::info!(%username, "registered a user and their first device");
+        } else {
+            tracing::info!(%username, revoked = revoked.len(), "re-keyed a user on re-invite");
+        }
         Ok(Response::new(pb::RegisterResponse {
             user_id: Some(pb::UserId {
                 username,
@@ -377,8 +388,10 @@ impl Devices for DevicesService {
     }
 }
 
-/// device-identity: Signup with an invite; Admin-owned usernames. Returns the
-/// new user's username.
+/// device-identity: Signup with an invite; Admin-owned usernames; Re-inviting
+/// an existing user. Returns the user's username and the ids of any prior
+/// devices this registration revoked (non-empty only on the re-invite re-key
+/// path), so the caller can tear down their live streams.
 fn register(
     tx: &Transaction<'_>,
     invite_code: &str,
@@ -386,7 +399,7 @@ fn register(
     signed: &pb::SignedDeviceCertificate,
     server_id: &str,
     now: SystemTime,
-) -> Result<String, Status> {
+) -> Result<(String, Vec<DeviceId>), Status> {
     let invite: Option<(String, i64, Option<i64>, Option<i64>)> = tx
         .query_row(
             "SELECT username, expires_at, used_at, revoked_at FROM invites WHERE code = ?1",
@@ -420,6 +433,7 @@ fn register(
             "the certificate must name {username}@{server_id}, the user the invite creates"
         )));
     }
+    let mut revoked = Vec::new();
     match records::user(tx, &username)? {
         None => {
             tx.execute(
@@ -439,7 +453,26 @@ fn register(
             )
             .map_err(StoreError::from)?;
         }
-        Some(_) => return Err(Status::already_exists("this user already exists")),
+        // device-identity: Re-inviting an existing user. A valid invite whose
+        // bound username is a present, non-removed user is a re-key: the new
+        // signup brings a new identity key for the SAME user id, and every
+        // prior device is revoked (a re-invite is a lost-device recovery; two
+        // live identity keys for one user must never coexist). The user row is
+        // kept (same user_id); only the identity key changes. Members see the
+        // changed key and re-trust (key-directory: Clients verify the identity
+        // chain).
+        Some(_) => {
+            tx.execute(
+                "UPDATE users SET identity_public_key = ?2 WHERE username = ?1",
+                params![username, identity_public_key],
+            )
+            .map_err(StoreError::from)?;
+            for device in records::active_devices(tx, &username)? {
+                if auth::revoke_device(tx, &device.device_id, now)? {
+                    revoked.push(device.device_id);
+                }
+            }
+        }
     }
     insert_device(tx, &cert, now)?;
     tx.execute(
@@ -447,7 +480,7 @@ fn register(
         params![invite_code, unix_millis(now)],
     )
     .map_err(StoreError::from)?;
-    Ok(username)
+    Ok((username, revoked))
 }
 
 /// device-identity: Device linking. Returns the new device's id.

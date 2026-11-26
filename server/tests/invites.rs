@@ -145,8 +145,9 @@ async fn admin_lists_and_revokes_unused_invites() {
 }
 
 // spec: device-identity/invites
+// spec: device-identity/re-inviting-an-existing-user
 #[tokio::test]
-async fn used_invite_cannot_be_revoked_and_existing_users_get_no_invite() {
+async fn used_invite_cannot_be_revoked_and_the_admin_cannot_be_re_invited() {
     let server = TestServer::start().await;
     let conn = server.connect().await;
     let (_, admin) = bootstrap_admin(&server, &conn).await;
@@ -161,7 +162,10 @@ async fn used_invite_cannot_be_revoked_and_existing_users_get_no_invite() {
         .await;
     assert_eq!(used.err().map(|s| s.code()), Some(Code::FailedPrecondition));
 
-    let existing = conn
+    // The admin's own username is not invitable: a re-invite would re-key the
+    // admin and revoke the lobby's only committer. The admin re-keys through
+    // admin-recovery instead (device-identity: Re-inviting an existing user).
+    let admin_reinvite = conn
         .admin()
         .create_invite(authed(
             admin.token(),
@@ -170,7 +174,10 @@ async fn used_invite_cannot_be_revoked_and_existing_users_get_no_invite() {
             },
         ))
         .await;
-    assert_eq!(existing.err().map(|s| s.code()), Some(Code::AlreadyExists));
+    assert_eq!(
+        admin_reinvite.err().map(|s| s.code()),
+        Some(Code::FailedPrecondition)
+    );
 
     for bad in ["", "a@b", "has space"] {
         let result = conn
