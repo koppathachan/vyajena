@@ -125,8 +125,11 @@ specs; no requirement was weakened.
   (durable through the envelope log, so it reaches an admin that was offline at
   the sweep). Today the app suppresses *automatic* `MembersChanged` entries
   (qa-fixes D5); the change surfaces them **to the admin only** as an
-  inactivity notice ("X went inactive and was removed" / "X came back and was
-  re-added"). No server table, migration or proto field.
+  inactivity notice ("X was removed from the group automatically (inactive or
+  account deleted)" / "X came back and was re-added"). An account deletion
+  (change `account-deletion`) reuses the same external Remove, so the app cannot
+  tell it from inactivity; the line names both rather than asserting either. No server table, migration or
+  proto field.
 - **Add-a-member-to-a-named-group already exists on `main`.** The admin's
   group menu has had an admin-only "Add member" action using `add_to_group`
   since PR #16 (`app/lib/chat/group_menu.dart`); the proposal's "Members screen

@@ -430,6 +430,8 @@ class _ChatScreenState extends State<ChatScreen> {
         frameWidth: clip.frameWidth,
         frameHeight: clip.frameHeight,
       );
+      // The reply bar goes once the video is sent, as for a text or voice send.
+      if (mounted) setState(() => _reply = null);
     } catch (error) {
       messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
     }

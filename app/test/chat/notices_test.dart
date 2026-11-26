@@ -29,6 +29,10 @@ List<String> noticeTexts(WidgetTester tester) => [
     tile.text,
 ].reversed.toList();
 
+const removedAutomatically =
+    'bob was removed from the group automatically '
+    '(inactive or account deleted).';
+
 void main() {
   // spec: app-ui/notices-in-the-chat
   testWidgets('Back from holiday: the removal notice with its time, the '
@@ -409,7 +413,7 @@ void main() {
     );
     await settle(tester);
     expect(noticeTexts(tester), [
-      'bob went inactive and was removed from the group.',
+      removedAutomatically,
     ]);
 
     // Bob comes back and the admin's phone re-adds him.
@@ -423,7 +427,7 @@ void main() {
     );
     await settle(tester);
     expect(noticeTexts(tester), [
-      'bob went inactive and was removed from the group.',
+      removedAutomatically,
       'bob came back and was re-added to the group.',
     ]);
   });
