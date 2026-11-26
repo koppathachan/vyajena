@@ -508,6 +508,7 @@ impl Devices for DevicesService {
 /// invite-only. Returns the user's username and the ids of any prior devices
 /// this registration revoked (non-empty only on the re-invite re-key path), so
 /// the caller can tear down their live streams.
+#[allow(clippy::too_many_arguments)]
 fn register(
     tx: &Transaction<'_>,
     invite_code: &str,
@@ -578,10 +579,10 @@ fn register(
         }
         // dev-onboarding: Join code. Only authorises creating an account; never
         // stored, never an identity credential.
-        if let Some(required) = &onboarding.join_code {
-            if join_code != required {
-                return Err(Status::permission_denied("the join code is wrong"));
-            }
+        if let Some(required) = &onboarding.join_code
+            && join_code != required
+        {
+            return Err(Status::permission_denied("the join code is wrong"));
         }
         cert.username.clone()
     };

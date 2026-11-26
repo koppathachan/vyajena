@@ -88,15 +88,18 @@ the live simulator (stages 6–8). Proto first.
       // spec: app-ui/simplified-onboarding-in-open-mode
 
 ## 8. Live demo + docs
-- [ ] 8.1 Stand up a throwaway open-mode local server in a temp dir (run.sh
+- [x] 8.1 Stand up a throwaway open-mode local server in a temp dir (run.sh
       pattern; never `server/local.toml`, never the real/review server) and run the
       app on a dedicated iOS simulator through the simplified onboarding into the
-      lobby.
-- [ ] 8.2 Note the dev/demo onboarding mode in `docs/architecture-decisions.md`
+      lobby. DONE: demo server on 127.0.0.1:8443 (mode=open); app on vyajena-shots
+      pasted the handle → open screen → "Join as the admin (akhil)" → register_open
+      → auto-lobby; server logged "registered a user username=akhil" and "created
+      the group at epoch 0".
+- [x] 8.2 Note the dev/demo onboarding mode in `docs/architecture-decisions.md`
       (config-gated, prod-off, E2EE-preserving; the password-vs-escrow decision D2
       and the admin-only MLS-add limit D5).
 
 ## 9. Done
-- [ ] 9.1 `cargo test --workspace`, `cargo clippy --workspace --all-targets -D
+- [x] 9.1 `cargo test --workspace`, `cargo clippy --workspace --all-targets -D
       warnings`, `cargo fmt --check`, `buf lint`, `cd app && flutter analyze &&
       flutter test`, and `openspec validate dev-onboarding --strict` all pass.

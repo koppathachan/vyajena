@@ -32,9 +32,8 @@ async fn core_registers_openly() {
         .await
         .check("register_open");
     assert_eq!(id, user("alice"));
-    assert_eq!(
-        device.client.is_admin().check("is_admin"),
-        false,
+    assert!(
+        !device.client.is_admin().check("is_admin"),
         "alice is an ordinary user"
     );
 }

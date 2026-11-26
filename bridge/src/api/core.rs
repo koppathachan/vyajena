@@ -17,9 +17,9 @@ use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, PresenceStatus,
     ProfileInfo, PushPlatform, ReportView, ServerOnboarding, StickerSource, UserRef,
 };
-use client::identity::Invite;
 use crate::frb_generated::StreamSink;
 use crate::map;
+use client::identity::Invite;
 
 /// The key store profile of the app: one user per app install.
 pub const KEY_STORE_PROFILE: &str = "app";
