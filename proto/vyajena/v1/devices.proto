@@ -88,6 +88,40 @@ message ServerInfo {
   // (group-membership: Group creation; group-membership: Inactive devices are
   // kept out; design D7).
   ExternalSender external_sender = 4;
+  // dev-onboarding: Server advertises its onboarding mode. How a new user joins
+  // this server, so the app can render the right first-run screen. Absent (an
+  // older server) reads as the default INVITE mode.
+  Onboarding onboarding = 5;
+}
+
+// dev-onboarding: Server advertises its onboarding mode. Describes the server's
+// effective onboarding configuration (server-runtime: Dev onboarding mode).
+message Onboarding {
+  // How a new user may join.
+  enum Mode {
+    // Unset: an older server sends no `onboarding` message, so the field reads
+    // as this zero value. A client treats it as invite-only (the default).
+    MODE_UNSPECIFIED = 0;
+    // Invite-only (today's behaviour): a new user needs an admin-minted
+    // single-use invite. The server sets this explicitly in invite mode.
+    MODE_INVITE = 1;
+    // Open/dev mode: a device may self-register with a chosen username and no
+    // invite (device-identity: Open registration), bounded by `max_users` and
+    // gated by a join code if one is required.
+    MODE_OPEN = 2;
+  }
+  // The effective onboarding mode.
+  Mode mode = 1;
+  // True only when a join code is configured and `Devices.Register` in open
+  // mode must carry the matching `join_code` (device-identity: Join code). The
+  // code itself is never advertised.
+  bool join_code_required = 2;
+  // The maximum number of active users the server accepts, or 0 when no cap is
+  // configured (device-identity: Maximum users).
+  uint32 max_users = 3;
+  // The server's admin username, so the app can offer a one-tap "join as the
+  // admin" path in open mode (device-identity: Default-admin auto-claim).
+  string admin_username = 4;
 }
 
 // wire-transport: Size limits. The client refuses to send an envelope over its
@@ -125,13 +159,23 @@ message ExternalSender {
 // device-identity: Admin-owned usernames. The new user's id is the one the
 // invite was created for, whatever the device sends. A certificate naming any
 // other user id is rejected with `PERMISSION_DENIED` and nothing is created.
+//
+// dev-onboarding: Open registration. In open mode the device MAY leave
+// `invite_code` empty and register with the username bound in its certificate,
+// carrying `join_code` if the server requires one. In invite mode an empty
+// `invite_code` is rejected with `FAILED_PRECONDITION`.
 message RegisterRequest {
-  // `InvitePayload.invite_code`.
+  // `InvitePayload.invite_code`. Empty for an open-mode registration.
   string invite_code = 1;
   // The new user identity public key (Ed25519, 32 bytes).
   bytes identity_public_key = 2;
   // A certificate for this device, signed by `identity_public_key`.
   SignedDeviceCertificate certificate = 3;
+  // dev-onboarding: Join code. The shared registration secret for open-mode
+  // signup, required only when the server advertises `join_code_required`.
+  // It authorises creating an account and is nothing more: never stored against
+  // the user, never an identity credential. Empty in invite mode. Never logged.
+  string join_code = 4;
 }
 
 message RegisterResponse {

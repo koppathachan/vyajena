@@ -140,6 +140,12 @@ impl TestServer {
         Self::start_inner(&format!("[limits]\nmax_video_blob_bytes = {cap}\n")).await
     }
 
+    /// [`TestServer::start`] in open onboarding mode (dev-onboarding: Open
+    /// registration), so a device can self-register with no invite.
+    pub async fn start_open() -> Self {
+        Self::start_inner("[onboarding]\nmode = \"open\"\n").await
+    }
+
     async fn start_inner(extra_config: &str) -> Self {
         super::init_logging();
         let dir = tempfile::tempdir().check("temp dir");

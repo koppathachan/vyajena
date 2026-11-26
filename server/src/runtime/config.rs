@@ -18,6 +18,21 @@
 //!                                        #   this passphrase (defense-in-depth on
 //!                                        #   top of host access; admin-recovery).
 //!
+//! [onboarding]                           # optional: DEV/DEMO ONLY. Absent, or
+//!                                        #   mode = "invite", is today's
+//!                                        #   invite-only flow. Do NOT enable
+//!                                        #   "open" in production.
+//! mode = "open"                          # "invite" (default) or "open": open lets
+//!                                        #   a device self-register with a chosen
+//!                                        #   username, no admin invite. Logs a
+//!                                        #   startup WARNING when open.
+//! join_code = "letmein"                  # optional shared secret open signup must
+//!                                        #   carry; authorises creating an account
+//!                                        #   only, never an identity. Never logged.
+//! max_users = 10                         # optional cap on active users (both
+//!                                        #   modes); new signups past it are
+//!                                        #   refused with RESOURCE_EXHAUSTED.
+//!
 //! [limits]                               # optional: every field defaults to the
 //!                                        # built-in value, so an absent table or
 //!                                        # field keeps today's behaviour. Durations
@@ -82,6 +97,38 @@ pub struct Config {
     /// host access). An absent `[recovery]` table means host access alone
     /// authorises `server admin-reset`.
     pub recovery: Recovery,
+    /// Dev/demo onboarding settings (server-runtime: Dev onboarding mode). An
+    /// absent `[onboarding]` table, or `mode = "invite"`, keeps today's
+    /// invite-only onboarding exactly.
+    pub onboarding: Onboarding,
+}
+
+/// How a new user joins this server (server-runtime: Dev onboarding mode).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum OnboardingMode {
+    /// Invite-only: a new user needs an admin-minted single-use invite. Today's
+    /// behaviour and the default.
+    #[default]
+    Invite,
+    /// Open/dev mode: a device may self-register with a chosen username and no
+    /// invite (device-identity: Open registration), bounded by `max_users` and
+    /// gated by `join_code` if one is set. Off in production.
+    Open,
+}
+
+/// Dev/demo onboarding settings. An absent `[onboarding]` table defaults to
+/// invite-only with no join code and no user cap, so behaviour is today's.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Onboarding {
+    /// The onboarding mode.
+    pub mode: OnboardingMode,
+    /// The shared registration secret for open mode, if one is required
+    /// (device-identity: Join code). It authorises creating an account and is
+    /// never an identity credential; it is never logged.
+    pub join_code: Option<String>,
+    /// The maximum number of active users the server will create, or `None`
+    /// for no cap (device-identity: Maximum users). Enforced in both modes.
+    pub max_users: Option<u32>,
 }
 
 /// Optional defense-in-depth for the break-glass admin reset. When
@@ -196,6 +243,14 @@ pub mod field {
     pub const RECOVERY: &str = "recovery";
     /// `recovery.passphrase`
     pub const RECOVERY_PASSPHRASE: &str = "recovery.passphrase";
+    /// `[onboarding]`
+    pub const ONBOARDING: &str = "onboarding";
+    /// `onboarding.mode`
+    pub const ONBOARDING_MODE: &str = "onboarding.mode";
+    /// `onboarding.join_code`
+    pub const ONBOARDING_JOIN_CODE: &str = "onboarding.join_code";
+    /// `onboarding.max_users`
+    pub const ONBOARDING_MAX_USERS: &str = "onboarding.max_users";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -207,6 +262,7 @@ pub mod field {
         BLOB_STORE,
         LIMITS,
         RECOVERY,
+        ONBOARDING,
     ];
 
     /// The known fields inside the `[limits]` table.
@@ -320,6 +376,7 @@ impl Config {
         let blob_store = blob_store(&table, base)?;
         let limits = limits(&table)?;
         let recovery = recovery(&table)?;
+        let onboarding = onboarding(&table)?;
 
         Ok(Self {
             server_id,
@@ -331,6 +388,7 @@ impl Config {
             blob_store,
             limits,
             recovery,
+            onboarding,
         })
     }
 
@@ -495,6 +553,86 @@ fn recovery(table: &toml::Table) -> Result<Recovery, ConfigError> {
         }
     };
     Ok(Recovery { passphrase })
+}
+
+/// The `[onboarding]` table, if there is one (server-runtime: Dev onboarding
+/// mode). Every field is optional: `mode` is `"invite"` (default) or `"open"`,
+/// `join_code` a non-empty string, `max_users` a positive integer. An absent
+/// table keeps today's invite-only onboarding.
+fn onboarding(table: &toml::Table) -> Result<Onboarding, ConfigError> {
+    let Some(value) = table.get(field::ONBOARDING) else {
+        return Ok(Onboarding::default());
+    };
+    let toml::Value::Table(sub) = value else {
+        return Err(ConfigError::Invalid {
+            field: field::ONBOARDING,
+            reason: format!("must be a table, found {}", value.type_str()),
+        });
+    };
+    const KNOWN: &[&str] = &["mode", "join_code", "max_users"];
+    if let Some(unknown) = sub.keys().find(|key| !KNOWN.contains(&key.as_str())) {
+        return Err(ConfigError::Unknown {
+            field: format!("{}.{unknown}", field::ONBOARDING),
+        });
+    }
+    let mode = match sub.get("mode") {
+        None => OnboardingMode::default(),
+        Some(toml::Value::String(value)) => match value.as_str() {
+            "invite" => OnboardingMode::Invite,
+            "open" => OnboardingMode::Open,
+            other => {
+                return Err(ConfigError::Invalid {
+                    field: field::ONBOARDING_MODE,
+                    reason: format!("{other:?} is not a known mode (only \"invite\" or \"open\")"),
+                });
+            }
+        },
+        Some(other) => {
+            return Err(ConfigError::Invalid {
+                field: field::ONBOARDING_MODE,
+                reason: format!("must be a string, found {}", other.type_str()),
+            });
+        }
+    };
+    let join_code = match sub.get("join_code") {
+        None => None,
+        Some(toml::Value::String(value)) if !value.is_empty() => Some(value.clone()),
+        Some(toml::Value::String(_)) => {
+            return Err(ConfigError::Invalid {
+                field: field::ONBOARDING_JOIN_CODE,
+                reason: "must not be empty".into(),
+            });
+        }
+        Some(other) => {
+            return Err(ConfigError::Invalid {
+                field: field::ONBOARDING_JOIN_CODE,
+                reason: format!("must be a string, found {}", other.type_str()),
+            });
+        }
+    };
+    let max_users = match sub.get("max_users") {
+        None => None,
+        Some(toml::Value::Integer(n)) if *n > 0 => {
+            Some(bounded_u32(field::ONBOARDING_MAX_USERS, *n as u64)?)
+        }
+        Some(toml::Value::Integer(_)) => {
+            return Err(ConfigError::Invalid {
+                field: field::ONBOARDING_MAX_USERS,
+                reason: "must be a positive integer".into(),
+            });
+        }
+        Some(other) => {
+            return Err(ConfigError::Invalid {
+                field: field::ONBOARDING_MAX_USERS,
+                reason: format!("must be a positive integer, found {}", other.type_str()),
+            });
+        }
+    };
+    Ok(Onboarding {
+        mode,
+        join_code,
+        max_users,
+    })
 }
 
 /// An optional positive integer from a `[limits]` sub-field, erroring (naming

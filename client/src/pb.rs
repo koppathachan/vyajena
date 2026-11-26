@@ -1154,6 +1154,82 @@ pub struct ServerInfo {
     /// kept out; design D7).
     #[prost(message, optional, tag = "4")]
     pub external_sender: ::core::option::Option<ExternalSender>,
+    /// dev-onboarding: Server advertises its onboarding mode. How a new user joins
+    /// this server, so the app can render the right first-run screen. Absent (an
+    /// older server) reads as the default INVITE mode.
+    #[prost(message, optional, tag = "5")]
+    pub onboarding: ::core::option::Option<Onboarding>,
+}
+/// dev-onboarding: Server advertises its onboarding mode. Describes the server's
+/// effective onboarding configuration (server-runtime: Dev onboarding mode).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct Onboarding {
+    /// The effective onboarding mode.
+    #[prost(enumeration = "onboarding::Mode", tag = "1")]
+    pub mode: i32,
+    /// True only when a join code is configured and `Devices.Register` in open
+    /// mode must carry the matching `join_code` (device-identity: Join code). The
+    /// code itself is never advertised.
+    #[prost(bool, tag = "2")]
+    pub join_code_required: bool,
+    /// The maximum number of active users the server accepts, or 0 when no cap is
+    /// configured (device-identity: Maximum users).
+    #[prost(uint32, tag = "3")]
+    pub max_users: u32,
+    /// The server's admin username, so the app can offer a one-tap "join as the
+    /// admin" path in open mode (device-identity: Default-admin auto-claim).
+    #[prost(string, tag = "4")]
+    pub admin_username: ::prost::alloc::string::String,
+}
+/// Nested message and enum types in `Onboarding`.
+pub mod onboarding {
+    /// How a new user may join.
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum Mode {
+        /// Unset: an older server sends no `onboarding` message, so the field reads
+        /// as this zero value. A client treats it as invite-only (the default).
+        Unspecified = 0,
+        /// Invite-only (today's behaviour): a new user needs an admin-minted
+        /// single-use invite. The server sets this explicitly in invite mode.
+        Invite = 1,
+        /// Open/dev mode: a device may self-register with a chosen username and no
+        /// invite (device-identity: Open registration), bounded by `max_users` and
+        /// gated by a join code if one is required.
+        Open = 2,
+    }
+    impl Mode {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::Unspecified => "MODE_UNSPECIFIED",
+                Self::Invite => "MODE_INVITE",
+                Self::Open => "MODE_OPEN",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "MODE_UNSPECIFIED" => Some(Self::Unspecified),
+                "MODE_INVITE" => Some(Self::Invite),
+                "MODE_OPEN" => Some(Self::Open),
+                _ => None,
+            }
+        }
+    }
 }
 /// wire-transport: Size limits. The client refuses to send an envelope over its
 /// limit; the server rejects one with `REJECTION_REASON_TOO_LARGE`.
@@ -1195,9 +1271,14 @@ pub struct ExternalSender {
 /// device-identity: Admin-owned usernames. The new user's id is the one the
 /// invite was created for, whatever the device sends. A certificate naming any
 /// other user id is rejected with `PERMISSION_DENIED` and nothing is created.
+///
+/// dev-onboarding: Open registration. In open mode the device MAY leave
+/// `invite_code` empty and register with the username bound in its certificate,
+/// carrying `join_code` if the server requires one. In invite mode an empty
+/// `invite_code` is rejected with `FAILED_PRECONDITION`.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RegisterRequest {
-    /// `InvitePayload.invite_code`.
+    /// `InvitePayload.invite_code`. Empty for an open-mode registration.
     #[prost(string, tag = "1")]
     pub invite_code: ::prost::alloc::string::String,
     /// The new user identity public key (Ed25519, 32 bytes).
@@ -1206,6 +1287,12 @@ pub struct RegisterRequest {
     /// A certificate for this device, signed by `identity_public_key`.
     #[prost(message, optional, tag = "3")]
     pub certificate: ::core::option::Option<SignedDeviceCertificate>,
+    /// dev-onboarding: Join code. The shared registration secret for open-mode
+    /// signup, required only when the server advertises `join_code_required`.
+    /// It authorises creating an account and is nothing more: never stored against
+    /// the user, never an identity credential. Empty in invite mode. Never logged.
+    #[prost(string, tag = "4")]
+    pub join_code: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct RegisterResponse {

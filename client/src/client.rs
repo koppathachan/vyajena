@@ -103,6 +103,24 @@ impl std::fmt::Debug for ClientConfig {
     }
 }
 
+/// dev-onboarding: Open registration in the core. A server's advertised
+/// onboarding configuration ([`Client::server_onboarding`]), so the app can
+/// render the right first-run screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ServerOnboarding {
+    /// The server id (the `@<server_id>` of every user id on it).
+    pub server_id: String,
+    /// Whether the server is in open onboarding mode (a device may self-register
+    /// with [`Client::register_open`]); false means invite-only.
+    pub open: bool,
+    /// Whether open registration must carry a join code.
+    pub join_code_required: bool,
+    /// The maximum number of active users, or 0 when there is no cap.
+    pub max_users: u32,
+    /// The admin's username, so the app can offer a one-tap "join as the admin".
+    pub admin_username: String,
+}
+
 /// Why a [`Client`] call failed.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -153,6 +171,10 @@ pub enum ClientError {
     /// Signup with an invite; app-ui: Invite expiry is surfaced).
     #[error("the invite has expired")]
     InviteExpired,
+    /// `register_open` was called against a server that is not in open
+    /// onboarding mode (dev-onboarding: Open registration in the core).
+    #[error("this server does not allow open onboarding")]
+    OpenOnboardingUnavailable,
     /// This device is not in the group.
     #[error("this device is not in the group")]
     NoGroup,
@@ -447,6 +469,8 @@ impl Client {
             .devices()
             .register(pb::RegisterRequest {
                 invite_code: invite.code.clone(),
+                // dev-onboarding: no join code on the invite path.
+                join_code: String::new(),
                 identity_public_key: identity_public.clone(),
                 certificate: Some(signed.clone()),
             })
@@ -479,6 +503,114 @@ impl Client {
             &user,
             &invite.relay_address,
             invite.tls_pin,
+            &info,
+            &identity_public,
+        )
+        .await?;
+        Ok(user)
+    }
+
+    /// dev-onboarding: Open registration in the core. Fetches a server's
+    /// onboarding advertisement (`ServerInfo.onboarding`) so the app can render
+    /// the right first-run screen. Opens a connection and pins the server's TLS
+    /// key, exactly as registering does.
+    pub async fn server_onboarding(
+        &self,
+        relay_address: &str,
+        tls_pin: [u8; 32],
+    ) -> Result<ServerOnboarding, ClientError> {
+        let conn = self.open_conn(relay_address, tls_pin).await?;
+        let info = conn.server_info().await?;
+        if negotiate_protocol_version(&info.supported_protocol_versions).is_none() {
+            return Err(ClientError::ServerMismatch(format!(
+                "it speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
+            )));
+        }
+        let onboarding = info.onboarding.unwrap_or_default();
+        Ok(ServerOnboarding {
+            server_id: info.server_id,
+            open: onboarding.mode == pb::onboarding::Mode::Open as i32,
+            join_code_required: onboarding.join_code_required,
+            max_users: onboarding.max_users,
+            admin_username: onboarding.admin_username,
+        })
+    }
+
+    /// dev-onboarding: Open registration in the core. Self-registers this device
+    /// as a new user named `username` with no invite, against an open-mode
+    /// server: generates the user identity key and this device's keys in the key
+    /// store, signs a certificate for `username@<server_id>`, calls
+    /// `Devices.Register` with an empty invite code and the `join_code`, then
+    /// finishes signup as [`Client::register`] does. Keys never leave the core.
+    /// A server that is not in open mode answers `FAILED_PRECONDITION`, surfaced
+    /// as [`ClientError::OpenOnboardingUnavailable`]. Call [`Client::start`] next.
+    pub async fn register_open(
+        &self,
+        relay_address: &str,
+        tls_pin: [u8; 32],
+        username: &str,
+        join_code: &str,
+    ) -> Result<UserId, ClientError> {
+        if self.shared.store.account()?.is_some() {
+            return Err(ClientError::AlreadyRegistered);
+        }
+        let conn = self.open_conn(relay_address, tls_pin).await?;
+        let info = conn.server_info().await?;
+        if negotiate_protocol_version(&info.supported_protocol_versions).is_none() {
+            return Err(ClientError::ServerMismatch(format!(
+                "it speaks none of the protocol versions {SUPPORTED_PROTOCOL_VERSIONS:?}"
+            )));
+        }
+        // dev-onboarding: the device picks its own username; the user id's
+        // server_id is the one the server advertises (the pinned TLS key is the
+        // trust root for a dev/demo server).
+        let user = UserId::new(username.to_owned(), info.server_id.clone());
+        let store = Arc::clone(&self.shared.key_store);
+        let (keys, identity) = blocking(move || {
+            // device-identity: Fresh keys for a new signup.
+            let keys = DeviceKeys::create_fresh(store.as_ref())?;
+            let identity = create_identity_key(store.as_ref())?;
+            Ok((keys, identity))
+        })
+        .await?;
+        let signed = certificate::sign(
+            &identity,
+            &user,
+            &keys.auth_public(),
+            &keys.mls_public(),
+            self.now(),
+        );
+        let identity_public = identity.verifying_key().to_bytes().to_vec();
+        let registered = match conn
+            .devices()
+            .register(pb::RegisterRequest {
+                invite_code: String::new(),
+                join_code: join_code.to_owned(),
+                identity_public_key: identity_public.clone(),
+                certificate: Some(signed.clone()),
+            })
+            .await
+        {
+            Ok(response) => response.into_inner(),
+            // dev-onboarding: Open registration. An invite-only server rejects an
+            // invite-less register with FAILED_PRECONDITION.
+            Err(status) if status.code() == tonic::Code::FailedPrecondition => {
+                return Err(ClientError::OpenOnboardingUnavailable);
+            }
+            Err(status) => return Err(NetError::from(status).into()),
+        };
+        let user = registered
+            .user_id
+            .as_ref()
+            .map(UserId::from_pb)
+            .ok_or_else(|| NetError::Protocol("Register without user_id".into()))?;
+        tracing::info!(user = %user, "registered (open onboarding)");
+        self.finish_signup(
+            &conn,
+            &keys,
+            &user,
+            relay_address,
+            tls_pin,
             &info,
             &identity_public,
         )

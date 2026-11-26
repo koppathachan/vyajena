@@ -17,7 +17,7 @@ use crate::membership::{self, certificate};
 use crate::pb;
 use crate::pb::devices_server::{Devices, DevicesServer};
 use crate::runtime::clock::{from_unix_millis, to_timestamp, unix_millis};
-use crate::runtime::{State, TlsConnectInfo};
+use crate::runtime::{Onboarding, OnboardingMode, State, TlsConnectInfo};
 use crate::store::StoreError;
 use crate::store::records::{self, DeviceRow};
 
@@ -100,6 +100,11 @@ impl Devices for DevicesService {
                     signature_public_key: self.state.keys.external_sender_public_key().to_vec(),
                     credential: membership::external_sender_credential(server_id)?,
                 }),
+                // dev-onboarding: Server advertises its onboarding mode.
+                onboarding: Some(onboarding_info(
+                    &self.state.config.onboarding,
+                    &self.state.config.admin_username,
+                )),
             }),
         }))
     }
@@ -113,6 +118,7 @@ impl Devices for DevicesService {
             .certificate
             .ok_or_else(|| Status::invalid_argument("certificate is required"))?;
         let server_id = self.state.config.server_id.clone();
+        let onboarding = self.state.config.onboarding.clone();
         let now = self.state.clock.now();
         let (username, revoked) = self
             .state
@@ -122,9 +128,11 @@ impl Devices for DevicesService {
                 let result = register(
                     &tx,
                     &request.invite_code,
+                    &request.join_code,
                     &request.identity_public_key,
                     &signed,
                     &server_id,
+                    &onboarding,
                     now,
                 );
                 if result.is_ok() {
@@ -493,62 +501,107 @@ impl Devices for DevicesService {
 }
 
 /// device-identity: Signup with an invite; Admin-owned usernames; Re-inviting
-/// an existing user. Returns the user's username and the ids of any prior
-/// devices this registration revoked (non-empty only on the re-invite re-key
-/// path), so the caller can tear down their live streams.
+/// an existing user. dev-onboarding: Open registration; Join code; Maximum
+/// users. With a non-empty `invite_code` this is today's invite signup; with an
+/// empty one it is an open-mode registration (device-identity: Open
+/// registration), rejected with `FAILED_PRECONDITION` when the server is
+/// invite-only. Returns the user's username and the ids of any prior devices
+/// this registration revoked (non-empty only on the re-invite re-key path), so
+/// the caller can tear down their live streams.
 fn register(
     tx: &Transaction<'_>,
     invite_code: &str,
+    join_code: &str,
     identity_public_key: &[u8],
     signed: &pb::SignedDeviceCertificate,
     server_id: &str,
+    onboarding: &Onboarding,
     now: SystemTime,
 ) -> Result<(String, Vec<DeviceId>), Status> {
-    let invite: Option<(String, i64, Option<i64>, Option<i64>)> = tx
-        .query_row(
-            "SELECT username, expires_at, used_at, revoked_at FROM invites WHERE code = ?1",
-            params![invite_code],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
-        )
-        .optional()
-        .map_err(StoreError::from)?;
-    let username = match invite {
-        Some((username, expires_at, None, None)) if now < from_unix_millis(expires_at) => username,
-        // group-resync: an otherwise-valid invite that has only expired gets a
-        // distinct status, so the app can say "this invite has expired — ask
-        // for a fresh one" instead of a generic failure (app-ui: Invite expiry
-        // is surfaced). An invite is valid for `invite_ttl` (7 days default).
-        Some((_, _, None, None)) => {
-            return Err(Status::deadline_exceeded(
-                "the invite has expired; ask for a fresh one",
-            ));
-        }
-        _ => {
-            return Err(Status::permission_denied(
-                "the invite is unknown, used or revoked",
-            ));
-        }
-    };
     // Forged certificate: PERMISSION_DENIED (User identity key and device
-    // certificates); malformed: INVALID_ARGUMENT.
+    // certificates); malformed: INVALID_ARGUMENT. Verified the same way on both
+    // paths — the server always authenticates the device key, never a secret it
+    // could forge.
     let cert = certificate::verify(signed, identity_public_key)?;
-    if cert.username != username || cert.server_id != server_id {
+    if cert.server_id != server_id {
         return Err(Status::permission_denied(format!(
-            "the certificate must name {username}@{server_id}, the user the invite creates"
+            "the certificate must name a user on {server_id}"
         )));
     }
+
+    let invited = !invite_code.is_empty();
+    let username = if invited {
+        let invite: Option<(String, i64, Option<i64>, Option<i64>)> = tx
+            .query_row(
+                "SELECT username, expires_at, used_at, revoked_at FROM invites WHERE code = ?1",
+                params![invite_code],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .optional()
+            .map_err(StoreError::from)?;
+        let bound = match invite {
+            Some((username, expires_at, None, None)) if now < from_unix_millis(expires_at) => {
+                username
+            }
+            // group-resync: an otherwise-valid invite that has only expired gets a
+            // distinct status, so the app can say "this invite has expired — ask
+            // for a fresh one" instead of a generic failure (app-ui: Invite expiry
+            // is surfaced). An invite is valid for `invite_ttl` (7 days default).
+            Some((_, _, None, None)) => {
+                return Err(Status::deadline_exceeded(
+                    "the invite has expired; ask for a fresh one",
+                ));
+            }
+            _ => {
+                return Err(Status::permission_denied(
+                    "the invite is unknown, used or revoked",
+                ));
+            }
+        };
+        if cert.username != bound {
+            return Err(Status::permission_denied(format!(
+                "the certificate must name {bound}@{server_id}, the user the invite creates"
+            )));
+        }
+        bound
+    } else {
+        // dev-onboarding: Open registration. No invite: allowed only in open
+        // mode, where the device picks its own username (taken from the verified
+        // certificate), gated by the join code if one is required.
+        match onboarding.mode {
+            OnboardingMode::Open => {}
+            OnboardingMode::Invite => {
+                return Err(Status::failed_precondition(
+                    "this server is invite-only; register with an invite code",
+                ));
+            }
+        }
+        // dev-onboarding: Join code. Only authorises creating an account; never
+        // stored, never an identity credential.
+        if let Some(required) = &onboarding.join_code {
+            if join_code != required {
+                return Err(Status::permission_denied("the join code is wrong"));
+            }
+        }
+        cert.username.clone()
+    };
+
     let mut revoked = Vec::new();
     match records::user(tx, &username)? {
         None => {
+            // dev-onboarding: Maximum users. The cap blocks only a brand-new
+            // user, in both modes; re-key and removed-user re-signup below do
+            // not count as new users.
+            enforce_max_users(tx, onboarding)?;
             tx.execute(
                 "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
                 params![username, identity_public_key, unix_millis(now)],
             )
             .map_err(StoreError::from)?;
         }
-        // The admin reset a removed user (group-membership: Removing a user):
-        // the new signup brings the new identity key. The old devices stay
-        // revoked.
+        // The admin reset a removed user (group-membership: Removing a user), or
+        // in open mode a removed username is reclaimed: the new signup brings the
+        // new identity key. The old devices stay revoked.
         Some(user) if user.removed => {
             tx.execute(
                 "UPDATE users SET identity_public_key = ?2, created_at = ?3, removed_at = NULL
@@ -556,6 +609,12 @@ fn register(
                 params![username, identity_public_key, unix_millis(now)],
             )
             .map_err(StoreError::from)?;
+        }
+        // An active user already holds this username.
+        Some(_) if !invited => {
+            // dev-onboarding: Open registration never re-keys an existing active
+            // user — that would let anyone hijack a live identity. Refuse.
+            return Err(Status::already_exists("that username is already taken"));
         }
         // device-identity: Re-inviting an existing user. A valid invite whose
         // bound username is a present, non-removed user is a re-key: the new
@@ -579,12 +638,52 @@ fn register(
         }
     }
     insert_device(tx, &cert, now)?;
-    tx.execute(
-        "UPDATE invites SET used_at = ?2 WHERE code = ?1",
-        params![invite_code, unix_millis(now)],
-    )
-    .map_err(StoreError::from)?;
+    if invited {
+        tx.execute(
+            "UPDATE invites SET used_at = ?2 WHERE code = ?1",
+            params![invite_code, unix_millis(now)],
+        )
+        .map_err(StoreError::from)?;
+    }
     Ok((username, revoked))
+}
+
+/// dev-onboarding: Maximum users. Errors with `RESOURCE_EXHAUSTED` when a
+/// `max_users` cap is configured and that many users are already active
+/// (`removed_at IS NULL`). Called only before creating a brand-new user.
+fn enforce_max_users(tx: &Transaction<'_>, onboarding: &Onboarding) -> Result<(), Status> {
+    let Some(max) = onboarding.max_users else {
+        return Ok(());
+    };
+    let active: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM users WHERE removed_at IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::from)?;
+    if u64::try_from(active).unwrap_or(u64::MAX) >= u64::from(max) {
+        return Err(Status::resource_exhausted(
+            "the server has reached its maximum number of users",
+        ));
+    }
+    Ok(())
+}
+
+/// dev-onboarding: Server advertises its onboarding mode. Builds the `Onboarding`
+/// advertised in `ServerInfo` from the effective config. The join code value is
+/// never included, only whether one is required.
+fn onboarding_info(onboarding: &Onboarding, admin_username: &str) -> pb::Onboarding {
+    let mode = match onboarding.mode {
+        OnboardingMode::Invite => pb::onboarding::Mode::Invite,
+        OnboardingMode::Open => pb::onboarding::Mode::Open,
+    };
+    pb::Onboarding {
+        mode: mode as i32,
+        join_code_required: onboarding.join_code.is_some(),
+        max_users: onboarding.max_users.unwrap_or(0),
+        admin_username: admin_username.to_owned(),
+    }
 }
 
 /// device-identity: Device linking. Returns the new device's id.

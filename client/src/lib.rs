@@ -47,7 +47,7 @@ pub mod net;
 mod pb;
 pub mod store;
 
-pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE};
+pub use client::{Client, ClientConfig, ClientError, DATABASE_FILE, ServerOnboarding};
 pub use clock::{Clock, ManualClock, SystemClock};
 pub use events::{
     AudioBody, Chat, ChatId, ChatKind, ConnectionState, DeviceId, Event, EventStream, ImageBody,

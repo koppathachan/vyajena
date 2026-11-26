@@ -104,6 +104,27 @@ pub async fn register(
         .devices()
         .register(pb::RegisterRequest {
             invite_code: code.to_owned(),
+            join_code: String::new(),
+            identity_public_key: user.identity_public_key(),
+            certificate: Some(device.certificate.clone()),
+        })
+        .await?
+        .into_inner())
+}
+
+/// `Devices.Register` for an open-mode signup (no invite): `user`'s chosen
+/// username and an optional join code (dev-onboarding: Open registration).
+pub async fn register_open(
+    conn: &harness::Conn,
+    user: &clients::TestUser,
+    device: &clients::TestDevice,
+    join_code: &str,
+) -> Result<pb::RegisterResponse, tonic::Status> {
+    Ok(conn
+        .devices()
+        .register(pb::RegisterRequest {
+            invite_code: String::new(),
+            join_code: join_code.to_owned(),
             identity_public_key: user.identity_public_key(),
             certificate: Some(device.certificate.clone()),
         })

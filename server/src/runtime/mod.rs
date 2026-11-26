@@ -32,7 +32,7 @@ use crate::store::{Store, StoreError};
 pub use admin_reset::{ResetError, ResetReport};
 pub use bootstrap::{Bootstrap, BootstrapInvite};
 pub use clock::{Clock, ManualClock, SystemClock};
-pub use config::{Config, ConfigError, Recovery};
+pub use config::{Config, ConfigError, Onboarding, OnboardingMode, Recovery};
 pub use redact::redact;
 pub use server_keys::{KeyError, ServerKeys};
 pub use tls::{TlsConnectInfo, TlsError};
@@ -371,6 +371,18 @@ fn log_config(config: &Config) {
         sweep_interval_secs = l.sweep_interval.as_secs(),
         max_blob_store_bytes = l.max_blob_store_bytes,
         max_uploads_per_device_per_hour = l.max_uploads_per_device_per_hour as u64,
+        // dev-onboarding: the mode and the non-secret onboarding settings. The
+        // join_code value itself is NEVER logged, only whether one is required.
+        onboarding_mode = ?config.onboarding.mode,
+        onboarding_join_code_required = config.onboarding.join_code.is_some(),
+        onboarding_max_users = config.onboarding.max_users.unwrap_or(0) as u64,
         "effective configuration"
     );
+    if config.onboarding.mode == OnboardingMode::Open {
+        tracing::warn!(
+            "DEV onboarding is ENABLED (open mode): devices may self-register with no \
+             invite, up to any configured max_users. This is for demos/testing only \
+             and must not be used in production."
+        );
+    }
 }
