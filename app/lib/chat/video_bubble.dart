@@ -6,6 +6,7 @@
 // the clip the bubble says "Video expired" and downloads nothing (the sender can
 // send it again from the message's long-press menu); a failed download can be
 // tried again by tapping.
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -39,6 +40,7 @@ class VideoBubble extends StatefulWidget {
     required this.messageId,
     required this.video,
     this.openViewer,
+    this.firstFrame,
   });
 
   final CoreService core;
@@ -52,6 +54,12 @@ class VideoBubble extends StatefulWidget {
   /// [VideoViewer] route; a test injects its own to avoid the platform plugin.
   final Future<void> Function(BuildContext context, String path)? openViewer;
 
+  /// Draws the clip's first frame for the file at `path` once it is downloaded
+  /// (the bubble shows the real frame instead of the blur, so a downloaded
+  /// video reads as downloaded). Defaults to a paused [VideoPlayer]; a test
+  /// injects its own to avoid the platform plugin.
+  final Widget Function(BuildContext context, String path)? firstFrame;
+
   @override
   State<VideoBubble> createState() => _VideoBubbleState();
 }
@@ -64,10 +72,21 @@ class _VideoBubbleState extends State<VideoBubble> {
   bool _expired = false;
   String? _error;
 
+  /// The clip's file once it is in the core's cache (downloaded); null before.
+  String? _cached;
+
   @override
   void initState() {
     super.initState();
     _expired = widget.video.state == MediaStatus.expired;
+    unawaited(_checkCached());
+  }
+
+  /// A clip already in the cache shows its first frame without a tap; nothing
+  /// is downloaded here (the core's `cachedVideo` never downloads).
+  Future<void> _checkCached() async {
+    final path = await widget.core.cachedVideo(widget.messageId);
+    if (mounted && path != null) setState(() => _cached = path);
   }
 
   @override
@@ -87,6 +106,7 @@ class _VideoBubbleState extends State<VideoBubble> {
       // core hands back a file path, never the bytes.
       final path = await widget.core.downloadVideo(widget.messageId);
       if (!mounted) return;
+      setState(() => _cached = path);
       final open = widget.openViewer ?? _defaultOpen;
       await open(context, path);
     } catch (error) {
@@ -101,10 +121,9 @@ class _VideoBubbleState extends State<VideoBubble> {
     }
   }
 
-  Future<void> _defaultOpen(BuildContext context, String path) =>
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => VideoViewer(path: path)),
-      );
+  Future<void> _defaultOpen(BuildContext context, String path) => Navigator.of(
+    context,
+  ).push(MaterialPageRoute<void>(builder: (_) => VideoViewer(path: path)));
 
   /// The size the bubble is drawn at: the clip's own shape, within the limits.
   Size _size() {
@@ -120,6 +139,28 @@ class _VideoBubbleState extends State<VideoBubble> {
   }
 
   Widget _backdrop(BuildContext context) {
+    final cached = _cached;
+    if (cached != null) {
+      // Downloaded: the real first frame over the blur (which shows until the
+      // frame is ready, and if it cannot be decoded).
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _blurBackdrop(context),
+          KeyedSubtree(
+            key: const Key('video-first-frame'),
+            child: (widget.firstFrame ?? _defaultFirstFrame)(context, cached),
+          ),
+        ],
+      );
+    }
+    return _blurBackdrop(context);
+  }
+
+  Widget _defaultFirstFrame(BuildContext context, String path) =>
+      _FirstFrame(path: path);
+
+  Widget _blurBackdrop(BuildContext context) {
     final blur = _blur;
     if (blur != null) {
       return Image.memory(
@@ -172,7 +213,11 @@ class _VideoBubbleState extends State<VideoBubble> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(videoFailedText, key: const Key('video-failed'), style: onScrim),
+              Text(
+                videoFailedText,
+                key: const Key('video-failed'),
+                style: onScrim,
+              ),
               Text(error, style: onScrim, textAlign: TextAlign.center),
             ],
           ),
@@ -191,7 +236,6 @@ class _VideoBubbleState extends State<VideoBubble> {
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: scheme.scrim.withValues(alpha: 0.55),
-              shape: BoxShape.circle,
             ),
             child: const Icon(Icons.play_arrow, color: Colors.white, size: 30),
           ),
@@ -203,7 +247,7 @@ class _VideoBubbleState extends State<VideoBubble> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: scheme.scrim.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.zero,
             ),
             child: Text(
               '$length · ${sizeText(widget.video.size)}',
@@ -226,7 +270,7 @@ class _VideoBubbleState extends State<VideoBubble> {
         key: const Key('video-bubble'),
         onTap: _tap,
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.zero,
           child: SizedBox(
             width: size.width,
             height: size.height,
@@ -236,6 +280,62 @@ class _VideoBubbleState extends State<VideoBubble> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The first frame of the clip at [path], drawn by a paused, silent player
+/// that is disposed with the bubble. Draws nothing until the frame is ready or
+/// if the file cannot be opened, so the blur stays.
+class _FirstFrame extends StatefulWidget {
+  const _FirstFrame({required this.path});
+
+  final String path;
+
+  @override
+  State<_FirstFrame> createState() => _FirstFrameState();
+}
+
+class _FirstFrameState extends State<_FirstFrame> {
+  late final VideoPlayerController _controller = VideoPlayerController.file(
+    File(widget.path),
+  );
+  bool _ready = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_open());
+  }
+
+  Future<void> _open() async {
+    try {
+      await _controller.initialize();
+      await _controller.setVolume(0);
+      if (mounted) setState(() => _ready = true);
+    } catch (_) {
+      // Unreadable: the blur stays.
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_controller.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_ready) return const SizedBox.shrink();
+    final size = _controller.value.size;
+    return FittedBox(
+      fit: BoxFit.cover,
+      clipBehavior: Clip.hardEdge,
+      child: SizedBox(
+        width: size.width,
+        height: size.height,
+        child: VideoPlayer(_controller),
       ),
     );
   }

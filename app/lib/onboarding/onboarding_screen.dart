@@ -3,6 +3,7 @@
 // existing user is linked instead (app-ui: Link a device).
 import 'package:flutter/material.dart';
 
+import '../app/arcade/motion.dart';
 import '../app/errors.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
@@ -75,7 +76,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       appBar: shellAppBar(widget.core),
       body: ListView(
         padding: const EdgeInsets.all(16),
-        children: [
+        children: arcadeEntrances([
           Text('Join the group', style: text.titleLarge),
           const SizedBox(height: 8),
           const Text('Paste the invite the admin shared with you.'),
@@ -146,7 +147,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             icon: const Icon(Icons.devices_outlined),
             label: const Text('I already have an account: link this device'),
           ),
-        ],
+        ]),
       ),
     );
   }

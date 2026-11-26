@@ -9,7 +9,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/connection_indicator.dart';
+import '../app/arcade/motion.dart';
 import '../app/errors.dart';
+import '../app/theme_mode.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
@@ -179,14 +181,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         child: ListView(
           key: const Key('profile-list'),
           padding: const EdgeInsets.all(16),
-          children: [
+          children: arcadeEntrances([
             if (widget.embedded && user != null) ...[
               Center(
-                child: NameAvatar(
-                  key: const Key('profile-header-avatar'),
-                  name: _name.text.trim().isEmpty ? user.username : _name.text,
-                  seed: user.username,
-                  radius: 44,
+                child: ArcadeFloat(
+                  distance: 4,
+                  child: NameAvatar(
+                    key: const Key('profile-header-avatar'),
+                    name: _name.text.trim().isEmpty
+                        ? user.username
+                        : _name.text,
+                    seed: user.username,
+                    radius: 44,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -237,15 +244,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             if (widget.embedded) ..._serverAndSettings(context, user),
-          ],
+          ]),
         ),
       ),
     );
   }
 
+  /// app-ui: Arcade look. The Auto/Light/Dark choice; Auto follows the phone.
+  List<Widget> _appearance(BuildContext context) {
+    final theme = ThemeModeScope.maybeOf(context);
+    if (theme == null) return const [];
+    return [
+      Text('Appearance', style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 8),
+      ValueListenableBuilder<ThemeMode>(
+        valueListenable: theme,
+        builder: (context, mode, _) => SegmentedButton<ThemeMode>(
+          key: const Key('theme-mode'),
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: ThemeMode.system, label: Text('Auto')),
+            ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+            ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+          ],
+          selected: {mode},
+          onSelectionChanged: (chosen) => unawaited(theme.choose(chosen.first)),
+        ),
+      ),
+      const SizedBox(height: 16),
+    ];
+  }
+
   /// The server info and the settings entries (app-shell: Profile tab).
   List<Widget> _serverAndSettings(BuildContext context, UserRef? user) => [
     const SizedBox(height: 24),
+    ..._appearance(context),
     Text('Presence', style: Theme.of(context).textTheme.titleSmall),
     // manual-presence: Toggle your status on the Profile screen. A sliding
     // toggle the user flips on to appear Online (green) and off to appear
@@ -425,6 +458,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   Widget build(BuildContext context) {
     final error = Theme.of(context).colorScheme.error;
     return AlertDialog(
+      scrollable: true,
       title: const Text('Delete account'),
       content: Column(
         mainAxisSize: MainAxisSize.min,

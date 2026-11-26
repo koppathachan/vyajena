@@ -1,8 +1,10 @@
 // Opening the app over the fake core in widget tests.
+import 'package:flutter/material.dart' show ListTile;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
+import 'package:vyajena/app/theme_mode.dart';
 import 'package:vyajena/chat/picture_picker.dart';
 import 'package:vyajena/chat/sticker_plugins.dart';
 import 'package:vyajena/chat/video_plugins.dart';
@@ -14,6 +16,13 @@ import 'fake_core_service.dart';
 const alice = UserRef(username: 'alice', serverId: 'chat');
 const bob = UserRef(username: 'bob', serverId: 'chat');
 const akhil = UserRef(username: 'akhil', serverId: 'chat');
+
+/// Turns the phone's reduce-motion setting on for this test.
+void reduceMotion(WidgetTester tester) {
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(disableAnimations: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+}
 
 /// Lets the fake core's futures, events and route transitions finish.
 /// (Never `Future.delayed` in `testWidgets`: its fake clock never runs it.)
@@ -140,7 +149,12 @@ Future<FakeCoreService> openHome(
   FakeCoreService? core,
 ]) async {
   final fake = core ?? FakeCoreService();
-  await tester.pumpWidget(VyajenaApp(core: fake));
+  // Arcade motion: no animation of its own under reduce-motion, so a looping
+  // float never holds a pump-until-settled test up. Motion has its own tests.
+  reduceMotion(tester);
+  await tester.pumpWidget(
+    VyajenaApp(core: fake, themeStore: MemoryThemeModeStore()),
+  );
   await fake.open();
   await settle(tester);
   return fake;
@@ -189,4 +203,18 @@ List<String> recordShares(WidgetTester tester) {
     ),
   );
   return shared;
+}
+
+/// The name a chat-list row shows: its title Text, or (the lobby, a muted row)
+/// the Text inside the title's Row.
+String? tileTitle(ListTile tile) {
+  final title = tile.title;
+  if (title is Text) return title.data;
+  if (title is Row) {
+    for (final child in title.children) {
+      final widget = child is Flexible ? child.child : child;
+      if (widget is Text) return widget.data;
+    }
+  }
+  return null;
 }

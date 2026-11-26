@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../admin/create_named_group_screen.dart';
+import '../app/arcade/motion.dart';
 import '../app/errors.dart';
 import '../app/names.dart';
 import '../app/routes.dart';
@@ -101,7 +102,18 @@ class _ContactsTabState extends State<ContactsTab> {
   Widget _action(String key, IconData icon, String label, VoidCallback onTap) =>
       ListTile(
         key: Key(key),
-        leading: CircleAvatar(child: Icon(icon)),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primary,
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outline,
+              width: 2,
+            ),
+          ),
+          child: Icon(icon, color: Theme.of(context).colorScheme.onPrimary),
+        ),
         title: Text(label),
         onTap: onTap,
       );
@@ -147,7 +159,7 @@ class _ContactsTabState extends State<ContactsTab> {
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: BoxDecoration(
                 color: scheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.zero,
               ),
               child: Text(
                 'admin',
@@ -175,7 +187,7 @@ class _ContactsTabState extends State<ContactsTab> {
         (_, final String error) => Center(child: Text(error)),
         (null, _) => const SizedBox.shrink(),
         (final List<MemberUser> members, _) => ListView(
-          children: [
+          children: arcadeEntrances([
             // TODO(replace-user): the admin's "Replace user" entry goes here
             // once that change ships; it is not offered before then.
             if (widget.admin) ...[
@@ -207,7 +219,7 @@ class _ContactsTabState extends State<ContactsTab> {
               const Divider(),
             ],
             for (final m in members) _member(m),
-          ],
+          ]),
         ),
       },
     );

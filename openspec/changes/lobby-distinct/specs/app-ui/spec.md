@@ -2,7 +2,7 @@
 
 ### Requirement: Lobby row styling
 The chat list SHALL render the lobby row (`ChatKindInfo_Lobby`) distinctly from
-all other rows: a `#` hash tile on an accent-tinted rounded square in place of the
+all other rows: a `#` hash tile on an accent-tinted square in place of the
 plain avatar, the lobby name in italics, a small "system" tag pill beside the
 name, the row pinned to the top of the list, and a subtle accent-tinted row
 background. This treatment SHALL apply only to the lobby, never to an

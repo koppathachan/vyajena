@@ -9,12 +9,13 @@ import '../support/fake_core_service.dart';
 import '../support/fake_video.dart';
 
 /// Bob's device in a group with akhil and alice.
-FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
-  ..memberDevices = const [
-    MemberDevice(user: akhil, device: '01'),
-    MemberDevice(user: alice, device: '02'),
-    MemberDevice(user: bob, device: '03'),
-  ];
+FakeCoreService groupAsBob() =>
+    FakeCoreService(storedUser: bob)
+      ..memberDevices = const [
+        MemberDevice(user: akhil, device: '01'),
+        MemberDevice(user: alice, device: '02'),
+        MemberDevice(user: bob, device: '03'),
+      ];
 
 final attach = find.byKey(const Key('attach-image'));
 final bubble = find.byKey(const Key('video-bubble'));
@@ -136,6 +137,47 @@ void main() {
     // The clip downloaded through the core, and the player opened on its path.
     expect(core.args['downloadVideo'], message.id);
     expect(opened, '/media/clip-${message.id}.mp4');
+  });
+
+  // spec: app-ui/downloaded-video-shows-first-frame
+  testWidgets('a downloaded video shows its first frame; before that only the '
+      'blur (nothing downloads by itself)', (tester) async {
+    final core = groupAsBob();
+    final message = core.receiveVideo(alice);
+    final video = message.body as ChatBody_Video;
+    Widget bubbleWidget() => MaterialApp(
+      home: Scaffold(
+        body: VideoBubble(
+          core: core,
+          messageId: message.id,
+          video: video.video,
+          openViewer: (context, path) async {},
+          firstFrame: (context, path) =>
+              Text(path, key: const Key('fake-frame')),
+        ),
+      ),
+    );
+
+    // Not in the cache: the blur, no frame, and no download.
+    await tester.pumpWidget(bubbleWidget());
+    await settle(tester);
+    expect(find.byKey(const Key('video-first-frame')), findsNothing);
+    expect(core.calls, isNot(contains('downloadVideo')));
+
+    // Tap: it downloads, and the first frame appears in the bubble.
+    await tap(tester, find.byKey(const Key('video-bubble')));
+    await settle(tester);
+    expect(find.byKey(const Key('video-first-frame')), findsOneWidget);
+    expect(find.text('/media/clip-${message.id}.mp4'), findsOneWidget);
+
+    // Already in the cache when the bubble is built: the frame shows at once,
+    // without a tap and without downloading again.
+    core.calls.clear();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(bubbleWidget());
+    await settle(tester);
+    expect(find.byKey(const Key('video-first-frame')), findsOneWidget);
+    expect(core.calls, isNot(contains('downloadVideo')));
   });
 
   // spec: app-ui/video-bubble-and-player

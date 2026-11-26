@@ -63,6 +63,11 @@ const pickerOnly = {'package:image_picker/image_picker.dart'};
 /// OS browser (app-ui: Links in messages). It opens no connection in Dart.
 const linksOnly = {'package:url_launcher/url_launcher.dart'};
 
+/// What only the theme-choice file may import: the phone's small key-value
+/// store, for the Auto/Light/Dark choice (app-ui: Arcade look). One string; no
+/// message content, no network.
+const themeOnly = {'package:shared_preferences/shared_preferences.dart'};
+
 /// What only the sticker preview may import: `dart:ui` to draw the cutout's
 /// RGBA over a checkerboard (app-ui: Create a sticker). It is a rendering API
 /// (`decodeImageFromPixels`, `Canvas`) with no socket, HTTP client or file API.
@@ -125,6 +130,8 @@ void main() {
             file.path.replaceAll(r'\', '/') == 'lib/main.dart',
           _ when linksOnly.contains(uri) =>
             file.path.replaceAll(r'\', '/') == 'lib/chat/links.dart',
+          _ when themeOnly.contains(uri) =>
+            file.path.replaceAll(r'\', '/') == 'lib/app/theme_mode.dart',
           // dart:io, image_picker and video_player overlap across the voice and
           // video files, so these are matched by uri before the set arms below.
           'dart:io' => ioFiles.contains(file.path.replaceAll(r'\', '/')),
@@ -183,6 +190,8 @@ void main() {
     // voice message; Play a voice message).
     // video_player only plays the core's cached local MP4 (Video bubble and
     // player); image_picker also picks the video to send (Send a video).
+    // shared_preferences only keeps the Auto/Light/Dark choice on the phone
+    // (Arcade look).
     expect(names, {
       'flutter',
       'bridge',
@@ -194,6 +203,7 @@ void main() {
       'record',
       'just_audio',
       'video_player',
+      'shared_preferences',
     });
   });
 

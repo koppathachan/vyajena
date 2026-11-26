@@ -40,6 +40,9 @@ dependencies:
   record: ^7.2.0
   just_audio: ^0.10.6
   video_player: ^2.11.1
+  # app-ui: Arcade look. The Auto/Light/Dark choice is the only thing it stores:
+  # one small string on this device (the owner approved this one dependency).
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +75,13 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # app-ui: Arcade look. The one bundled font, for headings and labels only
+  # (SIL OFL, licence beside it). Body text is the platform monospace.
+  fonts:
+    - family: PressStart2P
+      fonts:
+        - asset: assets/fonts/PressStart2P-Regular.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

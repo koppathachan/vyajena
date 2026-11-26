@@ -7,6 +7,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/tokens.dart';
+
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_model.dart';
 import '../core/core_service.dart';
@@ -81,7 +83,6 @@ class _HomeShellState extends State<HomeShell> {
       children: [
         DecoratedBox(
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
             border: Border.all(
               color: selected
                   ? Theme.of(context).colorScheme.primary
@@ -117,9 +118,8 @@ class _HomeShellState extends State<HomeShell> {
                 width: 11,
                 height: 11,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
                   color: online ? presenceOnlineColor : scheme.error,
-                  border: Border.all(color: scheme.surface, width: 1.5),
+                  border: Border.all(color: scheme.outline, width: 1.5),
                 ),
               );
             },
@@ -140,30 +140,41 @@ class _HomeShellState extends State<HomeShell> {
           ProfileScreen(core: widget.core, embedded: true, admin: widget.admin),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        key: const Key('bottom-nav'),
-        selectedIndex: _tab.index,
-        onDestinationSelected: (i) => setState(() => _tab = ShellTab.values[i]),
-        destinations: [
-          const NavigationDestination(
-            key: Key('tab-chats'),
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: Theme.of(context).colorScheme.outline,
+              width: arcadeBorderWidth,
+            ),
           ),
-          const NavigationDestination(
-            key: Key('tab-contacts'),
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Contacts',
-          ),
-          NavigationDestination(
-            key: const Key('tab-profile'),
-            icon: avatar(selected: false),
-            selectedIcon: avatar(selected: true),
-            label: 'Profile',
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          key: const Key('bottom-nav'),
+          selectedIndex: _tab.index,
+          onDestinationSelected: (i) =>
+              setState(() => _tab = ShellTab.values[i]),
+          destinations: [
+            const NavigationDestination(
+              key: Key('tab-chats'),
+              icon: Icon(Icons.chat_bubble_outline),
+              selectedIcon: Icon(Icons.chat_bubble),
+              label: 'Chats',
+            ),
+            const NavigationDestination(
+              key: Key('tab-contacts'),
+              icon: Icon(Icons.people_outline),
+              selectedIcon: Icon(Icons.people),
+              label: 'Contacts',
+            ),
+            NavigationDestination(
+              key: const Key('tab-profile'),
+              icon: avatar(selected: false),
+              selectedIcon: avatar(selected: true),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }
