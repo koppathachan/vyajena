@@ -32,6 +32,15 @@ impl UserId {
         }
     }
 
+    /// The inverse of [`Display`](fmt::Display): parses `<username>@<server_id>`,
+    /// splitting at the first `@`. `None` when there is no `@` (device-identity:
+    /// Federation-ready identifiers). Either half may be empty, matching the
+    /// callers this replaces; it is not a validity check.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (username, server_id) = text.split_once('@')?;
+        Some(Self::new(username, server_id))
+    }
+
     pub(crate) fn to_pb(&self) -> crate::pb::UserId {
         crate::pb::UserId {
             username: self.username.clone(),
