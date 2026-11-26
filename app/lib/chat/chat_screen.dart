@@ -273,13 +273,15 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatBody_Text(:final text) => text,
           ChatBody_Image(:final image) => image.caption ?? pictureQuote,
           ChatBody_Audio() => voiceQuote,
+          ChatBody_Video() => videoQuote,
           _ => unsupportedText,
         },
-        // So the reply bar previews a voice (or picture) original correctly
+        // So the reply bar previews a voice, picture or video original correctly
         // (message-content: Reply quote describes the original's kind).
         kind: switch (body) {
           ChatBody_Image() => ReplyKind.image,
           ChatBody_Audio() => ReplyKind.audio,
+          ChatBody_Video() => ReplyKind.video,
           _ => ReplyKind.text,
         },
         durationMs: switch (body) {

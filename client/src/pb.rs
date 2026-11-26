@@ -1095,6 +1095,11 @@ pub enum OriginalKind {
     Text = 1,
     Image = 2,
     Audio = 3,
+    /// change `video-messages`: a video original, so a reply to a video renders a
+    /// video preview rather than the "needs a newer version" placeholder. An older
+    /// receiver reads this unknown value as UNSPECIFIED (a text quote), exactly as
+    /// it already treats any kind it does not know.
+    Video = 4,
 }
 impl OriginalKind {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -1107,6 +1112,7 @@ impl OriginalKind {
             Self::Text => "ORIGINAL_KIND_TEXT",
             Self::Image => "ORIGINAL_KIND_IMAGE",
             Self::Audio => "ORIGINAL_KIND_AUDIO",
+            Self::Video => "ORIGINAL_KIND_VIDEO",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -1116,6 +1122,7 @@ impl OriginalKind {
             "ORIGINAL_KIND_TEXT" => Some(Self::Text),
             "ORIGINAL_KIND_IMAGE" => Some(Self::Image),
             "ORIGINAL_KIND_AUDIO" => Some(Self::Audio),
+            "ORIGINAL_KIND_VIDEO" => Some(Self::Video),
             _ => None,
         }
     }

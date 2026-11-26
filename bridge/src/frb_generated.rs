@@ -5353,6 +5353,7 @@ impl SseDecode for crate::api::types::ReplyKind {
             0 => crate::api::types::ReplyKind::Text,
             1 => crate::api::types::ReplyKind::Image,
             2 => crate::api::types::ReplyKind::Audio,
+            3 => crate::api::types::ReplyKind::Video,
             _ => unreachable!("Invalid variant for ReplyKind: {}", inner),
         };
     }
@@ -6242,6 +6243,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::ReplyKind {
             Self::Text => 0.into_dart(),
             Self::Image => 1.into_dart(),
             Self::Audio => 2.into_dart(),
+            Self::Video => 3.into_dart(),
             _ => unreachable!(),
         }
     }
@@ -7053,6 +7055,7 @@ impl SseEncode for crate::api::types::ReplyKind {
                 crate::api::types::ReplyKind::Text => 0,
                 crate::api::types::ReplyKind::Image => 1,
                 crate::api::types::ReplyKind::Audio => 2,
+                crate::api::types::ReplyKind::Video => 3,
                 _ => {
                     unimplemented!("");
                 }

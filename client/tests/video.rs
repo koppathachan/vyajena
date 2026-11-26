@@ -345,6 +345,72 @@ async fn an_expired_video_shows_as_expired_and_the_sender_can_resend_it() {
     );
 }
 
+// spec: message-content/reply-quote-describes-the-original-s-kind
+// A reply to a video quotes the video (its kind and local id), not the text
+// message that follows it: the reply reference is the video's stable
+// (sender, msg_id), and its kind is Video so a receiver without the clip still
+// renders a video preview rather than the "needs a newer version" placeholder.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reply_to_a_video_quotes_the_video_and_its_kind() {
+    let server = TestServer::start().await;
+    let (mut admin, mut alice, mut bob) = chat(&server).await;
+
+    // Alice sends text, then a video, then text: three messages in a row.
+    let before = alice.client.send_text("before the clip").check("send");
+    let video = send_clip(&alice, 120_000).await.check("send_video");
+    let after = alice.client.send_text("after the clip").check("send");
+    for id in [before, video, after] {
+        wait_accepted(&mut alice, id).await;
+    }
+
+    // Bob receives all three and finds his local copy of the video.
+    let received = wait_video(&mut bob).await;
+    let bob_video = received.id;
+    assert_eq!(video_of(&received).duration_ms, 12_000);
+
+    // Bob replies to the video.
+    let reply_id = bob
+        .client
+        .send_message("nice clip", &[], Some(bob_video))
+        .check("reply to the video");
+    wait_accepted(&mut bob, reply_id).await;
+
+    // The admin, who also holds the video, receives Bob's reply. Its quote must
+    // point at the video (kind Video, and its local id), not the text after it.
+    let at_admin = loop {
+        match admin
+            .wait_event(
+                "Bob's reply",
+                |e| matches!(e, Event::Message(m) if matches!(&m.body, MessageBody::Text(t) if t == "nice clip")),
+            )
+            .await
+        {
+            Event::Message(message) => break message,
+            _ => continue,
+        }
+    };
+    let reply = at_admin.reply.expect("the reply carries a quote");
+    // The original the quote resolves to is the admin's local video, not the
+    // following text message.
+    let admin_video = admin
+        .client
+        .history(100)
+        .check("history")
+        .into_iter()
+        .find(|m| matches!(m.body, MessageBody::Video(_)))
+        .expect("the admin holds the video");
+    assert_eq!(
+        reply.original,
+        Some(admin_video.id),
+        "the quote points at the video, not the text after it"
+    );
+    assert_eq!(
+        reply.kind,
+        client::ReplyOriginalKind::Video,
+        "the quote's kind is Video so a receiver renders a video preview"
+    );
+}
+
 // spec: video-messages/video-messages
 #[tokio::test(flavor = "multi_thread")]
 async fn the_default_advertised_cap_is_the_protocol_default() {

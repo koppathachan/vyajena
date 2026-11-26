@@ -394,6 +394,15 @@ class MessageTile extends StatelessWidget {
             Text('$voiceQuote · $length', style: style),
           ],
         );
+      case ReplyKind.video:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam, size: 16, color: scheme.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Text(videoQuote, style: style),
+          ],
+        );
       case ReplyKind.image:
         final c = core;
         final blur = (reply.thumbhash.isEmpty || c == null)

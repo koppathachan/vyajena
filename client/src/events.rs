@@ -222,6 +222,8 @@ pub enum ReplyOriginalKind {
     Image,
     /// A voice message: show a mic glyph and the duration.
     Audio,
+    /// A video message: show a video glyph and "Video" (change `video-messages`).
+    Video,
 }
 
 /// What a reply answers (message-content: Replies; Reply quote describes the

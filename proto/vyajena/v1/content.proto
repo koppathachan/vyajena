@@ -164,6 +164,11 @@ enum OriginalKind {
   ORIGINAL_KIND_TEXT = 1;
   ORIGINAL_KIND_IMAGE = 2;
   ORIGINAL_KIND_AUDIO = 3;
+  // change `video-messages`: a video original, so a reply to a video renders a
+  // video preview rather than the "needs a newer version" placeholder. An older
+  // receiver reads this unknown value as UNSPECIFIED (a text quote), exactly as
+  // it already treats any kind it does not know.
+  ORIGINAL_KIND_VIDEO = 4;
 }
 
 // message-content: Text only. UTF-8 text, optional mentions and one optional
