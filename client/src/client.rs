@@ -1032,12 +1032,14 @@ impl Client {
                     audio.duration_ms,
                     Vec::new(),
                 ),
-                // Replying to a video is not a distinct reply kind (the
-                // OriginalKind enum has none for video); carry no quote, like an
-                // unsupported body.
-                Decoded::Video(_) | Decoded::Unsupported => {
-                    (String::new(), ReplyOriginalKind::Text, 0, Vec::new())
-                }
+                // Replying to a video quotes it as a video original (no text to
+                // quote); `original_kind` carries the kind so a receiver without
+                // the clip renders a video preview, never the "needs a newer
+                // version" placeholder (message-content: Reply quote describes the
+                // original's kind; change `video-messages`).
+                Decoded::Video(_) => (String::new(), ReplyOriginalKind::Video, 0, Vec::new()),
+                // A body this core cannot decode has no kind to carry.
+                Decoded::Unsupported => (String::new(), ReplyOriginalKind::Text, 0, Vec::new()),
                 Decoded::Profile(_) | Decoded::GroupSettings { .. } | Decoded::Delete(_) => {
                     return Err(ClientError::NoSuchMessage);
                 }

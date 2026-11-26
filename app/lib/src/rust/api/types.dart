@@ -705,6 +705,9 @@ enum ReplyKind {
 
   /// A voice message: show a mic glyph and the duration.
   audio,
+
+  /// A video message: show a video glyph and "Video".
+  video,
 }
 
 /// What a reply answers (message-content: Replies; Reply quote describes the

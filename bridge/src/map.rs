@@ -134,6 +134,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
             kind: match reply.kind {
                 client::ReplyOriginalKind::Image => ReplyKind::Image,
                 client::ReplyOriginalKind::Audio => ReplyKind::Audio,
+                client::ReplyOriginalKind::Video => ReplyKind::Video,
                 client::ReplyOriginalKind::Text => ReplyKind::Text,
             },
             duration_ms: reply.duration_ms,

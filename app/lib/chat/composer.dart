@@ -309,6 +309,15 @@ class _ComposerState extends State<Composer> {
             Text('Voice message · $length', style: style),
           ],
         );
+      case ReplyKind.video:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.videocam, size: 16),
+            const SizedBox(width: 4),
+            Text('Video', style: style),
+          ],
+        );
       case ReplyKind.image:
         final blur = reply.thumbhash.isEmpty
             ? null

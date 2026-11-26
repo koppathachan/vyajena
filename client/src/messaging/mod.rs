@@ -405,6 +405,7 @@ fn pb_original_kind(kind: ReplyOriginalKind) -> pb::OriginalKind {
         ReplyOriginalKind::Text => pb::OriginalKind::Text,
         ReplyOriginalKind::Image => pb::OriginalKind::Image,
         ReplyOriginalKind::Audio => pb::OriginalKind::Audio,
+        ReplyOriginalKind::Video => pb::OriginalKind::Video,
     }
 }
 
@@ -414,6 +415,7 @@ fn kind_from_pb(value: i32) -> ReplyOriginalKind {
     match pb::OriginalKind::try_from(value) {
         Ok(pb::OriginalKind::Image) => ReplyOriginalKind::Image,
         Ok(pb::OriginalKind::Audio) => ReplyOriginalKind::Audio,
+        Ok(pb::OriginalKind::Video) => ReplyOriginalKind::Video,
         _ => ReplyOriginalKind::Text,
     }
 }
