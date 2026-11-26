@@ -56,7 +56,7 @@ pub(crate) fn device_id(text: &str) -> Result<DeviceId, CoreError> {
     if text.len() != id.len() * 2 {
         return Err(bad());
     }
-    for (byte, pair) in id.iter_mut().zip(text.chunks_exact(2)) {
+    for (byte, pair) in id.iter_mut().zip(text.as_chunks::<2>().0.iter()) {
         let pair = std::str::from_utf8(pair).map_err(|_| bad())?;
         *byte = u8::from_str_radix(pair, 16).map_err(|_| bad())?;
     }

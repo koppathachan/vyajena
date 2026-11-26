@@ -237,7 +237,7 @@ pub fn webp_size(bytes: &[u8]) -> Option<(u32, u32)> {
 /// ThumbHash so the app needs no ThumbHash code of its own.
 pub fn thumbhash_is_transparent(hash: &[u8]) -> bool {
     match thumbhash::thumb_hash_to_rgba(hash) {
-        Ok((_, _, rgba)) => rgba.chunks_exact(4).any(|px| px[3] < 255),
+        Ok((_, _, rgba)) => rgba.as_chunks::<4>().0.iter().any(|px| px[3] < 255),
         Err(_) => false,
     }
 }
