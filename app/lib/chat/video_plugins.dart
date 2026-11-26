@@ -26,6 +26,13 @@ import 'package:image_picker/image_picker.dart';
 /// MAX_VIDEO_DURATION_MS). The server never sees duration; the app enforces it.
 const videoMaxDuration = Duration(seconds: 30);
 
+/// The 480p long-edge bound the native plugins normalize to (the Kotlin
+/// `VideoNormalize.LONG_EDGE` / iOS `AVAssetExportPreset640x480`). A normalized
+/// clip's reported dimensions keep the source aspect ratio scaled to fit this —
+/// never cropped — so the long edge never exceeds it. Used to sanity-check the
+/// plugin result below.
+const videoLongEdge = 854;
+
 /// A normalized clip ready for the core: canonical H.264/MP4 at the 480p/~1 Mbps
 /// target, trimmed to ≤ 30 s, with its first frame for the ThumbHash. Widget
 /// tests build one in memory.
@@ -109,11 +116,25 @@ class DeviceVideoSource implements VideoSource {
     try {
       final mp4 = await out.readAsBytes();
       final frame = result['frameRgba'] as Uint8List? ?? Uint8List(0);
+      final width = (result['width'] as num).toInt();
+      final height = (result['height'] as num).toInt();
+      // The plugin must report real, aspect-preserving display dimensions: both
+      // positive, with the long edge scaled to fit [videoLongEdge] (never
+      // cropped or stretched past it). A zero or over-bound value means the
+      // native transcode mis-sized the clip (the Android crop class of bug).
+      assert(
+        width > 0 && height > 0,
+        'normalized video has non-positive dimensions ${width}x$height',
+      );
+      assert(
+        width <= videoLongEdge && height <= videoLongEdge,
+        'normalized video long edge ${width}x$height exceeds $videoLongEdge',
+      );
       return NormalizedVideo(
         mp4: mp4,
         durationMs: (result['durationMs'] as num).toInt(),
-        width: (result['width'] as num).toInt(),
-        height: (result['height'] as num).toInt(),
+        width: width,
+        height: height,
         firstFrameRgba: frame,
         frameWidth: (result['frameWidth'] as num?)?.toInt() ?? 0,
         frameHeight: (result['frameHeight'] as num?)?.toInt() ?? 0,
