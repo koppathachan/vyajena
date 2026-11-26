@@ -64,6 +64,14 @@ abstract class Core implements RustOpaqueInterface {
   /// approval text to show back.
   Future<String> approveLink({required String requestText});
 
+  /// Blocks `user` on this device (moderation: Block a user): the display and
+  /// notification paths skip their messages and DM. Local only — no RPC, no
+  /// server marker, no sync to the user's other devices.
+  Future<void> blockUser({required UserRef user});
+
+  /// The users this device has blocked.
+  Future<List<UserRef>> blockedUsers();
+
   /// The path of voice message `id`'s clip if this device has it cached;
   /// never uses the network.
   Future<String?> cachedAudio({required PlatformInt64 id});
@@ -187,6 +195,9 @@ abstract class Core implements RustOpaqueInterface {
   /// Whether this device's user is the admin.
   Future<bool> isAdmin();
 
+  /// Whether this device has blocked `user`.
+  Future<bool> isBlocked({required UserRef user});
+
   /// Whether the core is connected right now.
   Future<bool> isConnected();
 
@@ -228,6 +239,10 @@ abstract class Core implements RustOpaqueInterface {
   /// The open DM with `user`, opened first if there is none; its chat id.
   Future<PlatformInt64> openDm({required UserRef user});
 
+  /// Parses a report `Content.Text` the admin received (moderation: The admin
+  /// sees reports), or `None` for an ordinary message.
+  Future<ReportView?> parseReport({required String text});
+
   /// The manual presence flag this device last learned for `user`, or `Unknown`
   /// when it has learned none — the app then shows no dot (manual-presence:
   /// Presence indicator on avatars).
@@ -265,6 +280,16 @@ abstract class Core implements RustOpaqueInterface {
     required PlatformInt64 chatId,
     required String name,
   });
+
+  /// Reports message `id` to the admin (moderation: Report a message; Report a
+  /// DM message): a group/lobby message is referenced, a DM message quoted.
+  Future<void> reportMessage({
+    required PlatformInt64 id,
+    required String reason,
+  });
+
+  /// Reports `user` to the admin (moderation: Report a user).
+  Future<void> reportUser({required UserRef user, required String reason});
 
   /// Re-sync a chat the core signalled is out of sync (`CoreEvent::OutOfSync`):
   /// ask the server to re-add this wedged device. The held message keeps its
@@ -447,6 +472,9 @@ abstract class Core implements RustOpaqueInterface {
 
   /// Stops the engine and closes the connection.
   Future<void> stop();
+
+  /// Unblocks `user` on this device; their messages and DM are shown again.
+  Future<void> unblockUser({required UserRef user});
 
   /// The local ids of messages whose mention of this user is not seen yet,
   /// in chat order (client-runtime: Unseen mentions).

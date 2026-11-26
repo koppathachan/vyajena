@@ -474,6 +474,38 @@ pub struct ProfileInfo {
     pub about: Option<String>,
 }
 
+/// A report the admin received, parsed from a report `Content.Text`
+/// (moderation: The admin sees reports, change `report-and-block`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReportView {
+    /// The reported user.
+    pub reported: UserRef,
+    /// The reporter's short reason.
+    pub reason: String,
+    /// What the report points at.
+    pub kind: ReportKindInfo,
+}
+
+/// What a report points at (moderation: The admin sees reports).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReportKindInfo {
+    /// A group/lobby message the admin already holds, referenced by group id and
+    /// wire message id (both lowercase hex).
+    Group {
+        /// The MLS group id, hex.
+        group_id: String,
+        /// The offending message's wire id, hex.
+        msg_id: String,
+    },
+    /// A DM message, with a capped quote of the offending text.
+    Dm {
+        /// The quote of the offending message.
+        quote: String,
+    },
+    /// A whole user, with no message reference or quote.
+    User,
+}
+
 /// A group member device.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MemberDevice {

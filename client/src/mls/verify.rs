@@ -392,8 +392,7 @@ pub fn key_lookup_allowed(
     if !committed_by_admin(group, committer) {
         return None;
     }
-    let (username, server_id) = user.split_once('@')?;
-    Some(UserId::new(username, server_id))
+    UserId::parse(user)
 }
 
 /// key-directory: Clients verify the identity chain. When [`check_welcome`]
@@ -405,8 +404,7 @@ pub fn welcome_key_lookup(problem: &LeafProblem) -> Option<UserId> {
     let LeafProblem::Unverified(user) = problem else {
         return None;
     };
-    let (username, server_id) = user.split_once('@')?;
-    Some(UserId::new(username, server_id))
+    UserId::parse(user)
 }
 
 /// Checks a DM Welcome's group before joining it (direct-messages: DM
@@ -432,10 +430,8 @@ pub fn check_dm_welcome(
         (false, true) => a,
         _ => return Err(LeafProblem::Context("a DM that does not name this user")),
     };
-    let (username, peer_server) = peer
-        .split_once('@')
+    let peer = UserId::parse(&peer)
         .ok_or(LeafProblem::Context("a DM peer without a server id"))?;
-    let peer = UserId::new(username, peer_server);
     if super::group::pi_sender_index(context_extensions, server).is_none() {
         return Err(LeafProblem::Context("the server is not an external sender"));
     }

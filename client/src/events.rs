@@ -32,6 +32,15 @@ impl UserId {
         }
     }
 
+    /// The inverse of [`Display`](fmt::Display): parses `<username>@<server_id>`,
+    /// splitting at the first `@`. `None` when there is no `@` (device-identity:
+    /// Federation-ready identifiers). Either half may be empty, matching the
+    /// callers this replaces; it is not a validity check.
+    pub fn parse(text: &str) -> Option<Self> {
+        let (username, server_id) = text.split_once('@')?;
+        Some(Self::new(username, server_id))
+    }
+
     pub(crate) fn to_pb(&self) -> crate::pb::UserId {
         crate::pb::UserId {
             username: self.username.clone(),
@@ -329,6 +338,17 @@ pub enum MuteTarget {
     Conversation(ChatId),
     /// Every conversation at once (the `muted_all` flag).
     Global,
+}
+
+/// What a user reports to the admin (moderation: Report a message; Report a
+/// user, change `report-and-block`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReportTarget {
+    /// A specific message, by its local id. The core decides whether to send a
+    /// group/lobby reference or a DM quote by the message's chat.
+    Message(MessageId),
+    /// A whole user, by their id, with no message reference or quote.
+    User(UserId),
 }
 
 /// A chat message, received or sent by this device.

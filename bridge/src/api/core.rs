@@ -5,14 +5,17 @@
 //! one runtime per app process, spike 1.3) or its thread pool.
 
 use client::keystore::{KeyStoreConfig, open_key_store};
-use client::{ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget, Presence, UserId};
+use client::{
+    ChatId, Client, ClientConfig, EventStream, MessageId, MuteTarget, Presence, ReportTarget,
+    UserId,
+};
 use tokio::sync::Mutex;
 
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, PresenceStatus,
-    ProfileInfo, PushPlatform, StickerSource, UserRef,
+    ProfileInfo, PushPlatform, ReportView, StickerSource, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -725,6 +728,61 @@ impl Core {
     /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
     pub fn app_muted(&self) -> Result<bool, CoreError> {
         Ok(forward(self.client.mute_prefs())?.muted_all)
+    }
+
+    // --- Moderation (block + report; change `report-and-block`) ---
+
+    /// Blocks `user` on this device (moderation: Block a user): the display and
+    /// notification paths skip their messages and DM. Local only — no RPC, no
+    /// server marker, no sync to the user's other devices.
+    pub fn block_user(&self, user: UserRef) -> Result<(), CoreError> {
+        forward(self.client.block_user(&map::user_id(&user)))
+    }
+
+    /// Unblocks `user` on this device; their messages and DM are shown again.
+    pub fn unblock_user(&self, user: UserRef) -> Result<(), CoreError> {
+        forward(self.client.unblock_user(&map::user_id(&user)))
+    }
+
+    /// Whether this device has blocked `user`.
+    pub fn is_blocked(&self, user: UserRef) -> Result<bool, CoreError> {
+        forward(self.client.is_blocked(&map::user_id(&user)))
+    }
+
+    /// The users this device has blocked.
+    pub fn blocked_users(&self) -> Result<Vec<UserRef>, CoreError> {
+        Ok(forward(self.client.blocked_users())?
+            .iter()
+            .map(map::user)
+            .collect())
+    }
+
+    /// Reports message `id` to the admin (moderation: Report a message; Report a
+    /// DM message): a group/lobby message is referenced, a DM message quoted.
+    pub async fn report_message(&self, id: i64, reason: String) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .report(ReportTarget::Message(MessageId(id)), &reason)
+                .await,
+        )
+    }
+
+    /// Reports `user` to the admin (moderation: Report a user).
+    pub async fn report_user(&self, user: UserRef, reason: String) -> Result<(), CoreError> {
+        forward(
+            self.client
+                .report(ReportTarget::User(map::user_id(&user)), &reason)
+                .await,
+        )
+    }
+
+    /// Parses a report `Content.Text` the admin received (moderation: The admin
+    /// sees reports), or `None` for an ordinary message.
+    pub fn parse_report(&self, text: String) -> Option<ReportView> {
+        self.client
+            .parse_report(&text)
+            .as_ref()
+            .map(map::report_view)
     }
 
     /// manual-presence: Setting your status. Sets this user's own manual flag —

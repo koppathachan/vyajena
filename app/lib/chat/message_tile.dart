@@ -66,6 +66,12 @@ const videoQuote = 'Video';
 /// What the long-press sheet's Delete entry says (message-deletion).
 const deleteLabel = 'Delete';
 
+/// What the long-press sheet's Report entry says (moderation: Report a message).
+const reportLabel = 'Report';
+
+/// What the long-press sheet's Block entry says (moderation: Block a user).
+const blockLabel = 'Block';
+
 /// The tombstone of a deleted message (message-deletion: Tombstone, not
 /// erasure).
 const deletedText = 'This message was deleted';
@@ -97,6 +103,8 @@ class MessageTile extends StatelessWidget {
     this.onResendAudio,
     this.onResendVideo,
     this.onDelete,
+    this.onReport,
+    this.onBlock,
     this.onReveal,
     this.revealed,
     this.playback,
@@ -146,6 +154,16 @@ class MessageTile extends StatelessWidget {
   /// message in a DM. The sheet shows Delete only when this is set
   /// (message-deletion: Who may delete).
   final VoidCallback? onDelete;
+
+  /// Reports this message to the admin (long-press → Report), for a message
+  /// from another user. The sheet shows Report only when this is set
+  /// (moderation: Report a message).
+  final VoidCallback? onReport;
+
+  /// Blocks this message's sender (long-press → Block), for a message from
+  /// another user. The sheet shows Block only when this is set (moderation:
+  /// Block a user).
+  final VoidCallback? onBlock;
 
   /// Reveals the original of a DM tombstone this device still holds (the Reveal
   /// affordance; message-deletion: Receiver may reveal in a DM).
@@ -214,6 +232,20 @@ class MessageTile extends StatelessWidget {
                 title: const Text(deleteLabel),
                 onTap: () => Navigator.of(context).pop('delete'),
               ),
+            if (onReport != null)
+              ListTile(
+                key: const Key('report'),
+                leading: const Icon(Icons.flag_outlined),
+                title: const Text(reportLabel),
+                onTap: () => Navigator.of(context).pop('report'),
+              ),
+            if (onBlock != null)
+              ListTile(
+                key: const Key('block'),
+                leading: const Icon(Icons.block),
+                title: const Text(blockLabel),
+                onTap: () => Navigator.of(context).pop('block'),
+              ),
           ],
         ),
       ),
@@ -229,6 +261,10 @@ class MessageTile extends StatelessWidget {
         resendVideo?.call();
       case 'delete':
         onDelete?.call();
+      case 'report':
+        onReport?.call();
+      case 'block':
+        onBlock?.call();
     }
   }
 
@@ -585,7 +621,22 @@ class MessageTile extends StatelessWidget {
       ),
     );
     final startReply = onReply;
-    if (startReply == null) return bubble;
+    // The long-press sheet is available whenever it has an entry (Reply,
+    // Resend, Delete, Report or Block); swipe-to-reply needs onReply.
+    final hasSheet =
+        startReply != null ||
+        onDelete != null ||
+        onReport != null ||
+        onBlock != null ||
+        (message.outgoing &&
+            (message.body is ChatBody_Image ||
+                message.body is ChatBody_Audio ||
+                message.body is ChatBody_Video));
+    if (startReply == null) {
+      return hasSheet
+          ? GestureDetector(onLongPress: () => _sheet(context), child: bubble)
+          : bubble;
+    }
     // Swipe right to reply: the row slides, then springs back (it is never
     // dismissed).
     return Dismissible(

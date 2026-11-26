@@ -374,8 +374,35 @@ void main() {
     await tap(tester, find.text(replyLabel));
     expect(find.byKey(const Key('reply-bar')), findsOneWidget);
     expect(find.text('the view'), findsWidgets);
-    // A picture goes as its own message: no attach button while replying.
-    expect(attach, findsNothing);
+    // The attach button stays while replying (it never vanishes on
+    // swipe-to-reply); a picture still goes as its own message.
+    expect(attach, findsOneWidget);
+  });
+
+  // spec: app-ui/image-bubble-and-viewer
+  testWidgets('the attach button stays and is tappable after swipe-to-reply', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithPictures(tester, core, FakePicker(picked));
+    core.receiveImage(alice, caption: 'the view');
+    await settle(tester);
+    // Swipe the bubble to the right to start a reply (swipe-to-reply): the
+    // Dismissible's confirmDismiss fires onReply past its small threshold.
+    await tester.drag(bubble, const Offset(300, 0));
+    await settle(tester);
+    expect(find.byKey(const Key('reply-bar')), findsOneWidget);
+
+    // The paperclip is still there and opens the attachment sheet, so a
+    // picture can still be attached while a reply is being composed.
+    expect(attach, findsOneWidget);
+    await tap(tester, attach);
+    expect(find.byKey(const Key('attachment-sheet')), findsOneWidget);
+    await tap(tester, find.byKey(const Key('attach-photo')));
+    await settle(tester);
+    expect(preview, findsOneWidget);
+    // The reply is still pending alongside the picked picture.
+    expect(find.byKey(const Key('reply-bar')), findsOneWidget);
   });
 }
 

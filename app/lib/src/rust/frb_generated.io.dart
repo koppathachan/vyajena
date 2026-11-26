@@ -70,6 +70,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReplyQuote dco_decode_box_autoadd_reply_quote(dynamic raw);
 
   @protected
+  ReportView dco_decode_box_autoadd_report_view(dynamic raw);
+
+  @protected
   SendState dco_decode_box_autoadd_send_state(dynamic raw);
 
   @protected
@@ -175,6 +178,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ReplyQuote? dco_decode_opt_box_autoadd_reply_quote(dynamic raw);
 
   @protected
+  ReportView? dco_decode_opt_box_autoadd_report_view(dynamic raw);
+
+  @protected
   SendState? dco_decode_opt_box_autoadd_send_state(dynamic raw);
 
   @protected
@@ -203,6 +209,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplyQuote dco_decode_reply_quote(dynamic raw);
+
+  @protected
+  ReportKindInfo dco_decode_report_kind_info(dynamic raw);
+
+  @protected
+  ReportView dco_decode_report_view(dynamic raw);
 
   @protected
   SendState dco_decode_send_state(dynamic raw);
@@ -277,6 +289,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplyQuote sse_decode_box_autoadd_reply_quote(SseDeserializer deserializer);
+
+  @protected
+  ReportView sse_decode_box_autoadd_report_view(SseDeserializer deserializer);
 
   @protected
   SendState sse_decode_box_autoadd_send_state(SseDeserializer deserializer);
@@ -390,6 +405,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  ReportView? sse_decode_opt_box_autoadd_report_view(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   SendState? sse_decode_opt_box_autoadd_send_state(
     SseDeserializer deserializer,
   );
@@ -420,6 +440,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   ReplyQuote sse_decode_reply_quote(SseDeserializer deserializer);
+
+  @protected
+  ReportKindInfo sse_decode_report_kind_info(SseDeserializer deserializer);
+
+  @protected
+  ReportView sse_decode_report_view(SseDeserializer deserializer);
 
   @protected
   SendState sse_decode_send_state(SseDeserializer deserializer);
@@ -508,6 +534,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_box_autoadd_reply_quote(
     ReplyQuote self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_box_autoadd_report_view(
+    ReportView self,
     SseSerializer serializer,
   );
 
@@ -653,6 +685,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_opt_box_autoadd_report_view(
+    ReportView? self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_opt_box_autoadd_send_state(
     SendState? self,
     SseSerializer serializer,
@@ -693,6 +731,15 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_reply_quote(ReplyQuote self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_report_kind_info(
+    ReportKindInfo self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_report_view(ReportView self, SseSerializer serializer);
 
   @protected
   void sse_encode_send_state(SendState self, SseSerializer serializer);

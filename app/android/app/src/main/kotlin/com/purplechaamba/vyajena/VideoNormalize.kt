@@ -78,10 +78,27 @@ object VideoNormalize {
         val rotation =
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
                 ?.toInt() ?: 0
-        val (outWidth, outHeight) = targetSize(srcWidth, srcHeight, rotation)
+
+        // The encoder's buffer keeps the SOURCE (stored, pre-rotation) aspect
+        // ratio, scaled so its long edge is at most LONG_EDGE. The decoder
+        // renders stored frames straight onto this surface in their stored
+        // orientation, so the surface must match that orientation; sizing it to
+        // the rotated (display) dimensions instead stretched a landscape frame
+        // into a portrait buffer, which was the Android crop bug. Rotation is
+        // carried as an MP4 orientation hint (see Transcoder) so the player
+        // turns portrait/landscape back the right way — the same result
+        // AVAssetExportSession gives on iOS by preserving the preferred
+        // transform.
+        val (encWidth, encHeight) = encodeSize(srcWidth, srcHeight)
+        // What the clip looks like once the player applies the rotation hint:
+        // the display size Dart lays the bubble out at. iOS reports the same, via
+        // naturalSize.applying(preferredTransform).
+        val (dispWidth, dispHeight) =
+            if (rotation == 90 || rotation == 270) encHeight to encWidth else encWidth to encHeight
 
         val outFile = File.createTempFile("vyajena-video-", ".mp4")
-        val transcoder = Transcoder(inputPath, outFile.absolutePath, outWidth, outHeight, maxDurationMs)
+        val transcoder =
+            Transcoder(inputPath, outFile.absolutePath, encWidth, encHeight, rotation, maxDurationMs)
         val durationMs = transcoder.run()
 
         val frame = firstFrame(retriever)
@@ -90,22 +107,28 @@ object VideoNormalize {
         return mapOf(
             "path" to outFile.absolutePath,
             "durationMs" to durationMs.toInt(),
-            "width" to outWidth,
-            "height" to outHeight,
+            "width" to dispWidth,
+            "height" to dispHeight,
             "frameRgba" to (frame?.rgba ?: ByteArray(0)),
             "frameWidth" to (frame?.width ?: 0),
             "frameHeight" to (frame?.height ?: 0),
         )
     }
 
-    /** The target size: the long edge scaled to [LONG_EDGE], even dimensions. */
-    private fun targetSize(w: Int, h: Int, rotation: Int): Pair<Int, Int> {
-        val ( w2, h2) = if (rotation == 90 || rotation == 270) h to w else w to h
-        if (w2 <= 0 || h2 <= 0) return LONG_EDGE to (LONG_EDGE * 9 / 16)
-        val longEdge = maxOf(w2, h2)
-        if (longEdge <= LONG_EDGE) return even(w2) to even(h2)
+    /**
+     * The encoder buffer size: the SOURCE (stored, pre-rotation) dimensions
+     * scaled so the long edge is at most [LONG_EDGE], keeping the aspect ratio
+     * exactly (scale to fit, never crop) with even sides (H.264 requires even
+     * dimensions). Rotation is not applied here — it is carried as the muxer's
+     * orientation hint — so these stay in the stored orientation the decoder
+     * renders onto the encoder surface.
+     */
+    private fun encodeSize(w: Int, h: Int): Pair<Int, Int> {
+        if (w <= 0 || h <= 0) return LONG_EDGE to even(LONG_EDGE * 9 / 16)
+        val longEdge = maxOf(w, h)
+        if (longEdge <= LONG_EDGE) return even(w) to even(h)
         val scale = LONG_EDGE.toDouble() / longEdge
-        return even((w2 * scale).toInt()) to even((h2 * scale).toInt())
+        return even((w * scale).toInt()) to even((h * scale).toInt())
     }
 
     private fun even(n: Int): Int = if (n % 2 == 0) n else n + 1
@@ -148,6 +171,7 @@ object VideoNormalize {
         private val outputPath: String,
         private val outWidth: Int,
         private val outHeight: Int,
+        private val rotation: Int,
         private val maxDurationMs: Long,
     ) {
         fun run(): Long {
@@ -183,6 +207,13 @@ object VideoNormalize {
             // that GL stage is S1's remaining on-device work. The muxer below
             // writes whatever the encoder produces as H.264 in an MP4.
             val muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            // The encoded frames stay in the source's stored orientation; the
+            // orientation hint tells the player how to rotate them for display,
+            // so a portrait recording (stored landscape + rotation 90/270) plays
+            // upright instead of stretched. Must be set before muxer.start().
+            if (rotation == 90 || rotation == 180 || rotation == 270) {
+                muxer.setOrientationHint(rotation)
+            }
 
             // Audio pass-through: a phone recording's AAC track is copied into the
             // normalized clip unchanged (not re-encoded), so the output keeps its

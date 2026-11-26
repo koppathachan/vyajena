@@ -420,7 +420,10 @@ class FakeCoreService extends CoreService {
   Future<List<ChatMessage>> historyIn(int chatId, int limit) async {
     final inChat = [
       for (final m in messages)
-        if (m.chatId == chatId) m,
+        // moderation: A blocked user is hidden — a blocked sender's messages are
+        // omitted from the displayed history (own messages are never hidden).
+        if (m.chatId == chatId && (m.ownUser || !blocked.containsKey(_key(m.sender))))
+          m,
     ];
     final start = inChat.length > limit ? inChat.length - limit : 0;
     return inChat.sublist(start);
@@ -938,8 +941,17 @@ class FakeCoreService extends CoreService {
         muted: mutedChats.contains(0),
       ),
     for (final c in groupChats) _withMuteState(c),
-    for (final c in dmChats) _withMuteState(c),
+    // moderation: A blocked user is hidden — a DM with a blocked peer is hidden
+    // from the chat list; it reappears on unblock.
+    for (final c in dmChats)
+      if (!_peerBlocked(c)) _withMuteState(c),
   ];
+
+  /// Whether chat summary [c] is a DM with a blocked peer.
+  bool _peerBlocked(ChatSummary c) => switch (c.kind) {
+    ChatKindInfo_Dm(:final peer) => blocked.containsKey(_key(peer)),
+    _ => false,
+  };
 
   /// What [setConversationMuted] and [setAppMuted] throw, to test a failure.
   Object? setMuteError;
@@ -968,6 +980,112 @@ class FakeCoreService extends CoreService {
 
   @override
   Future<bool> appMuted() async => appMutedValue;
+
+  // --- Moderation (block + report; change `report-and-block`) ---
+
+  /// The users blocked on this device, keyed by `username@serverId`
+  /// (moderation: Block a user).
+  final Map<String, UserRef> blocked = {};
+
+  /// The last report sent via [reportMessage] / [reportUser], for tests.
+  ReportView? lastReport;
+
+  @override
+  Future<void> blockUser(UserRef user) async {
+    _call('blockUser', user);
+    blocked[_key(user)] = user;
+  }
+
+  @override
+  Future<void> unblockUser(UserRef user) async {
+    _call('unblockUser', user);
+    blocked.remove(_key(user));
+  }
+
+  @override
+  Future<bool> isBlocked(UserRef user) async => blocked.containsKey(_key(user));
+
+  @override
+  Future<List<UserRef>> blockedUsers() async => blocked.values.toList();
+
+  @override
+  Future<void> reportMessage(int id, String reason) async {
+    _call('reportMessage', (id: id, reason: reason));
+    final message = messages.firstWhere((m) => m.id.toInt() == id);
+    final isDm =
+        message.chatId.toInt() != 0 &&
+        dmChats.any((c) => c.chatId == message.chatId.toInt());
+    lastReport = ReportView(
+      reported: message.sender,
+      reason: reason,
+      kind: isDm
+          ? ReportKindInfo.dm(
+              quote: switch (message.body) {
+                ChatBody_Text(:final text) => text,
+                _ => '',
+              },
+            )
+          : const ReportKindInfo.group(groupId: '', msgId: ''),
+    );
+  }
+
+  @override
+  Future<void> reportUser(UserRef user, String reason) async {
+    _call('reportUser', (user: user, reason: reason));
+    lastReport = ReportView(
+      reported: user,
+      reason: reason,
+      kind: const ReportKindInfo.user(),
+    );
+  }
+
+  @override
+  Future<ReportView?> parseReport(String text) async {
+    final lines = text.split('\n');
+    if (lines.isEmpty || lines.first.trim() != '[vyajena-report v1]') return null;
+    String? reportedText;
+    var reason = '';
+    String? kindTag;
+    var groupId = '';
+    var msgId = '';
+    var quote = '';
+    for (final line in lines.skip(1)) {
+      final i = line.indexOf(':');
+      if (i < 0) continue;
+      final key = line.substring(0, i).trim();
+      final value = line.substring(i + 1).trim();
+      switch (key) {
+        case 'reported':
+          reportedText = value;
+        case 'reason':
+          reason = value;
+        case 'kind':
+          kindTag = value;
+        case 'group':
+          groupId = value;
+        case 'msg':
+          msgId = value;
+        case 'quote':
+          quote = value;
+      }
+    }
+    final at = reportedText?.indexOf('@') ?? -1;
+    if (reportedText == null || at <= 0 || at == reportedText.length - 1) {
+      return null;
+    }
+    final reported = UserRef(
+      username: reportedText.substring(0, at),
+      serverId: reportedText.substring(at + 1),
+    );
+    final kind = switch (kindTag) {
+      'group' => ReportKindInfo.group(groupId: groupId, msgId: msgId),
+      'dm' => ReportKindInfo.dm(quote: quote),
+      'user' => const ReportKindInfo.user(),
+      _ => null,
+    };
+    if (kind == null) return null;
+    return ReportView(reported: reported, reason: reason, kind: kind);
+  }
 
   // --- Presence (manual-presence; change `manual-presence`) ---
 

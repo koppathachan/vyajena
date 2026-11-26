@@ -531,6 +531,34 @@ abstract class CoreService {
   /// reached; nothing is deleted then.
   Future<void> removeClosedDm(int chatId);
 
+  // --- Moderation (block + report; change `report-and-block`) ---
+
+  /// Blocks [user] on this device (moderation: Block a user): the core hides
+  /// their messages and any DM and raises no notification for them. Local only —
+  /// no RPC, no server marker, no sync to this user's other devices.
+  Future<void> blockUser(UserRef user);
+
+  /// Unblocks [user] on this device; their messages and DM are shown again.
+  Future<void> unblockUser(UserRef user);
+
+  /// Whether this device has blocked [user].
+  Future<bool> isBlocked(UserRef user);
+
+  /// The users this device has blocked.
+  Future<List<UserRef>> blockedUsers();
+
+  /// Reports message [id] to the admin (moderation: Report a message; Report a
+  /// DM message): a group/lobby message is referenced, a DM message quoted. The
+  /// core sends the report to the admin over a DM, reusing the existing path.
+  Future<void> reportMessage(int id, String reason);
+
+  /// Reports [user] to the admin (moderation: Report a user).
+  Future<void> reportUser(UserRef user, String reason);
+
+  /// Parses a report [text] the admin received (moderation: The admin sees
+  /// reports), or `null` for an ordinary message.
+  Future<ReportView?> parseReport(String text);
+
   // --- Notification prefs (notification-prefs; change `mute-notifications`) ---
 
   /// Mutes or unmutes the conversation [chatId] (notification-prefs: Mute a

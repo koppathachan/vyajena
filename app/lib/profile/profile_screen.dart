@@ -14,6 +14,7 @@ import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
 import '../core/core_service.dart';
 import '../shell/avatars.dart';
+import 'safety_screen.dart';
 
 /// Edit this user's profile.
 class ProfileScreen extends StatefulWidget {
@@ -176,6 +177,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         behavior: HitTestBehavior.opaque,
         onTap: () => FocusScope.of(context).unfocus(),
         child: ListView(
+          key: const Key('profile-list'),
           padding: const EdgeInsets.all(16),
           children: [
             if (widget.embedded && user != null) ...[
@@ -324,6 +326,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
       leading: const Icon(Icons.people_outline),
       title: const Text('Members and devices'),
       onTap: () => Navigator.of(context).pushNamed(Routes.members),
+    ),
+    // moderation: Published moderation policy; app-ui: Safety and moderation
+    // entry. How to report and block, the 24-hour commitment and the contact.
+    ListTile(
+      key: const Key('settings-safety'),
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.shield_outlined),
+      title: const Text('Safety & moderation'),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SafetyModerationScreen()),
+      ),
     ),
     const SizedBox(height: 8),
     Text('Account', style: Theme.of(context).textTheme.titleSmall),

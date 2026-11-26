@@ -828,9 +828,10 @@ class _ComposerState extends State<Composer> {
           if (_recording)
             Expanded(child: _recordingInfo(context))
           else ...[
-            // A picture or video goes as its own message, not as a reply.
-            if ((widget.pickImage != null || widget.onSendVideo != null) &&
-                widget.reply == null)
+            // The attach button stays while a reply is being written, so the
+            // affordance never vanishes on swipe-to-reply. A picked picture or
+            // video still goes as its own message, not as the reply itself.
+            if (widget.pickImage != null || widget.onSendVideo != null)
               IconButton(
                 key: const Key('attach-image'),
                 tooltip: 'Attach',
