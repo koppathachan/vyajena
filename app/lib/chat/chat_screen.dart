@@ -276,7 +276,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatBody_Text(:final text) => text,
           ChatBody_Image(:final image) => image.caption ?? pictureQuote,
           ChatBody_Audio() => voiceQuote,
-          ChatBody_Video() => videoQuote,
+          ChatBody_Video(:final video) => video.caption ?? videoQuote,
           _ => unsupportedText,
         },
         // So the reply bar previews a voice, picture or video original correctly
@@ -300,14 +300,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /// The text Copy puts on the clipboard for [message], or null when it has no
-  /// text to copy (message-actions: Copy a message): a text body, or an image
-  /// with a non-empty caption. Media-only messages, tombstones and unsupported
-  /// bodies have none.
+  /// text to copy (message-actions: Copy a message): a text body, or an image or
+  /// video with a non-empty caption. Media-only messages, tombstones and
+  /// unsupported bodies have none.
   String? _copyText(ChatMessage message) {
     final body = message.body;
     final text = switch (body) {
       ChatBody_Text(:final text) => text,
       ChatBody_Image(:final image) => image.caption,
+      ChatBody_Video(:final video) => video.caption,
       _ => null,
     };
     return (text != null && text.isNotEmpty) ? text : null;
@@ -450,12 +451,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Picks a source (record or gallery), normalizes the clip through the native
-  /// plugin and sends it (app-ui: Send a video). Owned here so the composer
-  /// stays free of the camera, picker and plugin.
-  Future<void> _sendVideo() async {
+  /// Shows the Record / gallery sub-sheet and returns the normalized clips for
+  /// the compose tray (app-ui: Send a video; Compose tray). Owned here so the
+  /// composer stays free of the camera, picker and plugin; the native normalize
+  /// (the ~5 s step the tray shows a "processing video…" state for) runs here.
+  Future<List<NormalizedVideo>> _pickVideos() async {
     final source = VideoScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -479,30 +480,35 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-    if (choice == null) return;
-    try {
-      // Recording makes one clip; the gallery can pick several, each sent as its
-      // own message (app-ui: Send a video — multiple from the gallery).
-      final clips = choice == 'record'
-          ? [await source.record()].whereType<NormalizedVideo>().toList()
-          : await source.pickMultiple();
-      if (clips.isEmpty) return;
-      for (final clip in clips) {
-        await _model.sendVideo(
-          clip.mp4,
-          durationMs: clip.durationMs,
-          width: clip.width,
-          height: clip.height,
-          firstFrameRgba: clip.firstFrameRgba,
-          frameWidth: clip.frameWidth,
-          frameHeight: clip.frameHeight,
-        );
-      }
-      // The reply bar goes once the video is sent, as for a text or voice send.
-      if (mounted) setState(() => _reply = null);
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
-    }
+    if (choice == null) return const [];
+    // Recording makes one clip; the gallery can pick several. Each is normalized
+    // before it lands in the tray. Errors propagate to the composer, which shows
+    // them (app-ui: Compose tray).
+    return choice == 'record'
+        ? [await source.record()].whereType<NormalizedVideo>().toList()
+        : await source.pickMultiple();
+  }
+
+  /// Sends one staged video with an optional caption and its mentions (app-ui:
+  /// Compose tray). The reply bar goes once a staged item is sent, as for a text
+  /// or image send.
+  Future<void> _sendStagedVideo(
+    NormalizedVideo clip,
+    String? caption,
+    List<MentionSpan> mentions,
+  ) async {
+    await _model.sendVideo(
+      clip.mp4,
+      durationMs: clip.durationMs,
+      width: clip.width,
+      height: clip.height,
+      firstFrameRgba: clip.firstFrameRgba,
+      frameWidth: clip.frameWidth,
+      frameHeight: clip.frameHeight,
+      caption: caption,
+      mentions: mentions,
+    );
+    if (mounted) setState(() => _reply = null);
   }
 
   /// Whether this device may delete [message] (message-deletion: Who may
@@ -918,7 +924,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 segmenter: SegmenterScope.of(context),
                 sendSticker: _sendSticker,
                 sendAudio: _sendAudio,
-                onSendVideo: _sendVideo,
+                pickVideos: _pickVideos,
+                sendVideo: _sendStagedVideo,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,

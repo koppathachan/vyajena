@@ -409,11 +409,22 @@ class MessageTile extends StatelessWidget {
   Widget _video(BuildContext context, VideoView video) {
     final core = this.core;
     if (core == null) return const Text('Video');
-    return VideoBubble(
-      key: ValueKey('video-${message.id}'),
-      core: core,
-      messageId: message.id,
-      video: video,
+    final caption = video.caption;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        VideoBubble(
+          key: ValueKey('video-${message.id}'),
+          core: core,
+          messageId: message.id,
+          video: video,
+        ),
+        if (caption != null && caption.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _withMentions(context, caption),
+        ],
+      ],
     );
   }
 

@@ -84,7 +84,7 @@ async fn wait_accepted(device: &mut Device, id: MessageId) {
 /// Sends a 12-second 854x480 clip from `who` to the main group.
 async fn send_clip(who: &Device, len: usize) -> Result<MessageId, ClientError> {
     who.client
-        .send_video(&mp4(len), 12_000, 854, 480, &frame(16, 16), 16, 16)
+        .send_video(&mp4(len), 12_000, 854, 480, &frame(16, 16), 16, 16, None, &[])
         .await
 }
 
@@ -195,7 +195,7 @@ async fn a_clip_over_thirty_seconds_or_not_an_mp4_sends_nothing() {
     // The client enforces the 30-second duration, which the server never sees.
     let too_long = alice
         .client
-        .send_video(&mp4(1000), MAX_VIDEO_DURATION_MS + 1, 854, 480, &[], 0, 0)
+        .send_video(&mp4(1000), MAX_VIDEO_DURATION_MS + 1, 854, 480, &[], 0, 0, None, &[])
         .await;
     assert!(
         matches!(too_long, Err(ClientError::VideoTooLong)),
@@ -204,7 +204,7 @@ async fn a_clip_over_thirty_seconds_or_not_an_mp4_sends_nothing() {
 
     let not_a_video = alice
         .client
-        .send_video(b"hello there", 5_000, 854, 480, &[], 0, 0)
+        .send_video(b"hello there", 5_000, 854, 480, &[], 0, 0, None, &[])
         .await;
     assert!(
         matches!(not_a_video, Err(ClientError::NotAVideo)),
@@ -257,7 +257,7 @@ async fn the_server_sees_ciphertext_and_wakes_bob_like_for_any_message() {
     clip.extend_from_slice(b"PLAINTEXT-MARKER-avc1");
     let id = alice
         .client
-        .send_video(&clip, 10_000, 640, 360, &frame(8, 8), 8, 8)
+        .send_video(&clip, 10_000, 640, 360, &frame(8, 8), 8, 8, None, &[])
         .await
         .check("send_video");
     wait_accepted(&mut alice, id).await;

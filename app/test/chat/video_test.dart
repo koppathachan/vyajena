@@ -22,12 +22,29 @@ FakeCoreService groupAsBob() =>
 
 final attach = find.byKey(const Key('attach-image'));
 final bubble = find.byKey(const Key('video-bubble'));
+final send = find.byTooltip('Send');
 
-/// Opens the attachment sheet and chooses Video, then a source.
+/// The record argument of [FakeCoreService.sendVideo], as the fake stores it.
+typedef SendVideoCall = ({
+  int chatId,
+  int durationMs,
+  String? caption,
+  List<MentionSpan> mentions,
+});
+
+/// Opens the attachment sheet, chooses Video and a source: the clip is
+/// normalized and staged in the compose tray (not yet sent).
 Future<void> attachVideo(WidgetTester tester, String source) async {
   await tap(tester, attach);
   await tap(tester, find.byKey(const Key('attach-video')));
   await tap(tester, find.byKey(Key('video-$source')));
+}
+
+/// Stages a video from [source] and taps Send.
+Future<void> attachAndSendVideo(WidgetTester tester, String source) async {
+  await attachVideo(tester, source);
+  await settle(tester);
+  await tap(tester, send);
 }
 
 void main() {
@@ -38,12 +55,11 @@ void main() {
     final video = FakeVideoSource();
     await openAppWithVideo(tester, core, video);
 
-    await attachVideo(tester, 'record');
-    await settle(tester);
+    await attachAndSendVideo(tester, 'record');
 
     expect(video.recordCalls, 1);
     expect(core.calls, contains('sendVideo'));
-    final call = core.args['sendVideo']! as ({int chatId, int durationMs});
+    final call = core.args['sendVideo']! as SendVideoCall;
     expect(call.chatId, 0);
     expect(call.durationMs, 12000);
     // The app did no transcode: the plugin's one normalized clip went to the
@@ -62,8 +78,7 @@ void main() {
     final video = FakeVideoSource();
     await openAppWithVideo(tester, core, video);
 
-    await attachVideo(tester, 'gallery');
-    await settle(tester);
+    await attachAndSendVideo(tester, 'gallery');
 
     expect(video.pickCalls, 1);
     expect(core.calls, contains('sendVideo'));
@@ -82,8 +97,7 @@ void main() {
     await settle(tester);
     expect(find.byKey(const Key('reply-bar')), findsOneWidget);
 
-    await attachVideo(tester, 'record');
-    await settle(tester);
+    await attachAndSendVideo(tester, 'record');
 
     expect(core.calls, contains('sendVideo'));
     expect(find.byKey(const Key('reply-bar')), findsNothing);
@@ -217,8 +231,7 @@ void main() {
     final core = groupAsBob();
     final video = FakeVideoSource();
     await openAppWithVideo(tester, core, video);
-    await attachVideo(tester, 'record');
-    await settle(tester);
+    await attachAndSendVideo(tester, 'record');
 
     // Long-press the own video bubble → Resend video.
     await tester.longPress(bubble);
@@ -229,9 +242,9 @@ void main() {
     expect(core.calls, contains('resendVideo'));
   });
 
-  // spec: app-ui/send-a-video
-  testWidgets('picking several clips from the gallery sends each as its own '
-      'message', (tester) async {
+  // spec: app-ui/compose-tray
+  testWidgets('picking several clips stages them in the tray, then one Send '
+      'sends each as its own message', (tester) async {
     final core = groupAsBob();
     final video = FakeVideoSource()..many = [_clip(1000), _clip(2000)];
     await openAppWithVideo(tester, core, video);
@@ -240,7 +253,13 @@ void main() {
     await settle(tester);
 
     expect(video.multiCalls, 1);
-    // Two clips, each normalized and sent as its own video message.
+    // Both stage; nothing is sent until Send.
+    expect(find.byKey(const Key('staged-0')), findsOneWidget);
+    expect(find.byKey(const Key('staged-1')), findsOneWidget);
+    expect(core.calls, isNot(contains('sendVideo')));
+
+    await tap(tester, send);
+    // Two clips, each sent as its own video message.
     expect(core.sentVideos.length, 2);
     expect(bubble, findsNWidgets(2));
   });

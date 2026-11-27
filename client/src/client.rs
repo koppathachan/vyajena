@@ -1098,12 +1098,18 @@ impl Client {
                     audio.duration_ms,
                     Vec::new(),
                 ),
-                // Replying to a video quotes it as a video original (no text to
-                // quote); `original_kind` carries the kind so a receiver without
-                // the clip renders a video preview, never the "needs a newer
-                // version" placeholder (message-content: Reply quote describes the
-                // original's kind; change `video-messages`).
-                Decoded::Video(_) => (String::new(), ReplyOriginalKind::Video, 0, Vec::new()),
+                // Replying to a video quotes its caption (if any), as a picture
+                // reply quotes its caption, and carries its first-frame ThumbHash
+                // so the quote shows a thumbnail; `original_kind` carries the kind
+                // so a receiver without the clip renders a video preview, never the
+                // "needs a newer version" placeholder (message-content: Reply quote
+                // describes the original's kind; Video caption and mentions).
+                Decoded::Video(video) => (
+                    video.caption.unwrap_or_default(),
+                    ReplyOriginalKind::Video,
+                    0,
+                    video.thumbhash,
+                ),
                 // A body this core cannot decode has no kind to carry.
                 Decoded::Unsupported => (String::new(), ReplyOriginalKind::Text, 0, Vec::new()),
                 Decoded::Profile(_) | Decoded::GroupSettings { .. } | Decoded::Delete(_) => {
@@ -2036,6 +2042,7 @@ impl Client {
 
     /// Sends a normalized video to the main group: [`Client::send_video_in`].
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_video(
         &self,
         mp4: &[u8],
@@ -2045,6 +2052,8 @@ impl Client {
         first_frame_rgba: &[u8],
         frame_width: u32,
         frame_height: u32,
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
     ) -> Result<MessageId, ClientError> {
         self.send_video_in(
             ChatId::MAIN,
@@ -2055,6 +2064,8 @@ impl Client {
             first_frame_rgba,
             frame_width,
             frame_height,
+            caption,
+            mentions,
         )
         .await
     }
@@ -2086,6 +2097,8 @@ impl Client {
         first_frame_rgba: &[u8],
         frame_width: u32,
         frame_height: u32,
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
     ) -> Result<MessageId, ClientError> {
         self.account()?;
         self.check_can_queue(chat)?;
@@ -2101,8 +2114,17 @@ impl Client {
         let thumbhash =
             crate::media::video::first_frame_thumbhash(first_frame_rgba, frame_width, frame_height)
                 .unwrap_or_default();
-        self.queue_encoded_video(chat, mp4.to_vec(), duration_ms, width, height, thumbhash)
-            .await
+        self.queue_encoded_video(
+            chat,
+            mp4.to_vec(),
+            duration_ms,
+            width,
+            height,
+            thumbhash,
+            caption,
+            mentions,
+        )
+        .await
     }
 
     /// Resends the clip of the own video message `id` as a new message with a
@@ -2135,7 +2157,7 @@ impl Client {
             .await?
             .ok_or(ClientError::MediaNotOnDevice)?;
         let mp4 = blocking(move || Ok(std::fs::read(path).map_err(MediaError::from)?)).await?;
-        // The resend keeps the original's ThumbHash and dimensions.
+        // The resend keeps the original's ThumbHash, dimensions and caption.
         self.queue_encoded_video(
             chat,
             mp4,
@@ -2143,12 +2165,15 @@ impl Client {
             video.width,
             video.height,
             video.thumbhash,
+            video.caption.as_deref(),
+            &video.mentions,
         )
         .await
     }
 
     /// Caches `mp4`, then stores its message as waiting for its blob and wakes the
     /// outbox, which uploads the blob and sends the message.
+    #[allow(clippy::too_many_arguments)]
     async fn queue_encoded_video(
         &self,
         chat: ChatId,
@@ -2157,6 +2182,8 @@ impl Client {
         width: u32,
         height: u32,
         thumbhash: Vec<u8>,
+        caption: Option<&str>,
+        mentions: &[crate::Mention],
     ) -> Result<MessageId, ClientError> {
         let (blob_id, blob_key) = crate::media::crypto::fresh().map_err(MediaError::from)?;
         let content = crate::messaging::VideoContent {
@@ -2167,6 +2194,8 @@ impl Client {
             width,
             height,
             thumbhash,
+            caption: caption.map(str::to_owned),
+            mentions: mentions.to_vec(),
         };
         let encoded = crate::messaging::encode_video(&content, self.now()).map_err(too_long)?;
         // The sender cannot decrypt its own message, so it keeps the clip; the
@@ -2713,12 +2742,13 @@ fn is_blocked_in(blocked: &std::collections::HashSet<String>, message: &Message)
 }
 
 /// The text a report quotes for a stored message (moderation: Report a DM
-/// message): the text of a text message or an image's caption, else empty. The
-/// caller caps it with the reply-quote rules.
+/// message): the text of a text message or an image's or video's caption, else
+/// empty. The caller caps it with the reply-quote rules.
 fn quotable_text(content: &[u8]) -> String {
     match crate::messaging::decode(content).body {
         crate::messaging::Decoded::Text(text) => text.text,
         crate::messaging::Decoded::Image(image) => image.caption.unwrap_or_default(),
+        crate::messaging::Decoded::Video(video) => video.caption.unwrap_or_default(),
         _ => String::new(),
     }
 }

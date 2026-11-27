@@ -48,8 +48,11 @@ Future<void> capturePhoto(WidgetTester tester) async {
   await tap(tester, find.byKey(const Key('photo-camera')));
 }
 
-final preview = find.byKey(const Key('picture-preview'));
-final attaching = find.byKey(const Key('picture-attaching'));
+// A single staged image shows as the first tray thumbnail; the tray's
+// processing tile stands in for the old "attaching" placeholder (app-ui:
+// Compose tray).
+final preview = find.byKey(const Key('staged-0'));
+final attaching = find.byKey(const Key('tray-processing'));
 final bubble = find.byKey(const Key('image-bubble'));
 final send = find.byTooltip('Send');
 
@@ -192,7 +195,7 @@ void main() {
     await openAppWithPictures(tester, core, picker);
     await attachPhoto(tester);
     expect(preview, findsOneWidget);
-    await tap(tester, find.byKey(const Key('remove-picture')));
+    await tap(tester, find.byKey(const Key('remove-staged-0')));
     expect(preview, findsNothing);
     expect(core.calls, isNot(contains('sendImage')));
 
@@ -476,9 +479,9 @@ void main() {
     expect(find.byKey(const Key('photo-gallery')), findsOneWidget);
   });
 
-  // spec: app-ui/send-an-image
-  testWidgets('picking several pictures from the gallery sends each as its own '
-      'message, with no shared preview or caption', (tester) async {
+  // spec: app-ui/compose-tray
+  testWidgets('picking several pictures stages them in the tray, then one Send '
+      'sends each as its own message', (tester) async {
     final core = groupAsBob();
     final one = Uint8List.fromList([1, 2, 3, 4]);
     final two = Uint8List.fromList([5, 6, 7, 8]);
@@ -488,9 +491,14 @@ void main() {
     await attachPhoto(tester);
     await settle(tester);
 
+    // Both stage in the tray; nothing is sent until Send.
     expect(picker.multiOpened, 1);
-    // Both pictures went to the core, each as its own message; nothing waits in
-    // a preview.
+    expect(find.byKey(const Key('staged-0')), findsOneWidget);
+    expect(find.byKey(const Key('staged-1')), findsOneWidget);
+    expect(core.calls, isNot(contains('sendImage')));
+
+    await tap(tester, send);
+    // Both pictures went to the core, each as its own message; the tray clears.
     expect(core.sentPictures, [one, two]);
     expect(preview, findsNothing);
     expect(bubble, findsNWidgets(2));

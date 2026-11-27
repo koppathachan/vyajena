@@ -387,12 +387,14 @@ abstract class CoreService {
   // out. ---
 
   /// Sends the already-normalized clip [mp4] (H.264/MP4 at the 480p/~1 Mbps
-  /// target, ≤ 30 s) to chat [chatId]; returns its local id. [firstFrameRgba]
-  /// ([frameWidth] x [frameHeight] RGBA) is the first frame the core turns into
-  /// the bubble's ThumbHash; pass an empty list for no blur. Throws [CoreError]
-  /// with [CoreErrorKind.videoTooLong] over 30 s, [CoreErrorKind.videoTooLarge]
-  /// over the server's advertised cap, or [CoreErrorKind.notAVideo] for non-MP4
-  /// bytes. Like an image it is queued at once, connected or not.
+  /// target, ≤ 30 s) to chat [chatId] with an optional [caption] and [mentions]
+  /// (UTF-16 ranges of the caption, like [sendImage]); returns its local id.
+  /// [firstFrameRgba] ([frameWidth] x [frameHeight] RGBA) is the first frame the
+  /// core turns into the bubble's ThumbHash; pass an empty list for no blur.
+  /// Throws [CoreError] with [CoreErrorKind.videoTooLong] over 30 s,
+  /// [CoreErrorKind.videoTooLarge] over the server's advertised cap, or
+  /// [CoreErrorKind.notAVideo] for non-MP4 bytes. Like an image it is queued at
+  /// once, connected or not.
   Future<int> sendVideo(
     Uint8List mp4, {
     int chatId = 0,
@@ -402,6 +404,8 @@ abstract class CoreService {
     Uint8List? firstFrameRgba,
     int frameWidth = 0,
     int frameHeight = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
   });
 
   /// The path of video message [id]'s clip, an MP4 file in the core's media

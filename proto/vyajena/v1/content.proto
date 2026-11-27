@@ -152,6 +152,13 @@ message Video {
   // downloaded; at most `protocol::blob_store::MAX_THUMBHASH_BYTES` bytes. The
   // video analogue of the image ThumbHash; there is no separate poster blob.
   bytes thumbhash = 7;
+  // Optional caption: UTF-8, limited like `Text.text`, mirroring `Image.caption`
+  // (message-content: Video caption and mentions). A client that predates it
+  // ignores the unknown field and still plays the clip.
+  optional string caption = 8;
+  // The mentions in `caption`, under the same rules as `Text.mentions`
+  // (message-content: Video caption and mentions).
+  repeated Mention caption_mentions = 9;
 }
 
 // message-content: Reply quote describes the original's kind (change
