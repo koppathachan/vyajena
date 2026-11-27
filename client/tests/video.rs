@@ -84,7 +84,17 @@ async fn wait_accepted(device: &mut Device, id: MessageId) {
 /// Sends a 12-second 854x480 clip from `who` to the main group.
 async fn send_clip(who: &Device, len: usize) -> Result<MessageId, ClientError> {
     who.client
-        .send_video(&mp4(len), 12_000, 854, 480, &frame(16, 16), 16, 16, None, &[])
+        .send_video(
+            &mp4(len),
+            12_000,
+            854,
+            480,
+            &frame(16, 16),
+            16,
+            16,
+            None,
+            &[],
+        )
         .await
 }
 
@@ -195,7 +205,17 @@ async fn a_clip_over_thirty_seconds_or_not_an_mp4_sends_nothing() {
     // The client enforces the 30-second duration, which the server never sees.
     let too_long = alice
         .client
-        .send_video(&mp4(1000), MAX_VIDEO_DURATION_MS + 1, 854, 480, &[], 0, 0, None, &[])
+        .send_video(
+            &mp4(1000),
+            MAX_VIDEO_DURATION_MS + 1,
+            854,
+            480,
+            &[],
+            0,
+            0,
+            None,
+            &[],
+        )
         .await;
     assert!(
         matches!(too_long, Err(ClientError::VideoTooLong)),

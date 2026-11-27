@@ -72,7 +72,17 @@ async fn alice_and_bob(server: &TestServer) -> (Device, Device) {
 
 async fn send_clip(who: &Device, len: usize) -> Result<i64, bridge::api::error::CoreError> {
     who.core
-        .send_video(mp4(len), 12_000, 854, 480, frame(16, 16), 16, 16, None, vec![])
+        .send_video(
+            mp4(len),
+            12_000,
+            854,
+            480,
+            frame(16, 16),
+            16,
+            16,
+            None,
+            vec![],
+        )
         .await
 }
 
@@ -136,7 +146,17 @@ async fn a_clip_over_the_limit_or_not_an_mp4_has_its_own_errors() {
     );
     let not_video = alice
         .core
-        .send_video(b"not a clip".to_vec(), 5_000, 854, 480, vec![], 0, 0, None, vec![])
+        .send_video(
+            b"not a clip".to_vec(),
+            5_000,
+            854,
+            480,
+            vec![],
+            0,
+            0,
+            None,
+            vec![],
+        )
         .await;
     assert_eq!(
         not_video.err().map(|e| e.kind),
