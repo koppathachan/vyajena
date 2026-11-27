@@ -32,10 +32,20 @@ FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
 final composer = find.byKey(const Key('composer'));
 final attach = find.byKey(const Key('attach-image'));
 
-/// Opens the attachment sheet and picks Photo (app-shell: Conversation screen).
+/// Opens the attachment sheet, chooses Photo, then "Choose from gallery" in the
+/// photo-source chooser (app-shell: Conversation screen).
 Future<void> attachPhoto(WidgetTester tester) async {
   await tap(tester, attach);
   await tap(tester, find.byKey(const Key('attach-photo')));
+  await tap(tester, find.byKey(const Key('photo-gallery')));
+}
+
+/// Opens the attachment sheet, chooses Photo, then "Take photo" to capture with
+/// the in-app camera (app-ui: Send an image — capture or pick).
+Future<void> capturePhoto(WidgetTester tester) async {
+  await tap(tester, attach);
+  await tap(tester, find.byKey(const Key('attach-photo')));
+  await tap(tester, find.byKey(const Key('photo-camera')));
 }
 
 final preview = find.byKey(const Key('picture-preview'));
@@ -399,6 +409,7 @@ void main() {
     await tap(tester, attach);
     expect(find.byKey(const Key('attachment-sheet')), findsOneWidget);
     await tap(tester, find.byKey(const Key('attach-photo')));
+    await tap(tester, find.byKey(const Key('photo-gallery')));
     await settle(tester);
     expect(preview, findsOneWidget);
     // The reply is still pending alongside the picked picture.
@@ -424,6 +435,65 @@ void main() {
     await settle(tester);
     expect(core.calls, contains('sendImage'));
     expect(find.byKey(const Key('reply-bar')), findsNothing);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('Bob takes a photo with the in-app camera and sends it: the '
+      'camera source is used and its bytes go to the core, the same as a '
+      'gallery pick', (tester) async {
+    final core = groupAsBob();
+    final picker = FakePicker(picked);
+    await openAppWithPictures(tester, core, picker);
+
+    await capturePhoto(tester);
+    await settle(tester);
+    // The in-app camera was opened, not the gallery.
+    expect(picker.captured, 1);
+    expect(picker.opened, 0);
+    expect(preview, findsOneWidget);
+
+    await tap(tester, send);
+    await settle(tester);
+    expect(core.calls, contains('sendImage'));
+    // A captured photo takes the very same path as a picked one: its bytes go
+    // to the core untouched and show as an image bubble.
+    expect(core.sentPictures.single, picked);
+    expect(bubble, findsOneWidget);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('choosing Photo offers both the in-app camera and the gallery', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithPictures(tester, core, FakePicker(picked));
+
+    await tap(tester, attach);
+    await tap(tester, find.byKey(const Key('attach-photo')));
+    // The capture-or-pick chooser mirrors the video record/gallery chooser.
+    expect(find.byKey(const Key('photo-source-sheet')), findsOneWidget);
+    expect(find.byKey(const Key('photo-camera')), findsOneWidget);
+    expect(find.byKey(const Key('photo-gallery')), findsOneWidget);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('picking several pictures from the gallery sends each as its own '
+      'message, with no shared preview or caption', (tester) async {
+    final core = groupAsBob();
+    final one = Uint8List.fromList([1, 2, 3, 4]);
+    final two = Uint8List.fromList([5, 6, 7, 8]);
+    final picker = FakePicker()..many = [one, two];
+    await openAppWithPictures(tester, core, picker);
+
+    await attachPhoto(tester);
+    await settle(tester);
+
+    expect(picker.multiOpened, 1);
+    // Both pictures went to the core, each as its own message; nothing waits in
+    // a preview.
+    expect(core.sentPictures, [one, two]);
+    expect(preview, findsNothing);
+    expect(bubble, findsNWidgets(2));
   });
 }
 

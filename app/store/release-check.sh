@@ -306,13 +306,16 @@ if [ "$check_ios" = 1 ]; then
       fail "export compliance" "ITSAppUsesNonExemptEncryption is not NO (design D8)"
     fi
     usages="$(plutil -convert xml1 -o - "$plist" | sed -n 's/.*<key>\(NS[A-Za-z]*UsageDescription\)<\/key>.*/\1/p' | sort | tr '\n' ' ')"
-    # audio-messages: the microphone, for recording voice messages (record
-    # plugin). Nothing else: picking a picture uses PHPicker, which needs no
-    # photo-library usage description, and there is no in-app camera capture.
-    if [ "$usages" = "NSMicrophoneUsageDescription " ]; then
-      pass "ios permissions" "microphone only (voice messages)"
+    # video-messages / in-app capture: the camera, for the photos and videos the
+    # user records and sends (image_picker ImageSource.camera). audio-messages:
+    # the microphone, for recording voice messages (record plugin) and the audio
+    # track of a recorded video. Nothing else: picking an existing picture or
+    # clip uses PHPicker, which needs no photo-library usage description. Sorted,
+    # so camera precedes microphone.
+    if [ "$usages" = "NSCameraUsageDescription NSMicrophoneUsageDescription " ]; then
+      pass "ios permissions" "camera (photo/video capture) and microphone (voice messages)"
     else
-      fail "ios permissions" "usage descriptions: ${usages:-none}, expected NSMicrophoneUsageDescription"
+      fail "ios permissions" "usage descriptions: ${usages:-none}, expected NSCameraUsageDescription NSMicrophoneUsageDescription"
     fi
     # The one capability beyond the keychain is Push (push design D12). The
     # archive is unsigned (build-ipa.sh signs at export), so read the source.

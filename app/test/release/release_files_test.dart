@@ -62,15 +62,17 @@ void main() {
   });
 
   // spec: app-release/declared-permissions
-  test('First connect on an iPhone: the app dials the relay and asks for '
-      'nothing but the microphone, when a voice message is first recorded', () {
+  test('First connect on an iPhone: the app dials the relay and asks only for '
+      'the camera and the microphone, when media is first captured', () {
     final plist = read(infoPlist);
     final usages = RegExp(
       r'<key>(NS\w+UsageDescription)</key>',
     ).allMatches(plist).map((m) => m.group(1)).toSet();
-    // audio-messages: the one thing it asks for is the microphone, on the first
-    // voice message.
-    expect(usages, {'NSMicrophoneUsageDescription'});
+    // video-messages / in-app capture: the camera, for the photos and videos the
+    // user records (image_picker ImageSource.camera). audio-messages: the
+    // microphone, for voice messages and a recorded video's sound. Both are
+    // asked on first use; nothing else.
+    expect(usages, {'NSCameraUsageDescription', 'NSMicrophoneUsageDescription'});
     expect(plist, isNot(contains('UIBackgroundModes')));
     // push design D12: the one capability beyond the default keychain is
     // Push Notifications (aps-environment), in Runner.entitlements only.

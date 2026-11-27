@@ -64,7 +64,9 @@
 			</array>
 		</dict>
 	</dict>
-	<key>NSMicrophoneUsageDescription</key>
+	<key>NSCameraUsageDescription</key>
+		<string>Vyajena uses the camera for the photos and videos you record and send.</string>
+		<key>NSMicrophoneUsageDescription</key>
 	<string>Vyajena records your voice for the voice messages you send.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>

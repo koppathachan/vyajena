@@ -1,5 +1,5 @@
 // app-ui: Send an image. Where a picture to send comes from: the phone's
-// gallery. The picked file's bytes go to the core as they are; the core makes
+// gallery or the in-app camera. The picked file's bytes go to the core as they are; the core makes
 // the WebP, strips the metadata and scales it (client-runtime: Image encode
 // pipeline), so nothing here touches pixels. This is the one file that
 // imports the gallery plugin; widget tests give the screens a fake picker.
@@ -23,10 +23,26 @@ abstract class PicturePicker {
 
   /// The chosen picture's file bytes, or null if the user chose none.
   Future<Uint8List?> pick();
+
+  /// Captures a photo with the camera and returns its bytes, or null if the
+  /// user backed out (app-ui: Send an image — capture or pick, matching the
+  /// video record/gallery chooser). Defaults to [pick] so a gallery-only
+  /// picker — and the widget-test fakes — need not override it.
+  Future<Uint8List?> capture() => pick();
+
+  /// Picks one or more pictures from the gallery (app-ui: Send an image —
+  /// multiple from the gallery), each as its own message. Returns the chosen
+  /// pictures' bytes in order, or empty if the user chose none. Defaults to a
+  /// single [pick] so the test fakes need not override it.
+  Future<List<Uint8List>> pickMultiple() async {
+    final one = await pick();
+    return one == null ? const [] : [one];
+  }
 }
 
-/// The phone's gallery (iOS photo picker, Android photo picker): no
-/// permission is asked, the system shows only what the user selects.
+/// The phone's gallery (iOS photo picker, Android photo picker) for [pick] —
+/// no permission is asked, the system shows only what the user selects — and
+/// the in-app camera for [capture].
 class GalleryPicker extends PicturePicker {
   const GalleryPicker();
 
@@ -43,13 +59,34 @@ class GalleryPicker extends PicturePicker {
   static const int _quality = 85;
 
   @override
-  Future<Uint8List?> pick() async {
+  Future<Uint8List?> pick() => _fromSource(gallery.ImageSource.gallery);
+
+  @override
+  Future<Uint8List?> capture() => _fromSource(gallery.ImageSource.camera);
+
+  @override
+  Future<List<Uint8List>> pickMultiple() async {
+    // The gallery's native multi-select; each picked image is downscaled by the
+    // platform the same way a single pick is, then sent as its own message.
+    final picked = await gallery.ImagePicker().pickMultiImage(
+      maxWidth: _longestEdge,
+      maxHeight: _longestEdge,
+      imageQuality: _quality,
+    );
+    return Future.wait(picked.map((x) => x.readAsBytes()));
+  }
+
+  /// Reads a picture from [source] — the gallery or the in-app camera — asking
+  /// the platform for an already-downscaled JPEG. The camera needs
+  /// `NSCameraUsageDescription` (iOS); on Android `image_picker` hands off to
+  /// the system camera, so no `CAMERA` manifest permission is required.
+  Future<Uint8List?> _fromSource(gallery.ImageSource source) async {
     // Asking for a size and quality makes the platform hand over a downscaled
     // JPEG, so a HEIC photo from an iPhone arrives as one the core can read and
     // the pick finishes fast instead of transcoding the full-resolution
     // original. The core still does the final scale, WebP and EXIF strip.
     final picked = await gallery.ImagePicker().pickImage(
-      source: gallery.ImageSource.gallery,
+      source: source,
       maxWidth: _longestEdge,
       maxHeight: _longestEdge,
       imageQuality: _quality,
