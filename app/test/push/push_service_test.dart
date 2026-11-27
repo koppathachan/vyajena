@@ -3,52 +3,15 @@
 // (never before joining), clears the token when notifications are not
 // allowed, forgets it when removed, and clears shown notifications when the
 // app opens or comes back.
-import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
 import 'package:vyajena/core/core_service.dart';
-import 'package:vyajena/push/push_platform.dart';
 import 'package:vyajena/push/push_service.dart';
 
 import '../support/fake_core_service.dart';
-
-class FakePush implements PushPlatformApi {
-  FakePush({this.allow = true, this.current = 'tok-1'});
-
-  bool allow;
-  String? current;
-  int asked = 0;
-  final List<String> calls = [];
-  final _changes = StreamController<String>.broadcast();
-
-  void rotate(String token) {
-    current = token;
-    _changes.add(token);
-  }
-
-  @override
-  PushPlatform get platform => PushPlatform.fcm;
-
-  @override
-  Future<bool> ensurePermission() async {
-    asked++;
-    return allow;
-  }
-
-  @override
-  Future<String?> token() async => current;
-
-  @override
-  Stream<String> get tokenChanges => _changes.stream;
-
-  @override
-  Future<void> deleteToken() async => calls.add('deleteToken');
-
-  @override
-  Future<void> clearNotifications() async => calls.add('clearNotifications');
-}
+import '../support/fake_push.dart';
 
 const bob = UserRef(username: 'bob', serverId: 'chat');
 

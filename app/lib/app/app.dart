@@ -15,6 +15,8 @@ import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../push/push_platform.dart';
 import 'background_task.dart';
+import '../push/notification_service.dart';
+import '../push/open_conversation.dart';
 import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
@@ -84,6 +86,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
     widget.themeStore,
   );
   PushService? _push;
+  NotificationService? _notifications;
 
   /// The app's navigator and messenger, so an inbound share (which can arrive
   /// while no chat is on screen) can open the picker and show a snackbar from
@@ -103,12 +106,43 @@ class _VyajenaAppState extends State<VyajenaApp> {
     final api = widget.push;
     if (api != null) {
       _push = PushService(core: widget.core, api: api)..start();
+      _notifications = NotificationService(
+        core: widget.core,
+        api: api,
+        onOpen: _open,
+      )..start();
     }
     _shareIntake.start();
   }
 
+  /// A tapped notification: once the core is open, the conversation it names.
+  Future<void> _open(NotificationTap tap) async {
+    final core = widget.core;
+    if (core.state.value == CoreState.opening) {
+      final ready = Completer<void>();
+      void listener() {
+        if (core.state.value != CoreState.opening && !ready.isCompleted) {
+          ready.complete();
+        }
+      }
+
+      core.state.addListener(listener);
+      await ready.future;
+      core.state.removeListener(listener);
+    }
+    final navigator = _navigatorKey.currentState;
+    if (core.state.value != CoreState.ready || navigator == null) return;
+    await openTappedConversation(
+      navigator: navigator,
+      core: core,
+      chat: _chat,
+      tap: tap,
+    );
+  }
+
   @override
   void dispose() {
+    _notifications?.dispose();
     _shareIntake.stop();
     _push?.dispose();
     _chat.dispose();

@@ -35,6 +35,7 @@ mod identity_keys;
 mod media;
 mod messages;
 mod migrations;
+mod notifications;
 mod prefs;
 mod presence;
 

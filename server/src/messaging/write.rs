@@ -58,6 +58,11 @@ pub(crate) enum Outcome {
         /// Notices to send to connected devices (direct-messages: DM members
         /// kept complete, after a main-group commit adds a device back).
         notices: Vec<(DeviceId, pb::ServerFrame)>,
+        /// Devices whose own user's access just changed (removed from the
+        /// conversation, or added to a new named group): they get a
+        /// content-free wake push although the entry is control traffic
+        /// (message-delivery: Content-free wake for an own-access admin-event).
+        own_access: Vec<DeviceId>,
     },
     /// Refused; nothing stored.
     Rejected {
@@ -192,6 +197,7 @@ pub(crate) fn submit(
                 accepted_at: original.accepted_at,
                 notify: Vec::new(),
                 notices: Vec::new(),
+                own_access: Vec::new(),
             });
         }
         return Ok(reject(RejectionReason::DuplicateMismatch));
@@ -321,6 +327,7 @@ pub(crate) fn submit(
 
     let mut notify = Vec::new();
     let mut notices = Vec::new();
+    let mut own_access = Vec::new();
     match kind {
         Kind::Application => {
             // message-delivery: Per-device queues. A full queue never fails
@@ -371,6 +378,13 @@ pub(crate) fn submit(
                 notify.push(*recipient);
             }
             if let (Some(mut state), Some(accepted)) = (group, accepted_commit) {
+                own_access.extend(own_access_changes(
+                    conn,
+                    state.kind(),
+                    &group_id,
+                    caller,
+                    &accepted,
+                )?);
                 for added in &accepted.added {
                     log::insert_delivery(conn, &added.device_id, server_seq, true)?;
                     // Back in the main group means active again; its DMs
@@ -405,7 +419,47 @@ pub(crate) fn submit(
         accepted_at,
         notify,
         notices,
+        own_access,
     })
+}
+
+/// message-delivery: Content-free wake for an own-access admin-event. The devices
+/// of a user whose access to this conversation an accepted commit changes for
+/// good: every device of a user the commit removes entirely, and the devices of
+/// a user the commit adds to a *named* group where they had none. Not a user's
+/// other device being linked or unlinked, not the committer's own leave, not the
+/// server's inactivity Removes, and not the lobby or a DM (routine churn). Read
+/// before the commit is saved, so `mls_members` still holds the old members.
+fn own_access_changes(
+    conn: &Transaction<'_>,
+    kind: &GroupKind,
+    group_id: &[u8],
+    caller: &Caller,
+    accepted: &AcceptedCommit,
+) -> Result<Vec<DeviceId>, StoreError> {
+    let before = GroupState::members(conn, group_id)?;
+    let in_before = |user: &str| before.iter().any(|m| m.username == user);
+    let mut wake = Vec::new();
+    for removed in &accepted.removed {
+        let stays = before.iter().any(|m| {
+            m.username == removed.username
+                && !accepted.removed.iter().any(|r| r.device_id == m.device_id)
+        });
+        if removed.username != caller.username
+            && !stays
+            && !inactivity::is_inactive(conn, &removed.device_id)?
+        {
+            wake.push(removed.device_id);
+        }
+    }
+    if matches!(kind, GroupKind::Named { .. }) {
+        for added in &accepted.added {
+            if !in_before(&added.username) {
+                wake.push(added.device_id);
+            }
+        }
+    }
+    Ok(wake)
 }
 
 /// group-membership: Inactive devices are kept out. Marks `device_id`

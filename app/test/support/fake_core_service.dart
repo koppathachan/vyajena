@@ -992,6 +992,47 @@ class FakeCoreService extends CoreService {
   @override
   Future<bool> appMuted() async => appMutedValue;
 
+  // --- Local notifications (change `smarter-notifications`) ---
+
+  /// What [notificationSummary] returns (local-notifications: The device builds
+  /// the notification locally).
+  NotificationSummaryView summaryValue = const NotificationSummaryView(
+    conversations: [],
+    adminEvents: [],
+    totalUnread: 0,
+  );
+
+  /// The per-device "Notification detail" level; Basic until chosen.
+  NotificationDetailLevel detailValue = NotificationDetailLevel.basic;
+
+  @override
+  Future<NotificationSummaryView> notificationSummary() async {
+    _call('notificationSummary');
+    return summaryValue;
+  }
+
+  @override
+  Future<void> clearAdminEvents(int upTo) async {
+    _call('clearAdminEvents', upTo);
+    summaryValue = NotificationSummaryView(
+      conversations: summaryValue.conversations,
+      adminEvents: [
+        for (final e in summaryValue.adminEvents)
+          if (e.id > upTo) e,
+      ],
+      totalUnread: summaryValue.totalUnread,
+    );
+  }
+
+  @override
+  Future<NotificationDetailLevel> notificationDetail() async => detailValue;
+
+  @override
+  Future<void> setNotificationDetail(NotificationDetailLevel level) async {
+    _call('setNotificationDetail', level);
+    detailValue = level;
+  }
+
   // --- Moderation (block + report; change `report-and-block`) ---
 
   /// The users blocked on this device, keyed by `username@serverId`

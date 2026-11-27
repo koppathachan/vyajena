@@ -14,8 +14,9 @@ use tokio::sync::Mutex;
 use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
-    ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan, PresenceStatus,
-    ProfileInfo, PushPlatform, ReportView, StickerSource, UserRef,
+    ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan,
+    NotificationDetailLevel, NotificationSummaryView, PresenceStatus, ProfileInfo, PushPlatform,
+    ReportView, StickerSource, UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -737,6 +738,40 @@ impl Core {
     /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
     pub fn app_muted(&self) -> Result<bool, CoreError> {
         Ok(forward(self.client.mute_prefs())?.muted_all)
+    }
+
+    // --- Local notifications (change `smarter-notifications`) ---
+
+    /// What to show as notifications right now (local-notifications: The device
+    /// builds the notification locally): per conversation with unread messages
+    /// its type and unread count, plus pending admin-events. Metadata only: it
+    /// holds no sender, body or caption. Call it after the core has caught up;
+    /// it is recomputed from the unread state each time, so a repeated or
+    /// missed wake never changes the count.
+    pub fn notification_summary(&self) -> Result<NotificationSummaryView, CoreError> {
+        Ok(map::notification_summary(forward(
+            self.client.notification_summary(),
+        )?))
+    }
+
+    /// Forgets the pending admin-events up to `up_to` (the largest id the app
+    /// notified for, or the user is looking at the app).
+    pub fn clear_admin_events(&self, up_to: i64) -> Result<(), CoreError> {
+        forward(self.client.clear_admin_events(up_to))
+    }
+
+    /// This device's "Notification detail" level (app-ui: Notification detail
+    /// level): Basic until the user picks More.
+    pub fn notification_detail(&self) -> Result<NotificationDetailLevel, CoreError> {
+        Ok(map::detail_level(forward(
+            self.client.notification_detail(),
+        )?))
+    }
+
+    /// Sets this device's "Notification detail" level. Local only: never sent to
+    /// the server, and it changes no push.
+    pub fn set_notification_detail(&self, level: NotificationDetailLevel) -> Result<(), CoreError> {
+        forward(self.client.set_notification_detail(map::detail(level)))
     }
 
     // --- Moderation (block + report; change `report-and-block`) ---

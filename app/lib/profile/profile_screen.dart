@@ -51,6 +51,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
   bool _appMuted = false;
 
+  /// app-ui: Notification detail level. Basic until the user picks More.
+  NotificationDetailLevel _detail = NotificationDetailLevel.basic;
+
   /// Guards the mute switch while a toggle is in flight.
   bool _muteBusy = false;
 
@@ -67,6 +70,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
     _load();
     _loadMuted();
+    _loadDetail();
   }
 
   @override
@@ -95,6 +99,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (mounted) setState(() => _appMuted = muted);
     } on Object {
       // Leave the last known value; the switch is not critical.
+    }
+  }
+
+  Future<void> _loadDetail() async {
+    try {
+      final level = await widget.core.notificationDetail();
+      if (mounted) setState(() => _detail = level);
+    } on Object {
+      // Leave Basic, the default.
+    }
+  }
+
+  /// app-ui: Notification detail level. Local to this device: it changes how the
+  /// phone words its own notifications, nothing the server sends.
+  Future<void> _setDetail(NotificationDetailLevel level) async {
+    final before = _detail;
+    setState(() => _detail = level);
+    try {
+      await widget.core.setNotificationDetail(level);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _detail = before);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(errorText(error))));
+      }
     }
   }
 
@@ -346,6 +376,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       value: _appMuted,
       onChanged: _muteBusy ? null : _setAppMuted,
+    ),
+    // app-ui: Notification detail level. Basic (the default) shows only "New
+    // message"; More adds the count and type ("3 new in Work"). Never a sender
+    // or any message text, at either level.
+    ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.notifications_outlined),
+      title: const Text('Notification detail'),
+      subtitle: Text(
+        _detail == NotificationDetailLevel.more
+            ? 'Shows how many are new and where, such as “3 new in Work”. '
+                  'Never who sent them or what they say.'
+            : 'Shows only “New message”. Nothing about who or where.',
+      ),
+    ),
+    SegmentedButton<NotificationDetailLevel>(
+      key: const Key('notification-detail'),
+      showSelectedIcon: false,
+      segments: const [
+        ButtonSegment(
+          value: NotificationDetailLevel.basic,
+          label: Text('Basic'),
+        ),
+        ButtonSegment(value: NotificationDetailLevel.more, label: Text('More')),
+      ],
+      selected: {_detail},
+      onSelectionChanged: (chosen) => _setDetail(chosen.first),
     ),
     const SizedBox(height: 8),
     Text('Server', style: Theme.of(context).textTheme.titleSmall),

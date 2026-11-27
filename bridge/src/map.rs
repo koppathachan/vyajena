@@ -10,9 +10,11 @@ use client::{
 
 use crate::api::error::{CoreError, CoreErrorKind};
 use crate::api::types::{
-    AudioView, ChatBody, ChatKindInfo, ChatMessage, ChatSummary, ConnectionStatus, CoreEvent,
-    ImageView, InviteInfo, MediaStatus, MemberDevice, MentionSpan, MentionTarget, PresenceStatus,
-    ReaddAnswer, ReplyKind, ReplyQuote, ReportKindInfo, ReportView, SendState, UserRef, VideoView,
+    AdminEventNotification, AdminEventType, AudioView, ChatBody, ChatKindInfo, ChatMessage,
+    ChatSummary, ConnectionStatus, ConversationNotification, CoreEvent, ImageView, InviteInfo,
+    MediaStatus, MemberDevice, MentionSpan, MentionTarget, NotificationConversationKind,
+    NotificationDetailLevel, NotificationSummaryView, PresenceStatus, ReaddAnswer, ReplyKind,
+    ReplyQuote, ReportKindInfo, ReportView, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -248,6 +250,61 @@ pub(crate) fn chat(chat: client::Chat) -> ChatSummary {
         unseen_mentions: chat.unseen_mentions,
         last_message_at_ms: chat.last_message_at.map(millis),
         muted: chat.muted,
+    }
+}
+
+fn conversation_kind(kind: client::ConversationKind) -> NotificationConversationKind {
+    match kind {
+        client::ConversationKind::Dm => NotificationConversationKind::Dm,
+        client::ConversationKind::NamedGroup => NotificationConversationKind::NamedGroup,
+        client::ConversationKind::Lobby => NotificationConversationKind::Lobby,
+    }
+}
+
+pub(crate) fn notification_summary(
+    summary: client::NotificationSummary,
+) -> NotificationSummaryView {
+    NotificationSummaryView {
+        conversations: summary
+            .conversations
+            .into_iter()
+            .map(|c| ConversationNotification {
+                chat_id: c.chat.0,
+                kind: conversation_kind(c.kind),
+                name: c.name,
+                unread: c.unread,
+            })
+            .collect(),
+        admin_events: summary
+            .admin_events
+            .into_iter()
+            .map(|e| AdminEventNotification {
+                id: e.id,
+                event: match e.kind {
+                    client::AdminEventKind::Removed => AdminEventType::Removed,
+                    client::AdminEventKind::Closed => AdminEventType::Closed,
+                    client::AdminEventKind::Added => AdminEventType::Added,
+                },
+                kind: conversation_kind(e.conversation),
+                chat_id: e.chat.map(|c| c.0),
+                name: e.name,
+            })
+            .collect(),
+        total_unread: summary.total_unread,
+    }
+}
+
+pub(crate) fn detail_level(level: client::NotificationDetail) -> NotificationDetailLevel {
+    match level {
+        client::NotificationDetail::Basic => NotificationDetailLevel::Basic,
+        client::NotificationDetail::More => NotificationDetailLevel::More,
+    }
+}
+
+pub(crate) fn detail(level: NotificationDetailLevel) -> client::NotificationDetail {
+    match level {
+        NotificationDetailLevel::Basic => client::NotificationDetail::Basic,
+        NotificationDetailLevel::More => client::NotificationDetail::More,
     }
 }
 

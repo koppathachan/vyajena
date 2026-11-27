@@ -150,7 +150,10 @@ pub(crate) fn has_backlog(conn: &Connection, device_id: &DeviceId) -> Result<boo
 /// A device whose only backlog is control envelopes (`COMMIT`/`WELCOME`/
 /// `PROPOSAL`) or `silent` application envelopes (profile/group-settings/delete)
 /// has no user-facing new message, so it is never woken by a push; it syncs on
-/// its next reconnect.
+/// its next reconnect. An entry in a conversation the device's user muted does
+/// not count either (notification-prefs: A muted conversation gets no wake
+/// push): a device whose only backlog is muted would otherwise be pinged by the
+/// next unrelated control envelope, with nothing it may show.
 pub(crate) fn has_application_backlog(
     conn: &Connection,
     device_id: &DeviceId,
@@ -158,7 +161,10 @@ pub(crate) fn has_application_backlog(
     Ok(conn.query_row(
         "SELECT EXISTS (
              SELECT 1 FROM deliveries d JOIN envelopes e ON e.server_seq = d.server_seq
-             WHERE d.device_id = ?1 AND e.kind = ?2 AND e.silent = 0)",
+             JOIN devices dv ON dv.device_id = d.device_id
+             WHERE d.device_id = ?1 AND e.kind = ?2 AND e.silent = 0
+               AND NOT EXISTS (SELECT 1 FROM muted_conversations m
+                               WHERE m.username = dv.username AND m.group_id = e.group_id))",
         params![device_id.as_slice(), Kind::Application as i32],
         |row| row.get::<_, bool>(0),
     )?)
@@ -169,13 +175,19 @@ pub(crate) fn has_application_backlog(
 /// application backlog alerts an offline device; push-silent-app-envelopes: Only
 /// a user-visible message alerts an offline device). A backlog of only control
 /// envelopes (`COMMIT`/`WELCOME`/`PROPOSAL`) or `silent` application envelopes is
-/// excluded, so the sweep never fires a wake ping — nor spends the catch-up
-/// budget — for a device with no new message.
+/// excluded, and so is an entry in a conversation its user muted and every
+/// entry of a user who muted the whole app (notification-prefs: A muted
+/// conversation gets no wake push), so the sweep never fires a wake ping — nor
+/// spends the catch-up budget — for a device with no new message to show.
 pub(crate) fn backlogged_devices(conn: &Connection) -> Result<Vec<DeviceId>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT d.device_id FROM deliveries d
          JOIN envelopes e ON e.server_seq = d.server_seq
-         WHERE e.kind = ?1 AND e.silent = 0",
+         JOIN devices dv ON dv.device_id = d.device_id
+         WHERE e.kind = ?1 AND e.silent = 0
+           AND NOT EXISTS (SELECT 1 FROM muted_all a WHERE a.username = dv.username)
+           AND NOT EXISTS (SELECT 1 FROM muted_conversations m
+                           WHERE m.username = dv.username AND m.group_id = e.group_id)",
     )?;
     let rows = stmt.query_map(params![Kind::Application as i32], |row| {
         row.get::<_, Vec<u8>>(0)

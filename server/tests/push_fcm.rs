@@ -77,7 +77,7 @@ fn fcm_error(status: u16, code: &str, field: Option<&str>) -> Reply {
 // spec: server-runtime/push-provider-interface
 // spec: message-delivery/content-free-wake-pings
 #[tokio::test]
-async fn real_fcm_ping_signs_in_and_sends_only_the_fixed_text() {
+async fn real_fcm_ping_signs_in_and_sends_only_a_data_wake() {
     let (fake, push) = fcm().await;
     assert!(push.has_fcm() && !push.has_apns());
 
@@ -125,12 +125,11 @@ async fn real_fcm_ping_signs_in_and_sends_only_the_fixed_text() {
             send.json(),
             json!({ "message": {
                 "token": "bob-phone",
-                "notification": { "body": "New message" },
+                "data": { "wake": "1" },
                 "android": {
                     "priority": "HIGH",
                     "ttl": "86400s",
                     "collapse_key": "wake",
-                    "notification": { "tag": "wake" },
                 },
             }})
         );

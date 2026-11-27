@@ -23,6 +23,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0012_mute_prefs.sql"),
     include_str!("migrations/0013_presence.sql"),
     include_str!("migrations/0014_blocked_users.sql"),
+    include_str!("migrations/0015_notifications.sql"),
 ];
 
 /// The schema version this library writes.

@@ -2,7 +2,7 @@
     <!-- The app's own permissions (app-release: Declared permissions). The Rust
          core connects to the server (the UI itself opens nothing); connectivity_plus
          reads whether a network is up, to tell the core to reconnect;
-         POST_NOTIFICATIONS shows the server's "New message" (push design D8, asked
+         POST_NOTIFICATIONS shows the app's own notifications (push design D8, asked
          once after joining). Firebase Messaging adds WAKE_LOCK and
          c2dm RECEIVE itself. -->
     <uses-permission android:name="android.permission.INTERNET"/>
@@ -53,9 +53,12 @@
                 <data android:mimeType="image/*"/>
             </intent-filter>
         </activity>
-        <!-- Push (app-ui: Push notifications): FCM token rotation, and the
-             channel and icon of the "New message" notification Play
-             services shows from the server's ping. -->
+        <!-- Push (app-ui: Push notifications; smarter-notifications): FCM token
+             rotation, and the server's wake (a high-priority data message with
+             nothing in it), on which the app catches up and posts its own
+             metadata-only notification. The default channel and icon below are
+             for a notification message Play services shows itself (an older
+             server's ping). -->
         <service
             android:name=".VyajenaMessagingService"
             android:exported="false">

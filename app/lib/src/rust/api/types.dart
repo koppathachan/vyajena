@@ -9,7 +9,66 @@ import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'types.freezed.dart';
 
 // These functions are ignored because they are not marked as `pub`: `to_core`
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `hash`, `hash`, `hash`, `hash`
+
+/// One pending admin-event.
+class AdminEventNotification {
+  /// Its id: pass the largest to `Core::clear_admin_events` once notified.
+  final PlatformInt64 id;
+
+  /// What happened.
+  final AdminEventType event;
+
+  /// The conversation's type.
+  final NotificationConversationKind kind;
+
+  /// The conversation, if the device still has it.
+  final PlatformInt64? chatId;
+
+  /// A named group's local name, if known.
+  final String? name;
+
+  const AdminEventNotification({
+    required this.id,
+    required this.event,
+    required this.kind,
+    this.chatId,
+    this.name,
+  });
+
+  @override
+  int get hashCode =>
+      id.hashCode ^
+      event.hashCode ^
+      kind.hashCode ^
+      chatId.hashCode ^
+      name.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AdminEventNotification &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          event == other.event &&
+          kind == other.kind &&
+          chatId == other.chatId &&
+          name == other.name;
+}
+
+/// An admin-event that changed the user's own access
+/// (local-notifications: Admin-event notifications are fixed, content-free
+/// phrases).
+enum AdminEventType {
+  /// The user was removed from a named group.
+  removed,
+
+  /// A conversation the user is in was closed.
+  closed,
+
+  /// The user was added to a new named group.
+  added,
+}
 
 /// A voice message (message-content: Audio messages). No key and no blob id: they
 /// stay in the core, which is given the message's local id.
@@ -284,6 +343,43 @@ enum ConnectionStatus {
 
   /// Not connected; the core retries while started.
   disconnected,
+}
+
+/// One conversation with unread messages: its type and unread count, never a
+/// sender, body or caption.
+class ConversationNotification {
+  /// The conversation (0 is the lobby): the app groups by it and opens it on a tap.
+  final PlatformInt64 chatId;
+
+  /// Its type.
+  final NotificationConversationKind kind;
+
+  /// A named group's local name; unset for a DM, the lobby, or an unnamed group.
+  final String? name;
+
+  /// Unread messages, as the chat list counts them.
+  final int unread;
+
+  const ConversationNotification({
+    required this.chatId,
+    required this.kind,
+    this.name,
+    required this.unread,
+  });
+
+  @override
+  int get hashCode =>
+      chatId.hashCode ^ kind.hashCode ^ name.hashCode ^ unread.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ConversationNotification &&
+          runtimeType == other.runtimeType &&
+          chatId == other.chatId &&
+          kind == other.kind &&
+          name == other.name &&
+          unread == other.unread;
 }
 
 @freezed
@@ -623,6 +719,63 @@ sealed class MentionTarget with _$MentionTarget {
 
   /// Every member.
   const factory MentionTarget.everyone() = MentionTarget_Everyone;
+}
+
+/// What kind of conversation a notification is about (local-notifications: The
+/// device builds the notification locally).
+enum NotificationConversationKind {
+  /// A DM.
+  dm,
+
+  /// An admin-created named group.
+  namedGroup,
+
+  /// The system lobby.
+  lobby,
+}
+
+/// How much a notification says (app-ui: Notification detail level): a
+/// per-device choice that only changes how the app renders its own local
+/// notifications.
+enum NotificationDetailLevel {
+  /// Only the generic "New message". The default.
+  basic,
+
+  /// The per-conversation count and type; still no sender and no text.
+  more,
+}
+
+/// What to show as notifications right now (local-notifications: The device
+/// builds the notification locally): metadata only, so no sender or text exists
+/// in it.
+class NotificationSummaryView {
+  /// Conversations with unread messages that may notify (not muted, not closed).
+  final List<ConversationNotification> conversations;
+
+  /// Pending admin-events that may notify.
+  final List<AdminEventNotification> adminEvents;
+
+  /// The unread total across `conversations`.
+  final int totalUnread;
+
+  const NotificationSummaryView({
+    required this.conversations,
+    required this.adminEvents,
+    required this.totalUnread,
+  });
+
+  @override
+  int get hashCode =>
+      conversations.hashCode ^ adminEvents.hashCode ^ totalUnread.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is NotificationSummaryView &&
+          runtimeType == other.runtimeType &&
+          conversations == other.conversations &&
+          adminEvents == other.adminEvents &&
+          totalUnread == other.totalUnread;
 }
 
 /// A user's manual presence flag as the app shows it (manual-presence, change

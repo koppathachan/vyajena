@@ -95,7 +95,7 @@ async fn real_apns_ping_is_an_http2_alert_with_only_the_fixed_text() {
     assert!(expiration > now && expiration <= now + 86_400 + 5);
     assert_eq!(
         req.json(),
-        serde_json::json!({ "aps": { "alert": { "body": "New message" }, "sound": "default" } })
+        serde_json::json!({ "aps": { "alert": { "body": "New message" }, "sound": "default", "mutable-content": 1 } })
     );
     // The provider token: ES256, the key id from the file name, the team.
     let jwt = req

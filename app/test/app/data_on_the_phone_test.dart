@@ -50,7 +50,13 @@ void main() {
       final activity = read(
         'android/app/src/main/kotlin/com/purplechaamba/vyajena/MainActivity.kt',
       );
-      expect(activity, contains('File(noBackupFilesDir, "core")'));
+      // The one place the folder is made, shared with the headless wake that
+      // runs when a push arrives while the app is closed.
+      final wake = read(
+        'android/app/src/main/kotlin/com/purplechaamba/vyajena/WakeRunner.kt',
+      );
+      expect(wake, contains('File(context.noBackupFilesDir, "core")'));
+      expect(activity, contains('WakeRunner.coreDataDir(this)'));
       // The Keystore store gets its Context before Flutter starts.
       final onCreate = activity.indexOf('override fun onCreate');
       expect(
@@ -104,6 +110,8 @@ void main() {
     expect(ids, {
       'com.purplechaamba.vyajena',
       'com.purplechaamba.vyajena.RunnerTests',
+      // The notification extension (smarter-notifications): the app id + suffix.
+      'com.purplechaamba.vyajena.NotificationService',
     });
   });
 }

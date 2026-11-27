@@ -258,9 +258,12 @@ impl Admin for AdminService {
                 Ok(Ok(notices))
             })
             .await??;
+        // message-delivery: Content-free wake for an own-access admin-event.
+        let owed: Vec<_> = notices.iter().map(|(device, _)| *device).collect();
         for (device_id, notice) in notices {
             self.state.hub.send_frame(&device_id, notice);
         }
+        crate::messaging::notify_own_access(&self.state, owed);
         tracing::info!("closed a named group");
         Ok(Response::new(pb::CloseGroupResponse {}))
     }
@@ -313,9 +316,13 @@ impl Admin for AdminService {
         for device_id in &revoked {
             let _ = self.state.revocations.send(*device_id);
         }
+        // message-delivery: Content-free wake for an own-access admin-event: the
+        // closed DMs' other users.
+        let owed: Vec<_> = closed.iter().map(|(device, _)| *device).collect();
         for (device_id, notice) in closed {
             self.state.hub.send_frame(&device_id, notice);
         }
+        crate::messaging::notify_own_access(&self.state, owed);
         tracing::info!(devices = revoked.len(), invites, "removed a user");
         Ok(Response::new(pb::RemoveUserResponse {}))
     }
