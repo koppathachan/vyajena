@@ -77,7 +77,7 @@
 - [x] 8.1 `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D
   warnings`, `cargo fmt --check`, `buf lint`, `openspec validate
   review-admin-invite --strict` all pass
-- [ ] 8.2 Open the PR; close koppathachan/vyajena#71 with a comment linking it
+- [x] 8.2 Open the PR; close koppathachan/vyajena#71 with a comment linking it
   (owner chose this, 2026-11-27)
 - [ ] 8.3 Owner's yes, then redeploy the review server with the flag on
   (`deploy/server/build.sh && deploy/server/deploy.sh --no-build`), run
