@@ -7,9 +7,9 @@
 // when the badge takes the user to it. Tapping a reply's quote scrolls to
 // the original when it is among the loaded messages.
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
@@ -20,6 +20,7 @@ import '../shell/avatars.dart';
 import '../core/core_service.dart';
 import 'chat_model.dart';
 import 'composer.dart';
+import 'forward_picker.dart';
 import 'group_menu.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
@@ -297,6 +298,65 @@ class _ChatScreenState extends State<ChatScreen> {
         },
       ),
     );
+  }
+
+  /// The text Copy puts on the clipboard for [message], or null when it has no
+  /// text to copy (message-actions: Copy a message): a text body, or an image
+  /// with a non-empty caption. Media-only messages, tombstones and unsupported
+  /// bodies have none.
+  String? _copyText(ChatMessage message) {
+    final body = message.body;
+    final text = switch (body) {
+      ChatBody_Text(:final text) => text,
+      ChatBody_Image(:final image) => image.caption,
+      _ => null,
+    };
+    return (text != null && text.isNotEmpty) ? text : null;
+  }
+
+  /// The text Forward sends, or null when [message] is not forwardable
+  /// (message-actions: Forward a message): only a text body this version; a
+  /// forward of an attachment needs a core call this change does not add.
+  String? _forwardText(ChatMessage message) {
+    final body = message.body;
+    return body is ChatBody_Text && body.text.isNotEmpty ? body.text : null;
+  }
+
+  /// Copies [message]'s text to the clipboard and confirms (message-actions:
+  /// Copy a message). Nothing leaves the device.
+  Future<void> _copyMessage(ChatMessage message) async {
+    final text = _copyText(message);
+    if (text == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(text: text));
+    messenger.showSnackBar(const SnackBar(content: Text('Copied')));
+  }
+
+  /// Forwards [message]'s text into a chat the user picks (message-actions:
+  /// Forward a message): a new standalone message, carrying neither the
+  /// original's mentions nor its reply quote.
+  Future<void> _forwardMessage(ChatMessage message) async {
+    final text = _forwardText(message);
+    if (text == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final target = await ForwardPicker.pick(
+      context,
+      widget.core,
+      excludeChatId: _model.chatId,
+    );
+    if (target == null) return;
+    try {
+      if (target.chatId == 0) {
+        await widget.core.sendText(text);
+      } else {
+        await widget.core.sendMessageIn(target.chatId, text);
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Forwarded to ${target.title}')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
   }
 
   Future<void> _send(String text, List<MentionSpan> mentions) async {
@@ -744,6 +804,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
+                                  onCopy: _copyText(message) != null
+                                      ? () => _copyMessage(message)
+                                      : null,
+                                  onForward: _forwardText(message) != null
+                                      ? () => _forwardMessage(message)
+                                      : null,
                                   onDelete:
                                       _canDelete(message, peer == null)
                                       ? () => _deleteMessage(message)

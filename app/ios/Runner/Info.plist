@@ -26,6 +26,21 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- The custom scheme the Share Extension opens to foreground the app after
+	     it writes a shared item to the App Group (change `message-actions-share`).
+	     The app does not parse the URL; being opened brings it to the front and
+	     it drains the App Group inbox. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.purplechaamba.vyajena.share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>vyajena-share</string>
+			</array>
+		</dict>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
