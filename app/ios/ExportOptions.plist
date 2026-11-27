@@ -4,8 +4,13 @@
   App Store Connect export for `flutter build ipa` (app-release design D4).
   Automatic signing with the owner's team (DEVELOPMENT_TEAM in the project,
   teamID here: app/store/build-ipa.sh exports an unsigned archive, which names
-  no team);
-  the build number comes from pubspec.yaml (D5), never from Xcode.
+  no team). Automatic signing covers both built targets — the app and its
+  NotificationService extension (smarter-notifications) — reusing or creating
+  their App Store profiles from the Apple account in Xcode.
+  CI keeps the App Store Connect key out of the build environment, so it cannot
+  create profiles on the fly: .github/scripts/ios-ipa.sh copies this file and
+  overrides signingStyle to manual, naming one installed profile per target.
+  The build number comes from pubspec.yaml (D5), never from Xcode.
 -->
 <plist version="1.0">
 <dict>

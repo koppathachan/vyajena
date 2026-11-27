@@ -317,12 +317,13 @@ if [ "$check_ios" = 1 ]; then
     else
       fail "ios permissions" "usage descriptions: ${usages:-none}, expected NSCameraUsageDescription NSMicrophoneUsageDescription"
     fi
-    # The one capability beyond the keychain is Push (push design D12). The
-    # archive is unsigned (build-ipa.sh signs at export), so read the source.
+    # The capabilities beyond the keychain are Push (push design D12) and the App
+    # Group the app shares with its notification extension (smarter-notifications).
+    # The archive is unsigned (build-ipa.sh signs at export), so read the source.
     ent="$app/ios/Runner/Runner.entitlements"
     ent_keys="$( [ -f "$ent" ] && plutil -convert json -o - "$ent" | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin))))' || true)"
-    if [ "$ent_keys" = "aps-environment" ]; then
-      pass "ios capabilities" "Push only (aps-environment)"
+    if [ "$ent_keys" = "aps-environment com.apple.security.application-groups" ]; then
+      pass "ios capabilities" "Push (aps-environment) and the shared App Group"
     else
       fail "ios capabilities" "Runner.entitlements keys: ${ent_keys:-none}"
     fi
