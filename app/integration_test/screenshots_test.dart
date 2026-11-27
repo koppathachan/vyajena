@@ -67,7 +67,9 @@ void main() {
       await binding.convertFlutterSurfaceToImage();
       converted = true;
     }
-    await tester.pumpAndSettle();
+    // The Arcade theme runs perpetual sprite motion, so pumpAndSettle never
+    // settles; pump a bounded duration to render the frame instead.
+    await tester.pump(const Duration(milliseconds: 700));
     await binding.takeScreenshot(name);
   }
 
@@ -79,10 +81,10 @@ void main() {
     await core.open();
     await shot(tester, '1-chat');
 
-    await tester.tap(find.byTooltip('Menu'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Members'));
-    await tester.pumpAndSettle();
+    // Robust app-shell navigation via a bottom-nav label (the old Menu→Members
+    // path no longer exists on the Chats list under the app-shell).
+    await tester.tap(find.text('Contacts'));
+    await tester.pump(const Duration(milliseconds: 700));
     await shot(tester, '2-members');
 
     final joining = FakeCoreService();
