@@ -8,6 +8,7 @@ pub mod clock;
 pub mod config;
 pub mod logging;
 pub mod redact;
+pub mod review_invite;
 pub mod server_keys;
 pub mod tls;
 
@@ -342,6 +343,14 @@ fn log_bootstrap(config: &Config, bootstrap: &Bootstrap) {
             "no users yet; the bootstrap invite printed at first start is still valid"
         ),
         Bootstrap::NotNeeded => {}
+        // device-identity: Reusable review admin invite. Never log the code or
+        // the payload; `server review-invite` prints it on the host.
+        Bootstrap::Reusable(_) => tracing::warn!(
+            user_id = %config.admin_user_id(),
+            "REVIEW SERVER: a reusable admin invite is ON; anyone holding it can take over \
+             the admin seat. Never enable [review] on a server with real members. Get the \
+             invite with `server review-invite --config <file>`"
+        ),
     }
 }
 

@@ -746,6 +746,37 @@ fn the_server_check_covers_the_tunnel_and_the_relay_path() {
 
 // --- review-server -----------------------------------------------------------
 
+// spec: server-deployment/review-admin-invite-hand-off
+#[test]
+fn only_the_review_server_has_the_reusable_admin_invite() {
+    let sandbox = Sandbox::new().with_secrets();
+    let review = Config::from_toml(&sandbox.render("server-review-config"), Path::new("/"))
+        .check("rendered deploy/server/review.toml");
+    let real = Config::from_toml(&sandbox.render("server-config"), Path::new("/"))
+        .check("rendered deploy/server/config.toml");
+    assert!(
+        review.review.reusable_admin_invite,
+        "the review server has it"
+    );
+    assert!(
+        !real.review.reusable_admin_invite,
+        "the real server never has it"
+    );
+    assert!(
+        !read("deploy/server/config.toml")
+            .lines()
+            .any(|l| l.trim() == "[review]"),
+        "config.toml must have no [review] table"
+    );
+    // check.sh fails if the real server ever gets one; deploy.sh saves the
+    // invite to an owner-only file instead of printing it.
+    assert!(read("deploy/server/check.sh").contains("real review flag"));
+    let deploy = read("deploy/server/deploy.sh");
+    assert!(deploy.contains("--review-invite)"));
+    assert!(deploy.contains("review-admin-invite-"));
+    assert!(deploy.contains("umask 077"));
+}
+
 // spec: review-server/separate-review-server
 #[test]
 fn the_review_server_has_its_own_ids_port_user_and_data() {

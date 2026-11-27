@@ -17,12 +17,13 @@
 
 use std::time::SystemTime;
 
-use rusqlite::params;
+use rusqlite::{Transaction, params};
 
 use crate::admin::invites;
 use crate::auth;
 use crate::runtime::clock::unix_millis;
 use crate::store::{Store, StoreError, records};
+use protocol::device_identity::DeviceId;
 
 use super::Config;
 
@@ -117,28 +118,61 @@ pub async fn reset_admin(
                 "UPDATE users SET removed_at = ?2 WHERE username = ?1",
                 params![admin, unix_millis(now)],
             )?;
-            let mut devices_revoked = 0;
-            for device in records::active_devices(&tx, &admin)? {
-                if auth::revoke_device(&tx, &device.device_id, now)? {
-                    devices_revoked += 1;
-                }
-            }
-            let invites_revoked = invites::revoke_unused_for(&tx, &admin, now)?;
-            // Break-glass re-seed: drop the admin-owned system lobby so the
-            // recovered admin re-creates it; its members are re-announced as
-            // waiting and rejoin with a fresh Welcome (the admin's devices are
-            // already revoked above, so they are not counted). Runs after the
-            // revokes so the revoked old admin leaf is excluded from the count.
-            let reseed = crate::membership::group::reseed_system_group(&tx)?;
+            let cleared = clear_admin_seat(&tx, &admin, now)?;
             tx.commit()?;
             Ok(Some(ResetReport {
                 admin,
-                devices_revoked,
-                invites_revoked,
-                lobby_reseeded: reseed.is_some(),
-                members_to_rejoin: reseed.unwrap_or(0),
+                devices_revoked: cleared.revoked.len(),
+                invites_revoked: cleared.invites_revoked,
+                lobby_reseeded: cleared.lobby_reseeded,
+                members_to_rejoin: cleared.members_to_rejoin,
             }))
         })
         .await?;
     report.ok_or_else(|| ResetError::NoAdmin(config.admin_username.clone()))
+}
+
+/// What [`clear_admin_seat`] changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClearedSeat {
+    /// The admin devices it newly revoked (their live streams must be closed).
+    pub revoked: Vec<DeviceId>,
+    /// How many of the admin's unused single-use invites it revoked.
+    pub invites_revoked: usize,
+    /// Whether a system lobby existed and was dropped.
+    pub lobby_reseeded: bool,
+    /// How many non-revoked member devices the dropped lobby held.
+    pub members_to_rejoin: usize,
+}
+
+/// The steps that empty the admin seat, shared by the operator's
+/// `admin-reset` (admin-recovery: Operator break-glass reset) and the review
+/// server's reusable invite (device-identity: Reusable review admin invite), so
+/// the two can never drift: revoke every active admin device, revoke the
+/// admin's unused single-use invites, and re-seed the admin-owned system lobby
+/// (admin-recovery: Break-glass re-seeds the admin's lobby). The caller decides
+/// what happens to the admin's user row and commits.
+pub fn clear_admin_seat(
+    tx: &Transaction<'_>,
+    admin: &str,
+    now: SystemTime,
+) -> Result<ClearedSeat, StoreError> {
+    let mut revoked = Vec::new();
+    for device in records::active_devices(tx, admin)? {
+        if auth::revoke_device(tx, &device.device_id, now)? {
+            revoked.push(device.device_id);
+        }
+    }
+    let invites_revoked = invites::revoke_unused_for(tx, admin, now)?;
+    // Break-glass re-seed: drop the admin-owned system lobby so the next admin
+    // device re-creates it; its members are re-announced as waiting and rejoin
+    // with a fresh Welcome. Runs after the revokes so the revoked old admin
+    // leaf is excluded from the count.
+    let reseed = crate::membership::group::reseed_system_group(tx)?;
+    Ok(ClearedSeat {
+        revoked,
+        invites_revoked,
+        lobby_reseeded: reseed.is_some(),
+        members_to_rejoin: reseed.unwrap_or(0),
+    })
 }

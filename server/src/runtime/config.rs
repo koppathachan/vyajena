@@ -18,6 +18,12 @@
 //!                                        #   this passphrase (defense-in-depth on
 //!                                        #   top of host access; admin-recovery).
 //!
+//! [review]                               # optional: ONLY on the store reviewers'
+//! reusable_admin_invite = true           #   server. One admin invite that never
+//!                                        #   expires; each use takes over the admin
+//!                                        #   seat (review-admin-invite). Never set
+//!                                        #   it on a server with real members.
+//!
 //! [limits]                               # optional: every field defaults to the
 //!                                        # built-in value, so an absent table or
 //!                                        # field keeps today's behaviour. Durations
@@ -82,6 +88,18 @@ pub struct Config {
     /// host access). An absent `[recovery]` table means host access alone
     /// authorises `server admin-reset`.
     pub recovery: Recovery,
+    /// Store-review settings (device-identity: Reusable review admin invite).
+    /// An absent `[review]` table turns them all off.
+    pub review: Review,
+}
+
+/// Settings only the store reviewers' server sets (change
+/// `review-admin-invite`). All off by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Review {
+    /// The server keeps one admin invite that never expires and is never used
+    /// up; each `Devices.Register` with it takes over the admin seat.
+    pub reusable_admin_invite: bool,
 }
 
 /// Optional defense-in-depth for the break-glass admin reset. When
@@ -196,6 +214,10 @@ pub mod field {
     pub const RECOVERY: &str = "recovery";
     /// `recovery.passphrase`
     pub const RECOVERY_PASSPHRASE: &str = "recovery.passphrase";
+    /// `[review]`
+    pub const REVIEW: &str = "review";
+    /// `review.reusable_admin_invite`
+    pub const REVIEW_REUSABLE_ADMIN_INVITE: &str = "review.reusable_admin_invite";
 
     pub(super) const ALL: &[&str] = &[
         SERVER_ID,
@@ -207,6 +229,7 @@ pub mod field {
         BLOB_STORE,
         LIMITS,
         RECOVERY,
+        REVIEW,
     ];
 
     /// The known fields inside the `[limits]` table.
@@ -320,6 +343,7 @@ impl Config {
         let blob_store = blob_store(&table, base)?;
         let limits = limits(&table)?;
         let recovery = recovery(&table)?;
+        let review = review(&table)?;
 
         Ok(Self {
             server_id,
@@ -331,6 +355,7 @@ impl Config {
             blob_store,
             limits,
             recovery,
+            review,
         })
     }
 
@@ -495,6 +520,39 @@ fn recovery(table: &toml::Table) -> Result<Recovery, ConfigError> {
         }
     };
     Ok(Recovery { passphrase })
+}
+
+/// The `[review]` table, if there is one. Only `reusable_admin_invite` (a
+/// boolean) is known (device-identity: Reusable review admin invite).
+fn review(table: &toml::Table) -> Result<Review, ConfigError> {
+    let Some(value) = table.get(field::REVIEW) else {
+        return Ok(Review::default());
+    };
+    let toml::Value::Table(sub) = value else {
+        return Err(ConfigError::Invalid {
+            field: field::REVIEW,
+            reason: format!("must be a table, found {}", value.type_str()),
+        });
+    };
+    const KNOWN: &[&str] = &["reusable_admin_invite"];
+    if let Some(unknown) = sub.keys().find(|key| !KNOWN.contains(&key.as_str())) {
+        return Err(ConfigError::Unknown {
+            field: format!("{}.{unknown}", field::REVIEW),
+        });
+    }
+    let reusable_admin_invite = match sub.get("reusable_admin_invite") {
+        None => false,
+        Some(toml::Value::Boolean(value)) => *value,
+        Some(other) => {
+            return Err(ConfigError::Invalid {
+                field: field::REVIEW_REUSABLE_ADMIN_INVITE,
+                reason: format!("must be true or false, found {}", other.type_str()),
+            });
+        }
+    };
+    Ok(Review {
+        reusable_admin_invite,
+    })
 }
 
 /// An optional positive integer from a `[limits]` sub-field, erroring (naming
