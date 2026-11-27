@@ -417,6 +417,8 @@ abstract class RustLibApi extends BaseApi {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   });
 
   Future<PlatformInt64> crateApiCoreCoreSendVideoIn({
@@ -429,6 +431,8 @@ abstract class RustLibApi extends BaseApi {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   });
 
   Future<void> crateApiCoreCoreSetAppMuted({
@@ -3209,6 +3213,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3225,6 +3231,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_prim_u_8_loose(firstFrameRgba, serializer);
           sse_encode_u_32(frameWidth, serializer);
           sse_encode_u_32(frameHeight, serializer);
+          sse_encode_opt_String(caption, serializer);
+          sse_encode_list_mention_span(mentions, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3246,6 +3254,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           firstFrameRgba,
           frameWidth,
           frameHeight,
+          caption,
+          mentions,
         ],
         apiImpl: this,
       ),
@@ -3263,6 +3273,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       "firstFrameRgba",
       "frameWidth",
       "frameHeight",
+      "caption",
+      "mentions",
     ],
   );
 
@@ -3277,6 +3289,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -3294,6 +3308,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_list_prim_u_8_loose(firstFrameRgba, serializer);
           sse_encode_u_32(frameWidth, serializer);
           sse_encode_u_32(frameHeight, serializer);
+          sse_encode_opt_String(caption, serializer);
+          sse_encode_list_mention_span(mentions, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -3316,6 +3332,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           firstFrameRgba,
           frameWidth,
           frameHeight,
+          caption,
+          mentions,
         ],
         apiImpl: this,
       ),
@@ -3335,6 +3353,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "firstFrameRgba",
           "frameWidth",
           "frameHeight",
+          "caption",
+          "mentions",
         ],
       );
 
@@ -4544,15 +4564,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   VideoView dco_decode_video_view(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6)
-      throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7)
+      throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return VideoView(
       width: dco_decode_u_32(arr[0]),
       height: dco_decode_u_32(arr[1]),
       durationMs: dco_decode_u_32(arr[2]),
       thumbhash: dco_decode_list_prim_u_8_strict(arr[3]),
       size: dco_decode_u_64(arr[4]),
-      state: dco_decode_media_status(arr[5]),
+      caption: dco_decode_opt_String(arr[5]),
+      state: dco_decode_media_status(arr[6]),
     );
   }
 
@@ -5380,6 +5401,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_durationMs = sse_decode_u_32(deserializer);
     var var_thumbhash = sse_decode_list_prim_u_8_strict(deserializer);
     var var_size = sse_decode_u_64(deserializer);
+    var var_caption = sse_decode_opt_String(deserializer);
     var var_state = sse_decode_media_status(deserializer);
     return VideoView(
       width: var_width,
@@ -5387,6 +5409,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       durationMs: var_durationMs,
       thumbhash: var_thumbhash,
       size: var_size,
+      caption: var_caption,
       state: var_state,
     );
   }
@@ -6164,6 +6187,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_u_32(self.durationMs, serializer);
     sse_encode_list_prim_u_8_strict(self.thumbhash, serializer);
     sse_encode_u_64(self.size, serializer);
+    sse_encode_opt_String(self.caption, serializer);
     sse_encode_media_status(self.state, serializer);
   }
 }
@@ -6709,6 +6733,8 @@ class CoreImpl extends RustOpaque implements Core {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   }) => RustLib.instance.api.crateApiCoreCoreSendVideo(
     that: this,
     mp4: mp4,
@@ -6718,6 +6744,8 @@ class CoreImpl extends RustOpaque implements Core {
     firstFrameRgba: firstFrameRgba,
     frameWidth: frameWidth,
     frameHeight: frameHeight,
+    caption: caption,
+    mentions: mentions,
   );
 
   /// Sends a video to chat `chat_id`; returns its local id. `mp4` is the
@@ -6740,6 +6768,8 @@ class CoreImpl extends RustOpaque implements Core {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   }) => RustLib.instance.api.crateApiCoreCoreSendVideoIn(
     that: this,
     chatId: chatId,
@@ -6750,6 +6780,8 @@ class CoreImpl extends RustOpaque implements Core {
     firstFrameRgba: firstFrameRgba,
     frameWidth: frameWidth,
     frameHeight: frameHeight,
+    caption: caption,
+    mentions: mentions,
   );
 
   /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):

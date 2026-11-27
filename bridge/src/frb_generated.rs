@@ -4135,6 +4135,8 @@ fn wire__crate__api__core__Core_send_video_impl(
             let api_first_frame_rgba = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_frame_width = <u32>::sse_decode(&mut deserializer);
             let api_frame_height = <u32>::sse_decode(&mut deserializer);
+            let api_caption = <Option<String>>::sse_decode(&mut deserializer);
+            let api_mentions = <Vec<crate::api::types::MentionSpan>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::CoreError>(
@@ -4165,6 +4167,8 @@ fn wire__crate__api__core__Core_send_video_impl(
                             api_first_frame_rgba,
                             api_frame_width,
                             api_frame_height,
+                            api_caption,
+                            api_mentions,
                         )
                         .await?;
                         Ok(output_ok)
@@ -4208,6 +4212,8 @@ fn wire__crate__api__core__Core_send_video_in_impl(
             let api_first_frame_rgba = <Vec<u8>>::sse_decode(&mut deserializer);
             let api_frame_width = <u32>::sse_decode(&mut deserializer);
             let api_frame_height = <u32>::sse_decode(&mut deserializer);
+            let api_caption = <Option<String>>::sse_decode(&mut deserializer);
+            let api_mentions = <Vec<crate::api::types::MentionSpan>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::error::CoreError>(
@@ -4239,6 +4245,8 @@ fn wire__crate__api__core__Core_send_video_in_impl(
                             api_first_frame_rgba,
                             api_frame_width,
                             api_frame_height,
+                            api_caption,
+                            api_mentions,
                         )
                         .await?;
                         Ok(output_ok)
@@ -5956,6 +5964,7 @@ impl SseDecode for crate::api::types::VideoView {
         let mut var_durationMs = <u32>::sse_decode(deserializer);
         let mut var_thumbhash = <Vec<u8>>::sse_decode(deserializer);
         let mut var_size = <u64>::sse_decode(deserializer);
+        let mut var_caption = <Option<String>>::sse_decode(deserializer);
         let mut var_state = <crate::api::types::MediaStatus>::sse_decode(deserializer);
         return crate::api::types::VideoView {
             width: var_width,
@@ -5963,6 +5972,7 @@ impl SseDecode for crate::api::types::VideoView {
             duration_ms: var_durationMs,
             thumbhash: var_thumbhash,
             size: var_size,
+            caption: var_caption,
             state: var_state,
         };
     }
@@ -6892,6 +6902,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::types::VideoView {
             self.duration_ms.into_into_dart().into_dart(),
             self.thumbhash.into_into_dart().into_dart(),
             self.size.into_into_dart().into_dart(),
+            self.caption.into_into_dart().into_dart(),
             self.state.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -7755,6 +7766,7 @@ impl SseEncode for crate::api::types::VideoView {
         <u32>::sse_encode(self.duration_ms, serializer);
         <Vec<u8>>::sse_encode(self.thumbhash, serializer);
         <u64>::sse_encode(self.size, serializer);
+        <Option<String>>::sse_encode(self.caption, serializer);
         <crate::api::types::MediaStatus>::sse_encode(self.state, serializer);
     }
 }

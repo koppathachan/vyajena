@@ -483,6 +483,8 @@ impl Core {
         first_frame_rgba: Vec<u8>,
         frame_width: u32,
         frame_height: u32,
+        caption: Option<String>,
+        mentions: Vec<MentionSpan>,
     ) -> Result<i64, CoreError> {
         self.send_video_in(
             0,
@@ -493,6 +495,8 @@ impl Core {
             first_frame_rgba,
             frame_width,
             frame_height,
+            caption,
+            mentions,
         )
         .await
     }
@@ -519,7 +523,10 @@ impl Core {
         first_frame_rgba: Vec<u8>,
         frame_width: u32,
         frame_height: u32,
+        caption: Option<String>,
+        mentions: Vec<MentionSpan>,
     ) -> Result<i64, CoreError> {
+        let mentions = map::mentions(caption.as_deref().unwrap_or_default(), &mentions)?;
         Ok(forward(
             self.client
                 .send_video_in(
@@ -531,6 +538,8 @@ impl Core {
                     &first_frame_rgba,
                     frame_width,
                     frame_height,
+                    caption.as_deref(),
+                    &mentions,
                 )
                 .await,
         )?

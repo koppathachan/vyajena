@@ -142,6 +142,10 @@ pub struct VideoContent {
     pub height: u32,
     /// The first-frame ThumbHash blur.
     pub thumbhash: Vec<u8>,
+    /// The caption, if any (message-content: Video caption and mentions).
+    pub caption: Option<String>,
+    /// The valid caption mentions, sorted by `start`; empty without a caption.
+    pub mentions: Vec<Mention>,
 }
 
 /// What a `Content` says, decoded.
@@ -357,6 +361,12 @@ fn decode_video(video: pb::Video) -> Option<VideoContent> {
     {
         return None;
     }
+    // The caption's invalid mentions are dropped (Video caption and mentions);
+    // the caption stays, mirroring `decode_image`.
+    let mentions = match &video.caption {
+        Some(caption) => valid_mentions(caption, mentions_from_pb(&video.caption_mentions)),
+        None => Vec::new(),
+    };
     Some(VideoContent {
         blob_id: BlobId::try_from(video.blob_id.as_slice()).ok()?,
         blob_key: BlobKey::try_from(video.blob_key.as_slice()).ok()?,
@@ -365,6 +375,8 @@ fn decode_video(video: pb::Video) -> Option<VideoContent> {
         width: video.width,
         height: video.height,
         thumbhash: video.thumbhash,
+        caption: video.caption,
+        mentions,
     })
 }
 
@@ -554,9 +566,15 @@ pub fn encode_audio(audio: &AudioContent, sent_at: SystemTime) -> Result<Vec<u8>
     )
 }
 
-/// A `Video` body (message-content: Video messages). Fails with
-/// [`ContentError::TooLong`] if it would encrypt to more than the ciphertext cap.
+/// A `Video` body (message-content: Video messages; Video caption and mentions).
+/// Fails with [`ContentError::InvalidMention`] if a caption mention is not one a
+/// receiver keeps, and with [`ContentError::TooLong`] if it would encrypt to more
+/// than the ciphertext cap.
 pub fn encode_video(video: &VideoContent, sent_at: SystemTime) -> Result<Vec<u8>, ContentError> {
+    let caption = video.caption.as_deref().unwrap_or_default();
+    if valid_mentions(caption, video.mentions.clone()).len() != video.mentions.len() {
+        return Err(ContentError::InvalidMention);
+    }
     encode(
         Body::Video(pb::Video {
             blob_id: video.blob_id.to_vec(),
@@ -566,6 +584,8 @@ pub fn encode_video(video: &VideoContent, sent_at: SystemTime) -> Result<Vec<u8>
             width: video.width,
             height: video.height,
             thumbhash: video.thumbhash.clone(),
+            caption: video.caption.clone(),
+            caption_mentions: mentions_to_pb(&video.mentions)?,
         }),
         sent_at,
     )
@@ -683,8 +703,9 @@ fn chat_parts(store: &Store, body: Decoded) -> Option<(MessageBody, Vec<Mention>
             Some((MessageBody::Audio(Box::new(body)), Vec::new(), reply))
         }
         Decoded::Video(video) => {
+            let mentions = video.mentions.clone();
             let body = video_body(store, &video);
-            Some((MessageBody::Video(Box::new(body)), Vec::new(), None))
+            Some((MessageBody::Video(Box::new(body)), mentions, None))
         }
         // A `Delete` body shown in the history directly (its target was never
         // held, or it has not been applied yet) is a bare tombstone with no
@@ -757,6 +778,7 @@ pub(crate) fn video_body(store: &Store, video: &VideoContent) -> crate::events::
         duration_ms: video.duration_ms,
         thumbhash: video.thumbhash.clone(),
         size: video.blob_size,
+        caption: video.caption.clone(),
         state,
     }
 }

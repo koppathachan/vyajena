@@ -1334,7 +1334,7 @@ pub struct Audio {
 /// fixed (MP4/H.264/AAC), as WebP is fixed for images, so there is no
 /// container/codec field, and there is exactly one clip and no separate poster
 /// blob.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Video {
     /// The random id the ciphertext is stored under on the server, 16 bytes
     /// (`protocol::blob_store::BLOB_ID_LEN`). Unique per upload; no dedup.
@@ -1365,6 +1365,15 @@ pub struct Video {
     /// video analogue of the image ThumbHash; there is no separate poster blob.
     #[prost(bytes = "vec", tag = "7")]
     pub thumbhash: ::prost::alloc::vec::Vec<u8>,
+    /// Optional caption: UTF-8, limited like `Text.text`, mirroring `Image.caption`
+    /// (message-content: Video caption and mentions). A client that predates it
+    /// ignores the unknown field and still plays the clip.
+    #[prost(string, optional, tag = "8")]
+    pub caption: ::core::option::Option<::prost::alloc::string::String>,
+    /// The mentions in `caption`, under the same rules as `Text.mentions`
+    /// (message-content: Video caption and mentions).
+    #[prost(message, repeated, tag = "9")]
+    pub caption_mentions: ::prost::alloc::vec::Vec<Mention>,
 }
 /// message-content: Text only. UTF-8 text, optional mentions and one optional
 /// reply reference, and nothing else: no attachments, link previews or rich

@@ -197,6 +197,8 @@ class FakeCoreService extends CoreService {
   /// ([serverVideoClips]) unless [expired]; it is not cached yet.
   ChatMessage receiveVideo(
     UserRef sender, {
+    String? caption,
+    List<MentionSpan> mentions = const [],
     bool expired = false,
     int durationMs = 12000,
     int width = 854,
@@ -218,10 +220,11 @@ class FakeCoreService extends CoreService {
           durationMs: durationMs,
           thumbhash: Uint8List.fromList([1, 2, 3]),
           size: BigInt.from(4 * 1024 * 1024),
+          caption: caption,
           state: expired ? MediaStatus.expired : MediaStatus.notDownloaded,
         ),
       ),
-      mentions: const [],
+      mentions: mentions,
       mentionsMe: false,
       acceptedAtMs: 1,
     );
@@ -824,8 +827,15 @@ class FakeCoreService extends CoreService {
     Uint8List? firstFrameRgba,
     int frameWidth = 0,
     int frameHeight = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
   }) async {
-    _call('sendVideo', (chatId: chatId, durationMs: durationMs));
+    _call('sendVideo', (
+      chatId: chatId,
+      durationMs: durationMs,
+      caption: caption,
+      mentions: mentions,
+    ));
     sentVideos.add(mp4);
     final id = _newId();
     cachedVideoClips[id] = '/media/clip-$id.mp4';
@@ -844,10 +854,11 @@ class FakeCoreService extends CoreService {
             durationMs: durationMs,
             thumbhash: Uint8List.fromList([1, 2, 3]),
             size: BigInt.from(mp4.length),
+            caption: caption,
             state: MediaStatus.available,
           ),
         ),
-        mentions: const [],
+        mentions: mentions,
         mentionsMe: false,
         sentAtMs: 1,
         status: const SendState.sending(),
