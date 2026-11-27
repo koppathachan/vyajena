@@ -70,4 +70,4 @@ Proto first, then core, bridge, app, tests. Tick a task only when its tests pass
   Each tagged `// spec: app-ui/<slug>`.
 - [x] 6.2 `cd app && flutter analyze && flutter test` clean.
 - [x] 6.3 `openspec validate media-compose-tray --strict` passes.
-- [ ] 6.4 Open a PR against `main` (concise ~50-word message); do not deploy.
+- [x] 6.4 Open a PR against `main` (concise ~50-word message); do not deploy.
