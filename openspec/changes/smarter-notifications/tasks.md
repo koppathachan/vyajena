@@ -33,16 +33,16 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 ## 2. Core — the notification summary builder (decisions b, c)
 
-- [ ] 2.1 A module that, after catch-up, produces a per-conversation summary
+- [x] 2.1 A module that, after catch-up, produces a per-conversation summary
   `{type, unread_count}` (no sender in v1) from the core's existing unread state and
   `group_id`→conversation map; never emits a body or sender. Tests
   `local-notifications/the-device-builds-the-notification-locally`,
   `local-notifications/conversation-type-without-decryption`,
   `local-notifications/unread-count-not-push-count`.
-- [ ] 2.2 Admin-event summaries from core notices (`RemovedNotice`, `GroupClosed`,
+- [x] 2.2 Admin-event summaries from core notices (`RemovedNotice`, `GroupClosed`,
   `DmClosed`, self-add); routine churn excluded. Test
   `local-notifications/admin-event-notifications-are-fixed-content-free-phrases`.
-- [ ] 2.3 Bridge surface: expose the summary stream/getter and the per-device
+- [x] 2.3 Bridge surface: expose the summary stream/getter and the per-device
   "Notification detail" (Basic / More) setting; regenerate bindings (`cd app &&
   flutter_rust_bridge_codegen generate`), commit generated files.
 

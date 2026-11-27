@@ -52,6 +52,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String dco_decode_String(dynamic raw);
 
   @protected
+  AdminEventNotification dco_decode_admin_event_notification(dynamic raw);
+
+  @protected
+  AdminEventType dco_decode_admin_event_type(dynamic raw);
+
+  @protected
   AudioView dco_decode_audio_view(dynamic raw);
 
   @protected
@@ -103,6 +109,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConnectionStatus dco_decode_connection_status(dynamic raw);
 
   @protected
+  ConversationNotification dco_decode_conversation_notification(dynamic raw);
+
+  @protected
   CoreError dco_decode_core_error(dynamic raw);
 
   @protected
@@ -127,10 +136,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InvitePreview dco_decode_invite_preview(dynamic raw);
 
   @protected
+  List<AdminEventNotification> dco_decode_list_admin_event_notification(
+    dynamic raw,
+  );
+
+  @protected
   List<ChatMessage> dco_decode_list_chat_message(dynamic raw);
 
   @protected
   List<ChatSummary> dco_decode_list_chat_summary(dynamic raw);
+
+  @protected
+  List<ConversationNotification> dco_decode_list_conversation_notification(
+    dynamic raw,
+  );
 
   @protected
   List<InviteInfo> dco_decode_list_invite_info(dynamic raw);
@@ -164,6 +183,17 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MentionTarget dco_decode_mention_target(dynamic raw);
+
+  @protected
+  NotificationConversationKind dco_decode_notification_conversation_kind(
+    dynamic raw,
+  );
+
+  @protected
+  NotificationDetailLevel dco_decode_notification_detail_level(dynamic raw);
+
+  @protected
+  NotificationSummaryView dco_decode_notification_summary_view(dynamic raw);
 
   @protected
   String? dco_decode_opt_String(dynamic raw);
@@ -273,6 +303,14 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   String sse_decode_String(SseDeserializer deserializer);
 
   @protected
+  AdminEventNotification sse_decode_admin_event_notification(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  AdminEventType sse_decode_admin_event_type(SseDeserializer deserializer);
+
+  @protected
   AudioView sse_decode_audio_view(SseDeserializer deserializer);
 
   @protected
@@ -324,6 +362,11 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   ConnectionStatus sse_decode_connection_status(SseDeserializer deserializer);
 
   @protected
+  ConversationNotification sse_decode_conversation_notification(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   CoreError sse_decode_core_error(SseDeserializer deserializer);
 
   @protected
@@ -348,10 +391,20 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   InvitePreview sse_decode_invite_preview(SseDeserializer deserializer);
 
   @protected
+  List<AdminEventNotification> sse_decode_list_admin_event_notification(
+    SseDeserializer deserializer,
+  );
+
+  @protected
   List<ChatMessage> sse_decode_list_chat_message(SseDeserializer deserializer);
 
   @protected
   List<ChatSummary> sse_decode_list_chat_summary(SseDeserializer deserializer);
+
+  @protected
+  List<ConversationNotification> sse_decode_list_conversation_notification(
+    SseDeserializer deserializer,
+  );
 
   @protected
   List<InviteInfo> sse_decode_list_invite_info(SseDeserializer deserializer);
@@ -387,6 +440,21 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   MentionTarget sse_decode_mention_target(SseDeserializer deserializer);
+
+  @protected
+  NotificationConversationKind sse_decode_notification_conversation_kind(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NotificationDetailLevel sse_decode_notification_detail_level(
+    SseDeserializer deserializer,
+  );
+
+  @protected
+  NotificationSummaryView sse_decode_notification_summary_view(
+    SseDeserializer deserializer,
+  );
 
   @protected
   String? sse_decode_opt_String(SseDeserializer deserializer);
@@ -511,6 +579,18 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_String(String self, SseSerializer serializer);
 
   @protected
+  void sse_encode_admin_event_notification(
+    AdminEventNotification self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_admin_event_type(
+    AdminEventType self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_audio_view(AudioView self, SseSerializer serializer);
 
   @protected
@@ -580,6 +660,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
+  void sse_encode_conversation_notification(
+    ConversationNotification self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_core_error(CoreError self, SseSerializer serializer);
 
   @protected
@@ -604,6 +690,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_invite_preview(InvitePreview self, SseSerializer serializer);
 
   @protected
+  void sse_encode_list_admin_event_notification(
+    List<AdminEventNotification> self,
+    SseSerializer serializer,
+  );
+
+  @protected
   void sse_encode_list_chat_message(
     List<ChatMessage> self,
     SseSerializer serializer,
@@ -612,6 +704,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_list_chat_summary(
     List<ChatSummary> self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_list_conversation_notification(
+    List<ConversationNotification> self,
     SseSerializer serializer,
   );
 
@@ -662,6 +760,24 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_mention_target(MentionTarget self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_notification_conversation_kind(
+    NotificationConversationKind self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notification_detail_level(
+    NotificationDetailLevel self,
+    SseSerializer serializer,
+  );
+
+  @protected
+  void sse_encode_notification_summary_view(
+    NotificationSummaryView self,
+    SseSerializer serializer,
+  );
 
   @protected
   void sse_encode_opt_String(String? self, SseSerializer serializer);

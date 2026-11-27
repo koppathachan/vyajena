@@ -1357,6 +1357,15 @@ impl Engine {
                 }
             }
             tracing::info!(what, "a chat was closed");
+            // local-notifications: Admin-event notifications. The admin closed it
+            // (or removed the peer), so only other users are told.
+            if !self.account.is_admin {
+                self.store().add_admin_event(
+                    crate::notification::AdminEventKind::Closed,
+                    &notice.group_id,
+                    self.now(),
+                )?;
+            }
             self.emit(Event::ChatsChanged);
         }
         self.ack(&notice.group_id, 0).await
@@ -1594,6 +1603,25 @@ impl Engine {
             "merged a commit"
         );
         if mls_group::kind_of(group.extensions()) != protocol::group_membership::GroupKind::System {
+            // local-notifications: Admin-event notifications. Another user (the
+            // admin) removed this device from a named group; not the server's
+            // inactivity Remove and not the user unlinking its own device.
+            let own_device = self.account.device_id;
+            if mls_group::kind_of(group.extensions())
+                == protocol::group_membership::GroupKind::Named
+                && review
+                    .removed
+                    .iter()
+                    .any(|(_, device)| *device == own_device)
+                && by.as_ref() != Some(&self.user())
+                && !automatic.iter().any(|m| m.device == own_device)
+            {
+                self.store().add_admin_event(
+                    crate::notification::AdminEventKind::Removed,
+                    &envelope.group_id,
+                    now,
+                )?;
+            }
             if !review.added.is_empty() || !review.removed.is_empty() {
                 self.emit(Event::ChatsChanged);
             }
@@ -1936,6 +1964,13 @@ impl Engine {
         for (user, _) in repinned {
             self.identity_key_changed(user);
         }
+        // local-notifications: Admin-event notifications. "Added to a new named
+        // group"; the group's name arrives later in its settings.
+        self.store().add_admin_event(
+            crate::notification::AdminEventKind::Added,
+            &envelope.group_id,
+            now,
+        )?;
         self.emit(Event::ChatsChanged);
         self.ack(&envelope.group_id, seq).await
     }

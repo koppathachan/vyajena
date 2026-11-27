@@ -93,6 +93,10 @@ abstract class Core implements RustOpaqueInterface {
   /// closed last.
   Future<List<ChatSummary>> chats();
 
+  /// Forgets the pending admin-events up to `up_to` (the largest id the app
+  /// notified for, or the user is looking at the app).
+  Future<void> clearAdminEvents({required PlatformInt64 upTo});
+
   /// Clears this device's push token on the server: no more wake pings
   /// (notifications not allowed).
   Future<void> clearPushToken();
@@ -227,6 +231,18 @@ abstract class Core implements RustOpaqueInterface {
   /// Whether the server knows named groups: the app offers "Create group"
   /// only then.
   Future<bool> namedGroupsAvailable();
+
+  /// This device's "Notification detail" level (app-ui: Notification detail
+  /// level): Basic until the user picks More.
+  Future<NotificationDetailLevel> notificationDetail();
+
+  /// What to show as notifications right now (local-notifications: The device
+  /// builds the notification locally): per conversation with unread messages
+  /// its type and unread count, plus pending admin-events. Metadata only: it
+  /// holds no sender, body or caption. Call it after the core has caught up;
+  /// it is recomputed from the unread state each time, so a repeated or
+  /// missed wake never changes the count.
+  Future<NotificationSummaryView> notificationSummary();
 
   /// Opens the core: the database in `data_dir` (the app's private
   /// storage) and the keys in the OS key store. The decrypted pictures
@@ -449,6 +465,10 @@ abstract class Core implements RustOpaqueInterface {
     required PlatformInt64 chatId,
     required bool muted,
   });
+
+  /// Sets this device's "Notification detail" level. Local only: never sent to
+  /// the server, and it changes no push.
+  Future<void> setNotificationDetail({required NotificationDetailLevel level});
 
   /// manual-presence: Setting your status. Sets this user's own manual flag —
   /// `true` for Online, `false` for Offline — recording it on this device and

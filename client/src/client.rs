@@ -36,6 +36,7 @@ use crate::mls::MlsError;
 use crate::mls::verify;
 use crate::moderation::{Report, ReportKind};
 use crate::net::{Conn, NetError, Session};
+use crate::notification::{ConversationKind, NotificationDetail, NotificationSummary};
 use crate::pb;
 use crate::store::{AccountRow, OutgoingMessage, ProfileRow, Store, StoreError};
 
@@ -1420,6 +1421,81 @@ impl Client {
             Err(ClientError::NoSuchChat | ClientError::NoGroup) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    // --- Local notifications (change `smarter-notifications`) ---
+
+    /// What to show as this device's notifications right now: per conversation
+    /// with unread messages its type and unread count, plus the pending
+    /// admin-events (local-notifications: The device builds the notification
+    /// locally). Metadata only: no sender, body or caption exists in the
+    /// result. Recomputed from the core's unread state on every call, so a
+    /// missed, collapsed or duplicated wake cannot change the count
+    /// (local-notifications: Unread count, not push count). Muted and closed
+    /// conversations are left out, and whole-app mute silences everything
+    /// (the local gate for `mute-notifications`).
+    pub fn notification_summary(&self) -> Result<NotificationSummary, ClientError> {
+        let store = &self.shared.store;
+        let chats = self.chats()?;
+        let events = store
+            .admin_events()?
+            .into_iter()
+            .map(|(id, kind, group_id)| crate::notification::StoredEvent { id, kind, group_id })
+            .collect();
+        Ok(crate::notification::build(
+            &chats,
+            store.muted_all()?,
+            events,
+            |group_id| self.chat_of_group(group_id).ok().flatten(),
+        ))
+    }
+
+    /// The type of the conversation whose wire `group_id` is `group_id`, from the
+    /// device's local record alone: no message is read or decrypted
+    /// (local-notifications: Conversation type without decryption). `None` for a
+    /// group this device does not know.
+    pub fn conversation_kind_of_group(
+        &self,
+        group_id: &[u8],
+    ) -> Result<Option<ConversationKind>, ClientError> {
+        let store = &self.shared.store;
+        if store.is_main(group_id)? {
+            return Ok(Some(ConversationKind::Lobby));
+        }
+        Ok(store.dm_by_group(group_id)?.map(|dm| {
+            if dm.named {
+                ConversationKind::NamedGroup
+            } else {
+                ConversationKind::Dm
+            }
+        }))
+    }
+
+    /// The wire `group_id` of `chat` (the id a push-woken device sees on an
+    /// `Envelope`); [`NoSuchChat`](ClientError::NoSuchChat) for an unknown one.
+    pub fn chat_group_id(&self, chat: ChatId) -> Result<Vec<u8>, ClientError> {
+        self.group_id_of(chat)
+    }
+
+    /// Forgets the pending admin-events up to `up_to` (the largest
+    /// [`AdminEvent::id`] the app notified for, or the user is looking at the
+    /// app and needs no notification for them).
+    pub fn clear_admin_events(&self, up_to: i64) -> Result<(), ClientError> {
+        self.shared.store.clear_admin_events(up_to)?;
+        Ok(())
+    }
+
+    /// This device's "Notification detail" level (app-ui: Notification detail
+    /// level): Basic until the user picks More.
+    pub fn notification_detail(&self) -> Result<NotificationDetail, ClientError> {
+        Ok(self.shared.store.notification_detail()?)
+    }
+
+    /// Sets this device's "Notification detail" level. Local only: it is never
+    /// sent to the server and changes no push.
+    pub fn set_notification_detail(&self, level: NotificationDetail) -> Result<(), ClientError> {
+        self.shared.store.set_notification_detail(level)?;
+        Ok(())
     }
 
     // --- Moderation (block + report; change `report-and-block`) ---

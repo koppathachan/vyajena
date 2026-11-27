@@ -39,7 +39,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1828997768;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -342788348;
 
 // Section: executor
 
@@ -792,6 +792,57 @@ fn wire__crate__api__core__Core_chats_impl(
                     }
                     let api_that_guard = api_that_guard.unwrap();
                     let output_ok = crate::api::core::Core::chats(&*api_that_guard)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__core__Core_clear_admin_events_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_clear_admin_events",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            let api_up_to = <i64>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok =
+                        crate::api::core::Core::clear_admin_events(&*api_that_guard, api_up_to)?;
                     Ok(output_ok)
                 })())
             }
@@ -2505,6 +2556,104 @@ fn wire__crate__api__core__Core_named_groups_available_impl(
                     let output_ok = Result::<_, ()>::Ok(
                         crate::api::core::Core::named_groups_available(&*api_that_guard),
                     )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__core__Core_notification_detail_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_notification_detail",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::core::Core::notification_detail(&*api_that_guard)?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__core__Core_notification_summary_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_notification_summary",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::core::Core::notification_summary(&*api_that_guard)?;
                     Ok(output_ok)
                 })())
             }
@@ -4369,6 +4518,60 @@ fn wire__crate__api__core__Core_set_conversation_muted_impl(
         },
     )
 }
+fn wire__crate__api__core__Core_set_notification_detail_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "Core_set_notification_detail",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_that = <RustOpaqueMoi<
+                flutter_rust_bridge::for_generated::RustAutoOpaqueInner<Core>,
+            >>::sse_decode(&mut deserializer);
+            let api_level =
+                <crate::api::types::NotificationDetailLevel>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, crate::api::error::CoreError>((move || {
+                    let mut api_that_guard = None;
+                    let decode_indices_ =
+                        flutter_rust_bridge::for_generated::lockable_compute_decode_order(vec![
+                            flutter_rust_bridge::for_generated::LockableOrderInfo::new(
+                                &api_that, 0, false,
+                            ),
+                        ]);
+                    for i in decode_indices_ {
+                        match i {
+                            0 => api_that_guard = Some(api_that.lockable_decode_sync_ref()),
+                            _ => unreachable!(),
+                        }
+                    }
+                    let api_that_guard = api_that_guard.unwrap();
+                    let output_ok = crate::api::core::Core::set_notification_detail(
+                        &*api_that_guard,
+                        api_level,
+                    )?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__core__Core_set_presence_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -5050,6 +5253,38 @@ impl SseDecode for String {
     }
 }
 
+impl SseDecode for crate::api::types::AdminEventNotification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_id = <i64>::sse_decode(deserializer);
+        let mut var_event = <crate::api::types::AdminEventType>::sse_decode(deserializer);
+        let mut var_kind =
+            <crate::api::types::NotificationConversationKind>::sse_decode(deserializer);
+        let mut var_chatId = <Option<i64>>::sse_decode(deserializer);
+        let mut var_name = <Option<String>>::sse_decode(deserializer);
+        return crate::api::types::AdminEventNotification {
+            id: var_id,
+            event: var_event,
+            kind: var_kind,
+            chat_id: var_chatId,
+            name: var_name,
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::AdminEventType {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::AdminEventType::Removed,
+            1 => crate::api::types::AdminEventType::Closed,
+            2 => crate::api::types::AdminEventType::Added,
+            _ => unreachable!("Invalid variant for AdminEventType: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for crate::api::types::AudioView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5229,6 +5464,23 @@ impl SseDecode for crate::api::types::ConnectionStatus {
             1 => crate::api::types::ConnectionStatus::Connected,
             2 => crate::api::types::ConnectionStatus::Disconnected,
             _ => unreachable!("Invalid variant for ConnectionStatus: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::ConversationNotification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_chatId = <i64>::sse_decode(deserializer);
+        let mut var_kind =
+            <crate::api::types::NotificationConversationKind>::sse_decode(deserializer);
+        let mut var_name = <Option<String>>::sse_decode(deserializer);
+        let mut var_unread = <u32>::sse_decode(deserializer);
+        return crate::api::types::ConversationNotification {
+            chat_id: var_chatId,
+            kind: var_kind,
+            name: var_name,
+            unread: var_unread,
         };
     }
 }
@@ -5484,6 +5736,20 @@ impl SseDecode for crate::api::types::InvitePreview {
     }
 }
 
+impl SseDecode for Vec<crate::api::types::AdminEventNotification> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::types::AdminEventNotification>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::types::ChatMessage> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -5503,6 +5769,20 @@ impl SseDecode for Vec<crate::api::types::ChatSummary> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::api::types::ChatSummary>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::api::types::ConversationNotification> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::types::ConversationNotification>::sse_decode(
+                deserializer,
+            ));
         }
         return ans_;
     }
@@ -5635,6 +5915,50 @@ impl SseDecode for crate::api::types::MentionTarget {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseDecode for crate::api::types::NotificationConversationKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::NotificationConversationKind::Dm,
+            1 => crate::api::types::NotificationConversationKind::NamedGroup,
+            2 => crate::api::types::NotificationConversationKind::Lobby,
+            _ => unreachable!(
+                "Invalid variant for NotificationConversationKind: {}",
+                inner
+            ),
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::NotificationDetailLevel {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::api::types::NotificationDetailLevel::Basic,
+            1 => crate::api::types::NotificationDetailLevel::More,
+            _ => unreachable!("Invalid variant for NotificationDetailLevel: {}", inner),
+        };
+    }
+}
+
+impl SseDecode for crate::api::types::NotificationSummaryView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_conversations =
+            <Vec<crate::api::types::ConversationNotification>>::sse_decode(deserializer);
+        let mut var_adminEvents =
+            <Vec<crate::api::types::AdminEventNotification>>::sse_decode(deserializer);
+        let mut var_totalUnread = <u32>::sse_decode(deserializer);
+        return crate::api::types::NotificationSummaryView {
+            conversations: var_conversations,
+            admin_events: var_adminEvents,
+            total_unread: var_totalUnread,
+        };
     }
 }
 
@@ -5998,103 +6322,121 @@ fn pde_ffi_dispatcher_primary_impl(
         12 => wire__crate__api__core__Core_cached_video_impl(port, ptr, rust_vec_len, data_len),
         13 => wire__crate__api__core__Core_chat_read_mark_impl(port, ptr, rust_vec_len, data_len),
         14 => wire__crate__api__core__Core_chats_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__core__Core_clear_push_token_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__core__Core_close_group_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__core__Core_complete_link_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__core__Core_create_group_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__core__Core_create_invite_impl(port, ptr, rust_vec_len, data_len),
-        20 => {
+        15 => {
+            wire__crate__api__core__Core_clear_admin_events_impl(port, ptr, rust_vec_len, data_len)
+        }
+        16 => wire__crate__api__core__Core_clear_push_token_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__core__Core_close_group_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__core__Core_complete_link_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__core__Core_create_group_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__core__Core_create_invite_impl(port, ptr, rust_vec_len, data_len),
+        21 => {
             wire__crate__api__core__Core_create_named_group_impl(port, ptr, rust_vec_len, data_len)
         }
-        21 => wire__crate__api__core__Core_delete_account_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__core__Core_delete_message_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__core__Core_device_id_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__core__Core_display_name_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__core__Core_dms_available_impl(port, ptr, rust_vec_len, data_len),
-        26 => wire__crate__api__core__Core_download_audio_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__core__Core_download_image_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__core__Core_download_video_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__core__Core_epoch_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__core__Core_events_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__core__Core_group_members_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__core__Core_has_unsent_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__core__Core_history_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__core__Core_history_in_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__core__Core_identity_retrust_pending_impl(
+        22 => wire__crate__api__core__Core_delete_account_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__core__Core_delete_message_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__core__Core_device_id_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__core__Core_display_name_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__core__Core_dms_available_impl(port, ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__core__Core_download_audio_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__core__Core_download_image_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__core__Core_download_video_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__core__Core_epoch_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__core__Core_events_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__core__Core_group_members_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__core__Core_has_unsent_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__core__Core_history_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__core__Core_history_in_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__core__Core_identity_retrust_pending_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        36 => wire__crate__api__core__Core_is_admin_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__core__Core_is_blocked_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__core__Core_is_connected_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__core__Core_link_request_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__core__Core_list_invites_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__core__Core_mark_chat_read_impl(port, ptr, rust_vec_len, data_len),
-        42 => {
+        37 => wire__crate__api__core__Core_is_admin_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__core__Core_is_blocked_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__core__Core_is_connected_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__core__Core_link_request_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__core__Core_list_invites_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__core__Core_mark_chat_read_impl(port, ptr, rust_vec_len, data_len),
+        43 => {
             wire__crate__api__core__Core_mark_mention_seen_impl(port, ptr, rust_vec_len, data_len)
         }
-        43 => wire__crate__api__core__Core_members_impl(port, ptr, rust_vec_len, data_len),
-        44 => wire__crate__api__core__Core_message_impl(port, ptr, rust_vec_len, data_len),
-        45 => wire__crate__api__core__Core_my_presence_impl(port, ptr, rust_vec_len, data_len),
-        46 => wire__crate__api__core__Core_named_groups_available_impl(
+        44 => wire__crate__api__core__Core_members_impl(port, ptr, rust_vec_len, data_len),
+        45 => wire__crate__api__core__Core_message_impl(port, ptr, rust_vec_len, data_len),
+        46 => wire__crate__api__core__Core_my_presence_impl(port, ptr, rust_vec_len, data_len),
+        47 => wire__crate__api__core__Core_named_groups_available_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        47 => wire__crate__api__core__Core_open_impl(port, ptr, rust_vec_len, data_len),
-        48 => wire__crate__api__core__Core_open_dm_impl(port, ptr, rust_vec_len, data_len),
-        49 => wire__crate__api__core__Core_parse_report_impl(port, ptr, rust_vec_len, data_len),
-        50 => wire__crate__api__core__Core_presence_of_impl(port, ptr, rust_vec_len, data_len),
-        51 => wire__crate__api__core__Core_profile_impl(port, ptr, rust_vec_len, data_len),
-        52 => wire__crate__api__core__Core_reconnect_now_impl(port, ptr, rust_vec_len, data_len),
-        53 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
-        54 => wire__crate__api__core__Core_remove_closed_dm_impl(port, ptr, rust_vec_len, data_len),
-        55 => {
+        48 => {
+            wire__crate__api__core__Core_notification_detail_impl(port, ptr, rust_vec_len, data_len)
+        }
+        49 => wire__crate__api__core__Core_notification_summary_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        50 => wire__crate__api__core__Core_open_impl(port, ptr, rust_vec_len, data_len),
+        51 => wire__crate__api__core__Core_open_dm_impl(port, ptr, rust_vec_len, data_len),
+        52 => wire__crate__api__core__Core_parse_report_impl(port, ptr, rust_vec_len, data_len),
+        53 => wire__crate__api__core__Core_presence_of_impl(port, ptr, rust_vec_len, data_len),
+        54 => wire__crate__api__core__Core_profile_impl(port, ptr, rust_vec_len, data_len),
+        55 => wire__crate__api__core__Core_reconnect_now_impl(port, ptr, rust_vec_len, data_len),
+        56 => wire__crate__api__core__Core_register_impl(port, ptr, rust_vec_len, data_len),
+        57 => wire__crate__api__core__Core_remove_closed_dm_impl(port, ptr, rust_vec_len, data_len),
+        58 => {
             wire__crate__api__core__Core_remove_from_group_impl(port, ptr, rust_vec_len, data_len)
         }
-        56 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
-        57 => wire__crate__api__core__Core_rename_group_impl(port, ptr, rust_vec_len, data_len),
-        58 => wire__crate__api__core__Core_report_message_impl(port, ptr, rust_vec_len, data_len),
-        59 => wire__crate__api__core__Core_report_user_impl(port, ptr, rust_vec_len, data_len),
-        60 => wire__crate__api__core__Core_request_resync_impl(port, ptr, rust_vec_len, data_len),
-        61 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
-        62 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
-        63 => wire__crate__api__core__Core_resend_video_impl(port, ptr, rust_vec_len, data_len),
-        64 => wire__crate__api__core__Core_reveal_impl(port, ptr, rust_vec_len, data_len),
-        65 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
-        66 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
-        67 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
-        68 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
-        69 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
-        70 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
-        71 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
-        72 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
-        73 => wire__crate__api__core__Core_send_sticker_in_impl(port, ptr, rust_vec_len, data_len),
-        74 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
-        75 => wire__crate__api__core__Core_send_video_impl(port, ptr, rust_vec_len, data_len),
-        76 => wire__crate__api__core__Core_send_video_in_impl(port, ptr, rust_vec_len, data_len),
-        77 => wire__crate__api__core__Core_set_app_muted_impl(port, ptr, rust_vec_len, data_len),
-        78 => wire__crate__api__core__Core_set_conversation_muted_impl(
+        59 => wire__crate__api__core__Core_remove_user_impl(port, ptr, rust_vec_len, data_len),
+        60 => wire__crate__api__core__Core_rename_group_impl(port, ptr, rust_vec_len, data_len),
+        61 => wire__crate__api__core__Core_report_message_impl(port, ptr, rust_vec_len, data_len),
+        62 => wire__crate__api__core__Core_report_user_impl(port, ptr, rust_vec_len, data_len),
+        63 => wire__crate__api__core__Core_request_resync_impl(port, ptr, rust_vec_len, data_len),
+        64 => wire__crate__api__core__Core_resend_audio_impl(port, ptr, rust_vec_len, data_len),
+        65 => wire__crate__api__core__Core_resend_image_impl(port, ptr, rust_vec_len, data_len),
+        66 => wire__crate__api__core__Core_resend_video_impl(port, ptr, rust_vec_len, data_len),
+        67 => wire__crate__api__core__Core_reveal_impl(port, ptr, rust_vec_len, data_len),
+        68 => wire__crate__api__core__Core_revoke_device_impl(port, ptr, rust_vec_len, data_len),
+        69 => wire__crate__api__core__Core_revoke_invite_impl(port, ptr, rust_vec_len, data_len),
+        70 => wire__crate__api__core__Core_send_audio_impl(port, ptr, rust_vec_len, data_len),
+        71 => wire__crate__api__core__Core_send_audio_in_impl(port, ptr, rust_vec_len, data_len),
+        72 => wire__crate__api__core__Core_send_image_impl(port, ptr, rust_vec_len, data_len),
+        73 => wire__crate__api__core__Core_send_image_in_impl(port, ptr, rust_vec_len, data_len),
+        74 => wire__crate__api__core__Core_send_message_impl(port, ptr, rust_vec_len, data_len),
+        75 => wire__crate__api__core__Core_send_message_in_impl(port, ptr, rust_vec_len, data_len),
+        76 => wire__crate__api__core__Core_send_sticker_in_impl(port, ptr, rust_vec_len, data_len),
+        77 => wire__crate__api__core__Core_send_text_impl(port, ptr, rust_vec_len, data_len),
+        78 => wire__crate__api__core__Core_send_video_impl(port, ptr, rust_vec_len, data_len),
+        79 => wire__crate__api__core__Core_send_video_in_impl(port, ptr, rust_vec_len, data_len),
+        80 => wire__crate__api__core__Core_set_app_muted_impl(port, ptr, rust_vec_len, data_len),
+        81 => wire__crate__api__core__Core_set_conversation_muted_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        79 => wire__crate__api__core__Core_set_presence_impl(port, ptr, rust_vec_len, data_len),
-        80 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
-        81 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
-        82 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
-        83 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
-        84 => wire__crate__api__core__Core_unblock_user_impl(port, ptr, rust_vec_len, data_len),
-        85 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
-        86 => {
+        82 => wire__crate__api__core__Core_set_notification_detail_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        83 => wire__crate__api__core__Core_set_presence_impl(port, ptr, rust_vec_len, data_len),
+        84 => wire__crate__api__core__Core_set_profile_impl(port, ptr, rust_vec_len, data_len),
+        85 => wire__crate__api__core__Core_set_push_token_impl(port, ptr, rust_vec_len, data_len),
+        86 => wire__crate__api__core__Core_start_impl(port, ptr, rust_vec_len, data_len),
+        87 => wire__crate__api__core__Core_stop_impl(port, ptr, rust_vec_len, data_len),
+        88 => wire__crate__api__core__Core_unblock_user_impl(port, ptr, rust_vec_len, data_len),
+        89 => wire__crate__api__core__Core_unseen_mentions_impl(port, ptr, rust_vec_len, data_len),
+        90 => {
             wire__crate__api__core__Core_unseen_mentions_in_impl(port, ptr, rust_vec_len, data_len)
         }
-        87 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
-        89 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
+        91 => wire__crate__api__core__Core_user_id_impl(port, ptr, rust_vec_len, data_len),
+        93 => wire__crate__api__types__profile_info_default_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6107,10 +6449,10 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        88 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
-        90 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
-        91 => wire__crate__api__core__thumbhash_is_transparent_impl(ptr, rust_vec_len, data_len),
-        92 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
+        92 => wire__crate__api__text__parse_invite_impl(ptr, rust_vec_len, data_len),
+        94 => wire__crate__api__core__text_fits_impl(ptr, rust_vec_len, data_len),
+        95 => wire__crate__api__core__thumbhash_is_transparent_impl(ptr, rust_vec_len, data_len),
+        96 => wire__crate__api__core__thumbhash_preview_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -6132,6 +6474,52 @@ impl flutter_rust_bridge::IntoIntoDart<FrbWrapper<Core>> for Core {
     }
 }
 
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::AdminEventNotification {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.id.into_into_dart().into_dart(),
+            self.event.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.chat_id.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::AdminEventNotification
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::AdminEventNotification>
+    for crate::api::types::AdminEventNotification
+{
+    fn into_into_dart(self) -> crate::api::types::AdminEventNotification {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::AdminEventType {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Removed => 0.into_dart(),
+            Self::Closed => 1.into_dart(),
+            Self::Added => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::AdminEventType
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::AdminEventType>
+    for crate::api::types::AdminEventType
+{
+    fn into_into_dart(self) -> crate::api::types::AdminEventType {
+        self
+    }
+}
 // Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::types::AudioView {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
@@ -6307,6 +6695,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ConnectionStatus>
     for crate::api::types::ConnectionStatus
 {
     fn into_into_dart(self) -> crate::api::types::ConnectionStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::ConversationNotification {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.chat_id.into_into_dart().into_dart(),
+            self.kind.into_into_dart().into_dart(),
+            self.name.into_into_dart().into_dart(),
+            self.unread.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::ConversationNotification
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::ConversationNotification>
+    for crate::api::types::ConversationNotification
+{
+    fn into_into_dart(self) -> crate::api::types::ConversationNotification {
         self
     }
 }
@@ -6642,6 +7053,71 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::types::MentionTarget>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::NotificationConversationKind {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Dm => 0.into_dart(),
+            Self::NamedGroup => 1.into_dart(),
+            Self::Lobby => 2.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::NotificationConversationKind
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::NotificationConversationKind>
+    for crate::api::types::NotificationConversationKind
+{
+    fn into_into_dart(self) -> crate::api::types::NotificationConversationKind {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::NotificationDetailLevel {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Basic => 0.into_dart(),
+            Self::More => 1.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::NotificationDetailLevel
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::NotificationDetailLevel>
+    for crate::api::types::NotificationDetailLevel
+{
+    fn into_into_dart(self) -> crate::api::types::NotificationDetailLevel {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::types::NotificationSummaryView {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.conversations.into_into_dart().into_dart(),
+            self.admin_events.into_into_dart().into_dart(),
+            self.total_unread.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::api::types::NotificationSummaryView
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::types::NotificationSummaryView>
+    for crate::api::types::NotificationSummaryView
+{
+    fn into_into_dart(self) -> crate::api::types::NotificationSummaryView {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::types::PresenceStatus {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         match self {
@@ -6948,6 +7424,34 @@ impl SseEncode for String {
     }
 }
 
+impl SseEncode for crate::api::types::AdminEventNotification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.id, serializer);
+        <crate::api::types::AdminEventType>::sse_encode(self.event, serializer);
+        <crate::api::types::NotificationConversationKind>::sse_encode(self.kind, serializer);
+        <Option<i64>>::sse_encode(self.chat_id, serializer);
+        <Option<String>>::sse_encode(self.name, serializer);
+    }
+}
+
+impl SseEncode for crate::api::types::AdminEventType {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::types::AdminEventType::Removed => 0,
+                crate::api::types::AdminEventType::Closed => 1,
+                crate::api::types::AdminEventType::Added => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for crate::api::types::AudioView {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7098,6 +7602,16 @@ impl SseEncode for crate::api::types::ConnectionStatus {
             },
             serializer,
         );
+    }
+}
+
+impl SseEncode for crate::api::types::ConversationNotification {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.chat_id, serializer);
+        <crate::api::types::NotificationConversationKind>::sse_encode(self.kind, serializer);
+        <Option<String>>::sse_encode(self.name, serializer);
+        <u32>::sse_encode(self.unread, serializer);
     }
 }
 
@@ -7318,6 +7832,16 @@ impl SseEncode for crate::api::types::InvitePreview {
     }
 }
 
+impl SseEncode for Vec<crate::api::types::AdminEventNotification> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::types::AdminEventNotification>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::types::ChatMessage> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -7334,6 +7858,16 @@ impl SseEncode for Vec<crate::api::types::ChatSummary> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::api::types::ChatSummary>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::api::types::ConversationNotification> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::types::ConversationNotification>::sse_encode(item, serializer);
         }
     }
 }
@@ -7447,6 +7981,51 @@ impl SseEncode for crate::api::types::MentionTarget {
                 unimplemented!("");
             }
         }
+    }
+}
+
+impl SseEncode for crate::api::types::NotificationConversationKind {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::types::NotificationConversationKind::Dm => 0,
+                crate::api::types::NotificationConversationKind::NamedGroup => 1,
+                crate::api::types::NotificationConversationKind::Lobby => 2,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::types::NotificationDetailLevel {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::api::types::NotificationDetailLevel::Basic => 0,
+                crate::api::types::NotificationDetailLevel::More => 1,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
+impl SseEncode for crate::api::types::NotificationSummaryView {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <Vec<crate::api::types::ConversationNotification>>::sse_encode(
+            self.conversations,
+            serializer,
+        );
+        <Vec<crate::api::types::AdminEventNotification>>::sse_encode(self.admin_events, serializer);
+        <u32>::sse_encode(self.total_unread, serializer);
     }
 }
 

@@ -296,6 +296,84 @@ pub struct ChatSummary {
     pub muted: bool,
 }
 
+/// How much a notification says (app-ui: Notification detail level): a
+/// per-device choice that only changes how the app renders its own local
+/// notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationDetailLevel {
+    /// Only the generic "New message". The default.
+    Basic,
+    /// The per-conversation count and type; still no sender and no text.
+    More,
+}
+
+/// What kind of conversation a notification is about (local-notifications: The
+/// device builds the notification locally).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotificationConversationKind {
+    /// A DM.
+    Dm,
+    /// An admin-created named group.
+    NamedGroup,
+    /// The system lobby.
+    Lobby,
+}
+
+/// One conversation with unread messages: its type and unread count, never a
+/// sender, body or caption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationNotification {
+    /// The conversation (0 is the lobby): the app groups by it and opens it on a tap.
+    pub chat_id: i64,
+    /// Its type.
+    pub kind: NotificationConversationKind,
+    /// A named group's local name; unset for a DM, the lobby, or an unnamed group.
+    pub name: Option<String>,
+    /// Unread messages, as the chat list counts them.
+    pub unread: u32,
+}
+
+/// An admin-event that changed the user's own access
+/// (local-notifications: Admin-event notifications are fixed, content-free
+/// phrases).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdminEventType {
+    /// The user was removed from a named group.
+    Removed,
+    /// A conversation the user is in was closed.
+    Closed,
+    /// The user was added to a new named group.
+    Added,
+}
+
+/// One pending admin-event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminEventNotification {
+    /// Its id: pass the largest to `Core::clear_admin_events` once notified.
+    pub id: i64,
+    /// What happened.
+    pub event: AdminEventType,
+    /// The conversation's type.
+    pub kind: NotificationConversationKind,
+    /// The conversation, if the device still has it.
+    pub chat_id: Option<i64>,
+    /// A named group's local name, if known.
+    pub name: Option<String>,
+}
+
+/// What to show as notifications right now (local-notifications: The device
+/// builds the notification locally): metadata only, so no sender or text exists
+/// in it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotificationSummaryView {
+    /// Conversations with unread messages that may notify (not muted, not closed).
+    pub conversations: Vec<ConversationNotification>,
+    /// Pending admin-events that may notify.
+    pub admin_events: Vec<AdminEventNotification>,
+    /// The unread total across `conversations`.
+    pub total_unread: u32,
+}
+
 /// The connection to the server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConnectionStatus {
