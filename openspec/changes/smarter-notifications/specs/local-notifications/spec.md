@@ -5,28 +5,27 @@ The core SHALL compute the user-facing notification on the device, after the dev
 wakes and catches up and decrypts locally (message-delivery: Ordered delivery and
 catch-up), and SHALL NOT rely on the push payload for any of it. For each
 conversation with unread messages it SHALL produce a typed summary carrying the
-conversation **type** (DM, named group, lobby, or admin-event), an **unread
-count**, and — only when the "Show who messaged" setting is on (app-ui: Show who
-messaged) — the **display name** of the latest unread message's sender. The summary
-SHALL NOT carry any message body or caption. The app SHALL render a local
-notification from this summary and SHALL NOT read decrypted content for it. The
-client enforces this.
+conversation **type** (DM, named group, lobby, or admin-event) and an **unread
+count**, and SHALL NOT carry a sender, message body or caption in v1 (metadata only).
+The app SHALL render a local notification from this summary and SHALL NOT read
+decrypted content for it. The notification content SHALL be the same on iOS and
+Android. The client enforces this.
 
 #### Scenario: One group, three unread
 - **WHEN** Bob's phone wakes to a content-free push, catches up, and decrypts three
   new messages in the named group "Work"
 - **THEN** the core emits a summary `{type: named_group, group: "Work", unread: 3}`
-  and the app shows a local notification "3 new in Work", with no message text
+  and the app shows a local notification "3 new in Work", with no sender and no
+  message text
 
 #### Scenario: A DM
-- **WHEN** Bob has two unread messages in a DM with Alice and "Show who messaged" is
-  off
+- **WHEN** Bob has two unread messages in a DM with Alice
 - **THEN** the app shows "2 new messages" with no name and no text
 
 #### Scenario: Nothing decrypted leaves the core for the notification
 - **WHEN** the app builds any notification
-- **THEN** the summary it reads from the core contains a type, a count and at most a
-  sender display name, and never a message body, caption or other decrypted content
+- **THEN** the summary it reads from the core contains a type and a count only, and
+  never a sender, message body, caption or other decrypted content
 
 ### Requirement: Conversation type without decryption
 The core SHALL derive a conversation's type for the notification from the wire
@@ -74,11 +73,10 @@ the device's local name for the conversation. The client enforces this.
 ### Requirement: Respect the notification detail level
 The app SHALL honor the per-device notification detail level (app-ui: Notification
 detail level) when rendering a notification from the core summary: at **Basic** it
-SHALL show only the generic "New message" and SHALL NOT show the count, type name or
-sender, even though the summary carries them; at **More** it SHALL show the
-per-conversation count and type, and the sender only if "Show who messaged" is on.
-The level SHALL change only local rendering, and SHALL NOT change the server push or
-whether a wake is sent. The client enforces this.
+SHALL show only the generic "New message" and SHALL NOT show the count or type name,
+even though the summary carries them; at **More** it SHALL show the per-conversation
+count and type and no sender. The level SHALL change only local rendering, and SHALL
+NOT change the server push or whether a wake is sent. The client enforces this.
 
 #### Scenario: Basic ignores the summary's detail
 - **WHEN** detail is Basic and the core summary says `{type: named_group, group:
@@ -87,18 +85,4 @@ whether a wake is sent. The client enforces this.
 
 #### Scenario: More renders the summary
 - **WHEN** detail is More and the same summary arrives
-- **THEN** the app shows "3 new in Work"
-
-### Requirement: Sender name only when opted in
-The core SHALL include a sender display name in a notification summary only while the
-"Show who messaged" setting is on (app-ui: Show who messaged); while it is off the
-summary SHALL omit the sender and the app SHALL show only the generic, type-aware
-text. The client enforces this.
-
-#### Scenario: Opt-in reveals the sender
-- **WHEN** "Show who messaged" is on and Alice sends Bob a DM
-- **THEN** Bob's notification reads "Message from Ali"
-
-#### Scenario: Default hides the sender
-- **WHEN** "Show who messaged" is off and Alice sends Bob a DM
-- **THEN** Bob's notification reads "New message" or "1 new message", naming no one
+- **THEN** the app shows "3 new in Work", naming no sender

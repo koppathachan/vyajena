@@ -31,43 +31,39 @@ proto change is expected; if apply surfaces one, raise it to the owner first
   `message-delivery/content-free-wake-for-an-own-access-admin-event` (removal wakes;
   an unrelated re-key does not).
 
-## 2. Core — the notification summary builder (decisions a, b, c)
+## 2. Core — the notification summary builder (decisions b, c)
 
 - [ ] 2.1 A module that, after catch-up, produces a per-conversation summary
-  `{type, unread_count, latest_sender_display_name?}` from the core's existing
-  unread state and `group_id`→conversation map; never emits a body. Honors the
-  sender-name setting (off → no sender). Tests
+  `{type, unread_count}` (no sender in v1) from the core's existing unread state and
+  `group_id`→conversation map; never emits a body or sender. Tests
   `local-notifications/the-device-builds-the-notification-locally`,
   `local-notifications/conversation-type-without-decryption`,
-  `local-notifications/unread-count-not-push-count`,
-  `local-notifications/sender-name-only-when-opted-in`.
+  `local-notifications/unread-count-not-push-count`.
 - [ ] 2.2 Admin-event summaries from core notices (`RemovedNotice`, `GroupClosed`,
   `DmClosed`, self-add); routine churn excluded. Test
   `local-notifications/admin-event-notifications-are-fixed-content-free-phrases`.
 - [ ] 2.3 Bridge surface: expose the summary stream/getter and the per-device
-  "Show who messaged" setting; regenerate bindings (`cd app &&
+  "Notification detail" (Basic / More) setting; regenerate bindings (`cd app &&
   flutter_rust_bridge_codegen generate`), commit generated files.
 
-## 3. App — local notifications (decisions a, b, c, d)
+## 3. App — local notifications (decisions b, c, d)
 
 - [ ] 3.1 `app/lib/push/` builds local notifications from the core summary:
   type-aware wording, per-conversation lines, OS grouping per `group_id`, total
-  unread as the app badge. Tests (widget, on the fake core)
-  `app-ui/type-aware-notification-wording`,
+  unread as the app badge; **no sender**; identical content on iOS and Android.
+  Tests (widget, on the fake core) `app-ui/type-aware-notification-wording`,
   `app-ui/a-notification-opens-its-conversation`.
-- [ ] 3.2 Settings: a "Notification detail" control (Basic / More, default per 0.2)
-  and a "Show who messaged" toggle (default off, active only at More). The core
-  summary always carries count/type/sender?; the app gates rendering on the level.
-  Tests `app-ui/notification-detail-level`, `app-ui/show-who-messaged`,
+- [ ] 3.2 Settings: a "Notification detail" control (Basic / More, default Basic).
+  The core summary carries count/type; the app gates rendering on the level. Tests
+  `app-ui/notification-detail-level`,
   `local-notifications/respect-the-notification-detail-level`.
 - [ ] 3.3 Android: `VyajenaMessagingService.onMessageReceived` handles the
-  high-priority data message, runs the core, posts the notification; fallback to
-  catch-up-on-open documented.
-- [ ] 3.4 iOS: a Notification Service Extension target that enriches the alert
-  (metadata-only for v1 per D7 — count + type, no in-extension decrypt); generic
-  alert stays if it cannot finish. (Spike `spikes/nse-decrypt/` only if the owner
-  chooses decrypt-in-NSE; record the epoch-safety result in design.md and delete the
-  spike.)
+  high-priority data message, runs the core, posts the metadata-only notification
+  (count + type, no sender); fallback to catch-up-on-open documented.
+- [ ] 3.4 iOS: a **metadata-only** Notification Service Extension target that rewrites
+  the alert to count + type from the shared App Group metadata (no in-extension
+  decrypt, no sender — D7); generic alert stays if it cannot finish. No
+  `spikes/nse-decrypt/` in v1 (only needed if a later change adds iOS sender names).
 - [ ] 3.5 Tap → open the conversation (by `group_id`) and clear its notification.
 
 ## 4. Compose with mute (no mute code here)

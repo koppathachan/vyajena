@@ -26,8 +26,9 @@
 
 ## Goals / Non-Goals
 
-**Goals:** a wake turns into a count + DM/group/admin type + optional sender, built
-on the device; nothing beyond a content-free wake (and a generic fallback string)
+**Goals:** a wake turns into a count + DM/group/admin type (no sender in v1 — D6),
+built on the device, identical on iOS and Android; nothing beyond a content-free wake
+(and a generic fallback string)
 reaches a push provider; the generic "New message" still shows when the device
 cannot enrich; the design composes with mute and does not disturb wake scheduling.
 
@@ -47,8 +48,8 @@ flowchart LR
   w -->|"delivered"| d
   subgraph device["Bob's device — everything real happens here"]
     d["wake"] --> cx["core: Connect + catch up + decrypt locally"]
-    cx --> m["summary per conversation:<br/>type, unread count, latest sender?"]
-    m --> n["LOCAL notification:<br/>'3 new in Work' / 'Message from Ali'"]
+    cx --> m["summary per conversation:<br/>type, unread count (no sender in v1)"]
+    m --> n["LOCAL notification:<br/>'2 new DMs' / '1 new in Work'"]
   end
 ```
 
@@ -67,19 +68,19 @@ count in the *payload* as well.
 |---|---|---|
 | Conversation **type** (DM / named group / lobby / admin-event) | `Envelope.group_id` → local conversation record; admin-events from core notices | No |
 | **Unread count** per conversation | the core's existing per-conversation unread (unread-divider / about-chat-list), recomputed after catch-up | counts `APPLICATION` messages, which catch-up already decrypts; no extra decrypt |
-| **Sender** display name (opt-in only) | the latest unread message's MLS sender → the user's profile display name | Yes (already done during catch-up) |
+| ~~**Sender** display name~~ | **deferred past v1 (D6)** — would need MLS sender → profile | n/a in v1 |
 | Admin-event **phrase** | the core notice type (`RemovedNotice`, `GroupClosed`, membership) | No (control traffic; the server knows the membership fact) |
 
 The core already decrypts everything during catch-up; the notification builder
 reads the *result* of catch-up, so it adds no new decryption and keeps all content
 inside the core (app-ui: UI goes through the core). The builder emits a typed
-summary (`type`, `unread_count`, `sender_display_name?`) — **never a message body**.
+summary (`type`, `unread_count`) — no sender in v1 (D6), **never a message body**.
 
 ### D3. Count semantics — per-conversation line + total badge (owner decision b)
 
 - **Recommendation:** the notification body is **per conversation**: "3 new in Work"
-  (named group), "2 new messages" (a DM, no name shown unless the sender setting is
-  on), "5 new in the lobby". When several conversations are unread, the OS groups
+  (named group), "2 new messages" (a DM, no name — D6), "5 new in the lobby". When
+  several conversations are unread, the OS groups
   them (Android notification group / iOS thread-id per `group_id`) and the app icon
   **badge** shows **total unread** across conversations.
 - **Why not one "N new messages" blob:** per-conversation is what the owner asked
@@ -134,12 +135,12 @@ flowchart TD
   subgraph ios["iOS"]
     ia["server push: ALERT body 'New message'<br/>+ mutable-content: 1 (content-free)"] --> ib["iOS shows 'New message' AND spins up the<br/>Notification Service Extension (runs even if force-quit)"]
     ib --> ic{"NSE finishes in ~30s?"}
-    ic -- yes --> id["NSE rewrites body → '3 new in Work' (D7)"]
+    ic -- yes --> id["NSE rewrites body → '2 new DMs / 1 new in Work'<br/>metadata only, no sender (D7)"]
     ic -- "no / killed" --> ie["generic 'New message' stays shown"]
   end
   subgraph android["Android"]
     aa["server push: HIGH-PRIORITY DATA message<br/>(no notification block, content-free)"] --> ab{"app can run onMessageReceived?"}
-    ab -- yes --> ac["app: core catches up, builds local notification"]
+    ab -- yes --> ac["app: core catches up, builds local notification<br/>metadata only, no sender (D7)"]
     ab -- "no (force-stopped / OEM kill)"  --> ad["no push shown; next app open catches up (today's behavior)"]
   end
 ```
@@ -164,51 +165,55 @@ flowchart TD
   generic alert but reintroduces a system-shown "New message" the app then has to
   reconcile; recommended **against** for v1 to avoid double notifications. Owner to
   weigh.)
+- **Consistency — both platforms show the same thing (owner, 2026-11-27).** v1
+  shows **metadata only on both iOS and Android**: a count and a type ("2 new DMs",
+  "1 new in Work"), **no sender**. The platforms differ only in *mechanism* (NSE vs
+  data message), never in *what is shown* (D7). So a user with an iPhone and an
+  Android device sees the same notification content on both.
 - **Net:** the invariant holds on both platforms (payload content-free); iOS always
   shows at least the generic alert; Android degrades to catch-up-on-open when it
   cannot wake. Owner confirms this degradation is acceptable.
 
-### D6. Sender names — opt-in, off by default (owner decision a)
+### D6. Sender names — deferred past v1 (owner, 2026-11-27)
 
-- **Trade-off:** showing "Message from Ali" on the lock screen reveals *who contacts
-  whom* to anyone glancing at the phone — directly against the app's privacy
-  promise. Hiding it costs a little immediacy.
-- **Recommendation:** a **per-device** setting "Show who messaged", **default off**.
-  Off → "New message" / "N new in <group>" (no personal name). On → a DM reads
-  "Message from Ali", a group "Ali in Work". The sender display name comes from the
-  decrypted sender's profile, computed in the core only when the setting is on.
-- **Why per-device, not server-synced:** the choice only affects how *this* device
-  renders a *local* notification; it carries no privacy value to the server and
-  needs no `notification-prefs` rail (that rail is for mute, which gates the server
-  push). Keeping it local avoids a proto/prefs change here. If the owner prefers it
-  to follow the user across devices, it can move onto the `notification-prefs` rail
-  later (a small additive change); flagged, not decided alone.
-- **Owner to confirm:** default off; a setting (not all-or-nothing); per-device vs
-  synced.
+- **Decision:** v1 shows **no sender name** on either platform; notifications are
+  count + type only ("2 new DMs", "1 new in Work"). The "Show who messaged" setting
+  of the earlier draft is **deferred to a later iteration**, not shipped in v1.
+- **Why:** (1) **Consistency** — the owner wants iOS and Android to match, and a
+  sender on iOS needs decrypt-in-NSE (D7) which Android would not; dropping it keeps
+  parity. (2) **Privacy** — a sender on the lock screen reveals *who contacts whom* to
+  a glance, against the app's promise; off-by-v1 is the safest default. (3)
+  **Simplicity** — count + type need no per-message decryption at all (D2), so v1
+  avoids the whole decrypt-in-extension problem.
+- **Later:** if the owner wants sender names, they return as a **per-device,
+  default-off** setting, on both platforms together, gated behind the iOS
+  decrypt-in-NSE spike (D7) so parity holds. Flagged for a future change, not decided
+  now.
 
-### D7. iOS NSE — metadata-only or full decrypt (owner decision d, sub-question)
+### D7. Both platforms metadata-only in v1 (owner, 2026-11-27)
 
-The NSE is a *separate process* from the app. To show a **count** and **type** it
-needs only on-device metadata (the last-persisted per-conversation unread + the
-`group_id`→type map), or it can connect and count queued `APPLICATION` envelopes by
-`group_id` **without decrypting** (envelope metadata only). To show a **sender** or a
-decryption-exact count it must **decrypt MLS inside the extension**, which means:
-sharing the SQLite store via an App Group, sharing keychain items via a keychain
-access group, running a slim core entrypoint in the extension, and — the real risk —
-two processes touching MLS group state under the strict-epoch invariant
-(`max_past_epochs = 0`): an extension that advances the epoch while the app is also
-running could desynchronize state.
+Neither platform decrypts for the notification in v1; both show **count + type**,
+derived from metadata the device already has (D2): the `group_id`→conversation-type
+map and the per-conversation unread / queued-`APPLICATION` count. No message is
+decrypted *for the notification*.
 
-- **Recommendation for v1: metadata-only NSE.** Show count + type (+ group name,
-  which is local) with **no decryption in the extension** and **no sender on iOS**
-  until the app itself next runs. This delivers requirements 1 and 2 (count + type)
-  with far less risk; the sender name (requirement 4, already opt-in) appears once
-  the app is foregrounded, or is a later iteration that adds decrypt-in-NSE behind a
-  spike proving the epoch-safety story (a read-only decrypt that never commits).
-- A spike (`spikes/nse-decrypt/`, per config.yaml) would validate decrypt-in-NSE
-  epoch safety before any full-decrypt path is committed; its result goes here.
-- **Owner to confirm:** metadata-only NSE for v1 (sender on iOS deferred to app
-  foreground), vs investing in decrypt-in-NSE now.
+- **iOS — metadata-only NSE.** The NSE is a *separate process*; it reads the
+  last-persisted per-conversation unread and the `group_id`→type map from the shared
+  App Group container (or counts queued `APPLICATION` envelopes by `group_id` with no
+  decrypt) and rewrites the notification to "2 new DMs" / "1 new in Work". **No
+  decryption in the extension**, so the strict-epoch risk (two processes touching MLS
+  group state under `max_past_epochs = 0`) never arises. If the NSE cannot run, the
+  generic "New message" stays.
+- **Android — metadata-only too, for parity.** The data-message handler wakes the
+  full app, which catches up and decrypts as usual *for the chat* — but the
+  **notification is rendered from the same count + type metadata**, deliberately
+  **without the sender**, so it matches iOS. (Android *could* name the sender cheaply
+  since the app has decrypted; v1 chooses not to, for consistency — D6.)
+- **Count freshness:** on iOS the count is the last-persisted value until the app
+  runs, so it can lag slightly; on Android it is current (the app just caught up).
+  Both are "unread", recomputed from core state (D2), never accumulated from pushes.
+- A `spikes/nse-decrypt/` spike (per config.yaml) is needed **only if** a later
+  change adds sender names on iOS (decrypt-in-NSE epoch safety); not needed for v1.
 
 ### D8. Composition with mute (out of scope to implement here)
 
@@ -232,13 +237,13 @@ The owner asked for a customizable client option between **basic** and **more**
 notifications. A single **per-device** setting "Notification detail" with two levels:
 
 - **Basic** — the generic, content-free notification only: "New message" (today's
-  behavior); no count, no type name, no sender; the barest lock-screen information.
-- **More** — the rich local notification: per-conversation count and type ("3 new in
-  Work", "2 new messages"), still content-free and built entirely on the device (D1).
+  behavior); no count, no type name; the barest lock-screen information.
+- **More** — the metadata notification: count and type ("2 new DMs", "1 new in
+  Work"), **no sender** (D6), still content-free and built entirely on the device
+  (D1), identical on iOS and Android (D7).
 
-The sender name stays the deeper, separate opt-in of D6 ("Show who messaged",
-default off) and applies **only** while detail is More; Basic never names anyone. So
-the ladder is **Basic → More → More + sender**.
+v1 has no sender tier (D6), so the ladder is simply **Basic → More**. If sender names
+return in a later change they become a further, default-off step on top of More.
 
 - **Default — Basic (owner, 2026-11-27).** The owner chose **Basic** as the default:
   the barest lock screen out of the box ("New message"), most in keeping with the
@@ -248,8 +253,7 @@ the ladder is **Basic → More → More + sender**.
   differs.
 - **No server/payload impact.** Basic and More both ride the same content-free server
   push (D1); the level only changes how the device renders locally, so it needs no
-  server change, no payload change and no proto change. It composes with mute (D8)
-  and the sender setting (D6) rather than replacing them.
+  server change, no payload change and no proto change. It composes with mute (D8).
 
 ## Risks / Trade-offs
 
@@ -262,7 +266,7 @@ the ladder is **Basic → More → More + sender**.
   full decrypt gated behind a spike.
 - **[Count drift]** → count is recomputed from the core's unread, not accumulated
   from pushes, so a missed push does not corrupt it (D3).
-- **[Sender on the lock screen]** → off by default, opt-in (D6).
+- **[Sender on the lock screen]** → not shown at all in v1; deferred (D6).
 - **[Provider learns ping timing]** → unchanged from today and already in the
   architecture doc's "who sees what"; no new metadata added (D1, D9).
 
@@ -284,13 +288,15 @@ the ladder is **Basic → More → More + sender**.
 
 | # | Decision | Resolution |
 |---|---|---|
-| a | "Message from <username>" | **Accepted.** Per-device "Show who messaged", default off; opt-in to show sender, and only while detail is More (D6, D10) |
-| b | Count semantics | **Accepted.** Per-conversation line + total-unread app badge (D3) |
+| a | "Message from <username>" | **Deferred (owner, 2026-11-27).** No sender in v1 on either platform; sender names return later as a default-off setting, both platforms together (D6) |
+| b | Count semantics | **Accepted.** Per-conversation count + total-unread app badge (D3) |
 | c | Which admin-events notify + wording | **Accepted.** Removed / group-closed / added-to-new-group only, fixed phrases; own-access events ignore per-conv mute, honor mute-all (D4) |
-| d | Platform mechanics | **Accepted.** iOS alert+`mutable-content`+NSE (metadata-only for v1), Android high-priority data message, generic-alert/catch-up fallback (D5, D7) |
-| e | Basic vs More detail level (owner added) | **Added & accepted.** Per-device "Notification detail" with Basic / More; default **Basic** (owner, 2026-11-27) (D10) |
+| d | Platform mechanics | **Accepted, both metadata-only & consistent (owner, 2026-11-27).** iOS alert+`mutable-content`+metadata-only NSE; Android high-priority data message rendering the same count+type; generic-alert/catch-up fallback; no decryption for the notification on either (D5, D7) |
+| e | Basic vs More detail level (owner added) | **Added & accepted.** Per-device "Notification detail" with Basic / More (More = count+type, no sender); default **Basic** (owner, 2026-11-27) (D10) |
 
-The owner accepted a–d as recommended, added decision e (Basic/More), and chose
-**Basic** as its default (2026-11-27). The specs are written to these answers and no
-owner decision is outstanding. Implementation remains gated on the tracker's pre-step
-of archiving the unarchived `push` / `push-kind-aware` changes (see tasks.md gate 0).
+The owner accepted b–e and **deferred sender names** (a): v1 is **metadata-only and
+identical on iOS and Android** — count + type, no sender. The specs are written to
+these answers and no owner decision is outstanding. This also drops the
+decrypt-in-NSE spike from v1 scope. Implementation remains gated on the tracker's
+pre-step of archiving the unarchived `push` / `push-kind-aware` changes (tasks.md
+gate 0).

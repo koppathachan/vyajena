@@ -16,8 +16,9 @@ tell a DM from a group without reading content it must never read.
 So richness cannot come from the server. It must be computed **on the device**,
 after it wakes and decrypts locally, and shown as a **local** notification. The
 server push stays a content-free wake signal; the device turns one wake into a
-"3 new messages in Work" (or "Message from Ali", if the user opts in) without any
-of that ever reaching a push provider. This change makes "no content, sender,
+"2 new DMs" / "3 new in Work" — a count and a conversation type, identical on iOS and
+Android, without any of that ever reaching a push provider. This change makes "no
+content, sender,
 group id or count in the push-provider payload" an explicit, enforced invariant
 (the owner's requirement 3 falls out of it) and adds the client-side pipeline that
 builds the real notification.
@@ -32,10 +33,10 @@ builds the real notification.
   stated once and both the FCM and APNs paths obey it.
 - **Client builds the real notification.** After the device wakes, catches up and
   decrypts locally (message-delivery: Ordered delivery and catch-up), the core
-  computes per conversation: an **unread count**, a **type** (DM, named group, the
-  lobby, or an admin-event), and — only if the user opted in — a **sender display
-  name**. The app shows this as a **local** notification. No decrypted text is ever
-  put in it (app-ui: UI goes through the core).
+  computes per conversation an **unread count** and a **type** (DM, named group, the
+  lobby, or an admin-event). The app shows this as a **local** notification. v1 shows
+  **metadata only — no sender** (owner, 2026-11-27), identical on iOS and Android. No
+  decrypted text is ever put in it (app-ui: UI goes through the core).
 - **Type-aware, content-free wording.** A DM → "2 new messages"; a named group →
   "3 new in Work"; an admin-event → a fixed phrase ("You were removed from Work").
   The group name is known locally (it rides encrypted `GroupSettings`), so it is
@@ -47,11 +48,11 @@ builds the real notification.
   type. Default **Basic** (owner, 2026-11-27; barest lock screen out of the box),
   More the opt-up; the level only changes local rendering, no server/payload change
   (design D10).
-- **Sender names are opt-in, off by default (owner decision a).** A local
-  per-device setting "Show who messaged" defaults off: notifications stay generic
-  ("New message" / "N new in <group>"). Turned on, and only while detail is More, a
-  DM/group notification may read "Message from Ali". Default off protects
-  who-contacts-whom from a lock-screen glance; see design D6, D10.
+- **No sender in v1 — same on both platforms (owner, 2026-11-27).** Notifications
+  show count + type only ("2 new DMs", "1 new in Work"), never a sender name, and iOS
+  and Android show the identical content. This keeps the two platforms consistent and
+  avoids decrypt-in-extension on iOS entirely (design D6, D7). Sender names are
+  **deferred** to a later change (a default-off setting, both platforms together).
 - **Admin-events notify for a chosen, content-free set (owner decision c).** Events
   that materially affect the user and are already surfaced as core notices — you
   were removed from a group, a named group was closed, you were added to a new named
@@ -71,16 +72,18 @@ builds the real notification.
 
 ## Open decisions — resolved (owner, 2026-11-27; detail in design.md)
 
-- **(a) "Message from <username>"** — **accepted:** per-device "Show who messaged",
-  default off, opt-in, and only while detail is More (design D6, D10).
+- **(a) "Message from <username>"** — **deferred (owner, 2026-11-27):** no sender in
+  v1 on either platform; returns later as a default-off setting, both platforms
+  together (design D6).
 - **(b) Count semantics** — **accepted:** per-conversation count ("3 new in Work")
   plus an app-icon badge of total unread (design D3).
 - **(c) Which admin-events notify, and their wording** — **accepted:** removed /
   group-closed / added-to-a-new-group only, fixed phrases; own-access events ignore
   per-conv mute but honor mute-all (design D4).
 - **(d) Platform mechanics** — **accepted:** iOS alert + `mutable-content` + NSE
-  (metadata-only for v1), Android high-priority data message, generic-alert /
-  catch-up fallback (design D5, D7).
+  (metadata-only), Android high-priority data message rendering the same count+type,
+  generic-alert / catch-up fallback; **both metadata-only and consistent**, no
+  decryption for the notification on either (design D5, D7).
 - **(e) Basic vs More (owner added)** — **accepted:** a per-device "Notification
   detail" setting; default **Basic** (owner, 2026-11-27); no server/payload change
   (design D10).
@@ -93,6 +96,8 @@ builds the real notification.
 - **Notification reliability** (change `notification-reliability`): the re-ping /
   catch-up scheduling is a separate change; this one assumes the device wakes and
   catches up, and does not change wake scheduling.
+- **Sender names in notifications** ("Message from Ali"): deferred to a later change
+  (owner, 2026-11-27), to keep iOS/Android consistent and avoid decrypt-in-NSE in v1.
 - **Decrypted message previews** (showing the text). Explicitly never, by the new
   invariant.
 
@@ -101,7 +106,7 @@ builds the real notification.
 ### New Capabilities
 
 - `local-notifications`: the device builds the user-facing notification locally
-  after decrypting — count, type, opt-in sender — and the rule that no decrypted
+  after decrypting — count and type (no sender in v1) — and the rule that no decrypted
   content ever leaves the core for it. The client enforces this.
 
 ### Modified Capabilities
@@ -109,8 +114,8 @@ builds the real notification.
 - `message-delivery`: adds the content-free, metadata-minimal wake-payload
   invariant and the wake shape (alert + `mutable-content` on iOS, data on Android)
   that lets the client enrich, on top of Content-free wake pings.
-- `app-ui`: the "Show who messaged" setting, type-aware notification wording, and a
-  notification tap opening the right conversation.
+- `app-ui`: the "Notification detail" (Basic / More) setting, type-aware notification
+  wording, and a notification tap opening the right conversation.
 
 ## Proto files touched
 
@@ -131,12 +136,13 @@ builds the real notification.
   (APPLICATION backlog, mute) is unchanged; only the payload shape is pinned. The
   membership-event push of D4 reuses the authoritative membership the server holds.
 - **Core:** a notification-model builder that, after catch-up, produces a per
-  conversation `{type, unread_count, latest_sender?}` summary for the app, honoring
-  the sender-name setting; never emits text. `client/src/engine` + a new small
+  conversation `{type, unread_count}` summary for the app (no sender in v1); never
+  emits text. `client/src/engine` + a new small
   module; bridge surface for the summary and the setting.
 - **App:** `app/lib/push/` builds local notifications from the core summary;
   Android high-priority data-message handling in `VyajenaMessagingService`; an iOS
-  Notification Service Extension target; the "Show who messaged" toggle in settings;
+  metadata-only Notification Service Extension target; the "Notification detail"
+  (Basic / More) setting;
   tap → open conversation. Store/permission impacts coordinated with `app-release`.
 - **Docs:** `docs/architecture-decisions.md` "who sees what" gains the explicit
   "push provider sees only a wake" line; this config's context invariant list gains
