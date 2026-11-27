@@ -29,15 +29,19 @@ group.
   nothing
 
 ### Requirement: KeyPackage fetch
-`Keys.FetchKeyPackages` SHALL take a user id and an optional list of device ids
-and return, for each non-revoked device of that user, or only for the listed
-devices when the list is given, one KeyPackage together with the device
-certificate and the user's identity public key. The server SHALL consume KeyPackages
-only for the devices it returns. The server SHALL hand out each one-time KeyPackage at
-most once and SHALL fall back to the last-resort KeyPackage when none remain. The
-Server SHALL reject a fetch for an unknown user with `NOT_FOUND`, and a fetch listing
-a device that is not a non-revoked device of that user with `NOT_FOUND`,
-consuming nothing.
+`Keys.FetchKeyPackages` SHALL take a user id, an optional list of device ids and
+an optional `group_id`, and return, for each non-revoked device of that user, or
+only for the listed devices when the list is given, one KeyPackage together with
+the device certificate and the user's identity public key. When `group_id` names
+a DM, the server SHALL return only KeyPackages whose capabilities list the DM
+extension `0xF0A2` (a one-time one if the device has one left, else its
+last-resort one if that lists it), leave out devices with neither, and SHALL reject the fetch with `PERMISSION_DENIED` unless the caller's device is
+a member of that DM and `user_id` is one of its two users. The server SHALL consume
+KeyPackages only for the devices it returns. The server SHALL hand out each one-time
+KeyPackage at most once and SHALL fall back to the last-resort KeyPackage when
+none remain. The server SHALL reject a fetch for an unknown user with `NOT_FOUND`,
+and a fetch listing a device that is not a non-revoked device of that user with
+`NOT_FOUND`, consuming nothing.
 
 #### Scenario: One-time KeyPackage is consumed
 - **WHEN** two callers fetch KeyPackages for the same user
@@ -56,6 +60,16 @@ consuming nothing.
 #### Scenario: Unknown user
 - **WHEN** a device fetches KeyPackages for a user id the server does not know
 - **THEN** the server rejects the call with `NOT_FOUND`
+
+#### Scenario: Fetch for a DM skips old devices
+- **WHEN** Alice's phone fetches Bob's KeyPackages with the Alice–Bob DM's
+  `group_id`, and Bob's tablet still runs 1.0.0
+- **THEN** the server returns and consumes a KeyPackage for Bob's phone only
+
+#### Scenario: Carol fetches for someone else's DM
+- **WHEN** Carol's phone fetches Bob's KeyPackages with the Alice–Bob DM's
+  `group_id`
+- **THEN** the server rejects the call with `PERMISSION_DENIED` and consumes nothing
 
 ### Requirement: Replenishment signal
 The server SHALL notify a connected device on its `Connect` stream when its one-time

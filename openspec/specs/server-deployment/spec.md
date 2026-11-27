@@ -62,9 +62,9 @@ systemd SHALL restart either if it crashes. The server enforces this.
 ### Requirement: Host hardening
 The server SHALL allow SSH only with keys and SHALL refuse root logins. nftables SHALL
 drop all inbound traffic except replies and SSH from the home network's subnet;
-the server's port SHALL NOT be reachable from any network. The server SHALL install
-security updates unattended and SHALL listen on nothing but SSH and the server on
-loopback.
+the servers' ports SHALL NOT be reachable from any network. The server SHALL install
+security updates unattended and SHALL listen on nothing but SSH and the two
+servers (the real one and the review server) on loopback.
 
 #### Scenario: Root login
 - **WHEN** someone tries `ssh root@<server-address>` with a valid key
@@ -77,13 +77,13 @@ loopback.
 
 ### Requirement: Hardening check
 The project SHALL provide one command that checks the server over SSH and reports
-each failure by name: service user, sandbox settings of the server and the
-tunnel, file modes, listening ports, nftables rules, SSH settings, unattended
-upgrades, the tunnel attached to the relay, the server port closed on the LAN,
-and that the relay's port 443 presents the same TLS key as the server's loopback
-port. It SHALL also warn, without failing, when a reboot is pending:
-`/run/reboot-required` exists, or a kernel of the running kernel's flavour newer
-than the running one is installed.
+each failure by name: service users, sandbox settings of the server, the review
+Server and the tunnel, file modes, listening ports, nftables rules, SSH
+settings, unattended upgrades, the tunnel attached to the relay, the server
+ports closed on the LAN, and that the relay's ports 443 and <review-port> present the
+same TLS keys as the server's loopback ports <review-port> and <review-server-port>. It SHALL also warn,
+without failing, when a reboot is pending: `/run/reboot-required` exists, or a
+kernel of the running kernel's flavour newer than the running one is installed.
 
 #### Scenario: Root login re-enabled
 - **WHEN** `PermitRootLogin` on the server is changed back to allow keys
@@ -162,3 +162,30 @@ through `deploy/server/` scripts only, never by hand. The server enforces this.
 - **WHEN** the server boots with the drive not mounted at the stable path
 - **THEN** it still boots and serves text, and the hardening check warns that the
   blob store is absent without failing
+
+### Requirement: Deployment details stay out of the repository
+The project SHALL NOT hold the real IP addresses, networks, router, MAC address,
+SSH target, admin username or non-default ports of a deployment in the repository,
+its docs or its specs. The deploy scripts SHALL read them from a settings file
+outside the repository, `network.conf` in the owner's secrets folder, made from
+`deploy/network.conf.example`, and SHALL stop with the missing key's name when the
+file or a key is absent. Templates that name an address or port SHALL hold a
+placeholder that deploy fills. Ports 443 and 22 are the only fixed public ports.
+The scripts and tests enforce this.
+
+#### Scenario: Settings file missing
+- **WHEN** the owner runs `deploy/server/deploy.sh` before copying
+  `deploy/network.conf.example` to `~/.vyajena-relay/network.conf`
+- **THEN** the script stops before any SSH and says where to copy the example
+
+#### Scenario: Templates fill from the settings
+- **WHEN** deploy renders `nftables.conf`, `push.toml`, `vyajena-egress.service` and
+  `harden.sh` with the example settings
+- **THEN** no placeholder is left and the home network, router, address and ports
+  of the settings appear in them
+
+#### Scenario: No deployment value is committed
+- **WHEN** the tests scan the tracked files
+- **THEN** none holds the deployment's former LAN address, MAC address or SSH
+  user, and nothing under `deploy/` names a port other than from the example file
+
