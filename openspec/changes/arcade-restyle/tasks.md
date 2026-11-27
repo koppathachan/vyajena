@@ -41,6 +41,8 @@
   (`app-ui/groups-distinct-from-dms`).
 - [x] 4.6 Contact tap never does nothing (`app-ui/contact-tap`).
 - [x] 4.7 Sprite float on chat list and Contacts icons (`app-ui/arcade-motion`).
+- [x] 4.8 Theme choice Arcade/Calm on the Profile tab, look and colours
+  together, kept on the device (`app-ui/theme-choice`, design D15).
 
 ## 5. Review
 

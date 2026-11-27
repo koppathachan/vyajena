@@ -8,6 +8,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_model.dart';
@@ -83,6 +84,7 @@ class _HomeShellState extends State<HomeShell> {
       children: [
         DecoratedBox(
           decoration: sketchBox(
+            rough: context.arcade.rough,
             border: selected
                 ? Theme.of(context).colorScheme.primary
                 : Colors.transparent,
@@ -116,6 +118,7 @@ class _HomeShellState extends State<HomeShell> {
                 width: 11,
                 height: 11,
                 decoration: sketchBox(
+                  rough: context.arcade.rough,
                   fill: online ? presenceOnlineColor : scheme.error,
                   border: scheme.outline,
                   width: 1.5,
@@ -153,6 +156,7 @@ class _HomeShellState extends State<HomeShell> {
             color: Theme.of(context).colorScheme.outline,
             top: true,
             seed: 9,
+            rough: context.arcade.rough,
           ),
         ),
         child: NavigationBar(

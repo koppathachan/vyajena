@@ -78,6 +78,16 @@ the device had connected, and left rows with no tap. It now listens to the
 connection, asks the core again on each tap, explains when DMs are not offered,
 and sends a tap on your own row to the Profile tab.
 
+**D15 Themes (owner, 2026-11-27).** The owner asked for a theme selector in
+which a theme is the look and the colours together, as Slack, Discord and
+Telegram do it (a named theme; light or dark stays a separate setting). Two
+themes keep it simple: Arcade (this change's look) and Calm. A theme is a pair
+of `ArcadeTokens` (light, dark) that now also carry the look: `rough` (corner
+wobble, 0 for straight), `lively` (tilt, bubble offsets, icon bob),
+`pixelHeadings` and `shadowScale`. Borders take `rough` from the theme; `Askew`,
+`ArcadeFloat` and the bubble jitter read `lively` from the context. The choice
+is one more string in `shared_preferences`, beside the Auto/Light/Dark one.
+
 ## Verification
 
 Widget tests on the fake core; the owner reviews light and dark on a simulator

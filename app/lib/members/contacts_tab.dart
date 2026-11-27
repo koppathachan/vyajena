@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import '../admin/create_named_group_screen.dart';
 import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 import '../app/arcade/motion.dart';
 import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
@@ -158,6 +159,7 @@ class _ContactsTabState extends State<ContactsTab> {
               width: 40,
               height: 40,
               decoration: sketchBox(
+                rough: context.arcade.rough,
                 fill: Theme.of(context).colorScheme.primary,
                 border: Theme.of(context).colorScheme.outline,
                 seed: sketchSeed(key),
@@ -219,6 +221,7 @@ class _ContactsTabState extends State<ContactsTab> {
               key: ValueKey('admin-badge-${m.user.username}'),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
               decoration: sketchBox(
+                rough: context.arcade.rough,
                 fill: scheme.primaryContainer,
                 border: scheme.outline,
                 width: 1.5,

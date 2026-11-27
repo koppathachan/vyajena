@@ -82,6 +82,28 @@ choice SHALL be kept on this device between runs.
 - **WHEN** Alice has never chosen, and her phone switches to dark mode
 - **THEN** the app is dark
 
+### Requirement: Theme choice
+The Profile tab SHALL offer a Theme beside the Appearance choice: Arcade, the
+default, and Calm. A theme SHALL set the look and the colours together; they
+are never chosen separately. Arcade is the look the other requirements of this
+change describe. Calm SHALL use straight square lines, no hard shadows,
+nothing turned, offset or bobbing, monospace headings with no shadow, and its
+own teal palette. Every theme SHALL have a light and a dark palette that meet
+WCAG AA, and the Appearance choice (Auto, Light, Dark) SHALL pick between them.
+The theme SHALL be kept on this device between runs. Under Calm the
+requirements `Hand-drawn lines`, `Irregular boxes` and the float of
+`Arcade motion` do not apply.
+
+#### Scenario: Choose Calm
+- **WHEN** Alice picks Calm on the Profile tab
+- **THEN** at once the app's lines are straight, nothing tilts or bobs, the
+  headings are plain monospace and the accent is teal, and it is still Calm the
+  next time the app opens
+
+#### Scenario: Theme and appearance together
+- **WHEN** Alice has picked Calm and Dark
+- **THEN** the app uses Calm's dark palette
+
 ### Requirement: Downloaded video shows its first frame
 A video bubble SHALL show the clip's real first frame in place of the blur once
 the clip is in the device's cache, so a downloaded video reads as downloaded. It

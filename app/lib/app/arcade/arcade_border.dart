@@ -16,6 +16,7 @@ class ArcadeBorder extends OutlinedBorder {
     this.shadow = 0,
     this.shadowColor = Colors.black,
     this.seed = 0,
+    this.rough = sketchCorner,
   }) : super(side: BorderSide.none);
 
   final Color color;
@@ -28,22 +29,25 @@ class ArcadeBorder extends OutlinedBorder {
   /// Where this box's wobble comes from (mixed with its size).
   final int seed;
 
+  /// How far the corners sit off true; 0 for a ruled box (the theme's).
+  final double rough;
+
   @override
   EdgeInsetsGeometry get dimensions => EdgeInsets.all(width);
 
   @override
   Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
-      sketchOutline(rect.deflate(width), seed);
+      sketchOutline(rect.deflate(width), seed, corner: rough);
 
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
-      sketchOutline(rect, seed);
+      sketchOutline(rect, seed, corner: rough);
 
   @override
   void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {
     if (shadow > 0) {
       // Only the part of the shifted box outside the box itself.
-      final box = sketchOutline(rect, seed);
+      final box = sketchOutline(rect, seed, corner: rough);
       final outside = Path.combine(
         PathOperation.difference,
         box.shift(Offset(shadow, shadow)),
@@ -57,6 +61,7 @@ class ArcadeBorder extends OutlinedBorder {
       seed,
       color: color,
       width: width,
+      corner: rough,
     );
   }
 
@@ -67,6 +72,7 @@ class ArcadeBorder extends OutlinedBorder {
     shadow: shadow,
     shadowColor: shadowColor,
     seed: seed,
+    rough: rough,
   );
 
   @override
@@ -76,6 +82,7 @@ class ArcadeBorder extends OutlinedBorder {
     shadow: shadow * t,
     shadowColor: shadowColor,
     seed: seed,
+    rough: rough,
   );
 
   @override
@@ -85,10 +92,12 @@ class ArcadeBorder extends OutlinedBorder {
       other.width == width &&
       other.shadow == shadow &&
       other.shadowColor == shadowColor &&
-      other.seed == seed;
+      other.seed == seed &&
+      other.rough == rough;
 
   @override
-  int get hashCode => Object.hash(color, width, shadow, shadowColor, seed);
+  int get hashCode =>
+      Object.hash(color, width, shadow, shadowColor, seed, rough);
 }
 
 /// A text field's outline, hand-drawn like [ArcadeBorder]; the floating
@@ -97,27 +106,35 @@ class SketchInputBorder extends InputBorder {
   const SketchInputBorder({
     super.borderSide = const BorderSide(width: arcadeBorderWidth),
     this.seed = 0,
+    this.rough = sketchCorner,
   });
 
   final int seed;
+
+  /// How far the corners sit off true; 0 for a ruled outline.
+  final double rough;
 
   @override
   bool get isOutline => true;
 
   @override
   SketchInputBorder copyWith({BorderSide? borderSide}) =>
-      SketchInputBorder(borderSide: borderSide ?? this.borderSide, seed: seed);
+      SketchInputBorder(
+        borderSide: borderSide ?? this.borderSide,
+        seed: seed,
+        rough: rough,
+      );
 
   @override
   EdgeInsetsGeometry get dimensions => EdgeInsets.all(borderSide.width);
 
   @override
   Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
-      sketchOutline(rect.deflate(borderSide.width), seed);
+      sketchOutline(rect.deflate(borderSide.width), seed, corner: rough);
 
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
-      sketchOutline(rect, seed);
+      sketchOutline(rect, seed, corner: rough);
 
   @override
   void paint(
@@ -130,11 +147,18 @@ class SketchInputBorder extends InputBorder {
   }) {
     if (borderSide.style == BorderStyle.none || borderSide.width == 0) return;
     final box = rect.deflate(borderSide.width / 2);
-    final c = sketchCorners(box, seed);
+    final c = sketchCorners(box, seed, corner: rough);
     final width = borderSide.width;
     final color = borderSide.color;
     if (gapStart == null || gapExtent <= 0 || gapPercentage == 0) {
-      paintSketchBox(canvas, box, seed, color: color, width: width);
+      paintSketchBox(
+        canvas,
+        box,
+        seed,
+        color: color,
+        width: width,
+        corner: rough,
+      );
       return;
     }
     // The label's gap: the top edge is two strokes, with the label between.
@@ -151,6 +175,7 @@ class SketchInputBorder extends InputBorder {
       seed,
       color: color,
       width: width,
+      rough: rough,
     );
     if (start > c[0].dx + 2) {
       paintSketchStroke(
@@ -159,22 +184,28 @@ class SketchInputBorder extends InputBorder {
         seed + 1,
         color: color,
         width: width,
+        rough: rough,
       );
     }
   }
 
   @override
   SketchInputBorder scale(double t) =>
-      SketchInputBorder(borderSide: borderSide.scale(t), seed: seed);
+      SketchInputBorder(
+        borderSide: borderSide.scale(t),
+        seed: seed,
+        rough: rough,
+      );
 
   @override
   bool operator ==(Object other) =>
       other is SketchInputBorder &&
       other.borderSide == borderSide &&
-      other.seed == seed;
+      other.seed == seed &&
+      other.rough == rough;
 
   @override
-  int get hashCode => Object.hash(borderSide, seed);
+  int get hashCode => Object.hash(borderSide, seed, rough);
 }
 
 /// A plain rectangle with hand-drawn lines on some of its edges only: an app
@@ -187,6 +218,7 @@ class SketchEdgeBorder extends ShapeBorder {
     this.bottom = false,
     this.left = false,
     this.seed = 0,
+    this.rough = sketchCorner,
   });
 
   final Color color;
@@ -195,6 +227,9 @@ class SketchEdgeBorder extends ShapeBorder {
   final bool bottom;
   final bool left;
   final int seed;
+
+  /// 0 for a ruled edge.
+  final double rough;
 
   @override
   EdgeInsetsGeometry get dimensions => EdgeInsets.only(
@@ -222,6 +257,7 @@ class SketchEdgeBorder extends ShapeBorder {
         seed * 31 + w,
         color: color,
         width: width,
+        rough: rough,
       );
     }
     if (bottom) {
@@ -232,6 +268,7 @@ class SketchEdgeBorder extends ShapeBorder {
         seed * 31 + w + 7,
         color: color,
         width: width,
+        rough: rough,
       );
     }
     if (left) {
@@ -242,6 +279,7 @@ class SketchEdgeBorder extends ShapeBorder {
         seed * 31 + rect.height.round() + 13,
         color: color,
         width: width,
+        rough: rough,
       );
     }
   }
@@ -254,6 +292,7 @@ class SketchEdgeBorder extends ShapeBorder {
     bottom: bottom,
     left: left,
     seed: seed,
+    rough: rough,
   );
 
   @override
@@ -264,10 +303,12 @@ class SketchEdgeBorder extends ShapeBorder {
       other.top == top &&
       other.bottom == bottom &&
       other.left == left &&
-      other.seed == seed;
+      other.seed == seed &&
+      other.rough == rough;
 
   @override
-  int get hashCode => Object.hash(color, width, top, bottom, left, seed);
+  int get hashCode =>
+      Object.hash(color, width, top, bottom, left, seed, rough);
 }
 
 /// A box decoration with the hand-drawn [ArcadeBorder]: [fill] inside, a
@@ -279,6 +320,7 @@ ShapeDecoration sketchBox({
   double shadow = 0,
   Color shadowColor = Colors.black,
   int seed = 0,
+  double rough = sketchCorner,
 }) => ShapeDecoration(
   color: fill,
   shape: ArcadeBorder(
@@ -287,5 +329,6 @@ ShapeDecoration sketchBox({
     shadow: shadow,
     shadowColor: shadowColor,
     seed: seed,
+    rough: rough,
   ),
 );

@@ -7,6 +7,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'tokens.dart';
+
 /// How far a corner may sit off true.
 const double sketchCorner = 2;
 
@@ -79,7 +81,8 @@ Path sketchOutline(Rect rect, int seed, {double corner = sketchCorner}) {
   if (rect.isEmpty) return Path()..addRect(rect);
   final p = sketchCorners(rect, seed, corner: corner);
   final r = SketchRandom(_mix(seed ^ 0x5bd1e995, rect.size));
-  final bow = math.min(sketchBow, rect.shortestSide / 12);
+  // A straight theme (corner 0) has straight edges too.
+  final bow = corner == 0 ? 0.0 : math.min(sketchBow, rect.shortestSide / 12);
   final path = Path()..moveTo(p[0].dx, p[0].dy);
   for (var i = 0; i < 4; i++) {
     final a = p[i];
@@ -127,9 +130,23 @@ void paintSketchStroke(
   required Color color,
   required double width,
   bool closed = false,
+  double rough = sketchCorner,
 }) {
   if (width <= 0 || points.length < 2) return;
   final segments = closed ? points.length : points.length - 1;
+  if (rough == 0) {
+    // A straight theme: one ruled stroke.
+    final path = Path()..addPolygon(points, closed);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..strokeJoin = StrokeJoin.miter,
+    );
+    return;
+  }
   for (final (pass, w) in [(0, width * 0.9), (1, width * 0.55)]) {
     final r = SketchRandom(seed * 7 + pass * 104729 + 1);
     final path = Path();
@@ -163,6 +180,7 @@ void paintSketchBox(
   color: color,
   width: width,
   closed: true,
+  rough: corner,
 );
 
 /// A hand-drawn horizontal rule, for where a [Divider] would go.
@@ -188,6 +206,7 @@ class SketchDivider extends StatelessWidget {
     width: double.infinity,
     child: CustomPaint(
       painter: _LinePainter(
+        rough: context.arcade.rough,
         seed: seed,
         color: color ?? Theme.of(context).colorScheme.outline,
         width: thickness,
@@ -199,12 +218,14 @@ class SketchDivider extends StatelessWidget {
 
 class _LinePainter extends CustomPainter {
   _LinePainter({
+    required this.rough,
     required this.seed,
     required this.color,
     required this.width,
     required this.indent,
   });
 
+  final double rough;
   final int seed;
   final Color color;
   final double width;
@@ -219,11 +240,13 @@ class _LinePainter extends CustomPainter {
       seed * 31 + size.width.round(),
       color: color,
       width: width,
+      rough: rough,
     );
   }
 
   @override
   bool shouldRepaint(_LinePainter old) =>
+      old.rough != rough ||
       old.seed != seed ||
       old.color != color ||
       old.width != width ||
@@ -232,6 +255,7 @@ class _LinePainter extends CustomPainter {
 
 /// [child] set a little askew: turned by up to [degrees] and shifted by up to
 /// [shift] px, both from [seed], so a row of tiles never lines up exactly.
+/// Straight under a theme that is not lively (app-ui: Theme choice).
 class Askew extends StatelessWidget {
   const Askew({
     super.key,
@@ -248,6 +272,7 @@ class Askew extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!context.arcade.lively) return child;
     final r = SketchRandom(seed * 2654435761);
     final angle = r.range(degrees) * math.pi / 180;
     final offset = Offset(r.range(shift), r.range(shift));

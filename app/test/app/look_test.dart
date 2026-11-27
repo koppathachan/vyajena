@@ -109,8 +109,15 @@ void main() {
   });
 
   // spec: app-ui/arcade-look
+  // spec: app-ui/theme-choice
   test('text and controls meet WCAG AA contrast on their fills', () {
-    for (final t in [ArcadeTokens.light, ArcadeTokens.dark]) {
+    // Every theme's palettes (app-ui: Theme choice).
+    for (final t in [
+      ArcadeTokens.light,
+      ArcadeTokens.dark,
+      ArcadeTokens.calmLight,
+      ArcadeTokens.calmDark,
+    ]) {
       final pairs = <String, double>{
         'text on bg': contrast(t.text, t.bg),
         'text on card': contrast(t.text, t.card),

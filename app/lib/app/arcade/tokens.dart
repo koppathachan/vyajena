@@ -1,6 +1,8 @@
-// app-ui: Arcade look. The one token set, light and dark; widgets read it
+// app-ui: Arcade look and Theme choice. A theme is a pair of token sets,
+// light and dark, holding its colours AND its look (how rough the lines are,
+// whether things tilt and bob, pixel headings, hard shadows); widgets read it
 // through the ColorScheme and through [ArcadeTokens] for what a ColorScheme
-// has no slot for (the heading shadow, the bubble pair, the hard shadows).
+// has no slot for.
 import 'package:flutter/material.dart';
 
 /// Square corners everywhere.
@@ -55,6 +57,10 @@ class ArcadeTokens extends ThemeExtension<ArcadeTokens> {
     required this.onError,
     required this.mention,
     required this.disabled,
+    this.rough = 2,
+    this.lively = true,
+    this.pixelHeadings = true,
+    this.shadowScale = 1,
   });
 
   final Brightness brightness;
@@ -81,6 +87,20 @@ class ArcadeTokens extends ThemeExtension<ArcadeTokens> {
   final Color onError;
   final Color mention;
   final Color disabled;
+
+  // The look (app-ui: Theme choice).
+
+  /// How far a box's corners sit off true, in px; 0 draws straight lines.
+  final double rough;
+
+  /// Whether boxes are set askew, bubbles offset and icons bob.
+  final bool lively;
+
+  /// Pixel-font headings with a red hard shadow; else plain monospace bold.
+  final bool pixelHeadings;
+
+  /// 1 for the hard offset shadows, 0 for none.
+  final double shadowScale;
 
   static const dark = ArcadeTokens(
     brightness: Brightness.dark,
@@ -126,6 +146,62 @@ class ArcadeTokens extends ThemeExtension<ArcadeTokens> {
     onError: Colors.white,
     mention: Color(0xFF0057B8),
     disabled: Color(0xFF5E5E78),
+  );
+
+  /// Calm, light: straight lines, no shadows or motion, a teal accent.
+  static const calmLight = ArcadeTokens(
+    brightness: Brightness.light,
+    bg: Color(0xFFF6F7F4),
+    text: Color(0xFF1F2328),
+    border: Color(0xFF424A53),
+    card: Colors.white,
+    heading: Color(0xFF1F2328),
+    headingShadowColor: Colors.transparent,
+    button: Color(0xFF0F766E),
+    onButton: Colors.white,
+    focus: Color(0xFF0F766E),
+    bubbleMine: Color(0xFF0F766E),
+    onBubbleMine: Colors.white,
+    bubbleTheirs: Colors.white,
+    onBubbleTheirs: Color(0xFF1F2328),
+    shadow: Colors.black,
+    muted: Color(0xFF57606A),
+    error: Color(0xFFB3261E),
+    onError: Colors.white,
+    mention: Color(0xFF0550AE),
+    disabled: Color(0xFF59636E),
+    rough: 0,
+    lively: false,
+    pixelHeadings: false,
+    shadowScale: 0,
+  );
+
+  /// Calm, dark.
+  static const calmDark = ArcadeTokens(
+    brightness: Brightness.dark,
+    bg: Color(0xFF161B22),
+    text: Color(0xFFE6EDF3),
+    border: Color(0xFF8B949E),
+    card: Color(0xFF21262D),
+    heading: Color(0xFFE6EDF3),
+    headingShadowColor: Colors.transparent,
+    button: Color(0xFF5EC4B6),
+    onButton: Color(0xFF0D1117),
+    focus: Color(0xFF5EC4B6),
+    bubbleMine: Color(0xFF5EC4B6),
+    onBubbleMine: Color(0xFF0D1117),
+    bubbleTheirs: Color(0xFF21262D),
+    onBubbleTheirs: Color(0xFFE6EDF3),
+    shadow: Colors.black,
+    muted: Color(0xFFA0AAB5),
+    error: Color(0xFFFF8A80),
+    onError: Color(0xFF0D1117),
+    mention: Color(0xFF79C0FF),
+    disabled: Color(0xFF8B949E),
+    rough: 0,
+    lively: false,
+    pixelHeadings: false,
+    shadowScale: 0,
   );
 
   static ArcadeTokens of(Brightness brightness) =>

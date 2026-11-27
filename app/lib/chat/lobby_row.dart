@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 
 import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 import '../app/theme.dart';
 
 /// The `#` hash tile that replaces the lobby's plain avatar: a bordered square
@@ -22,6 +23,7 @@ class LobbyHashTile extends StatelessWidget {
       height: radius * 2,
       alignment: Alignment.center,
       decoration: sketchBox(
+        rough: context.arcade.rough,
         fill: scheme.primary,
         border: scheme.outline,
         seed: 41,
@@ -29,7 +31,7 @@ class LobbyHashTile extends StatelessWidget {
       child: Text(
         '#',
         style: TextStyle(
-          fontFamily: pixelFont,
+          fontFamily: context.arcade.pixelHeadings ? pixelFont : bodyFont,
           fontFamilyFallback: bodyFontFallback,
           shadows: const <Shadow>[],
           fontSize: radius,
@@ -52,6 +54,7 @@ class SystemPill extends StatelessWidget {
       key: const Key('lobby-system-pill'),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: sketchBox(
+        rough: context.arcade.rough,
         fill: scheme.primary,
         border: scheme.outline,
         width: 1.5,
@@ -60,7 +63,7 @@ class SystemPill extends StatelessWidget {
       child: Text(
         'system',
         style: TextStyle(
-          fontFamily: pixelFont,
+          fontFamily: context.arcade.pixelHeadings ? pixelFont : bodyFont,
           fontFamilyFallback: bodyFontFallback,
           shadows: const <Shadow>[],
           fontSize: 8,

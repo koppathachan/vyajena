@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 import '../app/arcade/sketch.dart';
 import '../app/theme.dart';
 
@@ -67,6 +68,7 @@ class NameAvatar extends StatelessWidget {
       height: radius * 2,
       alignment: Alignment.center,
       decoration: sketchBox(
+        rough: context.arcade.rough,
         fill: background,
         border: scheme.outline,
         seed: sketchSeed(seed ?? name),
@@ -131,6 +133,7 @@ class GroupAvatar extends StatelessWidget {
               width: inner,
               height: inner,
               decoration: sketchBox(
+                rough: context.arcade.rough,
                 fill: back,
                 border: scheme.outline,
                 seed: sketchSeed('back-$seed'),
@@ -266,6 +269,7 @@ class _PresenceAvatarState extends State<PresenceAvatar> {
             width: dotSize,
             height: dotSize,
             decoration: sketchBox(
+              rough: context.arcade.rough,
               fill: online ? presenceOnlineColor : scheme.error,
               border: scheme.outline,
               width: 1.5,

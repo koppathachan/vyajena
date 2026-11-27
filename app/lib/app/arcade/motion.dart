@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'sketch.dart';
 import 'steps.dart';
+import 'tokens.dart';
 
 bool reducedMotion(BuildContext context) =>
     MediaQuery.maybeDisableAnimationsOf(context) ?? false;
@@ -135,7 +136,8 @@ class _ArcadeFloatState extends State<ArcadeFloat>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (reducedMotion(context)) {
+    // Still under reduce-motion, and under a theme that is not lively.
+    if (reducedMotion(context) || !context.arcade.lively) {
       _controller.stop();
     } else if (!_controller.isAnimating) {
       _controller.repeat();
@@ -150,7 +152,7 @@ class _ArcadeFloatState extends State<ArcadeFloat>
 
   @override
   Widget build(BuildContext context) {
-    final still = reducedMotion(context);
+    final still = reducedMotion(context) || !context.arcade.lively;
     // Whole logical pixels only: a sprite jumps, it does not glide.
     final dy = still ? 0.0 : -(widget.distance * floatFrames[_frame]).round();
     return Transform.translate(
