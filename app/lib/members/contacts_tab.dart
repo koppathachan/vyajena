@@ -1,8 +1,9 @@
 // app-shell: Contacts tab. The server's members, each with an avatar and name,
-// an `admin` badge and a "you" marker; tapping a member opens or starts the DM
-// with them (app-ui: Contact tap: tapping yourself opens Profile, and a tap
-// when DMs are not offered says so, so a tap never does nothing). The admin's device also offers Invite, New group and the other
-// admin actions; no other device shows any of them.
+// an `admin` badge and a "you" marker; tapping another member opens that member's
+// profile (app-shell: Member profile), from which Message opens or starts the DM,
+// and tapping yourself opens Profile — so a tap never does nothing (app-ui: Contact
+// tap). The admin's device also offers Invite, New group and the other admin
+// actions; no other device shows any of them.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -16,11 +17,11 @@ import '../app/errors.dart';
 import '../app/names.dart';
 import '../app/routes.dart';
 import '../app/shell_app_bar.dart';
-import '../chat/dm_screen.dart';
 import '../chat/group_screen.dart';
 import '../core/core_service.dart';
 import '../shell/avatars.dart';
-import 'members_screen.dart';
+import 'member.dart';
+import 'member_profile_screen.dart';
 
 /// What a contact tap says when the server does not offer DMs (yet).
 const dmsUnavailableText =
@@ -52,7 +53,6 @@ class _ContactsTabState extends State<ContactsTab> {
   List<MemberUser>? _members;
   UserRef? _admin;
   String? _error;
-  bool _dms = false;
   bool _groups = false;
   StreamSubscription<CoreEvent>? _subscription;
 
@@ -67,8 +67,9 @@ class _ContactsTabState extends State<ContactsTab> {
         _load();
       }
     });
-    // Whether the server offers DMs is learnt when the device connects, which
-    // may be after this tab first loaded: look again on every change.
+    // What the admin may do (named groups) and who the admin is can settle when
+    // the device connects, after this tab first loaded: look again on every
+    // change.
     widget.core.connection.addListener(_load);
     _load();
   }
@@ -81,8 +82,9 @@ class _ContactsTabState extends State<ContactsTab> {
   }
 
   /// A tap on a member always answers: your own row opens Profile, another
-  /// member's opens the DM (DM availability asked afresh), and when DMs are
-  /// not offered a snack bar says why nothing opens.
+  /// member's opens that member's profile (app-shell: Member profile), where a
+  /// Message button opens the DM — so the tap never does nothing even before the
+  /// device has learnt whether DMs are offered.
   Future<void> _tapMember(MemberUser m) async {
     if (_isMe(m.user)) {
       final open = widget.onOpenProfile;
@@ -93,14 +95,11 @@ class _ContactsTabState extends State<ContactsTab> {
       }
       return;
     }
-    final dms = await widget.core.dmsAvailable();
-    if (!mounted) return;
-    if (dms != _dms) setState(() => _dms = dms);
-    if (dms) {
-      await messageUser(context, widget.core, m.user);
-    } else {
-      _tell(dmsUnavailableText);
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MemberProfileScreen(core: widget.core, member: m),
+      ),
+    );
   }
 
   void _tell(String text) => ScaffoldMessenger.of(context)
@@ -112,13 +111,11 @@ class _ContactsTabState extends State<ContactsTab> {
       final members = byUser(await widget.core.members());
       await _names.load(members.map((m) => m.user));
       final adminUser = await widget.core.adminUser();
-      final dms = await widget.core.dmsAvailable();
       final groups = await widget.core.namedGroupsAvailable();
       if (mounted) {
         setState(() {
           _members = members;
           _admin = adminUser;
-          _dms = dms;
           _groups = groups;
           _error = null;
         });

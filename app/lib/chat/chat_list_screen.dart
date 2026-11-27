@@ -18,7 +18,7 @@ import '../admin/create_named_group_screen.dart';
 import '../app/shell_app_bar.dart';
 import '../shell/avatars.dart';
 import '../core/core_service.dart';
-import '../members/members_screen.dart';
+import '../members/member.dart';
 import '../app/arcade/motion.dart';
 import '../app/arcade/sketch.dart';
 import 'chat_model.dart';

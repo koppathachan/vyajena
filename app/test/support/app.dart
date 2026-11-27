@@ -184,6 +184,30 @@ Future<void> menu(WidgetTester tester, String label) async {
   await tap(tester, find.text(label));
 }
 
+/// Opens an action on the Contacts tab by its [key] (app-shell: Contacts tab):
+/// e.g. 'contacts-invite', 'contacts-invites', 'contacts-new-group',
+/// 'contacts-remove-user'. The app must be on the shell (open it with
+/// [openHome]), since the admin actions moved off the old chat overflow menu to
+/// this tab (change `shell-nav-consistency`).
+Future<void> contactsAction(WidgetTester tester, String key) async {
+  await tap(tester, find.byKey(const Key('tab-contacts')));
+  await tap(tester, find.byKey(Key(key)));
+}
+
+/// Opens the Profile tab (app-shell), where Link a new device and the profile
+/// settings now live (change `shell-nav-consistency`).
+Future<void> openProfileTab(WidgetTester tester) async {
+  await tap(tester, find.byKey(const Key('tab-profile')));
+}
+
+/// A tall screen, so a whole long tab (e.g. the Profile tab, whose settings sit
+/// below the fold) is built and reachable in a lazy ListView.
+void tall(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
 /// Records what the app asks the platform to share.
 List<String> recordShares(WidgetTester tester) {
   final shared = <String>[];
