@@ -67,21 +67,22 @@ group.
 **Owner, 2026-11-16: reviewers never join the real group** ("we can't let
 reviewers access to internal chats"). They use a separate review server
 (change `review-server`): `vyajarelay.purplechaamba.com:<review-port>`, its own data,
-keys and pin. No code change (owner; review mode PR koppathachan/vyajena#1
-closed unmerged): **the reviewer is the review server's admin**,
-`review@review.purplechaamba.com`, joining with its bootstrap invite. So the
-reviewer reaches every feature, admin screens included.
+keys and pin. **The reviewer is the review server's admin**,
+`review@review.purplechaamba.com`, so they reach every feature, admin screens
+included.
 
-The invite is single-use and lasts 7 days (180 characters). It sits in the
-owner-only `~/vyajena-server-backups/review-bootstrap-invite-<UTC>.txt`; the owner
-pastes it into the store form, never into the repo. Before each submission, or
-once it is used or expired: `deploy/server/deploy.sh --no-build --reset-review`
-(owner's yes first) gives a new invite and review pin; update the form.
+Owner, 2026-11-27 (change `review-admin-invite`, replacing PR
+koppathachan/vyajena#71): the review server keeps **one reusable admin invite**
+(180 characters). It never expires and is never used up; each join takes over
+the admin seat (last join wins). `deploy/server/deploy.sh --review-invite` saves
+it to the owner-only `~/vyajena-server-backups/review-admin-invite-<UTC>.txt`; the
+owner pastes it into both store forms once, never into the repo. Only a
+`--reset-review` (new pin) means a new invite and an update to the forms.
 
-Play "Sign-in details" (Any other information, 500 max; 247 + the
+Play "Sign-in details" (Any other information, 500 max; 308 + the
 invite):
 
-> No sign-up or password. The invite below makes you admin of a review group. Open the app, paste it, tap Check invite, then Join, then Create the group. Send messages; the menu has Invite a user, Remove a user and Group name. The invite works once.
+> No sign-up or password. The invite below makes you admin of a review group. Open the app, paste it, tap Check invite, Join, then Create the group. The menu has Invite a user, Remove a user and Group name. The invite works any number of times; if the app says you were removed, reinstall and paste it again.
 >
 > <invite>
 

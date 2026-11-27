@@ -4,6 +4,10 @@
 //! re-keyed from it is the admin (the admin is whoever `admin_username` names).
 //! An active admin is the admin user id present with `removed_at IS NULL`; a
 //! removed admin (after `server admin-reset`, admin-recovery) re-fires bootstrap.
+//!
+//! A server with `[review] reusable_admin_invite = true` bootstraps nothing: it
+//! ensures its one reusable admin invite instead (device-identity: Reusable
+//! review admin invite).
 
 use std::time::SystemTime;
 
@@ -32,6 +36,10 @@ pub enum Bootstrap {
     },
     /// Users exist; there is nothing to bootstrap.
     NotNeeded,
+    /// The review flag is on: no bootstrap invite; this is the server's
+    /// reusable admin invite (device-identity: Reusable review admin invite).
+    /// Its code is never logged.
+    Reusable(BootstrapInvite),
 }
 
 /// A newly created bootstrap invite and the payload to hand to the admin.
@@ -68,6 +76,11 @@ pub async fn ensure_bootstrap_invite(
     tls_spki_sha256: SpkiPin,
     now: SystemTime,
 ) -> Result<Bootstrap, StoreError> {
+    if config.review.reusable_admin_invite {
+        return ensure_reusable_admin_invite(store, config, tls_spki_sha256, now)
+            .await
+            .map(Bootstrap::Reusable);
+    }
     let admin = config.admin_username.clone();
     let server_id = config.server_id.clone();
     let relay_address = config.public_address.clone();
@@ -90,16 +103,49 @@ pub async fn ensure_bootstrap_invite(
             }
             let invite = invites::create(&tx, &admin, now, invite_ttl, true)?;
             tx.commit()?;
-            let payload = pb::InvitePayload {
-                relay_address,
-                tls_spki_sha256: tls_spki_sha256.to_vec(),
-                invite_code: invite.code.clone(),
-                user_id: Some(pb::UserId {
-                    username: invite.username.clone(),
-                    server_id,
-                }),
-            };
+            let payload = payload_for(&invite, relay_address, tls_spki_sha256, server_id);
             Ok(Bootstrap::Created(BootstrapInvite { invite, payload }))
         })
         .await
+}
+
+/// device-identity: Reusable review admin invite. Returns the server's one
+/// reusable admin invite and its payload, creating it if there is none. The
+/// same invite comes back on every call until the database is wiped.
+pub async fn ensure_reusable_admin_invite(
+    store: &Store,
+    config: &Config,
+    tls_spki_sha256: SpkiPin,
+    now: SystemTime,
+) -> Result<BootstrapInvite, StoreError> {
+    let admin = config.admin_username.clone();
+    let server_id = config.server_id.clone();
+    let relay_address = config.public_address.clone();
+    store
+        .call(move |conn| {
+            let tx = conn.transaction()?;
+            let invite = invites::ensure_reusable(&tx, &admin, now)?;
+            tx.commit()?;
+            let payload = payload_for(&invite, relay_address, tls_spki_sha256, server_id);
+            Ok(BootstrapInvite { invite, payload })
+        })
+        .await
+}
+
+/// The `InvitePayload` a device pastes for `invite`.
+fn payload_for(
+    invite: &Invite,
+    relay_address: String,
+    tls_spki_sha256: SpkiPin,
+    server_id: String,
+) -> pb::InvitePayload {
+    pb::InvitePayload {
+        relay_address,
+        tls_spki_sha256: tls_spki_sha256.to_vec(),
+        invite_code: invite.code.clone(),
+        user_id: Some(pb::UserId {
+            username: invite.username.clone(),
+            server_id,
+        }),
+    }
 }

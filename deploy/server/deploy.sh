@@ -10,6 +10,8 @@
 #                                     Server with a new pin (asks for the server id)
 #   deploy/server/deploy.sh --reset-review  wipe only the store reviewers' server
 #                                     (no backup; asks for its server id)
+#   deploy/server/deploy.sh --review-invite save the review server's reusable admin
+#                                     invite to an owner-only file (installs nothing)
 #
 # To recover a LOCKED-OUT ADMIN (device key store lost), do NOT use --reset:
 # that wipes the whole server. Instead, on the server as the service user, run
@@ -400,6 +402,22 @@ divert_invite() {
   done
 }
 
+# The store reviewers' server's reusable admin invite (change
+# review-admin-invite), read on the server by the host-only `review-invite`
+# subcommand as the review service user, and saved to an owner-only file. The
+# payload is never printed. The same invite comes back every time until
+# --reset-review.
+save_review_invite() {
+  local payload file
+  payload="$(server sudo -u vyajena-review /usr/local/bin/vyajena-server review-invite \
+    --config /etc/vyajena/review.toml | grep -E '^[A-Za-z0-9_-]{100,}$' | tail -n1)" ||
+    die "could not read the review invite (is [review] reusable_admin_invite = true deployed?)"
+  [ -n "$payload" ] || die "the review server printed no invite"
+  file="$BACKUP_ROOT/review-admin-invite-$(date -u +%Y%m%dT%H%M%SZ).txt"
+  (umask 077; mkdir -p "$BACKUP_ROOT"; printf '%s\n' "$payload" >"$file")
+  say "review server: reusable admin invite saved to $file (owner only; paste it into the store forms)"
+}
+
 # mode_of <path>: permission bits, on macOS or Linux. GNU form first: on
 # Linux `stat -f` means filesystem status and succeeds with the wrong output;
 # on macOS `stat -c` fails and the BSD form answers.
@@ -449,15 +467,16 @@ confirm_reset() {
 }
 
 main() {
-  local build=yes rollback=no reset=no reset_review=no
+  local build=yes rollback=no reset=no reset_review=no review_invite=no
   while [ $# -gt 0 ]; do
     case "$1" in
       --no-build) build=no ;;
       --rollback) rollback=yes ;;
       --reset) reset=yes ;;
       --reset-review) reset_review=yes ;;
+      --review-invite) review_invite=yes ;;
       -h | --help)
-        sed -n '2,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
       *) die "unknown argument $1" ;;
@@ -470,6 +489,13 @@ main() {
   case "$(mkdir -p "$BACKUP_ROOT" && cd "$BACKUP_ROOT" && pwd)/" in
     "$REPO"/*) die "BACKUP_ROOT $BACKUP_ROOT is inside the repository; set it elsewhere" ;;
   esac
+  if [ "$review_invite" = yes ]; then
+    [ "$build" = yes ] && [ "$rollback" = no ] && [ "$reset" = no ] && [ "$reset_review" = no ] ||
+      die "--review-invite runs alone"
+    open_session
+    save_review_invite
+    return
+  fi
   # Fail before touching anything if the push keys are open to others or the
   # relay's settings are missing.
   local push_files
@@ -542,6 +568,7 @@ main() {
     "$SERVER_PORT" "$REVIEW_SERVER_PORT" "$EGRESS_PORT" | divert_invite
   server rm -rf "$staging"
   say "done; check with deploy/server/check.sh"
+  say "review server: deploy/server/deploy.sh --review-invite saves its reusable admin invite"
 }
 
 main "$@"
