@@ -37,6 +37,21 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Share target (change `message-actions-share`): other apps'
+                 share sheets list Vyajena for plain text and images. The shared
+                 item is handed to Dart, which opens a chat picker and composes
+                 it; the share carries no crypto. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
         </activity>
         <!-- Push (app-ui: Push notifications): FCM token rotation, and the
              channel and icon of the "New message" notification Play

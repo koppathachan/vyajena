@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The App Group the extension and the Runner share, to pass the shared
+	     item across (change `message-actions-share`). Must match the Runner's
+	     entitlement and be registered on both targets in the Apple Developer
+	     portal; see README.md. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.purplechaamba.vyajena</string>
+	</array>
+</dict>
+</plist>

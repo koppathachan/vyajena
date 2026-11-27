@@ -50,6 +50,14 @@ String statusText(SendState status) => switch (status) {
 /// What the long-press sheet's reply entry says.
 const replyLabel = 'Reply';
 
+/// What the long-press sheet's Copy entry says (message-actions: Copy a
+/// message).
+const copyLabel = 'Copy';
+
+/// What the long-press sheet's Forward entry says (message-actions: Forward a
+/// message).
+const forwardLabel = 'Forward';
+
 /// What a reply to a picture without a caption quotes.
 const pictureQuote = 'Picture';
 
@@ -102,6 +110,8 @@ class MessageTile extends StatelessWidget {
     this.me,
     this.replyTo,
     this.onReply,
+    this.onCopy,
+    this.onForward,
     this.onQuoteTap,
     this.core,
     this.onResendImage,
@@ -136,6 +146,16 @@ class MessageTile extends StatelessWidget {
 
   /// Starts a reply to this message (swipe right, or long-press → Reply).
   final VoidCallback? onReply;
+
+  /// Copies this message's text to the clipboard (long-press → Copy). The sheet
+  /// shows Copy only when this is set: the owner sets it for a text body or a
+  /// captioned image (message-actions: Copy a message).
+  final VoidCallback? onCopy;
+
+  /// Forwards this message's text to another chat (long-press → Forward). The
+  /// sheet shows Forward only when this is set: the owner sets it for a text
+  /// body (message-actions: Forward a message).
+  final VoidCallback? onForward;
 
   /// The reply's quote was tapped.
   final VoidCallback? onQuoteTap;
@@ -209,6 +229,20 @@ class MessageTile extends StatelessWidget {
               title: const Text(replyLabel),
               onTap: () => Navigator.of(context).pop('reply'),
             ),
+            if (onCopy != null)
+              ListTile(
+                key: const Key('copy'),
+                leading: const Icon(Icons.copy),
+                title: const Text(copyLabel),
+                onTap: () => Navigator.of(context).pop('copy'),
+              ),
+            if (onForward != null)
+              ListTile(
+                key: const Key('forward'),
+                leading: const Icon(Icons.forward),
+                title: const Text(forwardLabel),
+                onTap: () => Navigator.of(context).pop('forward'),
+              ),
             if (resend != null)
               ListTile(
                 key: const Key('resend-picture'),
@@ -258,6 +292,10 @@ class MessageTile extends StatelessWidget {
     switch (choice) {
       case 'reply':
         onReply?.call();
+      case 'copy':
+        onCopy?.call();
+      case 'forward':
+        onForward?.call();
       case 'resend':
         resend?.call();
       case 'resend-voice':
@@ -685,6 +723,8 @@ class MessageTile extends StatelessWidget {
     // Resend, Delete, Report or Block); swipe-to-reply needs onReply.
     final hasSheet =
         startReply != null ||
+        onCopy != null ||
+        onForward != null ||
         onDelete != null ||
         onReport != null ||
         onBlock != null ||

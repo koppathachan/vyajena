@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import com.google.firebase.FirebaseApp
@@ -22,28 +23,45 @@ class MainActivity : FlutterActivity() {
         Keyring.initializeNdkContext(applicationContext)
         super.onCreate(savedInstanceState)
         createMessagesChannel()
+        // A share that launched the app (cold start): captured now, pulled by
+        // Dart's `takeInitialShare` once the core is ready.
+        captureShare(intent)
     }
 
     private var pendingPermission: MethodChannel.Result? = null
 
+    // The share another app sent, until Dart takes it (change
+    // `message-actions-share`). Shape: {type: "text"|"image", text|path: ...}.
+    private var pendingShare: Map<String, Any?>? = null
+
+    // The `vyajena/platform` channel, kept to push a share that arrives while
+    // the app is already running (onNewIntent).
+    private var platformChannel: MethodChannel? = null
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vyajena/platform")
-            .setMethodCallHandler { call, result ->
-                when (call.method) {
-                    "dataDir" -> result.success(coreDataDir().path)
-                    "share" -> {
-                        val text = call.argument<String>("text")
-                        if (text == null) {
-                            result.error("share", "no text", null)
-                        } else {
-                            share(text)
-                            result.success(null)
-                        }
+        val platform =
+            MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "vyajena/platform")
+        platformChannel = platform
+        platform.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "dataDir" -> result.success(coreDataDir().path)
+                "share" -> {
+                    val text = call.argument<String>("text")
+                    if (text == null) {
+                        result.error("share", "no text", null)
+                    } else {
+                        share(text)
+                        result.success(null)
                     }
-                    else -> result.notImplemented()
                 }
+                "takeInitialShare" -> {
+                    result.success(pendingShare)
+                    pendingShare = null
+                }
+                else -> result.notImplemented()
             }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, Sticker.CHANNEL)
             .setMethodCallHandler { call, result -> Sticker.handle(call, result) }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, VideoNormalize.CHANNEL)
@@ -68,8 +86,68 @@ class MainActivity : FlutterActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         PushChannel.channel = null
+        platformChannel = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
+
+    // A share arriving while the app runs (launchMode singleTop keeps one
+    // activity): capture it and push it to Dart, which opens the picker.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        captureShare(intent)
+        val share = pendingShare
+        if (share != null) {
+            pendingShare = null
+            platformChannel?.invokeMethod("sharedContent", share)
+        }
+    }
+
+    // --- Share target (change `message-actions-share`) ---
+
+    /** Reads a shared text or image from a SEND / SEND_MULTIPLE [intent] into
+     *  [pendingShare]; leaves it unchanged for any other intent. Only the raw
+     *  content is kept — no key or ciphertext is involved. */
+    private fun captureShare(intent: Intent?) {
+        intent ?: return
+        val action = intent.action
+        if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) return
+        val type = intent.type ?: return
+        when {
+            type == "text/plain" -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
+                if (text.isNotEmpty()) {
+                    pendingShare = mapOf("type" to "text", "text" to text)
+                }
+            }
+            type.startsWith("image/") -> {
+                val uri = sharedImageUri(intent) ?: return
+                val bytes = readBytes(uri) ?: return
+                pendingShare = mapOf("type" to "image", "bytes" to bytes)
+            }
+        }
+    }
+
+    /** The first shared image URI of [intent] (SEND, or the first of
+     *  SEND_MULTIPLE — this version forwards one). */
+    @Suppress("DEPRECATION")
+    private fun sharedImageUri(intent: Intent): Uri? =
+        if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)?.firstOrNull()
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+
+    /** The raw bytes of the content at [uri], read now because a content URI
+     *  from another app is only readable while this intent is current; null if
+     *  it cannot be read. Dart hands these straight to the core — the app opens
+     *  no file (app-ui: UI goes through the core). */
+    private fun readBytes(uri: Uri): ByteArray? =
+        try {
+            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        } catch (_: Exception) {
+            null
+        }
 
     // --- Push (app-ui: Push notifications; push design D8, D9) ---
 

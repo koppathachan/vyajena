@@ -19,6 +19,7 @@ import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
 import 'routes.dart';
+import 'share_intake.dart';
 import 'shell_app_bar.dart';
 import 'arcade/tokens.dart';
 import 'theme.dart';
@@ -84,6 +85,17 @@ class _VyajenaAppState extends State<VyajenaApp> {
   );
   PushService? _push;
 
+  /// The app's navigator and messenger, so an inbound share (which can arrive
+  /// while no chat is on screen) can open the picker and show a snackbar from
+  /// the app root (change `message-actions-share`).
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  late final ShareIntake _shareIntake = ShareIntake(
+    core: widget.core,
+    navigatorKey: _navigatorKey,
+    messengerKey: _messengerKey,
+  );
+
   @override
   void initState() {
     super.initState();
@@ -92,10 +104,12 @@ class _VyajenaAppState extends State<VyajenaApp> {
     if (api != null) {
       _push = PushService(core: widget.core, api: api)..start();
     }
+    _shareIntake.start();
   }
 
   @override
   void dispose() {
+    _shareIntake.stop();
     _push?.dispose();
     _chat.dispose();
     _theme.dispose();
@@ -124,6 +138,8 @@ class _VyajenaAppState extends State<VyajenaApp> {
                 listenable: Listenable.merge([_theme, _theme.theme]),
                 builder: (context, _) => MaterialApp(
                   title: 'Vyajena',
+                  navigatorKey: _navigatorKey,
+                  scaffoldMessengerKey: _messengerKey,
                   // Never the debug banner, also in profile builds and screenshots
                   // (app-release design D7).
                   debugShowCheckedModeBanner: false,
