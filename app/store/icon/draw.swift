@@ -8,6 +8,7 @@
 //   master.png      1024x1024, opaque: the iOS icon and the Play store icon
 //   foreground.png  432x432, transparent: Android adaptive icon foreground
 //   monochrome.png  432x432, transparent: Android 13 themed icon
+//   notification.png 96x96, transparent: the white Android status-bar icon
 //   feature.png     1024x500, opaque: the Play store feature graphic
 import AppKit
 import CoreText
@@ -19,6 +20,7 @@ let seed = CGColor(red: 0xE6 / 255, green: 0xD8 / 255, blue: 0x4D / 255, alpha: 
 let shadow = CGColor(red: 1, green: 0, blue: 0, alpha: 1)  // the heading's red shadow
 let background = CGColor(red: 0x0F / 255, green: 0x0F / 255, blue: 0x23 / 255, alpha: 1)
 let black = CGColor(red: 0, green: 0, blue: 0, alpha: 1)
+let white = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
 let letter = "വ്യ"
 let fontName = "MalayalamSangamMN-Bold"
 let tilt: CGFloat = -3  // degrees, the hand-drawn Arcade lean
@@ -96,6 +98,9 @@ try draw(
 try draw(size: 432, fill: 0.46, ink: seed, bg: nil, shadow: shadow, rotate: tilt,
          to: "\(out)/foreground.png")
 try draw(size: 432, fill: 0.50, ink: black, bg: nil, rotate: tilt, to: "\(out)/monochrome.png")
+// Android status-bar icon: a flat white silhouette on transparent (Android masks by
+// alpha). Upright and a touch bigger so the wordmark stays legible down to 24 px.
+try draw(size: 96, fill: 0.80, ink: white, bg: nil, to: "\(out)/notification.png")
 try draw(
   size: 1024, height: 500, fill: 0.52, ink: seed, bg: background, shadow: shadow, rotate: tilt,
   to: "\(out)/feature.png")

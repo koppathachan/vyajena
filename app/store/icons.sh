@@ -48,6 +48,16 @@ cat >"$res/values/ic_launcher_background.xml" <<'XML'
 </resources>
 XML
 
+# Android notification small icon: a white glyph silhouette per density, replacing the
+# old plain-speech-bubble vector (drawable/ic_notification.xml). The manifest points
+# com.google.firebase.messaging.default_notification_icon at @drawable/ic_notification.
+rm -f "$res/drawable/ic_notification.xml"
+for pair in mdpi:24 hdpi:36 xhdpi:48 xxhdpi:72 xxxhdpi:96; do
+  density="${pair%%:*}"
+  px="${pair##*:}"
+  scale "$icon/notification.png" "$px" "$res/drawable-$density/ic_notification.png"
+done
+
 # iOS: iPhone sizes and the App Store icon, opaque (design D14: iPhone only).
 for spec in 20:2 20:3 29:1 29:2 29:3 40:2 40:3 60:2 60:3 1024:1; do
   points="${spec%%:*}"
