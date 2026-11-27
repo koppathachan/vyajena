@@ -19,13 +19,13 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 ## 1. Server — content-free, metadata-minimal payload (decision d, invariant)
 
-- [ ] 1.1 In `server/src/push/`, assert the payload invariant in one place for both
+- [x] 1.1 In `server/src/push/`, assert the payload invariant in one place for both
   providers: no content, sender, `group_id` or count; iOS alert + `mutable-content`
   + generic "New message"; Android high-priority data message. Test
   `message-delivery/wake-push-payload-is-content-free-and-metadata-minimal` against
   the fake FCM/APNs servers, asserting the serialized payloads carry only the wake
   and the generic string.
-- [ ] 1.2 Own-access admin-event wake: the server wakes the affected device
+- [x] 1.2 Own-access admin-event wake: the server wakes the affected device
   content-free on removal / close / add-to-new-group, derived from authoritative
   membership. Test
   `message-delivery/content-free-wake-for-an-own-access-admin-event` (removal wakes;

@@ -476,9 +476,13 @@ impl Devices for DevicesService {
             let _ = self.state.revocations.send(*device_id);
         }
         crate::messaging::notify(&self.state, notify);
+        // message-delivery: Content-free wake for an own-access admin-event: the
+        // closed DMs' other users.
+        let owed: Vec<_> = closed.iter().map(|(device, _)| *device).collect();
         for (device_id, notice) in closed {
             self.state.hub.send_frame(&device_id, notice);
         }
+        crate::messaging::notify_own_access(&self.state, owed);
         // account-deletion: purge the user's blobs (reuse Blobs.DeleteBlob
         // semantics; a blob already gone is a safe no-op).
         let uploader_ids = revoked.iter().map(|device_id| device_id.to_vec()).collect();

@@ -4,7 +4,9 @@
 //! The messaging service asks for a ping when it adds an entry for a device
 //! that has no open `Connect` stream and has a push token, at most once per
 //! device per [`WAKE_PING_MIN_INTERVAL`]. A ping carries the token and the one
-//! fixed text [`WAKE_TEXT`]: no content, sender, group id or count.
+//! fixed text [`WAKE_TEXT`]: no content, sender, group id or count. Both
+//! providers build it in [`payload`] (smarter-notifications: the wake payload
+//! is content-free and metadata-minimal).
 //!
 //! - [`FcmProvider`]: FCM HTTP v1 with a Google service account (push design D2).
 //! - [`ApnsProvider`]: APNs over HTTP/2 with a `.p8` key (design D3).
@@ -17,6 +19,7 @@ mod config;
 mod fcm;
 mod http;
 mod jwt;
+pub mod payload;
 pub mod proxy;
 
 use std::collections::HashMap;

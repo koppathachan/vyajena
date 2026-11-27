@@ -255,6 +255,7 @@ impl Session {
                 accepted_at,
                 notify,
                 notices,
+                own_access,
             } => {
                 tracing::debug!(
                     server_seq,
@@ -262,6 +263,7 @@ impl Session {
                     "accepted an envelope"
                 );
                 super::notify_in(&self.state, notify, Some(group_id));
+                super::notify_own_access(&self.state, own_access);
                 for (device, notice) in notices {
                     self.state.hub.send_frame(&device, notice);
                 }

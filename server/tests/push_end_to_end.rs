@@ -139,7 +139,7 @@ async fn bobs_closed_iphone_gets_only_new_message_and_logs_name_nothing_else() {
     assert_eq!(alerts[0].path, format!("/3/device/{iphone_token}"));
     assert_eq!(
         alerts[0].json(),
-        serde_json::json!({ "aps": { "alert": { "body": "New message" }, "sound": "default" } })
+        serde_json::json!({ "aps": { "alert": { "body": "New message" }, "sound": "default", "mutable-content": 1 } })
     );
     let admin_id = hex(&w.admin.device_id);
     let group_hex = hex(GROUP_ID);

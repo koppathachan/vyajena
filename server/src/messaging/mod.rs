@@ -90,6 +90,41 @@ pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<
     if offline.is_empty() {
         return;
     }
+    ping_offline(state, offline, Why::Backlog(group_id));
+}
+
+/// An admin-event changed `devices`' own access (message-delivery: Content-free
+/// wake for an own-access admin-event): their user was removed from a
+/// conversation, a conversation they are in was closed, or they were added to a
+/// new named group. The offline ones among them get one content-free wake push
+/// although the triggering entry is control traffic, so it needs no
+/// `APPLICATION` backlog (it is an enumerated exception to `push-kind-aware`).
+/// The payload says nothing of the event. A conversation's mute is ignored, as
+/// the event is about the user's access, not its chat; whole-app mute still
+/// silences it. Connected devices hear of it on their stream.
+pub(crate) fn notify_own_access(state: &State, devices: Vec<DeviceId>) {
+    let offline: Vec<DeviceId> = devices
+        .into_iter()
+        .filter(|device| !state.hub.is_connected(device))
+        .collect();
+    if offline.is_empty() {
+        return;
+    }
+    ping_offline(state, offline, Why::OwnAccess);
+}
+
+/// Why an offline device may be pinged.
+enum Why {
+    /// New entries for a conversation (or a general nudge, `None`): needs an
+    /// `APPLICATION` backlog and honors that conversation's mute.
+    Backlog(Option<Vec<u8>>),
+    /// An own-access admin-event: no backlog needed, whole-app mute only.
+    OwnAccess,
+}
+
+/// Sends the content-free wake push to each of `offline` that qualifies under
+/// `why` and has a push token, at most once per device per minute.
+fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why) {
     let state = state.clone();
     tokio::spawn(async move {
         let wanted = offline.clone();
@@ -107,11 +142,18 @@ pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<
                     // offline device. The open streams were already woken above;
                     // a device whose only backlog is control envelopes
                     // (commit/welcome/proposal) has no new message to show, so it
-                    // gets no wake push and syncs on its next reconnect.
-                    if !log::has_application_backlog(conn, &device_id)? {
-                        continue;
-                    }
-                    if crate::prefs::push_muted(conn, &device.username, group_id.as_deref())? {
+                    // gets no wake push and syncs on its next reconnect. An
+                    // own-access admin-event is the enumerated exception.
+                    let muted_group = match &why {
+                        Why::Backlog(group_id) => {
+                            if !log::has_application_backlog(conn, &device_id)? {
+                                continue;
+                            }
+                            group_id.as_deref()
+                        }
+                        Why::OwnAccess => None,
+                    };
+                    if crate::prefs::push_muted(conn, &device.username, muted_group)? {
                         continue;
                     }
                     if let Some(token) = records::push_token(conn, &device_id)? {

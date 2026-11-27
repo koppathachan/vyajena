@@ -1,6 +1,6 @@
 //! FCM HTTP v1 (push design D2): a service account signs a JWT, Google's OAuth
 //! endpoint swaps it for an access token, and one `messages:send` carries a
-//! notification with the fixed text only.
+//! high-priority data message that only wakes the app.
 
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use tokio::time::Instant;
 
 use super::http::{Gate, backoff, client, retry_after, retryable};
 use super::jwt::{now_secs, rs256};
-use super::{COLLAPSE_KEY, FcmServiceAccount, Options, PushConfigError, WAKE_TEXT, WakeOutcome};
+use super::{FcmServiceAccount, Options, PushConfigError, WakeOutcome, payload};
 
 const SCOPE: &str = "https://www.googleapis.com/auth/firebase.messaging";
 /// An access token is renewed this long before Google says it expires.
@@ -58,20 +58,10 @@ impl FcmProvider {
         if push_token_problem(PushTokenKind::Fcm, token).is_some() {
             return WakeOutcome::TokenInvalid;
         }
-        // Nothing but the token and the fixed text (message-delivery:
-        // Content-free wake pings): no data, title, sender or count.
-        let body = json!({
-            "message": {
-                "token": token,
-                "notification": { "body": WAKE_TEXT },
-                "android": {
-                    "priority": "HIGH",
-                    "ttl": "86400s",
-                    "collapse_key": COLLAPSE_KEY,
-                    "notification": { "tag": COLLAPSE_KEY },
-                },
-            }
-        });
+        // A high-priority data message with nothing but a wake flag, built in
+        // one place (message-delivery: Wake push payload is content-free and
+        // metadata-minimal): no notification block, sender, group id or count.
+        let body = payload::fcm(token);
         let mut retries = 0;
         let mut reauthed = false;
         loop {

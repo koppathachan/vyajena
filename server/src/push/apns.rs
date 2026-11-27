@@ -1,5 +1,6 @@
 //! APNs over HTTP/2 with a token-based `.p8` key (push design D3): the server signs
-//! its own ES256 provider JWT and sends a visible alert with the fixed text.
+//! its own ES256 provider JWT and sends a visible alert with the fixed text
+//! and `mutable-content`.
 //! Production first; only `BadDeviceToken` there tries the sandbox (Xcode
 //! builds), and the token is cleared only if both refuse it.
 
@@ -13,7 +14,7 @@ use tokio::time::Instant;
 
 use super::http::{Gate, backoff, client, retry_after, retryable};
 use super::jwt::{es256, now_secs};
-use super::{ApnsKey, COLLAPSE_KEY, Options, PushConfigError, WAKE_TEXT, WakeOutcome};
+use super::{ApnsKey, COLLAPSE_KEY, Options, PushConfigError, WakeOutcome, payload};
 
 /// A provider JWT is reused this long (Apple: refresh at most every 20
 /// minutes, valid for 60).
@@ -111,8 +112,10 @@ impl ApnsProvider {
 
     async fn send_to(&self, base: &str, token: &str) -> Answer {
         let url = format!("{}/3/device/{token}", base.trim_end_matches('/'));
-        // A visible alert with the fixed text only (owner, 2026-11-16).
-        let body = json!({ "aps": { "alert": { "body": WAKE_TEXT }, "sound": "default" } });
+        // A visible alert with the fixed text and `mutable-content`, built in
+        // one place (message-delivery: Wake push payload is content-free and
+        // metadata-minimal).
+        let body = payload::apns();
         let mut retries = 0;
         let mut reauthed = false;
         loop {
