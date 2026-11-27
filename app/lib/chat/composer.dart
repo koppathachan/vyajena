@@ -107,6 +107,8 @@ class Composer extends StatefulWidget {
     this.reply,
     this.onCancelReply,
     this.pickImage,
+    this.captureImage,
+    this.pickImages,
     this.sendImage,
     this.sendAudio,
     this.segmenter,
@@ -120,9 +122,20 @@ class Composer extends StatefulWidget {
   /// Sends the text with its mentions (stores it in the core).
   final Future<void> Function(String text, List<MentionSpan> mentions) send;
 
-  /// Lets the user choose a picture; its file bytes, or null for none. No
-  /// attach button when unset.
+  /// Lets the user choose a picture from the gallery; its file bytes, or null
+  /// for none. No attach button when unset.
   final Future<Uint8List?> Function()? pickImage;
+
+  /// Captures a photo with the in-app camera; its file bytes, or null for none.
+  /// When unset (or equal to [pickImage]'s source), the Photo attachment goes
+  /// straight to the gallery with no capture/pick chooser.
+  final Future<Uint8List?> Function()? captureImage;
+
+  /// Picks one or more pictures from the gallery; their bytes in order. One
+  /// picked picture goes to the preview-and-caption flow; several are sent at
+  /// once, each as its own message (app-ui: Send an image — multiple from the
+  /// gallery). When unset, the gallery picks a single picture via [pickImage].
+  final Future<List<Uint8List>> Function()? pickImages;
 
   /// Sends the picked picture with its caption and the caption's mentions.
   final Future<void> Function(
@@ -568,9 +581,98 @@ class _ComposerState extends State<Composer> {
         ),
       ),
     );
-    if (choice == 'photo') await _attach();
+    if (choice == 'photo') await _attachPhoto();
     if (choice == 'sticker') await _makeSticker();
     if (choice == 'video') await _sendVideo();
+  }
+
+  /// The Photo attachment: when the in-app camera is available, offers the same
+  /// Take photo / Choose from gallery chooser the video flow uses (app-ui: Send
+  /// an image — capture or pick), then attaches from the chosen source. With no
+  /// camera it goes straight to the gallery, as before.
+  Future<void> _attachPhoto() async {
+    if (widget.captureImage == null) {
+      await _attachGallery();
+      return;
+    }
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('photo-source-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('photo-camera'),
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take photo'),
+              onTap: () => Navigator.of(sheet).pop('camera'),
+            ),
+            ListTile(
+              key: const Key('photo-gallery'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(sheet).pop('gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    if (source == 'camera') {
+      await _attach(widget.captureImage);
+    } else {
+      await _attachGallery();
+    }
+  }
+
+  /// Picks from the gallery: one picture goes to the preview-and-caption flow;
+  /// several are sent straight away, each as its own message. Falls back to a
+  /// single [Composer.pickImage] when no multi-picker is wired.
+  Future<void> _attachGallery() async {
+    final pickMany = widget.pickImages;
+    if (pickMany == null) {
+      await _attach(widget.pickImage);
+      return;
+    }
+    if (_sending || _attaching) return;
+    setState(() {
+      _attaching = true;
+      _error = null;
+    });
+    try {
+      final picked = await pickMany();
+      if (!mounted || picked.isEmpty) return;
+      if (picked.length == 1) {
+        setState(() => _picture = picked.first);
+      } else {
+        await _sendPictures(picked);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+  }
+
+  /// Sends several pictures, each as its own message with no caption (a single
+  /// pick keeps the caption flow). Stops and reports on the first failure.
+  Future<void> _sendPictures(List<Uint8List> pictures) async {
+    final send = widget.sendImage;
+    if (send == null || _sending) return;
+    setState(() {
+      _error = null;
+      _sending = true;
+    });
+    try {
+      for (final picture in pictures) {
+        await send(picture, null, const []);
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 
   /// Picks a photo and cuts its subject out on the device; on success the
@@ -672,8 +774,8 @@ class _ComposerState extends State<Composer> {
     }
   }
 
-  Future<void> _attach() async {
-    final pick = widget.pickImage;
+  Future<void> _attach(Future<Uint8List?> Function()? source) async {
+    final pick = source;
     if (pick == null || _sending || _attaching) return;
     // Show the placeholder before awaiting the pick, so the preview area fills
     // the instant the user chooses rather than after the bytes are ready.

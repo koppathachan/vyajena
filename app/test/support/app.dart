@@ -60,12 +60,40 @@ class FakePicker extends PicturePicker {
   /// How many times the gallery was opened.
   int opened = 0;
 
+  /// How many times the in-app camera was opened.
+  int captured = 0;
+
+  /// What a multi-pick returns; when null, [pickMultiple] falls back to [pick].
+  List<Uint8List>? many;
+
+  /// How many times the gallery multi-pick was opened.
+  int multiOpened = 0;
+
   @override
   Future<Uint8List?> pick() async {
     opened++;
     final picked = next;
     next = null;
     return picked;
+  }
+
+  @override
+  Future<Uint8List?> capture() async {
+    captured++;
+    final taken = next;
+    next = null;
+    return taken;
+  }
+
+  @override
+  Future<List<Uint8List>> pickMultiple() async {
+    multiOpened++;
+    final picked = many;
+    if (picked != null) {
+      many = null;
+      return picked;
+    }
+    return super.pickMultiple();
   }
 }
 

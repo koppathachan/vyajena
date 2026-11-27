@@ -17,6 +17,10 @@ class FakeVideoSource implements VideoSource {
   /// How many times each entry point was called.
   int recordCalls = 0;
   int pickCalls = 0;
+  int multiCalls = 0;
+
+  /// What a multi-pick returns; when null, [pickMultiple] falls back to [pick].
+  List<NormalizedVideo>? many;
 
   @override
   Future<NormalizedVideo?> record() async {
@@ -28,6 +32,20 @@ class FakeVideoSource implements VideoSource {
   Future<NormalizedVideo?> pick() async {
     pickCalls++;
     return _clip;
+  }
+
+  @override
+  Future<List<NormalizedVideo>> pickMultiple() async {
+    multiCalls++;
+    final picked = many;
+    if (picked != null) {
+      many = null;
+      return picked;
+    }
+    // FakeVideoSource implements (not extends) VideoSource, so the interface's
+    // default is replicated here: a single pick as a one-item list.
+    final one = await pick();
+    return one == null ? const [] : [one];
   }
 
   static NormalizedVideo _sample() => NormalizedVideo(

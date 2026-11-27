@@ -1,7 +1,10 @@
 // app-ui: Send a video; Video bubble and player (change `video-messages`).
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/video_bubble.dart';
+import 'package:vyajena/chat/video_plugins.dart';
 import 'package:vyajena/core/core_service.dart';
 
 import '../support/app.dart';
@@ -225,4 +228,31 @@ void main() {
     await settle(tester);
     expect(core.calls, contains('resendVideo'));
   });
+
+  // spec: app-ui/send-a-video
+  testWidgets('picking several clips from the gallery sends each as its own '
+      'message', (tester) async {
+    final core = groupAsBob();
+    final video = FakeVideoSource()..many = [_clip(1000), _clip(2000)];
+    await openAppWithVideo(tester, core, video);
+
+    await attachVideo(tester, 'gallery');
+    await settle(tester);
+
+    expect(video.multiCalls, 1);
+    // Two clips, each normalized and sent as its own video message.
+    expect(core.sentVideos.length, 2);
+    expect(bubble, findsNWidgets(2));
+  });
 }
+
+/// A normalized clip of [durationMs] for the multi-pick test.
+NormalizedVideo _clip(int durationMs) => NormalizedVideo(
+  mp4: Uint8List.fromList([0, 0, 0, 0x18, ...'ftyp'.codeUnits, 1, 2, 3, 4]),
+  durationMs: durationMs,
+  width: 854,
+  height: 480,
+  firstFrameRgba: Uint8List.fromList(List<int>.filled(16 * 16 * 4, 100)),
+  frameWidth: 16,
+  frameHeight: 16,
+);

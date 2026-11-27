@@ -422,19 +422,23 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (choice == null) return;
     try {
-      final clip = choice == 'record'
-          ? await source.record()
-          : await source.pick();
-      if (clip == null) return;
-      await _model.sendVideo(
-        clip.mp4,
-        durationMs: clip.durationMs,
-        width: clip.width,
-        height: clip.height,
-        firstFrameRgba: clip.firstFrameRgba,
-        frameWidth: clip.frameWidth,
-        frameHeight: clip.frameHeight,
-      );
+      // Recording makes one clip; the gallery can pick several, each sent as its
+      // own message (app-ui: Send a video — multiple from the gallery).
+      final clips = choice == 'record'
+          ? [await source.record()].whereType<NormalizedVideo>().toList()
+          : await source.pickMultiple();
+      if (clips.isEmpty) return;
+      for (final clip in clips) {
+        await _model.sendVideo(
+          clip.mp4,
+          durationMs: clip.durationMs,
+          width: clip.width,
+          height: clip.height,
+          firstFrameRgba: clip.firstFrameRgba,
+          frameWidth: clip.frameWidth,
+          frameHeight: clip.frameHeight,
+        );
+      }
       // The reply bar goes once the video is sent, as for a text or voice send.
       if (mounted) setState(() => _reply = null);
     } catch (error) {
@@ -844,6 +848,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 core: widget.core,
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
+                captureImage: PicturePickerScope.of(context).capture,
+                pickImages: PicturePickerScope.of(context).pickMultiple,
                 sendImage: _sendImage,
                 segmenter: SegmenterScope.of(context),
                 sendSticker: _sendSticker,
