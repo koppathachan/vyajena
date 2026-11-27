@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../app/errors.dart';
 import '../app/names.dart';
 import '../core/core_service.dart';
-import '../members/members_screen.dart';
+import '../members/member.dart';
 
 /// Create a named group by picking its members; pops with the new chat id.
 class CreateNamedGroupScreen extends StatefulWidget {

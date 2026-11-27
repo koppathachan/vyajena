@@ -766,6 +766,8 @@ class ChatModel extends ChangeNotifier {
     Uint8List? firstFrameRgba,
     int frameWidth = 0,
     int frameHeight = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
   }) async {
     _lastId = await core.sendVideo(
       mp4,
@@ -776,6 +778,8 @@ class ChatModel extends ChangeNotifier {
       firstFrameRgba: firstFrameRgba,
       frameWidth: frameWidth,
       frameHeight: frameHeight,
+      caption: caption,
+      mentions: mentions,
     );
     await _reload();
   }

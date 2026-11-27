@@ -73,6 +73,15 @@ abstract class VideoSource {
   /// Picks a clip from the gallery, trims it to ≤ 30 s and normalizes it, or
   /// null if the user backed out.
   Future<NormalizedVideo?> pick();
+
+  /// Picks one or more clips from the gallery (app-ui: Send a video — multiple
+  /// from the gallery), normalizing each; each goes as its own message. Returns
+  /// the normalized clips in order, or empty if the user backed out. Defaults to
+  /// a single [pick] so the test fakes need not override it.
+  Future<List<NormalizedVideo>> pickMultiple() async {
+    final one = await pick();
+    return one == null ? const [] : [one];
+  }
 }
 
 /// The phone's camera/gallery (`image_picker`) and the native normalize plugin.
@@ -89,6 +98,30 @@ class DeviceVideoSource implements VideoSource {
 
   @override
   Future<NormalizedVideo?> pick() => _fromPicker(ImageSource.gallery);
+
+  @override
+  Future<List<NormalizedVideo>> pickMultiple() async {
+    // `image_picker` has no multi-video picker, so this uses the multi-media
+    // picker and keeps only the video files (any image picked here is dropped;
+    // images go through the Photo attachment). Each kept clip is normalized.
+    final picked = await ImagePicker().pickMultipleMedia();
+    final clips = <NormalizedVideo>[];
+    for (final file in picked) {
+      if (!_isVideoPath(file.path)) continue;
+      final clip = await normalize(file.path);
+      if (clip != null) clips.add(clip);
+    }
+    return clips;
+  }
+
+  /// Whether [path] names a video file the normalize plugin can take, by its
+  /// extension (the multi-media picker returns images and videos together).
+  static bool _isVideoPath(String path) {
+    const exts = {'mp4', 'mov', 'm4v', '3gp', 'webm', 'mkv', 'avi'};
+    final dot = path.lastIndexOf('.');
+    if (dot < 0) return false;
+    return exts.contains(path.substring(dot + 1).toLowerCase());
+  }
 
   Future<NormalizedVideo?> _fromPicker(ImageSource source) async {
     final picked = await ImagePicker().pickVideo(

@@ -13,10 +13,15 @@
 //
 // app-ui: Play a voice message. A voice message is a bubble with a play button
 // and the waveform (audio_bubble.dart).
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/sketch.dart';
+import '../app/arcade/tokens.dart';
 
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
@@ -44,6 +49,14 @@ String statusText(SendState status) => switch (status) {
 
 /// What the long-press sheet's reply entry says.
 const replyLabel = 'Reply';
+
+/// What the long-press sheet's Copy entry says (message-actions: Copy a
+/// message).
+const copyLabel = 'Copy';
+
+/// What the long-press sheet's Forward entry says (message-actions: Forward a
+/// message).
+const forwardLabel = 'Forward';
 
 /// What a reply to a picture without a caption quotes.
 const pictureQuote = 'Picture';
@@ -97,6 +110,8 @@ class MessageTile extends StatelessWidget {
     this.me,
     this.replyTo,
     this.onReply,
+    this.onCopy,
+    this.onForward,
     this.onQuoteTap,
     this.core,
     this.onResendImage,
@@ -131,6 +146,16 @@ class MessageTile extends StatelessWidget {
 
   /// Starts a reply to this message (swipe right, or long-press → Reply).
   final VoidCallback? onReply;
+
+  /// Copies this message's text to the clipboard (long-press → Copy). The sheet
+  /// shows Copy only when this is set: the owner sets it for a text body or a
+  /// captioned image (message-actions: Copy a message).
+  final VoidCallback? onCopy;
+
+  /// Forwards this message's text to another chat (long-press → Forward). The
+  /// sheet shows Forward only when this is set: the owner sets it for a text
+  /// body (message-actions: Forward a message).
+  final VoidCallback? onForward;
 
   /// The reply's quote was tapped.
   final VoidCallback? onQuoteTap;
@@ -204,6 +229,20 @@ class MessageTile extends StatelessWidget {
               title: const Text(replyLabel),
               onTap: () => Navigator.of(context).pop('reply'),
             ),
+            if (onCopy != null)
+              ListTile(
+                key: const Key('copy'),
+                leading: const Icon(Icons.copy),
+                title: const Text(copyLabel),
+                onTap: () => Navigator.of(context).pop('copy'),
+              ),
+            if (onForward != null)
+              ListTile(
+                key: const Key('forward'),
+                leading: const Icon(Icons.forward),
+                title: const Text(forwardLabel),
+                onTap: () => Navigator.of(context).pop('forward'),
+              ),
             if (resend != null)
               ListTile(
                 key: const Key('resend-picture'),
@@ -253,6 +292,10 @@ class MessageTile extends StatelessWidget {
     switch (choice) {
       case 'reply':
         onReply?.call();
+      case 'copy':
+        onCopy?.call();
+      case 'forward':
+        onForward?.call();
       case 'resend':
         resend?.call();
       case 'resend-voice':
@@ -366,11 +409,22 @@ class MessageTile extends StatelessWidget {
   Widget _video(BuildContext context, VideoView video) {
     final core = this.core;
     if (core == null) return const Text('Video');
-    return VideoBubble(
-      key: ValueKey('video-${message.id}'),
-      core: core,
-      messageId: message.id,
-      video: video,
+    final caption = video.caption;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        VideoBubble(
+          key: ValueKey('video-${message.id}'),
+          core: core,
+          messageId: message.id,
+          video: video,
+        ),
+        if (caption != null && caption.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          _withMentions(context, caption),
+        ],
+      ],
     );
   }
 
@@ -383,8 +437,13 @@ class MessageTile extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: scheme.primary, width: 3)),
+        decoration: ShapeDecoration(
+          shape: SketchEdgeBorder(
+            color: scheme.primary,
+            width: 3,
+            left: true,
+            rough: context.arcade.rough,
+          ),
           color: scheme.surfaceContainerHighest,
         ),
         child: Column(
@@ -449,7 +508,7 @@ class MessageTile extends StatelessWidget {
           children: [
             if (blur != null)
               ClipRRect(
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: BorderRadius.zero,
                 child: Image.memory(
                   blur,
                   width: 28,
@@ -482,6 +541,33 @@ class MessageTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Inside a bubble the scheme's text colours follow the bubble's fill, so
+    // quotes, labels and media controls read on yellow, purple or card.
+    final theme = Theme.of(context);
+    final arcade = context.arcade;
+    final onBubble = message.ownUser
+        ? arcade.onBubbleMine
+        : arcade.onBubbleTheirs;
+    final scheme = theme.colorScheme;
+    return Theme(
+      data: theme.copyWith(
+        // The text styles carry their own colour, so recolour them too.
+        textTheme: theme.textTheme.apply(
+          bodyColor: onBubble,
+          displayColor: onBubble,
+        ),
+        colorScheme: scheme.copyWith(
+          onSurface: onBubble,
+          onSurfaceVariant: onBubble.withValues(alpha: 0.8),
+          primary: message.ownUser ? onBubble : scheme.primary,
+          surfaceContainerHighest: onBubble.withValues(alpha: 0.12),
+        ),
+      ),
+      child: Builder(builder: _bubble),
+    );
+  }
+
+  Widget _bubble(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final own = message.ownUser;
@@ -548,24 +634,46 @@ class MessageTile extends StatelessWidget {
               body,
             ],
           );
+    final arcade = context.arcade;
+    // Hand-drawn look: every bubble sits a few pixels off the column, a hair
+    // turned, with its own wobble, so the list never looks stacked. All from
+    // the message id, so a bubble keeps its place on every rebuild.
+    // A theme that is not lively (app-ui: Theme choice) keeps the column.
+    final jitter = SketchRandom(sketchSeed('bubble-${message.id}'));
+    final lively = arcade.lively;
+    final side = lively ? 8 + jitter.next() * 10 : 12.0;
+    final top = lively ? 1 + jitter.next() * 3 : 2.0;
+    final turn = sticker || !lively ? 0.0 : jitter.range(0.6) * math.pi / 180;
     final bubble = Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
+      child: _turned(
+        turn,
+        ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: Card(
           color: sticker
               ? Colors.transparent
               : own
-              ? scheme.secondaryContainer
-              : scheme.surfaceContainerHigh,
+              ? arcade.bubbleMine
+              : arcade.bubbleTheirs,
           elevation: 0,
-          shape: message.mentionsMe
-              ? RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: scheme.tertiary, width: 1.5),
-                )
-              : null,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          // Arcade look: a 4px border and a 6px hard shadow; a mention takes
+          // the mention colour as its border. A sticker has neither.
+          shape: sticker
+              ? const RoundedRectangleBorder()
+              : ArcadeBorder(
+                  color: message.mentionsMe ? arcade.mention : arcade.border,
+                  shadow: bubbleShadow * arcade.shadowScale,
+                  shadowColor: arcade.shadow,
+                  seed: sketchSeed('bubble-${message.id}'),
+                  rough: arcade.rough,
+                ),
+          margin: EdgeInsets.fromLTRB(
+            own ? 12 : side,
+            top,
+            own ? side : 12,
+            top + bubbleShadow * arcade.shadowScale,
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: IntrinsicWidth(
@@ -619,12 +727,15 @@ class MessageTile extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
     final startReply = onReply;
     // The long-press sheet is available whenever it has an entry (Reply,
     // Resend, Delete, Report or Block); swipe-to-reply needs onReply.
     final hasSheet =
         startReply != null ||
+        onCopy != null ||
+        onForward != null ||
         onDelete != null ||
         onReport != null ||
         onBlock != null ||
@@ -717,3 +828,7 @@ class _MessageTextState extends State<_MessageText> {
     );
   }
 }
+
+/// [child] turned by [angle] radians (none for 0).
+Widget _turned(double angle, Widget child) =>
+    angle == 0 ? child : Transform.rotate(angle: angle, child: child);

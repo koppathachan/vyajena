@@ -7,6 +7,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
+
 import '../chat/chat_list_screen.dart';
 import '../chat/chat_model.dart';
 import '../core/core_service.dart';
@@ -80,14 +83,12 @@ class _HomeShellState extends State<HomeShell> {
       clipBehavior: Clip.none,
       children: [
         DecoratedBox(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: selected
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.transparent,
-              width: 2,
-            ),
+          decoration: sketchBox(
+            rough: context.arcade.rough,
+            border: selected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.transparent,
+            seed: 21,
           ),
           child: Padding(
             padding: const EdgeInsets.all(1),
@@ -116,10 +117,12 @@ class _HomeShellState extends State<HomeShell> {
                 key: const Key('profile-presence-dot'),
                 width: 11,
                 height: 11,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: online ? presenceOnlineColor : scheme.error,
-                  border: Border.all(color: scheme.surface, width: 1.5),
+                decoration: sketchBox(
+                  rough: context.arcade.rough,
+                  fill: online ? presenceOnlineColor : scheme.error,
+                  border: scheme.outline,
+                  width: 1.5,
+                  seed: 23,
                 ),
               );
             },
@@ -136,34 +139,52 @@ class _HomeShellState extends State<HomeShell> {
             chat: widget.chat,
             admin: widget.admin,
           ),
-          ContactsTab(core: widget.core, admin: widget.admin),
+          ContactsTab(
+            core: widget.core,
+            admin: widget.admin,
+            onOpenProfile: () => setState(() => _tab = ShellTab.profile),
+          ),
           ProfileScreen(core: widget.core, embedded: true, admin: widget.admin),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        key: const Key('bottom-nav'),
-        selectedIndex: _tab.index,
-        onDestinationSelected: (i) => setState(() => _tab = ShellTab.values[i]),
-        destinations: [
-          const NavigationDestination(
-            key: Key('tab-chats'),
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
+      bottomNavigationBar: DecoratedBox(
+        // Hand-drawn lines: the bar's top edge is drawn, not ruled (in front,
+        // or the bar's own fill would hide it).
+        position: DecorationPosition.foreground,
+        decoration: ShapeDecoration(
+          shape: SketchEdgeBorder(
+            color: Theme.of(context).colorScheme.outline,
+            top: true,
+            seed: 9,
+            rough: context.arcade.rough,
           ),
-          const NavigationDestination(
-            key: Key('tab-contacts'),
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people),
-            label: 'Contacts',
-          ),
-          NavigationDestination(
-            key: const Key('tab-profile'),
-            icon: avatar(selected: false),
-            selectedIcon: avatar(selected: true),
-            label: 'Profile',
-          ),
-        ],
+        ),
+        child: NavigationBar(
+          key: const Key('bottom-nav'),
+          selectedIndex: _tab.index,
+          onDestinationSelected: (i) =>
+              setState(() => _tab = ShellTab.values[i]),
+          destinations: [
+            const NavigationDestination(
+              key: Key('tab-chats'),
+              icon: Icon(Icons.chat_bubble_outline),
+              selectedIcon: Icon(Icons.chat_bubble),
+              label: 'Chats',
+            ),
+            const NavigationDestination(
+              key: Key('tab-contacts'),
+              icon: Icon(Icons.people_outline),
+              selectedIcon: Icon(Icons.people),
+              label: 'Contacts',
+            ),
+            NavigationDestination(
+              key: const Key('tab-profile'),
+              icon: avatar(selected: false),
+              selectedIcon: avatar(selected: true),
+              label: 'Profile',
+            ),
+          ],
+        ),
       ),
     );
   }

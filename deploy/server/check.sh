@@ -124,6 +124,11 @@ remote_checks() {
   if grep -q -- "--push /etc/vyajena/push.toml" <<<"$exec_main"; then ok "push vyajena.service --push"; else fail push "vyajena.service runs without --push /etc/vyajena/push.toml"; fi
   if grep -q -- "--push" <<<"$exec_review"; then fail "review push" "vyajena-review.service runs with --push"; else ok "review no push"; fi
 
+  # The reusable admin invite (change review-admin-invite) is for the store
+  # reviewers' server only: on the real server it would let anyone holding it
+  # take over the admin seat.
+  if grep -q '^\[review\]' /etc/vyajena/config.toml; then fail "real review flag" "/etc/vyajena/config.toml has a [review] table"; else ok "real server has no review flag"; fi
+
   # The egress proxy (server-deployment: Sandboxed service): dynamic user, no
   # writable path, loopback + the router's DNS + public addresses only.
   local dns

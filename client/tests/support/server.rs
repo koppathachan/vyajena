@@ -130,6 +130,13 @@ impl TestServer {
         Self::start_inner("").await
     }
 
+    /// A store reviewers' server (`[review] reusable_admin_invite = true`):
+    /// [`TestServer::bootstrap`] is its reusable admin invite payload
+    /// (device-identity: Reusable review admin invite).
+    pub async fn start_review() -> Self {
+        Self::start_inner("[review]\nreusable_admin_invite = true\n").await
+    }
+
     /// [`TestServer::start`] with the server's maximum blob size pinned to `cap`
     /// bytes (video-messages: Config-driven limit), so a test can exercise the
     /// advertised video size cap without multi-megabyte clips.
@@ -160,7 +167,9 @@ impl TestServer {
         let addr = server.local_addr();
         relay.retarget(addr);
         let bootstrap = match server.bootstrap() {
-            Bootstrap::Created(invite) => invite.payload.encode_to_vec(),
+            Bootstrap::Created(invite) | Bootstrap::Reusable(invite) => {
+                invite.payload.encode_to_vec()
+            }
             other => panic!("expected a bootstrap invite, got {other:?}"),
         };
         let state = server.state().clone();

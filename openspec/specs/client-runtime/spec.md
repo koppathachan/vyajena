@@ -46,7 +46,12 @@ acknowledging it to the server.
 The core SHALL connect to the relay address from the invite, accept the server only
 by its pinned TLS key, authenticate with its device auth key, renew its session
 token before it expires, keep one `Connect` stream open with heartbeats, and
-reconnect with backoff when the connection drops. When told the network is back
+reconnect with backoff when the connection drops. On reconnect the core SHALL
+reuse its current session token, when it still has it and the token is not yet
+due for renewal, to open the `Connect` stream directly without calling
+`Devices.GetChallenge` or `Devices.Authenticate`; it SHALL fall back to the full
+challenge/auth handshake when it has no such token or the server rejects the token on
+the stream with `UNAUTHENTICATED`. When told the network is back
 (`reconnect_now`), the core SHALL skip its current backoff wait. When the server
 answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL emit
 `Removed` once and stop connecting.
@@ -71,6 +76,24 @@ answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL em
   calls `reconnect_now`
 - **THEN** the core connects at once; a call while connected does nothing
 
+#### Scenario: Reused token on reconnect
+- **WHEN** Bob's stream drops while his session token is still valid and not yet
+  due for renewal, and his core reconnects
+- **THEN** the core opens the new `Connect` stream with the same token, the server
+  issues no new session, and no `GetChallenge` or `Authenticate` is sent
+
+#### Scenario: Full handshake when the token is due for renewal
+- **WHEN** Bob's stream drops and his session token is at or past its renewal
+  point, and his core reconnects
+- **THEN** the core runs the full challenge/auth handshake and the server issues a
+  fresh session token
+
+#### Scenario: Fallback when the server rejects the token
+- **WHEN** Bob's core reconnects and reuses a token it still believes valid but
+  the server no longer holds, so the stream open is refused with `UNAUTHENTICATED`
+- **THEN** the core runs the full challenge/auth handshake on the same attempt
+  and connects
+
 #### Scenario: Revoked device
 - **WHEN** the admin removes Bob and Bob's phone gets `PERMISSION_DENIED` from
   `Devices.Authenticate`
@@ -80,8 +103,14 @@ answers `Authenticate` or the stream with `PERMISSION_DENIED`, the core SHALL em
 ### Requirement: Send status
 The core SHALL report each sent message as sending until the server accepts it, then
 as accepted. On `STALE_EPOCH` or a reconnect it SHALL process pending commits,
-re-encrypt and resend with the same `msg_id`; on any other rejection it SHALL
-report the message as failed with the reason.
+re-encrypt and resend with the same `msg_id`; on any other rejection it SHALL report
+the message as failed with the reason. A message held behind the group's epoch
+SHALL NOT remain silently sending once the device is known to be stuck out of epoch
+sync (group-membership: Orphaned device self-recovery): the core SHALL then surface
+the message's chat as out of sync (app-ui: Out-of-sync re-sync affordance), keeping
+the message and its `msg_id` so it is sent once the device re-syncs — a distinct
+recoverable state, not reported as failed (its text is not lost) and not left an
+indefinite silent hourglass.
 
 #### Scenario: Message sent across a commit
 - **WHEN** Alice's message is rejected with `STALE_EPOCH` because the admin just
@@ -93,6 +122,13 @@ report the message as failed with the reason.
 - **WHEN** Bob sends "back" while his laptop is removed for inactivity
 - **THEN** it stays sending, and after the re-add the core sends it in the new
   epoch with the same `msg_id` and Bob sees it go to accepted
+
+#### Scenario: Held message never silently stuck forever
+- **WHEN** Bob's phone is wedged out of epoch sync and cannot be re-added (no
+  re-adder online, or the re-add daily limit reached), with "hi" still held
+- **THEN** the core surfaces the chat as out of sync so the app shows a re-sync
+  action, "hi" is kept with its `msg_id` for sending after re-sync, and it is not
+  left an indefinite silent sending nor reported as failed
 
 ### Requirement: Events in order
 The core SHALL deliver events to the UI in `server_seq` order through one event
@@ -222,3 +258,40 @@ picture is no longer in its cache. The core enforces this.
 #### Scenario: Sender can resend
 - **WHEN** Alice's image has expired on the server and she still has it cached
 - **THEN** her core can resend it as a new image with a new blob
+
+### Requirement: Reply lookup
+The core SHALL send a reply only to a stored chat message, building the
+`ReplyTo` from that message's sender device, `msg_id` and text. For each
+message it reports, the core SHALL report the reply's quote and replied-to
+user, and the local id of the original when it has the original stored.
+
+#### Scenario: Original on the device
+- **WHEN** Alice's phone has Bob's "dinner at 8?" and receives Carol's reply to
+  it
+- **THEN** the core reports the reply with the quote, `bob@chat` as the
+  replied-to user and the local id of "dinner at 8?"
+
+#### Scenario: Original missing
+- **WHEN** a reply arrives whose original this device never stored
+- **THEN** the core reports the quote and replied-to user with no original id
+
+#### Scenario: Reply to an unknown id
+- **WHEN** the app asks to reply to a local id that is not a stored chat
+  message
+- **THEN** the core refuses and stores nothing
+
+### Requirement: Unseen mentions
+The core SHALL store, with each received message that mentions this device's
+user or `everyone`, that the mention is unseen; SHALL list the unseen ones in
+chat order; and SHALL mark one seen when the app says so. Messages from this
+user's own devices SHALL never be unseen mentions.
+
+#### Scenario: Mention survives a restart
+- **WHEN** Bob's phone receives "@Bob look" and the app is killed before Bob
+  saw it
+- **THEN** after a restart the core still lists it as an unseen mention
+
+#### Scenario: Seen once
+- **WHEN** the app marks that mention seen
+- **THEN** the core no longer lists it, also after a restart
+

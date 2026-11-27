@@ -1057,6 +1057,11 @@ class VideoView {
   /// The clip's size on the server in bytes, to show before downloading.
   final BigInt size;
 
+  /// The caption, only to be shown; its mentions are the message's
+  /// `mentions`, as UTF-16 ranges of this text (message-content: Video caption
+  /// and mentions).
+  final String? caption;
+
   /// Where the clip is.
   final MediaStatus state;
 
@@ -1066,6 +1071,7 @@ class VideoView {
     required this.durationMs,
     required this.thumbhash,
     required this.size,
+    this.caption,
     required this.state,
   });
 
@@ -1076,6 +1082,7 @@ class VideoView {
       durationMs.hashCode ^
       thumbhash.hashCode ^
       size.hashCode ^
+      caption.hashCode ^
       state.hashCode;
 
   @override
@@ -1088,5 +1095,6 @@ class VideoView {
           durationMs == other.durationMs &&
           thumbhash == other.thumbhash &&
           size == other.size &&
+          caption == other.caption &&
           state == other.state;
 }

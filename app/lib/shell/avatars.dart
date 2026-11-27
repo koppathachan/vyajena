@@ -6,6 +6,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
+import '../app/arcade/sketch.dart';
+import '../app/theme.dart';
+
 import '../core/core_service.dart';
 
 /// The green of a presence dot for a user who set their status Online
@@ -57,19 +62,96 @@ class NameAvatar extends StatelessWidget {
     final base = HSLColor.fromAHSL(1, hue, 0.35, 0.42).toColor();
     final background = muted ? scheme.surfaceContainerHighest : base;
     final foreground = muted ? scheme.onSurfaceVariant : Colors.white;
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: background,
-      foregroundColor: foreground,
+    // Arcade look: a hand-drawn square, not a circle.
+    return Container(
+      width: radius * 2,
+      height: radius * 2,
+      alignment: Alignment.center,
+      decoration: sketchBox(
+        rough: context.arcade.rough,
+        fill: background,
+        border: scheme.outline,
+        seed: sketchSeed(seed ?? name),
+      ),
       child: icon != null
-          ? Icon(icon, size: radius)
+          ? Icon(icon, size: radius, color: foreground)
           : Text(
               monogram(name),
+              // Explicit family and no shadow: an app-bar title's pixel
+              // font and red shadow must not leak into the monogram.
               style: TextStyle(
+                fontFamily: bodyFont,
+                fontFamilyFallback: bodyFontFallback,
+                shadows: const <Shadow>[],
+                letterSpacing: 0,
                 fontSize: radius * 0.9,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                color: foreground,
               ),
             ),
+    );
+  }
+}
+
+/// app-ui: Groups distinct from DMs. A group's avatar: its monogram tile on
+/// top of a second tile peeking out behind it (a stack: several people), where
+/// a DM shows one person's single tile.
+class GroupAvatar extends StatelessWidget {
+  const GroupAvatar({
+    super.key,
+    required this.name,
+    required this.seed,
+    this.radius = 22,
+    this.muted = false,
+  });
+
+  final String name;
+  final String seed;
+  final double radius;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hue = (seed.hashCode.abs() % 360).toDouble();
+    // The tile behind: the same hue turned a third of the way round.
+    final back = muted
+        ? scheme.surfaceContainerHighest
+        : HSLColor.fromAHSL(1, (hue + 120) % 360, 0.35, 0.5).toColor();
+    final size = radius * 2;
+    final inner = size - 7;
+    return SizedBox(
+      key: const Key('group-avatar'),
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              width: inner,
+              height: inner,
+              decoration: sketchBox(
+                rough: context.arcade.rough,
+                fill: back,
+                border: scheme.outline,
+                seed: sketchSeed('back-$seed'),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: NameAvatar(
+              name: name,
+              seed: seed,
+              radius: inner / 2,
+              muted: muted,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -142,8 +224,9 @@ class _PresenceAvatarState extends State<PresenceAvatar> {
       user == null ? null : '${user.username}@${user.serverId}';
 
   void _onEvent(CoreEvent event) {
-    if (event case CoreEvent_PresenceChanged(:final user)
-        when user != null && _key(user) == _key(widget.user)) {
+    if (event case CoreEvent_PresenceChanged(
+      :final user,
+    ) when user != null && _key(user) == _key(widget.user)) {
       _load();
     }
   }
@@ -185,10 +268,12 @@ class _PresenceAvatarState extends State<PresenceAvatar> {
             key: const Key('presence-dot'),
             width: dotSize,
             height: dotSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: online ? presenceOnlineColor : scheme.error,
-              border: Border.all(color: scheme.surface, width: 1.5),
+            decoration: sketchBox(
+              rough: context.arcade.rough,
+              fill: online ? presenceOnlineColor : scheme.error,
+              border: scheme.outline,
+              width: 1.5,
+              seed: sketchSeed('dot-${widget.seed ?? widget.name}'),
             ),
           ),
         ),

@@ -83,13 +83,19 @@ out, so no one without the device's auth key learns whether it is revoked.
 ### Requirement: Single persistent messaging stream
 A device SHALL carry all messaging over one `Messaging.Connect` bidirectional
 stream per connection: outgoing envelopes, incoming envelopes, send results,
-acks, catch-up replay and heartbeats. The server SHALL allow at most one open
-`Connect` stream per device and SHALL close the older stream with gRPC status
-`ABORTED` when a new one opens.
+acks, catch-up replay, heartbeats, and the manual-presence frames (`SetPresence`
+from the device, `PresenceUpdate` from the server). The server SHALL allow at most
+one open `Connect` stream per device and SHALL close the older stream with gRPC
+status `ABORTED` when a new one opens.
 
 #### Scenario: Second stream from same device
 - **WHEN** a device opens a `Connect` stream while an earlier one is still open
 - **THEN** the server ends the earlier stream with `ABORTED` and serves the new one
+
+#### Scenario: Presence rides the same stream
+- **WHEN** a device wants to change its user's manual status
+- **THEN** it sends a `SetPresence` frame on its open `Connect` stream and receives
+  others' `PresenceUpdate` frames on the same stream, with no separate connection
 
 ### Requirement: Heartbeats
 While a `Connect` stream is idle the client SHALL send a heartbeat at least every
@@ -123,13 +129,44 @@ SHALL reject one with `TOO_LARGE`. The server SHALL advertise both limits in
 
 ### Requirement: Protocol version negotiation
 `Devices.GetServerInfo` SHALL return the server id, the supported protocol
-versions, the size limits and the server's external sender public key. The first
-frame a client sends on `Connect` SHALL state its protocol version, and the server
-SHALL close the stream with `FAILED_PRECONDITION` if it does not support that
-version.
+versions, the size limits and the server's external sender public key. The server SHALL
+support protocol versions 1 and 2, which behave the same on the stream; a server
+that lists version 2 knows `Dms` (direct-messages). The
+first frame a client sends on `Connect` SHALL state its protocol version, and the
+Server SHALL close the stream with `FAILED_PRECONDITION` if it does not support that
+version. A version 2 client SHALL connect with version 2 when the server lists it,
+else with version 1, and SHALL offer DMs only when the server lists version 2.
 
 #### Scenario: Unsupported client version
 - **WHEN** a client opens `Connect` with a protocol version the server does not support
 - **THEN** the server closes the stream with `FAILED_PRECONDITION` and lists the
   supported versions
+
+#### Scenario: Old app on the new server
+- **WHEN** a 1.0.0 app opens `Connect` with version 1
+- **THEN** the server accepts it and the app works in the main group as before
+
+#### Scenario: New app on an old server
+- **WHEN** a version 2 app connects to a server whose `GetServerInfo` lists only
+  version 1
+- **THEN** the app connects with version 1 and shows no "Message" action
+
+### Requirement: Session resume
+The server SHALL authenticate `Messaging.Connect` from the session token in the
+`authorization` metadata alone, accepting a valid, unexpired token of a
+non-revoked device whatever connection obtained it, and SHALL NOT tie a token to
+the connection that obtained it. The server SHALL reject a `Connect` carrying a
+missing, unknown or expired token with `UNAUTHENTICATED`, the same as any other
+authenticated RPC. The server enforces this; a client reuses it to open the stream
+without first calling `Devices.GetChallenge` and `Devices.Authenticate`.
+
+#### Scenario: Token minted on one connection opens a stream on another
+- **WHEN** a device authenticates on one connection, gets a session token, and
+  later opens `Messaging.Connect` on a new connection carrying that same token
+- **THEN** the server accepts the stream and serves the device, without a fresh
+  challenge or `Authenticate` on the new connection
+
+#### Scenario: Expired token on the stream
+- **WHEN** a device opens `Messaging.Connect` with a token that has expired
+- **THEN** the server rejects the stream with `UNAUTHENTICATED` and serves nothing
 

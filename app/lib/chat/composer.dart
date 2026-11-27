@@ -8,10 +8,13 @@
 // records the mention by user id. app-ui: Reply to a message: while
 // replying, the quote shows above the box with a cancel button.
 //
-// app-ui: Send an image. The attach button picks a picture, which shows as a
-// small preview above the box; the text box then holds its caption (with the
-// same mention picker) and Send hands the picture's bytes and the caption to
-// the core. Nothing here reads the picture's pixels.
+// app-ui: Compose tray. The attach button picks photos and videos, which stage
+// as thumbnails above the box with a "+" to add more; the text box holds the one
+// caption (with the same mention picker) and Send hands each staged item to the
+// core as a separate message, in order, the caption on the last. A just-picked
+// video shows a "processing video…" tile while the native normalize runs and
+// Send waits until it is ready. Nothing here reads the media's pixels. The
+// sticker cutout keeps its own single-send preview, apart from the tray.
 //
 // app-ui: Record a voice message. With nothing typed the Send button is a
 // microphone: press and hold to record, release to stop and get a preview (play,
@@ -24,14 +27,34 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/sketch.dart';
+import '../app/arcade/tokens.dart';
 import '../app/errors.dart';
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
 import 'mentions.dart';
 import 'sticker_plugins.dart';
 import 'sticker_preview.dart';
+import 'video_plugins.dart';
 import 'voice_playback.dart';
 import 'voice_plugins.dart';
+
+/// One item staged in the compose tray: an image (its picked bytes) or a
+/// normalized video (app-ui: Compose tray). Exactly one of the two is set.
+class StagedMedia {
+  const StagedMedia.image(Uint8List bytes) : image = bytes, video = null;
+  const StagedMedia.video(NormalizedVideo clip) : image = null, video = clip;
+
+  /// The picked image bytes, for an image item.
+  final Uint8List? image;
+
+  /// The normalized clip, for a video item.
+  final NormalizedVideo? video;
+
+  /// Whether this staged item is a video.
+  bool get isVideo => video != null;
+}
 
 /// The reply the composer is writing: who and what it answers.
 class ReplyDraft {
@@ -104,11 +127,14 @@ class Composer extends StatefulWidget {
     this.reply,
     this.onCancelReply,
     this.pickImage,
+    this.captureImage,
+    this.pickImages,
     this.sendImage,
     this.sendAudio,
     this.segmenter,
     this.sendSticker,
-    this.onSendVideo,
+    this.pickVideos,
+    this.sendVideo,
     this.onRecordingStarted,
   });
 
@@ -117,9 +143,20 @@ class Composer extends StatefulWidget {
   /// Sends the text with its mentions (stores it in the core).
   final Future<void> Function(String text, List<MentionSpan> mentions) send;
 
-  /// Lets the user choose a picture; its file bytes, or null for none. No
-  /// attach button when unset.
+  /// Lets the user choose a picture from the gallery; its file bytes, or null
+  /// for none. No attach button when unset.
   final Future<Uint8List?> Function()? pickImage;
+
+  /// Captures a photo with the in-app camera; its file bytes, or null for none.
+  /// When unset (or equal to [pickImage]'s source), the Photo attachment goes
+  /// straight to the gallery with no capture/pick chooser.
+  final Future<Uint8List?> Function()? captureImage;
+
+  /// Picks one or more pictures from the gallery; their bytes in order. One
+  /// picked picture goes to the preview-and-caption flow; several are sent at
+  /// once, each as its own message (app-ui: Send an image — multiple from the
+  /// gallery). When unset, the gallery picks a single picture via [pickImage].
+  final Future<List<Uint8List>> Function()? pickImages;
 
   /// Sends the picked picture with its caption and the caption's mentions.
   final Future<void> Function(
@@ -141,11 +178,23 @@ class Composer extends StatefulWidget {
   /// Sends a subject cutout as a sticker; the core encodes and uploads it.
   final Future<void> Function(Cutout cutout)? sendSticker;
 
-  /// Runs the whole send-a-video flow (record or gallery-pick, trim, native
-  /// normalize, then hand to the core). Owned by the chat screen so the
-  /// composer stays free of the camera, picker and native plugin. No "Video"
+  /// Picks one or more videos for the tray: the chat screen shows the
+  /// Record / gallery sub-sheet, runs the native normalize (the slow step the
+  /// tray shows a "processing video…" state for), and returns the normalized
+  /// clips in order, or empty if the user backed out. Owned by the chat screen so
+  /// the composer stays free of the camera, picker and native plugin. No "Video"
   /// entry in the attachment sheet when unset (app-ui: Send a video).
-  final Future<void> Function()? onSendVideo;
+  final Future<List<NormalizedVideo>> Function()? pickVideos;
+
+  /// Sends one staged video with an optional caption and the caption's mentions
+  /// (stores it in the core). The composer calls it once per staged video on
+  /// Send, with the caption only on the last staged item (app-ui: Compose tray).
+  final Future<void> Function(
+    NormalizedVideo clip,
+    String? caption,
+    List<MentionSpan> mentions,
+  )?
+  sendVideo;
 
   /// A recording began: the chat stops any clip that is playing.
   final VoidCallback? onRecordingStarted;
@@ -171,8 +220,15 @@ class _ComposerState extends State<Composer> {
   bool _sending = false;
   ({int at, String query})? _query;
 
-  /// The picked picture waiting to be sent, whose caption is the text.
-  Uint8List? _picture;
+  /// The media staged in the compose tray, in order (app-ui: Compose tray). The
+  /// text box holds the one caption for the batch; on Send the items go as
+  /// separate messages, the caption on the last.
+  final List<StagedMedia> _tray = [];
+
+  /// Whether a video add is in flight (its native normalize running): the tray
+  /// shows a "processing video…" tile and Send is disabled until it is ready
+  /// (app-ui: Video send progress).
+  bool _addingVideos = false;
 
   /// The subject cutout waiting in the sticker preview, if any.
   Cutout? _sticker;
@@ -265,8 +321,13 @@ class _ComposerState extends State<Composer> {
       key: const Key('reply-bar'),
       margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
       padding: const EdgeInsets.only(left: 8),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: scheme.primary, width: 3)),
+      decoration: ShapeDecoration(
+        shape: SketchEdgeBorder(
+          color: scheme.primary,
+          width: 3,
+          left: true,
+          rough: context.arcade.rough,
+        ),
       ),
       child: Row(
         children: [
@@ -327,7 +388,7 @@ class _ComposerState extends State<Composer> {
           children: [
             if (blur != null)
               ClipRRect(
-                borderRadius: BorderRadius.circular(3),
+                borderRadius: BorderRadius.zero,
                 child: Image.memory(
                   blur,
                   width: 20,
@@ -521,12 +582,11 @@ class _ComposerState extends State<Composer> {
     }
   }
 
-  /// The attachment sheet (app-shell: Conversation screen). Photo is the only
-  /// kind a message can carry beyond a voice message today; video, audio
-  /// files and files join the sheet as `video-messages` and later changes
-  /// ship, and stay out of it until then.
+  /// The attachment sheet (app-shell: Conversation screen). Picked photos and
+  /// videos land in the compose tray (app-ui: Compose tray); the sticker cutout
+  /// keeps its own single-send flow.
   Future<void> _openAttachments() async {
-    if (_sending || _attaching) return;
+    if (_sending || _attaching || _addingVideos) return;
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -549,7 +609,7 @@ class _ComposerState extends State<Composer> {
                 subtitle: const Text('Cut the subject out of a photo'),
                 onTap: () => Navigator.of(sheet).pop('sticker'),
               ),
-            if (widget.onSendVideo != null)
+            if (widget.pickVideos != null)
               ListTile(
                 key: const Key('attach-video'),
                 leading: const Icon(Icons.videocam_outlined),
@@ -560,9 +620,74 @@ class _ComposerState extends State<Composer> {
         ),
       ),
     );
-    if (choice == 'photo') await _attach();
+    if (choice == 'photo') await _attachPhoto();
     if (choice == 'sticker') await _makeSticker();
-    if (choice == 'video') await _sendVideo();
+    if (choice == 'video') await _addVideos();
+  }
+
+  /// The Photo attachment: when the in-app camera is available, offers the same
+  /// Take photo / Choose from gallery chooser the video flow uses (app-ui: Send
+  /// an image — capture or pick), then attaches from the chosen source. With no
+  /// camera it goes straight to the gallery, as before.
+  Future<void> _attachPhoto() async {
+    if (widget.captureImage == null) {
+      await _attachGallery();
+      return;
+    }
+    final source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (sheet) => SafeArea(
+        child: Column(
+          key: const Key('photo-source-sheet'),
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const Key('photo-camera'),
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('Take photo'),
+              onTap: () => Navigator.of(sheet).pop('camera'),
+            ),
+            ListTile(
+              key: const Key('photo-gallery'),
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Choose from gallery'),
+              onTap: () => Navigator.of(sheet).pop('gallery'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null) return;
+    if (source == 'camera') {
+      await _attach(widget.captureImage);
+    } else {
+      await _attachGallery();
+    }
+  }
+
+  /// Picks one or more pictures from the gallery into the compose tray (app-ui:
+  /// Compose tray). Falls back to a single [Composer.pickImage] when no
+  /// multi-picker is wired.
+  Future<void> _attachGallery() async {
+    final pickMany = widget.pickImages;
+    if (pickMany == null) {
+      await _attach(widget.pickImage);
+      return;
+    }
+    if (_sending || _attaching) return;
+    setState(() {
+      _attaching = true;
+      _error = null;
+    });
+    try {
+      final picked = await pickMany();
+      if (!mounted || picked.isEmpty) return;
+      setState(() => _tray.addAll(picked.map(StagedMedia.image)));
+    } catch (error) {
+      if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
   }
 
   /// Picks a photo and cuts its subject out on the device; on success the
@@ -654,28 +779,42 @@ class _ComposerState extends State<Composer> {
     );
   }
 
-  Future<void> _sendVideo() async {
-    final send = widget.onSendVideo;
-    if (send == null || _sending) return;
+  /// Picks one or more videos into the tray through [Composer.pickVideos] (the
+  /// chat screen shows the Record / gallery sub-sheet and runs the native
+  /// normalize). While that runs the tray shows a "processing video…" tile and
+  /// Send is disabled (app-ui: Video send progress).
+  Future<void> _addVideos() async {
+    final pick = widget.pickVideos;
+    if (pick == null || _sending || _addingVideos) return;
+    setState(() {
+      _addingVideos = true;
+      _error = null;
+    });
     try {
-      await send();
+      final clips = await pick();
+      if (!mounted || clips.isEmpty) return;
+      setState(() => _tray.addAll(clips.map(StagedMedia.video)));
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
+    } finally {
+      if (mounted) setState(() => _addingVideos = false);
     }
   }
 
-  Future<void> _attach() async {
-    final pick = widget.pickImage;
+  Future<void> _attach(Future<Uint8List?> Function()? source) async {
+    final pick = source;
     if (pick == null || _sending || _attaching) return;
-    // Show the placeholder before awaiting the pick, so the preview area fills
-    // the instant the user chooses rather than after the bytes are ready.
+    // Show the placeholder before awaiting the pick, so the tray fills the
+    // instant the user chooses rather than after the bytes are ready.
     setState(() {
       _attaching = true;
       _error = null;
     });
     try {
       final picked = await pick();
-      if (picked != null && mounted) setState(() => _picture = picked);
+      if (picked != null && mounted) {
+        setState(() => _tray.add(StagedMedia.image(picked)));
+      }
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
     } finally {
@@ -683,79 +822,143 @@ class _ComposerState extends State<Composer> {
     }
   }
 
-  /// The placeholder shown while a pick is in flight, in the same place the
-  /// picture preview will take, so choosing a picture feels immediate.
-  Widget _attachingBar(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  /// The compose tray: the staged images and videos as thumbnails, a tile while
+  /// a pick or normalize is in flight, and a **+** to add more (app-ui: Compose
+  /// tray). Removing the last item dismisses the tray.
+  Widget _trayBar(BuildContext context) {
     return Container(
-      key: const Key('picture-attaching'),
-      margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
-      child: Row(
+      key: const Key('compose-tray'),
+      margin: const EdgeInsets.fromLTRB(12, 4, 8, 4),
+      height: 68,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Container(
-              width: 56,
-              height: 56,
-              color: scheme.surfaceContainerHighest,
-              child: const Center(
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(child: Text('Adding picture…')),
+          for (var i = 0; i < _tray.length; i++) _trayThumb(context, i),
+          if (_attaching || _addingVideos) _trayProcessing(context),
+          _trayAddButton(context),
         ],
       ),
     );
   }
 
-  Widget _pictureBar(BuildContext context, Uint8List picture) {
+  /// One staged item's thumbnail with a remove button: the picture for an image,
+  /// a play glyph for a video (its first frame is not decoded here).
+  Widget _trayThumb(BuildContext context, int index) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      key: const Key('picture-preview'),
-      margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: Image.memory(
-              picture,
+    final item = _tray[index];
+    final Widget thumb = item.isVideo
+        ? Container(
+            width: 56,
+            height: 56,
+            color: scheme.surfaceContainerHighest,
+            child: const Center(child: Icon(Icons.play_circle_outline)),
+          )
+        : Image.memory(
+            item.image!,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+            cacheWidth: 112,
+            errorBuilder: (_, _, _) => Container(
               width: 56,
               height: 56,
-              fit: BoxFit.cover,
-              // Decoded small: this is only the preview.
-              cacheWidth: 112,
-              errorBuilder: (_, _, _) => Container(
-                width: 56,
-                height: 56,
-                color: scheme.surfaceContainerHighest,
-                child: const Icon(Icons.image),
+              color: scheme.surfaceContainerHighest,
+              child: const Icon(Icons.image),
+            ),
+          );
+    return Padding(
+      key: ValueKey('staged-$index'),
+      padding: const EdgeInsets.only(right: 8),
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: Stack(
+          children: [
+            ClipRRect(borderRadius: BorderRadius.zero, child: thumb),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: GestureDetector(
+                key: ValueKey('remove-staged-$index'),
+                onTap: _sending ? null : () => _removeStaged(index),
+                child: Tooltip(
+                  message: 'Remove',
+                  child: CircleAvatar(
+                    radius: 11,
+                    backgroundColor: scheme.surface,
+                    child: Icon(Icons.close, size: 14, color: scheme.onSurface),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// The tile shown while a pick or a video normalize is in flight: a spinner
+  /// and, for a video, "Processing video…" (app-ui: Video send progress).
+  Widget _trayProcessing(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      key: const Key('tray-processing'),
+      padding: const EdgeInsets.only(right: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            color: scheme.surfaceContainerHighest,
+            child: const Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          const Expanded(child: Text('Picture to send')),
-          IconButton(
-            key: const Key('remove-picture'),
-            tooltip: 'Remove the picture',
-            onPressed: _sending ? null : () => setState(() => _picture = null),
-            icon: const Icon(Icons.close),
-          ),
+          const SizedBox(width: 8),
+          Text(_addingVideos ? 'Processing video…' : 'Adding picture…'),
+          const SizedBox(width: 8),
         ],
       ),
     );
+  }
+
+  /// The **+** tile that reopens the attachment sheet to add more.
+  Widget _trayAddButton(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = !_sending && !_attaching && !_addingVideos;
+    return GestureDetector(
+      key: const Key('tray-add'),
+      onTap: enabled ? _openAttachments : null,
+      child: Tooltip(
+        message: 'Add more',
+        child: Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(border: Border.all(color: scheme.outline)),
+          child: const Center(child: Icon(Icons.add)),
+        ),
+      ),
+    );
+  }
+
+  /// Removes the staged item at [index]; the last removal dismisses the tray.
+  void _removeStaged(int index) {
+    setState(() {
+      if (index >= 0 && index < _tray.length) _tray.removeAt(index);
+    });
   }
 
   Future<void> _send() async {
     final text = _text.text;
-    final picture = _picture;
-    if ((text.trim().isEmpty && picture == null) || _sending) return;
-    if (!widget.core.textFits(text)) {
+    final hasText = text.trim().isNotEmpty;
+    if ((_tray.isEmpty && !hasText) || _sending || _addingVideos) return;
+    // The caption (and a plain text message) is limited like any text.
+    if (hasText && !widget.core.textFits(text)) {
       setState(() => _error = tooLongText);
       return;
     }
@@ -764,26 +967,63 @@ class _ComposerState extends State<Composer> {
       _sending = true;
     });
     try {
-      final sendImage = widget.sendImage;
-      if (picture != null && sendImage != null) {
-        // The caption is the text as typed, so the mention ranges still fit.
-        final caption = text.trim().isEmpty ? null : text;
-        await sendImage(
-          picture,
-          caption,
-          caption == null ? [] : _mentions.spans,
-        );
-        if (mounted) setState(() => _picture = null);
+      if (_tray.isNotEmpty) {
+        await _sendTray(hasText ? text : null);
       } else {
         await widget.send(text, _mentions.spans);
+        _text.clear();
+        _mentions.clear();
+        if (mounted) setState(() => _query = null);
       }
-      _text.clear();
-      _mentions.clear();
-      if (mounted) setState(() => _query = null);
     } catch (error) {
       if (mounted) setState(() => _error = errorText(error));
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  /// Sends the staged items as separate messages in order, the one [caption]
+  /// (and its mentions) on the last item only (app-ui: Compose tray). The
+  /// successfully-sent items are dropped from the tray; a failure leaves the
+  /// rest staged to retry.
+  Future<void> _sendTray(String? caption) async {
+    final sendImage = widget.sendImage;
+    final sendVideo = widget.sendVideo;
+    final items = List<StagedMedia>.of(_tray);
+    final mentions = caption == null ? const <MentionSpan>[] : _mentions.spans;
+    var sent = 0;
+    try {
+      for (var i = 0; i < items.length; i++) {
+        final isLast = i == items.length - 1;
+        final itemCaption = isLast ? caption : null;
+        final itemMentions = isLast ? mentions : const <MentionSpan>[];
+        final item = items[i];
+        if (item.isVideo) {
+          if (sendVideo == null) break;
+          await sendVideo(item.video!, itemCaption, itemMentions);
+        } else {
+          if (sendImage == null) break;
+          await sendImage(item.image!, itemCaption, itemMentions);
+        }
+        sent++;
+      }
+      _text.clear();
+      _mentions.clear();
+      if (mounted) {
+        setState(() {
+          _tray.clear();
+          _query = null;
+        });
+      }
+    } catch (error) {
+      // Drop the ones that went; keep the rest (the caption still rides the
+      // last) so Send retries only the unsent.
+      if (mounted) {
+        setState(() {
+          _tray.removeRange(0, sent.clamp(0, _tray.length));
+          _error = errorText(error);
+        });
+      }
     }
   }
 
@@ -801,10 +1041,8 @@ class _ComposerState extends State<Composer> {
         _picker(context),
         if (widget.reply case final ReplyDraft reply when !removed)
           _replyBar(context, reply),
-        if (_attaching && !removed)
-          _attachingBar(context)
-        else if (_picture case final Uint8List picture when !removed)
-          _pictureBar(context, picture),
+        if ((_tray.isNotEmpty || _attaching || _addingVideos) && !removed)
+          _trayBar(context),
         if (_sticker case final Cutout sticker when !removed)
           _stickerBar(context, sticker),
         if (_sticker == null) _field(context, removed),
@@ -812,11 +1050,15 @@ class _ComposerState extends State<Composer> {
     ),
   );
 
-  /// Whether the last button is the microphone: nothing typed or picked. A
+  /// Whether the last button is the microphone: nothing typed or staged. A
   /// reply may be pending — a voice message can answer one (message-content:
   /// Voice replies), so the mic stays while the text field is empty.
   bool get _micShown =>
-      widget.sendAudio != null && _text.text.isEmpty && _picture == null;
+      widget.sendAudio != null &&
+      _text.text.isEmpty &&
+      _tray.isEmpty &&
+      !_attaching &&
+      !_addingVideos;
 
   Widget _field(BuildContext context, bool removed) {
     if (_clip != null && !removed) return _previewRow(context);
@@ -829,13 +1071,13 @@ class _ComposerState extends State<Composer> {
             Expanded(child: _recordingInfo(context))
           else ...[
             // The attach button stays while a reply is being written, so the
-            // affordance never vanishes on swipe-to-reply. A picked picture or
-            // video still goes as its own message, not as the reply itself.
-            if (widget.pickImage != null || widget.onSendVideo != null)
+            // affordance never vanishes on swipe-to-reply. Picked media stage in
+            // the tray; they do not become the reply itself.
+            if (widget.pickImage != null || widget.pickVideos != null)
               IconButton(
                 key: const Key('attach-image'),
                 tooltip: 'Attach',
-                onPressed: _sending || _attaching || removed
+                onPressed: _sending || _attaching || _addingVideos || removed
                     ? null
                     : _openAttachments,
                 icon: const Icon(Icons.attach_file),
@@ -852,7 +1094,7 @@ class _ComposerState extends State<Composer> {
                 decoration: InputDecoration(
                   hintText: removed
                       ? 'Removed from the group'
-                      : _picture != null
+                      : _tray.isNotEmpty
                       ? 'Add a caption'
                       : 'Message',
                   border: const OutlineInputBorder(),
@@ -864,14 +1106,30 @@ class _ComposerState extends State<Composer> {
               ),
             ),
           ],
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
+          // Hand-drawn look: the button is smaller than the field, sits a
+          // little high and a little turned, so the row never looks ruled.
           if ((_micShown && !removed) || _recording)
             _micButton(context, removed)
           else
-            IconButton.filled(
-              tooltip: 'Send',
-              onPressed: _sending || removed ? null : _send,
-              icon: const Icon(Icons.send),
+            Padding(
+              padding: EdgeInsets.only(bottom: context.arcade.lively ? 5 : 0),
+              child: Askew(
+                seed: 3,
+                degrees: 3,
+                shift: 0,
+                child: IconButton.filled(
+                  key: const Key('composer-send'),
+                  tooltip: 'Send',
+                  style: sendButtonStyle(context, seed: 3),
+                  // Send is disabled while a video is still normalizing
+                  // (app-ui: Video send progress).
+                  onPressed: _sending || _addingVideos || removed
+                      ? null
+                      : _send,
+                  icon: const Icon(Icons.send, size: 18),
+                ),
+              ),
             ),
         ],
       ),
@@ -893,13 +1151,22 @@ class _ComposerState extends State<Composer> {
         label: 'Hold to record a voice message',
         button: true,
         child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: active
+          // Arcade: smaller than the field and off its line; a calm theme
+          // lines it up with the field (app-ui: Theme choice).
+          width: context.arcade.lively ? 36 : composerButtonCalmSize,
+          height: context.arcade.lively ? 36 : composerButtonCalmSize,
+          margin: context.arcade.lively
+              ? const EdgeInsets.only(bottom: 7, right: 3)
+              : EdgeInsets.zero,
+          decoration: sketchBox(
+            rough: context.arcade.rough,
+            border: scheme.outline,
+            fill: active
                 ? (_willCancel ? scheme.error : scheme.primary)
                 : scheme.primary,
+            shadow: buttonShadow * context.arcade.shadowScale,
+            shadowColor: scheme.shadow,
+            seed: 6,
           ),
           child: Icon(
             active && _willCancel ? Icons.delete : Icons.mic,
@@ -1003,11 +1270,17 @@ class _ComposerState extends State<Composer> {
                 },
               ),
               const SizedBox(width: 4),
-              IconButton.filled(
-                key: const Key('send-voice'),
-                tooltip: 'Send voice message',
-                onPressed: _sending ? null : _sendClip,
-                icon: const Icon(Icons.send),
+              Askew(
+                seed: 4,
+                degrees: 3,
+                shift: 0,
+                child: IconButton.filled(
+                  key: const Key('send-voice'),
+                  tooltip: 'Send voice message',
+                  style: sendButtonStyle(context, seed: 4),
+                  onPressed: _sending ? null : _sendClip,
+                  icon: const Icon(Icons.send, size: 18),
+                ),
               ),
             ],
           ),
@@ -1023,4 +1296,33 @@ class _ComposerState extends State<Composer> {
       if (mounted) setState(() => _error = errorText(error));
     }
   }
+}
+
+/// The send and mic buttons' size under a calm theme: the field's height.
+const double composerButtonCalmSize = 44;
+
+/// The send button's look: the accent fill with the accent's own text colour
+/// (navy on yellow in dark mode, never the white of plain icons), a
+/// hand-drawn box with the button shadow, and a size a little under the
+/// field's.
+ButtonStyle sendButtonStyle(BuildContext context, {int seed = 0}) {
+  final scheme = Theme.of(context).colorScheme;
+  final size = context.arcade.lively ? 36.0 : composerButtonCalmSize;
+  return IconButton.styleFrom(
+    backgroundColor: scheme.primary,
+    foregroundColor: scheme.onPrimary,
+    disabledBackgroundColor: scheme.primary.withValues(alpha: 0.5),
+    disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.7),
+    fixedSize: Size(size, size),
+    minimumSize: Size(size, size),
+    padding: EdgeInsets.zero,
+    tapTargetSize: MaterialTapTargetSize.padded,
+    shape: ArcadeBorder(
+      color: scheme.outline,
+      shadow: buttonShadow * context.arcade.shadowScale,
+      shadowColor: scheme.shadow,
+      seed: seed,
+      rough: context.arcade.rough,
+    ),
+  );
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/core/core_service.dart';
+import 'package:vyajena/members/contacts_tab.dart' show dmsUnavailableText;
 
 import '../support/app.dart';
 import '../support/fake_core_service.dart';
@@ -90,11 +91,10 @@ void main() {
   testWidgets('First message to Bob: "Message" on Bob opens the empty DM at '
       'once, which says it waits for his devices', (tester) async {
     final core = aliceInGroup();
-    await openApp(tester, core);
-    await menu(tester, 'Members');
+    await openHome(tester, core);
+    await tap(tester, find.byKey(const Key('tab-contacts')));
+    await tap(tester, find.byKey(const Key('contact-bob')));
 
-    // No "Message" on Alice herself.
-    expect(find.byKey(const ValueKey('message-alice')), findsNothing);
     await tap(tester, find.byKey(const ValueKey('message-bob')));
     expect(core.calls, contains('openDm'));
     expect(core.args['openDm'], bob);
@@ -113,11 +113,16 @@ void main() {
   });
 
   // spec: app-ui/open-a-dm
-  testWidgets('Old server: no "Message" action', (tester) async {
+  testWidgets('Old server: "Message" says DMs are not available yet', (
+    tester,
+  ) async {
     final core = aliceInGroup()..dms = false;
-    await openApp(tester, core);
-    await menu(tester, 'Members');
-    expect(find.text('Message'), findsNothing);
+    await openHome(tester, core);
+    await tap(tester, find.byKey(const Key('tab-contacts')));
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    await tap(tester, find.byKey(const ValueKey('message-bob')));
+    expect(find.text(dmsUnavailableText), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
   });
 
   // spec: app-ui/dm-screen

@@ -206,6 +206,7 @@ pub(crate) fn message(message: Message) -> ChatMessage {
                         duration_ms: video.duration_ms,
                         thumbhash: video.thumbhash,
                         size: video.size,
+                        caption: video.caption,
                         state: match video.state {
                             client::MediaState::Available => MediaStatus::Available,
                             client::MediaState::Expired => MediaStatus::Expired,

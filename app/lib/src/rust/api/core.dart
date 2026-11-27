@@ -427,6 +427,8 @@ abstract class Core implements RustOpaqueInterface {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   });
 
   /// Sends a video to chat `chat_id`; returns its local id. `mp4` is the
@@ -449,6 +451,8 @@ abstract class Core implements RustOpaqueInterface {
     required List<int> firstFrameRgba,
     required int frameWidth,
     required int frameHeight,
+    String? caption,
+    required List<MentionSpan> mentions,
   });
 
   /// Turns whole-app mute on or off (notification-prefs: Mute the whole app):

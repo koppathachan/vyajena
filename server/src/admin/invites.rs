@@ -1,5 +1,8 @@
 //! device-identity: Invites. Invite rows: single use, bound to a username,
-//! expiring [`INVITE_TTL`] after creation.
+//! expiring [`INVITE_TTL`] after creation. The one exception is the store
+//! reviewers' server's reusable admin invite (device-identity: Reusable review
+//! admin invite): a row with `reusable = 1` that never expires and is never
+//! used up. Every single-use query here skips it.
 
 use std::time::{Duration, SystemTime};
 
@@ -73,8 +76,8 @@ pub fn usable_bootstrap(
     let row = tx
         .query_row(
             "SELECT code, username, created_at, expires_at FROM invites
-             WHERE bootstrap = 1 AND used_at IS NULL AND revoked_at IS NULL
-               AND expires_at > ?1
+             WHERE bootstrap = 1 AND reusable = 0 AND used_at IS NULL
+               AND revoked_at IS NULL AND expires_at > ?1
              ORDER BY created_at DESC LIMIT 1",
             params![unix_millis(now)],
             |row| {
@@ -102,7 +105,7 @@ pub fn usable_for_username(
     let row = tx
         .query_row(
             "SELECT code, username, created_at, expires_at FROM invites
-             WHERE username = ?1 AND bootstrap = 0 AND used_at IS NULL
+             WHERE username = ?1 AND bootstrap = 0 AND reusable = 0 AND used_at IS NULL
                AND revoked_at IS NULL AND expires_at > ?2
              ORDER BY created_at DESC LIMIT 1",
             params![username, unix_millis(now)],
@@ -125,7 +128,7 @@ pub fn usable_for_username(
 pub fn list_unused(tx: &Transaction<'_>, now: SystemTime) -> Result<Vec<Invite>, StoreError> {
     let mut stmt = tx.prepare(
         "SELECT code, username, created_at, expires_at, bootstrap FROM invites
-         WHERE used_at IS NULL AND revoked_at IS NULL AND expires_at > ?1
+         WHERE reusable = 0 AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?1
          ORDER BY created_at, code",
     )?;
     let rows = stmt.query_map(params![unix_millis(now)], |row| {
@@ -163,7 +166,7 @@ pub fn revoke(
 ) -> Result<RevokeOutcome, StoreError> {
     let used: Option<(Option<i64>, String)> = tx
         .query_row(
-            "SELECT used_at, username FROM invites WHERE code = ?1",
+            "SELECT used_at, username FROM invites WHERE code = ?1 AND reusable = 0",
             params![code],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -191,7 +194,78 @@ pub fn revoke_unused_for(
 ) -> Result<usize, StoreError> {
     Ok(tx.execute(
         "UPDATE invites SET revoked_at = ?2
-         WHERE username = ?1 AND used_at IS NULL AND revoked_at IS NULL",
+         WHERE username = ?1 AND reusable = 0 AND used_at IS NULL AND revoked_at IS NULL",
         params![username, unix_millis(now)],
     )?)
+}
+
+/// device-identity: Reusable review admin invite. Returns the server's one
+/// reusable invite for `username`, creating it at `now` if there is none. It
+/// never expires (its `expires_at` is the far future and is never checked) and
+/// is never marked used. Only a server with `[review] reusable_admin_invite =
+/// true` calls this.
+pub fn ensure_reusable(
+    tx: &Transaction<'_>,
+    username: &str,
+    now: SystemTime,
+) -> Result<Invite, StoreError> {
+    if let Some(invite) = reusable(tx)? {
+        if invite.username == username {
+            return Ok(invite);
+        }
+        // `admin_username` changed in the config: the old row names someone
+        // who is no longer the admin, so it must stop working.
+        tx.execute(
+            "UPDATE invites SET revoked_at = ?2 WHERE code = ?1",
+            params![invite.code, unix_millis(now)],
+        )?;
+    }
+    let code = new_invite_code()?;
+    tx.execute(
+        "INSERT INTO invites (code, username, created_at, expires_at, bootstrap, reusable)
+         VALUES (?1, ?2, ?3, ?4, 0, 1)",
+        params![code, username, unix_millis(now), i64::MAX],
+    )?;
+    Ok(Invite {
+        code,
+        username: username.to_owned(),
+        created_at: now,
+        expires_at: from_unix_millis(i64::MAX),
+        bootstrap: false,
+    })
+}
+
+/// The server's live reusable invite, if it has one (device-identity: Reusable
+/// review admin invite).
+pub fn reusable(tx: &Transaction<'_>) -> Result<Option<Invite>, StoreError> {
+    let row = tx
+        .query_row(
+            "SELECT code, username, created_at, expires_at FROM invites
+             WHERE reusable = 1 AND revoked_at IS NULL
+             ORDER BY created_at DESC LIMIT 1",
+            [],
+            |row| {
+                Ok(Invite {
+                    code: row.get(0)?,
+                    username: row.get(1)?,
+                    created_at: from_unix_millis(row.get(2)?),
+                    expires_at: from_unix_millis(row.get(3)?),
+                    bootstrap: false,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Whether `code` is a live reusable invite, and for whom (device-identity:
+/// Reusable review admin invite).
+pub fn reusable_username(tx: &Transaction<'_>, code: &str) -> Result<Option<String>, StoreError> {
+    Ok(tx
+        .query_row(
+            "SELECT username FROM invites WHERE code = ?1 AND reusable = 1 AND revoked_at IS NULL",
+            params![code],
+            |row| row.get(0),
+        )
+        .optional()?)
 }

@@ -32,14 +32,27 @@ FakeCoreService groupAsBob() => FakeCoreService(storedUser: bob)
 final composer = find.byKey(const Key('composer'));
 final attach = find.byKey(const Key('attach-image'));
 
-/// Opens the attachment sheet and picks Photo (app-shell: Conversation screen).
+/// Opens the attachment sheet, chooses Photo, then "Choose from gallery" in the
+/// photo-source chooser (app-shell: Conversation screen).
 Future<void> attachPhoto(WidgetTester tester) async {
   await tap(tester, attach);
   await tap(tester, find.byKey(const Key('attach-photo')));
+  await tap(tester, find.byKey(const Key('photo-gallery')));
 }
 
-final preview = find.byKey(const Key('picture-preview'));
-final attaching = find.byKey(const Key('picture-attaching'));
+/// Opens the attachment sheet, chooses Photo, then "Take photo" to capture with
+/// the in-app camera (app-ui: Send an image — capture or pick).
+Future<void> capturePhoto(WidgetTester tester) async {
+  await tap(tester, attach);
+  await tap(tester, find.byKey(const Key('attach-photo')));
+  await tap(tester, find.byKey(const Key('photo-camera')));
+}
+
+// A single staged image shows as the first tray thumbnail; the tray's
+// processing tile stands in for the old "attaching" placeholder (app-ui:
+// Compose tray).
+final preview = find.byKey(const Key('staged-0'));
+final attaching = find.byKey(const Key('tray-processing'));
 final bubble = find.byKey(const Key('image-bubble'));
 final send = find.byTooltip('Send');
 
@@ -182,7 +195,7 @@ void main() {
     await openAppWithPictures(tester, core, picker);
     await attachPhoto(tester);
     expect(preview, findsOneWidget);
-    await tap(tester, find.byKey(const Key('remove-picture')));
+    await tap(tester, find.byKey(const Key('remove-staged-0')));
     expect(preview, findsNothing);
     expect(core.calls, isNot(contains('sendImage')));
 
@@ -399,10 +412,96 @@ void main() {
     await tap(tester, attach);
     expect(find.byKey(const Key('attachment-sheet')), findsOneWidget);
     await tap(tester, find.byKey(const Key('attach-photo')));
+    await tap(tester, find.byKey(const Key('photo-gallery')));
     await settle(tester);
     expect(preview, findsOneWidget);
     // The reply is still pending alongside the picked picture.
     expect(find.byKey(const Key('reply-bar')), findsOneWidget);
+  });
+
+  // spec: app-ui/image-bubble-and-viewer
+  testWidgets('sending a picture while replying clears the reply bar', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithPictures(tester, core, FakePicker(picked));
+    core.receiveImage(alice, caption: 'the view');
+    await settle(tester);
+    await tester.drag(bubble, const Offset(300, 0));
+    await settle(tester);
+    await attachPhoto(tester);
+    await settle(tester);
+    // Picking leaves the reply pending; only sending consumes it.
+    expect(find.byKey(const Key('reply-bar')), findsOneWidget);
+
+    await tap(tester, send);
+    await settle(tester);
+    expect(core.calls, contains('sendImage'));
+    expect(find.byKey(const Key('reply-bar')), findsNothing);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('Bob takes a photo with the in-app camera and sends it: the '
+      'camera source is used and its bytes go to the core, the same as a '
+      'gallery pick', (tester) async {
+    final core = groupAsBob();
+    final picker = FakePicker(picked);
+    await openAppWithPictures(tester, core, picker);
+
+    await capturePhoto(tester);
+    await settle(tester);
+    // The in-app camera was opened, not the gallery.
+    expect(picker.captured, 1);
+    expect(picker.opened, 0);
+    expect(preview, findsOneWidget);
+
+    await tap(tester, send);
+    await settle(tester);
+    expect(core.calls, contains('sendImage'));
+    // A captured photo takes the very same path as a picked one: its bytes go
+    // to the core untouched and show as an image bubble.
+    expect(core.sentPictures.single, picked);
+    expect(bubble, findsOneWidget);
+  });
+
+  // spec: app-ui/send-an-image
+  testWidgets('choosing Photo offers both the in-app camera and the gallery', (
+    tester,
+  ) async {
+    final core = groupAsBob();
+    await openAppWithPictures(tester, core, FakePicker(picked));
+
+    await tap(tester, attach);
+    await tap(tester, find.byKey(const Key('attach-photo')));
+    // The capture-or-pick chooser mirrors the video record/gallery chooser.
+    expect(find.byKey(const Key('photo-source-sheet')), findsOneWidget);
+    expect(find.byKey(const Key('photo-camera')), findsOneWidget);
+    expect(find.byKey(const Key('photo-gallery')), findsOneWidget);
+  });
+
+  // spec: app-ui/compose-tray
+  testWidgets('picking several pictures stages them in the tray, then one Send '
+      'sends each as its own message', (tester) async {
+    final core = groupAsBob();
+    final one = Uint8List.fromList([1, 2, 3, 4]);
+    final two = Uint8List.fromList([5, 6, 7, 8]);
+    final picker = FakePicker()..many = [one, two];
+    await openAppWithPictures(tester, core, picker);
+
+    await attachPhoto(tester);
+    await settle(tester);
+
+    // Both stage in the tray; nothing is sent until Send.
+    expect(picker.multiOpened, 1);
+    expect(find.byKey(const Key('staged-0')), findsOneWidget);
+    expect(find.byKey(const Key('staged-1')), findsOneWidget);
+    expect(core.calls, isNot(contains('sendImage')));
+
+    await tap(tester, send);
+    // Both pictures went to the core, each as its own message; the tray clears.
+    expect(core.sentPictures, [one, two]);
+    expect(preview, findsNothing);
+    expect(bubble, findsNWidgets(2));
   });
 }
 

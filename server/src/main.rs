@@ -14,6 +14,11 @@
 //!   admin removed and revokes the admin's devices and unused invites, so the
 //!   next start re-mints a bootstrap invite. Host access is the authority; it
 //!   has no network path.
+//! - `server review-invite --config <file.toml>` prints the store reviewers'
+//!   server's reusable admin invite payload, and nothing else, on stdout
+//!   (server-deployment: Review admin invite hand-off). It refuses unless the
+//!   config sets `[review] reusable_admin_invite = true`. Host access is the
+//!   authority; there is no RPC for it.
 
 #![forbid(unsafe_code)]
 
@@ -36,6 +41,7 @@ fn main() -> Result<()> {
     let (config, push) = match command_from_args()? {
         Command::EgressProxy { listen } => return egress_proxy(listen),
         Command::AdminReset { config, passphrase } => return admin_reset(config, passphrase),
+        Command::ReviewInvite { config } => return review_invite(config),
         Command::Backup { config, to } => {
             let config = Config::load(&config)?;
             let snapshot = backup::snapshot(&config.database_path, &to)
@@ -84,6 +90,7 @@ fn main() -> Result<()> {
 const USAGE: &str = "usage: Server --config <file.toml> [--push <push.toml>]
        server backup --config <file.toml> --to <file>
        server admin-reset --config <file.toml> [--passphrase <p>]
+       server review-invite --config <file.toml>
        server egress-proxy --listen <addr>";
 
 /// admin-recovery: Operator break-glass reset, run locally on the box. Opens the
@@ -125,6 +132,25 @@ fn admin_reset(config: PathBuf, passphrase: Option<String>) -> Result<()> {
         })
 }
 
+/// server-deployment: Review admin invite hand-off. Prints only the payload,
+/// so `deploy.sh --review-invite` can write stdout straight to a file; logs no
+/// code.
+fn review_invite(config: PathBuf) -> Result<()> {
+    let config = Config::load(&config)?;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("starting the async runtime")?
+        .block_on(async {
+            let invite =
+                server::runtime::review_invite::read(&config, std::time::SystemTime::now())
+                    .await
+                    .context("review invite")?;
+            println!("{}", invite.payload_text());
+            Ok(())
+        })
+}
+
 /// server-runtime: Egress proxy, until `SIGTERM` or Ctrl-C.
 fn egress_proxy(listen: std::net::SocketAddr) -> Result<()> {
     tokio::runtime::Builder::new_multi_thread()
@@ -155,6 +181,8 @@ enum Command {
     EgressProxy { listen: std::net::SocketAddr },
     /// Write a database snapshot to `to`.
     Backup { config: PathBuf, to: PathBuf },
+    /// Print the review server's reusable admin invite.
+    ReviewInvite { config: PathBuf },
     /// Break-glass reset of the admin (admin-recovery).
     AdminReset {
         config: PathBuf,
@@ -168,7 +196,8 @@ fn command_from_args() -> Result<Command> {
     let backup = sub.as_deref() == Some("backup");
     let egress = sub.as_deref() == Some("egress-proxy");
     let reset = sub.as_deref() == Some("admin-reset");
-    if backup || egress || reset {
+    let review = sub.as_deref() == Some("review-invite");
+    if backup || egress || reset || review {
         args.next();
     }
     let mut config = None;
@@ -183,7 +212,7 @@ fn command_from_args() -> Result<Command> {
             Some("--passphrase") if reset => {
                 passphrase = Some(string_after(&mut args, "--passphrase")?)
             }
-            Some("--push") if !backup && !egress && !reset => {
+            Some("--push") if !backup && !egress && !reset && !review => {
                 push = Some(path_after(&mut args, "--push")?)
             }
             Some("--listen") if egress => {
@@ -213,6 +242,8 @@ fn command_from_args() -> Result<Command> {
         }
     } else if reset {
         Command::AdminReset { config, passphrase }
+    } else if review {
+        Command::ReviewInvite { config }
     } else {
         Command::Serve { config, push }
     })

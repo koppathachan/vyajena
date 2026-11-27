@@ -218,6 +218,11 @@ enum BackgroundTask {
         }
         ShareSheet.present(text)
         result(nil)
+      case "takeInitialShare":
+        // Drain any item the share extension left in the App Group. Called by
+        // Dart at startup and on resume; the extension foregrounds the app, so
+        // the next active cycle picks the item up (change `message-actions-share`).
+        result(SharedInbox.drain())
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -391,6 +396,51 @@ enum Push {
     let results = waiting
     waiting = []
     for result in results { result(value) }
+  }
+}
+
+/// Inbound share from the Share Extension (change `message-actions-share`). The
+/// extension writes the raw shared item (text, or an image file) into the App
+/// Group container as `share.json`; the app drains it when it becomes active and
+/// hands the payload to Dart, which opens the chat picker and sends it through
+/// the core. Nothing here touches keys or ciphertext.
+///
+/// The App Group id must match the extension's and be registered on both targets
+/// in the Apple Developer portal (ios/ShareExtension/README.md).
+enum SharedInbox {
+  static let appGroup = "group.com.purplechaamba.vyajena"
+
+  private static func container() -> URL? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
+  }
+
+  /// Reads and removes a pending shared item, returning the Dart payload map
+  /// (`{type: "text", text: ...}` or `{type: "image", bytes: <Data>}`), or nil
+  /// if there is none. For an image, the extension wrote the raw bytes to
+  /// `share.img` in the App Group; this reads them and hands them to Dart, which
+  /// passes them straight to the core — the app opens no file of its own.
+  static func drain() -> [String: Any]? {
+    let files = FileManager.default
+    guard let dir = container() else { return nil }
+    let manifest = dir.appendingPathComponent("share.json")
+    guard let data = try? Data(contentsOf: manifest),
+      let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let type = payload["type"] as? String
+    else {
+      return nil
+    }
+    try? files.removeItem(at: manifest)
+    switch type {
+    case "text":
+      return payload
+    case "image":
+      let image = dir.appendingPathComponent("share.img")
+      guard let bytes = try? Data(contentsOf: image) else { return nil }
+      try? files.removeItem(at: image)
+      return ["type": "image", "bytes": FlutterStandardTypedData(bytes: bytes)]
+    default:
+      return nil
+    }
   }
 }
 

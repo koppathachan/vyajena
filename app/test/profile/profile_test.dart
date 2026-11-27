@@ -12,8 +12,8 @@ void main() {
     tester,
   ) async {
     final core = FakeCoreService(storedUser: alice);
-    await openApp(tester, core);
-    await menu(tester, 'Profile');
+    await openHome(tester, core);
+    await openProfileTab(tester);
     await tester.enterText(find.byKey(const Key('displayName')), 'Ali');
     await tap(tester, find.text('Save'));
     expect(core.calls, contains('setProfile'));
@@ -45,8 +45,8 @@ void main() {
       ..profiles = {
         'alice@chat': const ProfileInfo(displayName: 'Ali', about: 'tea'),
       };
-    await openApp(tester, core);
-    await menu(tester, 'Profile');
+    await openHome(tester, core);
+    await openProfileTab(tester);
     final username = tester.widget<TextField>(
       find.descendant(
         of: find.byKey(const Key('username')),

@@ -12,3 +12,10 @@ listen_address = "127.0.0.1:@REVIEW_SERVER_PORT@"
 public_address = "@RELAY_HOST@:@REVIEW_PORT@"
 database_path = "/var/lib/vyajena-review/server.sqlite"
 key_dir = "/var/lib/vyajena-review/keys"
+
+# Store reviewers join as the admin with ONE reusable invite that never expires;
+# each join takes over the admin seat (change review-admin-invite). Get it with
+# deploy.sh --review-invite. NEVER set this in config.toml: check.sh fails if
+# the real server has a [review] table.
+[review]
+reusable_admin_invite = true

@@ -113,6 +113,7 @@ impl Devices for DevicesService {
             .certificate
             .ok_or_else(|| Status::invalid_argument("certificate is required"))?;
         let server_id = self.state.config.server_id.clone();
+        let reusable_on = self.state.config.review.reusable_admin_invite;
         let now = self.state.clock.now();
         let (username, revoked) = self
             .state
@@ -125,6 +126,7 @@ impl Devices for DevicesService {
                     &request.identity_public_key,
                     &signed,
                     &server_id,
+                    reusable_on,
                     now,
                 );
                 if result.is_ok() {
@@ -140,7 +142,13 @@ impl Devices for DevicesService {
         for device_id in &revoked {
             let _ = self.state.revocations.send(*device_id);
         }
-        if revoked.is_empty() {
+        if reusable_on && username == self.state.config.admin_username {
+            tracing::info!(
+                %username,
+                revoked = revoked.len(),
+                "the reusable review admin invite took over the admin seat"
+            );
+        } else if revoked.is_empty() {
             tracing::info!(%username, "registered a user and their first device");
         } else {
             tracing::info!(%username, revoked = revoked.len(), "re-keyed a user on re-invite");
@@ -506,11 +514,20 @@ fn register(
     identity_public_key: &[u8],
     signed: &pb::SignedDeviceCertificate,
     server_id: &str,
+    reusable_on: bool,
     now: SystemTime,
 ) -> Result<(String, Vec<DeviceId>), Status> {
+    // device-identity: Reusable review admin invite. Only a server with the
+    // review flag honours a reusable row; without it the row is unknown below.
+    if reusable_on
+        && let Some(username) = crate::admin::invites::reusable_username(tx, invite_code)?
+    {
+        return take_over_admin(tx, &username, identity_public_key, signed, server_id, now);
+    }
     let invite: Option<(String, i64, Option<i64>, Option<i64>)> = tx
         .query_row(
-            "SELECT username, expires_at, used_at, revoked_at FROM invites WHERE code = ?1",
+            "SELECT username, expires_at, used_at, revoked_at FROM invites
+             WHERE code = ?1 AND reusable = 0",
             params![invite_code],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -589,6 +606,51 @@ fn register(
     )
     .map_err(StoreError::from)?;
     Ok((username, revoked))
+}
+
+/// device-identity: Reusable review admin invite. The newest registration with
+/// the review server's reusable invite takes over the admin seat in this one
+/// transaction: every active admin device and the admin's single-use invites
+/// are revoked and the lobby is re-seeded (the steps `server admin-reset`
+/// takes), then the admin's identity key becomes the new one and the device is
+/// registered. The invite is never marked used. Returns the revoked devices so
+/// the caller closes their streams.
+fn take_over_admin(
+    tx: &Transaction<'_>,
+    username: &str,
+    identity_public_key: &[u8],
+    signed: &pb::SignedDeviceCertificate,
+    server_id: &str,
+    now: SystemTime,
+) -> Result<(String, Vec<DeviceId>), Status> {
+    // Check the certificate before touching anything, so a bad request leaves
+    // the current reviewer in place.
+    let cert = certificate::verify(signed, identity_public_key)?;
+    if cert.username != username || cert.server_id != server_id {
+        return Err(Status::permission_denied(format!(
+            "the certificate must name {username}@{server_id}, the user the invite creates"
+        )));
+    }
+    let cleared = crate::runtime::admin_reset::clear_admin_seat(tx, username, now)?;
+    match records::user(tx, username)? {
+        None => {
+            tx.execute(
+                "INSERT INTO users (username, identity_public_key, created_at) VALUES (?1, ?2, ?3)",
+                params![username, identity_public_key, unix_millis(now)],
+            )
+            .map_err(StoreError::from)?;
+        }
+        Some(_) => {
+            tx.execute(
+                "UPDATE users SET identity_public_key = ?2, created_at = ?3, removed_at = NULL
+                 WHERE username = ?1",
+                params![username, identity_public_key, unix_millis(now)],
+            )
+            .map_err(StoreError::from)?;
+        }
+    }
+    insert_device(tx, &cert, now)?;
+    Ok((username.to_owned(), cleared.revoked))
 }
 
 /// device-identity: Device linking. Returns the new device's id.

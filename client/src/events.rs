@@ -153,6 +153,9 @@ pub struct VideoBody {
     pub thumbhash: Vec<u8>,
     /// The blob's size on the server, in bytes.
     pub size: u64,
+    /// The caption, if there is one (message-content: Video caption and
+    /// mentions). Its mentions are the message's [`Message::mentions`].
+    pub caption: Option<String>,
     /// Where the clip is.
     pub state: MediaState,
 }

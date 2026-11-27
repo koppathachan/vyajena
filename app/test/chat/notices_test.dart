@@ -29,6 +29,10 @@ List<String> noticeTexts(WidgetTester tester) => [
     tile.text,
 ].reversed.toList();
 
+const removedAutomatically =
+    'bob was removed from the group automatically '
+    '(inactive or account deleted).';
+
 void main() {
   // spec: app-ui/notices-in-the-chat
   testWidgets('Back from holiday: the removal notice with its time, the '
@@ -210,12 +214,14 @@ void main() {
     core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince, chatId: 0));
     await settle(tester);
 
-    // Members is on top of the chat while a notice comes.
-    await menu(tester, 'Members');
+    // The chat is left (the chat list is shown) while notices come, then
+    // reopened.
+    await tester.pageBack();
+    await settle(tester);
     core.emit(const CoreEvent.identityKeyChanged(user: alice));
     core.receive(akhil, 'second');
     await settle(tester);
-    await tester.pageBack();
+    await enterGroup(tester);
     await settle(tester);
 
     final gap = find.textContaining('expired before this phone fetched them');
@@ -409,7 +415,7 @@ void main() {
     );
     await settle(tester);
     expect(noticeTexts(tester), [
-      'bob went inactive and was removed from the group.',
+      removedAutomatically,
     ]);
 
     // Bob comes back and the admin's phone re-adds him.
@@ -423,7 +429,7 @@ void main() {
     );
     await settle(tester);
     expect(noticeTexts(tester), [
-      'bob went inactive and was removed from the group.',
+      removedAutomatically,
       'bob came back and was re-added to the group.',
     ]);
   });

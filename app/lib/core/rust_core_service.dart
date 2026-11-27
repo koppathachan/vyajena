@@ -198,6 +198,8 @@ class RustCoreService extends CoreService {
     Uint8List? firstFrameRgba,
     int frameWidth = 0,
     int frameHeight = 0,
+    String? caption,
+    List<MentionSpan> mentions = const [],
   }) async => (await _c.sendVideoIn(
     chatId: chatId,
     mp4: mp4,
@@ -207,6 +209,8 @@ class RustCoreService extends CoreService {
     firstFrameRgba: firstFrameRgba ?? Uint8List(0),
     frameWidth: frameWidth,
     frameHeight: frameHeight,
+    caption: caption,
+    mentions: mentions,
   )).toInt();
 
   @override

@@ -1,8 +1,10 @@
 // Opening the app over the fake core in widget tests.
+import 'package:flutter/material.dart' show ListTile;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
+import 'package:vyajena/app/theme_mode.dart';
 import 'package:vyajena/chat/picture_picker.dart';
 import 'package:vyajena/chat/sticker_plugins.dart';
 import 'package:vyajena/chat/video_plugins.dart';
@@ -14,6 +16,13 @@ import 'fake_core_service.dart';
 const alice = UserRef(username: 'alice', serverId: 'chat');
 const bob = UserRef(username: 'bob', serverId: 'chat');
 const akhil = UserRef(username: 'akhil', serverId: 'chat');
+
+/// Turns the phone's reduce-motion setting on for this test.
+void reduceMotion(WidgetTester tester) {
+  tester.platformDispatcher.accessibilityFeaturesTestValue =
+      const FakeAccessibilityFeatures(disableAnimations: true);
+  addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+}
 
 /// Lets the fake core's futures, events and route transitions finish.
 /// (Never `Future.delayed` in `testWidgets`: its fake clock never runs it.)
@@ -51,12 +60,40 @@ class FakePicker extends PicturePicker {
   /// How many times the gallery was opened.
   int opened = 0;
 
+  /// How many times the in-app camera was opened.
+  int captured = 0;
+
+  /// What a multi-pick returns; when null, [pickMultiple] falls back to [pick].
+  List<Uint8List>? many;
+
+  /// How many times the gallery multi-pick was opened.
+  int multiOpened = 0;
+
   @override
   Future<Uint8List?> pick() async {
     opened++;
     final picked = next;
     next = null;
     return picked;
+  }
+
+  @override
+  Future<Uint8List?> capture() async {
+    captured++;
+    final taken = next;
+    next = null;
+    return taken;
+  }
+
+  @override
+  Future<List<Uint8List>> pickMultiple() async {
+    multiOpened++;
+    final picked = many;
+    if (picked != null) {
+      many = null;
+      return picked;
+    }
+    return super.pickMultiple();
   }
 }
 
@@ -140,7 +177,12 @@ Future<FakeCoreService> openHome(
   FakeCoreService? core,
 ]) async {
   final fake = core ?? FakeCoreService();
-  await tester.pumpWidget(VyajenaApp(core: fake));
+  // Arcade motion: no animation of its own under reduce-motion, so a looping
+  // float never holds a pump-until-settled test up. Motion has its own tests.
+  reduceMotion(tester);
+  await tester.pumpWidget(
+    VyajenaApp(core: fake, themeStore: MemoryThemeModeStore()),
+  );
   await fake.open();
   await settle(tester);
   return fake;
@@ -170,6 +212,30 @@ Future<void> menu(WidgetTester tester, String label) async {
   await tap(tester, find.text(label));
 }
 
+/// Opens an action on the Contacts tab by its [key] (app-shell: Contacts tab):
+/// e.g. 'contacts-invite', 'contacts-invites', 'contacts-new-group',
+/// 'contacts-remove-user'. The app must be on the shell (open it with
+/// [openHome]), since the admin actions moved off the old chat overflow menu to
+/// this tab (change `shell-nav-consistency`).
+Future<void> contactsAction(WidgetTester tester, String key) async {
+  await tap(tester, find.byKey(const Key('tab-contacts')));
+  await tap(tester, find.byKey(Key(key)));
+}
+
+/// Opens the Profile tab (app-shell), where Link a new device and the profile
+/// settings now live (change `shell-nav-consistency`).
+Future<void> openProfileTab(WidgetTester tester) async {
+  await tap(tester, find.byKey(const Key('tab-profile')));
+}
+
+/// A tall screen, so a whole long tab (e.g. the Profile tab, whose settings sit
+/// below the fold) is built and reachable in a lazy ListView.
+void tall(WidgetTester tester) {
+  tester.view.physicalSize = const Size(800, 2400);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+}
+
 /// Records what the app asks the platform to share.
 List<String> recordShares(WidgetTester tester) {
   final shared = <String>[];
@@ -189,4 +255,18 @@ List<String> recordShares(WidgetTester tester) {
     ),
   );
   return shared;
+}
+
+/// The name a chat-list row shows: its title Text, or (the lobby, a muted row)
+/// the Text inside the title's Row.
+String? tileTitle(ListTile tile) {
+  final title = tile.title;
+  if (title is Text) return title.data;
+  if (title is Row) {
+    for (final child in title.children) {
+      final widget = child is Flexible ? child.child : child;
+      if (widget is Text) return widget.data;
+    }
+  }
+  return null;
 }

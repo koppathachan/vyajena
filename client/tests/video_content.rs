@@ -4,13 +4,18 @@
 
 use std::time::{Duration, SystemTime};
 
-use client::messaging::{self, Decoded, VideoContent, encode_video};
+use client::messaging::{self, ContentError, Decoded, VideoContent, encode_video};
+use client::{Mention, MentionTarget, UserId};
 use prost::Message as _;
 use protocol::blob_store::MAX_THUMBHASH_BYTES;
 use protocol::video::{MAX_VIDEO_BYTES, MAX_VIDEO_DURATION_MS};
 
 fn now() -> SystemTime {
     SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000)
+}
+
+fn bob() -> UserId {
+    UserId::new("bob", "chat")
 }
 
 fn video() -> VideoContent {
@@ -22,6 +27,8 @@ fn video() -> VideoContent {
         width: 854,
         height: 480,
         thumbhash: vec![9; 25],
+        caption: None,
+        mentions: Vec::new(),
     }
 }
 
@@ -50,7 +57,24 @@ struct RawVideo {
     height: u32,
     #[prost(bytes = "vec", tag = "7")]
     thumbhash: Vec<u8>,
+    #[prost(string, optional, tag = "8")]
+    caption: Option<String>,
+    #[prost(message, repeated, tag = "9")]
+    caption_mentions: Vec<RawMention>,
 }
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct RawMention {
+    #[prost(uint32, tag = "3")]
+    start: u32,
+    #[prost(uint32, tag = "4")]
+    length: u32,
+    #[prost(message, optional, tag = "2")]
+    everyone: Option<RawEveryone>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct RawEveryone {}
 
 /// A `Content` carrying a `Video` at field 8.
 #[derive(Clone, PartialEq, prost::Message)]
@@ -68,6 +92,8 @@ fn good_raw() -> RawVideo {
         width: 640,
         height: 360,
         thumbhash: vec![9; 25],
+        caption: None,
+        caption_mentions: Vec::new(),
     }
 }
 
@@ -206,4 +232,71 @@ fn a_client_that_predates_video_sees_a_body_it_does_not_know() {
         old.text, None,
         "the old core finds no text and shows its placeholder"
     );
+}
+
+// spec: message-content/video-caption-and-mentions
+#[test]
+fn a_caption_with_a_mention_round_trips() {
+    let mut with_caption = video();
+    with_caption.caption = Some("@Bob look".to_owned());
+    with_caption.mentions = vec![Mention {
+        target: MentionTarget::User(bob()),
+        start: 0,
+        len: 4,
+    }];
+    let content = encode_video(&with_caption, now()).expect("encode");
+    assert_eq!(video_of(&content), with_caption);
+}
+
+// spec: message-content/video-caption-and-mentions
+#[test]
+fn the_sender_refuses_a_bad_caption_mention() {
+    for (caption, start, len) in [
+        (Some("hi"), 1, 8), // outside the text
+        (Some("hi"), 0, 0), // empty
+        (Some("é"), 1, 1),  // inside a character
+        (None, 0, 1),       // a mention without a caption
+    ] {
+        let mut bad = video();
+        bad.caption = caption.map(str::to_owned);
+        bad.mentions = vec![Mention {
+            target: MentionTarget::Everyone,
+            start,
+            len,
+        }];
+        assert_eq!(
+            encode_video(&bad, now()),
+            Err(ContentError::InvalidMention),
+            "{caption:?} {start}..+{len}"
+        );
+    }
+}
+
+// spec: message-content/video-caption-and-mentions
+#[test]
+fn the_receiver_drops_a_bad_caption_span_and_keeps_the_caption() {
+    let raw = RawVideo {
+        caption: Some("hi".to_owned()),
+        caption_mentions: vec![RawMention {
+            start: 1,
+            length: 8,
+            everyone: Some(RawEveryone {}),
+        }],
+        ..good_raw()
+    };
+    let Decoded::Video(video) = decoded(raw) else {
+        panic!("expected a video");
+    };
+    assert_eq!(video.caption.as_deref(), Some("hi"));
+    assert!(video.mentions.is_empty());
+}
+
+// spec: message-content/video-caption-and-mentions
+#[test]
+fn a_captionless_video_still_decodes_at_an_older_client() {
+    // Both caption fields are optional, so a captionless video is exactly the
+    // pre-caption wire shape and round-trips unchanged.
+    let content = encode_video(&video(), now()).expect("encode");
+    assert_eq!(video_of(&content).caption, None);
+    assert!(video_of(&content).mentions.is_empty());
 }

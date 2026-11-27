@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/core/core_service.dart';
+import 'package:vyajena/members/contacts_tab.dart';
+import 'package:vyajena/shell/avatars.dart';
 
 import '../chat/dms_test.dart' show aliceInGroup, dmWithBob;
 import '../chat/groups_test.dart' as g;
@@ -29,16 +31,9 @@ FakeCoreService aliceWithEverything() {
   return core;
 }
 
-/// A tall screen, so the whole Profile tab is built and on screen.
-void tall(WidgetTester tester) {
-  tester.view.physicalSize = const Size(800, 2400);
-  tester.view.devicePixelRatio = 1;
-  addTearDown(tester.view.reset);
-}
-
 void main() {
   // spec: app-shell/bottom-navigation
-  testWidgets('three tabs; the third is the round avatar, not a gear', (
+  testWidgets('three tabs; the third is the square avatar, not a gear', (
     tester,
   ) async {
     await openHome(tester, aliceWithEverything());
@@ -55,12 +50,9 @@ void main() {
     );
     expect(find.byIcon(Icons.settings), findsNothing);
     expect(find.byIcon(Icons.settings_outlined), findsNothing);
-    // The avatar is a circle.
+    // The avatar is a square (Arcade look), the monogram box.
     expect(
-      find.descendant(
-        of: find.byKey(const Key('profile-avatar')),
-        matching: find.byType(CircleAvatar),
-      ),
+      find.descendant(of: profileTab, matching: find.byType(NameAvatar)),
       findsOneWidget,
     );
   });
@@ -78,8 +70,8 @@ void main() {
       of: profileTab,
       matching: find.byKey(const Key('profile-presence-dot')),
     );
-    BoxDecoration deco() =>
-        tester.widget<Container>(dot).decoration! as BoxDecoration;
+    ShapeDecoration deco() =>
+        tester.widget<Container>(dot).decoration! as ShapeDecoration;
 
     // Offline is the first-launch default, so the dot starts in the error
     // colour.
@@ -136,7 +128,7 @@ void main() {
     await openHome(tester, core);
     final rows = tester
         .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
+        .map(tileTitle)
         .toList();
     expect(rows, ['lobby', 'Weekend', 'Bobby (bob)']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);
@@ -167,7 +159,7 @@ void main() {
     await openHome(tester, core);
     final rows = tester
         .widgetList<ListTile>(find.byType(ListTile))
-        .map((t) => (t.title as Text).data)
+        .map(tileTitle)
         .toList();
     expect(rows.last, 'Bobby (bob)');
   });
@@ -269,6 +261,24 @@ void main() {
     expect(find.byType(ChatScreen), findsOneWidget);
   });
 
+  // spec: app-shell/conversation-screen
+  testWidgets('the conversation overflow menu carries no tab duplicates', (
+    tester,
+  ) async {
+    await openHome(tester, aliceWithEverything());
+    await tap(tester, find.byKey(const ValueKey('chat-1'))); // the DM with Bob
+    await tap(tester, find.byTooltip('Menu'));
+    // Conversation-scoped only.
+    expect(find.byKey(const Key('conversation-mute-toggle')), findsOneWidget);
+    // None of the tabs' destinations or the admin actions are duplicated here.
+    expect(find.text('Members'), findsNothing);
+    expect(find.text('Profile'), findsNothing);
+    expect(find.text('Link a new device'), findsNothing);
+    expect(find.text('Invite a user'), findsNothing);
+    expect(find.text('Invites'), findsNothing);
+    expect(find.text('Remove a user'), findsNothing);
+  });
+
   // spec: app-shell/contacts-tab
   testWidgets('members carry the "you" marker, the admin the badge', (
     tester,
@@ -304,11 +314,74 @@ void main() {
   });
 
   // spec: app-shell/contacts-tab
-  testWidgets('tapping a member opens their DM', (tester) async {
+  testWidgets('tapping a member opens their profile, not the DM', (
+    tester,
+  ) async {
     final core = aliceInGroup();
     await openHome(tester, core);
     await tap(tester, contactsTab);
     await tap(tester, find.byKey(const Key('contact-bob')));
+    // The profile opens; no DM is started just by looking.
+    expect(find.byKey(const Key('member-name')), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
+    expect(find.byType(ChatScreen), findsNothing);
+    // Message from the profile opens the DM.
+    await tap(tester, find.byKey(const ValueKey('message-bob')));
+    expect(core.calls, contains('openDm'));
+    expect(find.byType(ChatScreen), findsOneWidget);
+  });
+
+  // spec: app-shell/member-profile
+  testWidgets('the member profile shows the member and a Message action', (
+    tester,
+  ) async {
+    final core = aliceInGroup();
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    expect(find.byKey(const Key('member-avatar')), findsOneWidget);
+    expect(find.text('Bobby (bob)'), findsOneWidget);
+    // Bob has one device in the fixture.
+    expect(find.byKey(const Key('member-devices')), findsOneWidget);
+    expect(find.text('1 device'), findsOneWidget);
+    expect(find.byKey(const ValueKey('message-bob')), findsOneWidget);
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('tapping your own row opens the Profile tab', (tester) async {
+    tall(tester);
+    final core = aliceInGroup();
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-alice')));
+    expect(find.byKey(const Key('profile-list')), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('Message says so when DMs are not offered', (tester) async {
+    final core = aliceInGroup()..dms = false;
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    // The tap still did something: the profile opened.
+    expect(find.byKey(const Key('member-name')), findsOneWidget);
+    await tap(tester, find.byKey(const ValueKey('message-bob')));
+    expect(find.text(dmsUnavailableText), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('Message opens the DM once DMs are learnt after the tab loaded', (
+    tester,
+  ) async {
+    final core = aliceInGroup()..dms = false;
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    // The device connects and learns the server offers DMs.
+    core.dms = true;
+    await tap(tester, find.byKey(const ValueKey('message-bob')));
     expect(core.calls, contains('openDm'));
     expect(find.byType(ChatScreen), findsOneWidget);
   });

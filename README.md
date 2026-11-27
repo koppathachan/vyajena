@@ -304,17 +304,24 @@ reached at **`vyajarelay.purplechaamba.com:<review-port>`** through the same tun
 its own token. Change `review-server`.
 
 ```
-admin       the "Vyajena Review" iOS simulator (review@review.purplechaamba.com)
-invite      on that simulator: menu -> Invite a user -> a fresh single-use invite per review
-            (paste it into Play's App access form; never into the repo)
-reset       deploy/server/deploy.sh --reset-review    wipes only the review server (type its id)
-            the new review bootstrap invite -> ~/vyajena-server-backups/review-bootstrap-invite-<UTC>.txt
-check       deploy/server/check.sh                    covers both servers; fails if they share a pin
+invite      deploy/server/deploy.sh --review-invite   the reusable admin invite
+            -> ~/vyajena-server-backups/review-admin-invite-<UTC>.txt (owner only;
+            paste it into Play and App Store once; never into the repo)
+reset       deploy/server/deploy.sh --reset-review    wipes only the review server (type its id);
+            new pin, so run --review-invite again and update the store forms
+check       deploy/server/check.sh                    covers both servers; fails if they share a
+            pin or if the real server has a [review] table
 ```
 
+- **One reusable admin invite** (change `review-admin-invite`): `review.toml`
+  sets `[review] reusable_admin_invite = true`. The invite never expires and is
+  never used up. Each reviewer who pastes it becomes the admin; **the last join
+  wins**: the reviewer before is removed, the lobby starts fresh and its members
+  are re-added. A removed reviewer reinstalls the app and pastes it again.
+- The review server mints no bootstrap invite. Never set `[review]` on the real
+  server.
 - `deploy/server/deploy.sh` installs and upgrades both servers; `backup.sh` skips
   the review server (no real data).
-- After a review: remove the reviewer (menu -> Remove a user) or `--reset-review`.
 
 ## Release
 

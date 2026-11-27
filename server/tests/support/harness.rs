@@ -71,6 +71,9 @@ pub struct TestServer {
     _dir: tempfile::TempDir,
 }
 
+/// The config table that makes a server the store reviewers' server.
+pub const REVIEW_CONFIG: &str = "[review]\nreusable_admin_invite = true\n";
+
 impl TestServer {
     /// Starts a fresh server (admin `akhil@chat`) whose wake pings are
     /// recorded in [`TestServer::pushes`].
@@ -88,6 +91,13 @@ impl TestServer {
     /// (video-messages: Config-driven limit).
     pub async fn start_with_blobs_and_config(blobs: Blobs, extra_config: &str) -> Self {
         Self::start_inner(true, blobs, extra_config.to_owned()).await
+    }
+
+    /// A store reviewers' server: `[review] reusable_admin_invite = true`, so
+    /// [`TestServer::bootstrap_code`] is the reusable admin invite
+    /// (device-identity: Reusable review admin invite).
+    pub async fn start_review() -> Self {
+        Self::start_inner(true, Blobs::Off, REVIEW_CONFIG.to_owned()).await
     }
 
     /// Starts a fresh server with the default push provider (the logging
@@ -114,7 +124,7 @@ impl TestServer {
         }
         .check("server start");
         let bootstrap_code = match server.bootstrap() {
-            Bootstrap::Created(invite) => invite.invite.code.clone(),
+            Bootstrap::Created(invite) | Bootstrap::Reusable(invite) => invite.invite.code.clone(),
             other => panic!("expected a bootstrap invite, got {other:?}"),
         };
         let addr = server.local_addr();

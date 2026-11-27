@@ -6,7 +6,7 @@
   It says what app/store/privacy.md says; change all three together.
 -->
 
-*Last updated: 2026-11-16*
+*Last updated: 2026-11-27*
 
 Vyajena is an end-to-end encrypted, text-only chat for one private group. It is
 made and run by Akhil Sasidharan (purplechaamba.com), who also runs the group's server.
@@ -45,9 +45,26 @@ cloud backups. Deleting the app deletes them and your keys.
 
 ## Removing your account
 
-Ask the group's admin to remove you: that deletes your username, your devices,
-their keys and anything still waiting for you on the server. You can also
-write to privacy@purplechaamba.com.
+You can delete your account yourself, in the app: **Profile › Delete account**.
+You confirm by typing your username, and the deletion is immediate and cannot
+be undone. It works like this:
+
+- **On the server**, your devices are removed, along with their keys and
+  certificates, your push tokens, any messages still waiting for you and any
+  pictures you uploaded. You are removed from every group you were in, and your
+  username is freed so it can be invited again. The server keeps only a minimal
+  "removed" marker for the username (it keeps your devices revoked) and nothing
+  else about you.
+- **On your phone**, the app wipes your local account, chats, history and keys
+  and returns to the welcome screen.
+- **What stays**: messages other members already received stay on their own
+  phones. The server holds no history and cannot reach those copies.
+- **The admin account** is the one exception: it cannot be deleted from the app
+  and is reset only by the operator on the server.
+
+If you cannot use the app, ask the group's admin to remove you, or write to
+privacy@purplechaamba.com. Deleting the app alone removes the data on your phone,
+not your account on the server.
 
 ## Children
 

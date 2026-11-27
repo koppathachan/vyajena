@@ -72,6 +72,7 @@ class GroupMenu extends StatelessWidget {
       await showDialog<void>(
         context: context,
         builder: (dialog) => AlertDialog(
+          scrollable: true,
           title: const Text('Members'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -166,6 +167,7 @@ class GroupMenu extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (dialog) => AlertDialog(
+        scrollable: true,
         title: const Text('Rename group'),
         content: TextField(
           key: const Key('group-rename-field'),
@@ -198,6 +200,7 @@ class GroupMenu extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialog) => AlertDialog(
+        scrollable: true,
         title: const Text('Close group?'),
         content: const Text(
           'Everyone keeps the history, but no one can write in it any more.',

@@ -93,6 +93,10 @@ pub struct VideoView {
     pub thumbhash: Vec<u8>,
     /// The clip's size on the server in bytes, to show before downloading.
     pub size: u64,
+    /// The caption, only to be shown; its mentions are the message's
+    /// `mentions`, as UTF-16 ranges of this text (message-content: Video caption
+    /// and mentions).
+    pub caption: Option<String>,
     /// Where the clip is.
     pub state: MediaStatus,
 }

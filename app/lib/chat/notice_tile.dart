@@ -50,7 +50,10 @@ String noticeText(
   InactivityNotice(:final user, :final returned) =>
     returned
         ? '${name(user)} came back and was re-added to the group.'
-        : '${name(user)} went inactive and was removed from the group.',
+        // The client cannot tell an inactivity removal from a deleted account
+        // (both are the server's external Remove), so the line names both.
+        : '${name(user)} was removed from the group automatically '
+              '(inactive or account deleted).',
 };
 
 /// One notice row.

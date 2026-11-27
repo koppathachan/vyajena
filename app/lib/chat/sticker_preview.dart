@@ -68,7 +68,7 @@ class _StickerPreviewState extends State<StickerPreview> {
   Widget build(BuildContext context) {
     final image = _image;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.zero,
       child: SizedBox(
         width: widget.size,
         height: widget.size,

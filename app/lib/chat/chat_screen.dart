@@ -7,18 +7,19 @@
 // when the badge takes the user to it. Tapping a reply's quote scrolls to
 // the original when it is among the loaded messages.
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
 import '../app/moderation.dart';
-import '../app/routes.dart';
 import '../app/connection_indicator.dart';
 import '../shell/avatars.dart';
 import '../core/core_service.dart';
 import 'chat_model.dart';
 import 'composer.dart';
+import 'forward_picker.dart';
 import 'group_menu.dart';
 import 'mentions.dart';
 import 'message_tile.dart';
@@ -275,7 +276,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ChatBody_Text(:final text) => text,
           ChatBody_Image(:final image) => image.caption ?? pictureQuote,
           ChatBody_Audio() => voiceQuote,
-          ChatBody_Video() => videoQuote,
+          ChatBody_Video(:final video) => video.caption ?? videoQuote,
           _ => unsupportedText,
         },
         // So the reply bar previews a voice, picture or video original correctly
@@ -298,6 +299,66 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// The text Copy puts on the clipboard for [message], or null when it has no
+  /// text to copy (message-actions: Copy a message): a text body, or an image or
+  /// video with a non-empty caption. Media-only messages, tombstones and
+  /// unsupported bodies have none.
+  String? _copyText(ChatMessage message) {
+    final body = message.body;
+    final text = switch (body) {
+      ChatBody_Text(:final text) => text,
+      ChatBody_Image(:final image) => image.caption,
+      ChatBody_Video(:final video) => video.caption,
+      _ => null,
+    };
+    return (text != null && text.isNotEmpty) ? text : null;
+  }
+
+  /// The text Forward sends, or null when [message] is not forwardable
+  /// (message-actions: Forward a message): only a text body this version; a
+  /// forward of an attachment needs a core call this change does not add.
+  String? _forwardText(ChatMessage message) {
+    final body = message.body;
+    return body is ChatBody_Text && body.text.isNotEmpty ? body.text : null;
+  }
+
+  /// Copies [message]'s text to the clipboard and confirms (message-actions:
+  /// Copy a message). Nothing leaves the device.
+  Future<void> _copyMessage(ChatMessage message) async {
+    final text = _copyText(message);
+    if (text == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(text: text));
+    messenger.showSnackBar(const SnackBar(content: Text('Copied')));
+  }
+
+  /// Forwards [message]'s text into a chat the user picks (message-actions:
+  /// Forward a message): a new standalone message, carrying neither the
+  /// original's mentions nor its reply quote.
+  Future<void> _forwardMessage(ChatMessage message) async {
+    final text = _forwardText(message);
+    if (text == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final target = await ForwardPicker.pick(
+      context,
+      widget.core,
+      excludeChatId: _model.chatId,
+    );
+    if (target == null) return;
+    try {
+      if (target.chatId == 0) {
+        await widget.core.sendText(text);
+      } else {
+        await widget.core.sendMessageIn(target.chatId, text);
+      }
+      messenger.showSnackBar(
+        SnackBar(content: Text('Forwarded to ${target.title}')),
+      );
+    } catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
+    }
+  }
+
   Future<void> _send(String text, List<MentionSpan> mentions) async {
     await _model.send(text, mentions: mentions, replyTo: _reply?.id);
     if (mounted) setState(() => _reply = null);
@@ -307,7 +368,11 @@ class _ChatScreenState extends State<ChatScreen> {
     Uint8List picked,
     String? caption,
     List<MentionSpan> mentions,
-  ) => _model.sendImage(picked, caption: caption, mentions: mentions);
+  ) async {
+    await _model.sendImage(picked, caption: caption, mentions: mentions);
+    // Picking a picture keeps the reply pending; sending it consumes the reply.
+    if (mounted) setState(() => _reply = null);
+  }
 
   Future<void> _sendSticker(Cutout cutout) => _model.sendSticker(cutout);
 
@@ -386,12 +451,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  /// Picks a source (record or gallery), normalizes the clip through the native
-  /// plugin and sends it (app-ui: Send a video). Owned here so the composer
-  /// stays free of the camera, picker and plugin.
-  Future<void> _sendVideo() async {
+  /// Shows the Record / gallery sub-sheet and returns the normalized clips for
+  /// the compose tray (app-ui: Send a video; Compose tray). Owned here so the
+  /// composer stays free of the camera, picker and plugin; the native normalize
+  /// (the ~5 s step the tray shows a "processing video…" state for) runs here.
+  Future<List<NormalizedVideo>> _pickVideos() async {
     final source = VideoScope.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheet) => SafeArea(
@@ -415,24 +480,35 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       ),
     );
-    if (choice == null) return;
-    try {
-      final clip = choice == 'record'
-          ? await source.record()
-          : await source.pick();
-      if (clip == null) return;
-      await _model.sendVideo(
-        clip.mp4,
-        durationMs: clip.durationMs,
-        width: clip.width,
-        height: clip.height,
-        firstFrameRgba: clip.firstFrameRgba,
-        frameWidth: clip.frameWidth,
-        frameHeight: clip.frameHeight,
-      );
-    } catch (error) {
-      messenger.showSnackBar(SnackBar(content: Text(errorText(error))));
-    }
+    if (choice == null) return const [];
+    // Recording makes one clip; the gallery can pick several. Each is normalized
+    // before it lands in the tray. Errors propagate to the composer, which shows
+    // them (app-ui: Compose tray).
+    return choice == 'record'
+        ? [await source.record()].whereType<NormalizedVideo>().toList()
+        : await source.pickMultiple();
+  }
+
+  /// Sends one staged video with an optional caption and its mentions (app-ui:
+  /// Compose tray). The reply bar goes once a staged item is sent, as for a text
+  /// or image send.
+  Future<void> _sendStagedVideo(
+    NormalizedVideo clip,
+    String? caption,
+    List<MentionSpan> mentions,
+  ) async {
+    await _model.sendVideo(
+      clip.mp4,
+      durationMs: clip.durationMs,
+      width: clip.width,
+      height: clip.height,
+      firstFrameRgba: clip.firstFrameRgba,
+      frameWidth: clip.frameWidth,
+      frameHeight: clip.frameHeight,
+      caption: caption,
+      mentions: mentions,
+    );
+    if (mounted) setState(() => _reply = null);
   }
 
   /// Whether this device may delete [message] (message-deletion: Who may
@@ -679,7 +755,6 @@ class _ChatScreenState extends State<ChatScreen> {
               )
             else
               ChatMenu(
-                admin: widget.admin && _model.isMain,
                 lobby: _model.isMain,
                 muted: _muted,
                 onToggleMute: _toggleMuted,
@@ -737,6 +812,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                   onReply: widget.core.removed.value
                                       ? null
                                       : () => _startReply(message),
+                                  onCopy: _copyText(message) != null
+                                      ? () => _copyMessage(message)
+                                      : null,
+                                  onForward: _forwardText(message) != null
+                                      ? () => _forwardMessage(message)
+                                      : null,
                                   onDelete:
                                       _canDelete(message, peer == null)
                                       ? () => _deleteMessage(message)
@@ -837,11 +918,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 core: widget.core,
                 send: _send,
                 pickImage: PicturePickerScope.of(context).pick,
+                captureImage: PicturePickerScope.of(context).capture,
+                pickImages: PicturePickerScope.of(context).pickMultiple,
                 sendImage: _sendImage,
                 segmenter: SegmenterScope.of(context),
                 sendSticker: _sendSticker,
                 sendAudio: _sendAudio,
-                onSendVideo: _sendVideo,
+                pickVideos: _pickVideos,
+                sendVideo: _sendStagedVideo,
                 onRecordingStarted: () => _playback?.stop(),
                 choices: _choices,
                 reply: _reply,
@@ -868,7 +952,7 @@ class _NewMessagesDivider extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          Expanded(child: Divider(color: scheme.primary)),
+          Expanded(child: SketchDivider(seed: 1, color: scheme.primary)),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Text(
@@ -879,50 +963,30 @@ class _NewMessagesDivider extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: Divider(color: scheme.primary)),
+          Expanded(child: SketchDivider(seed: 2, color: scheme.primary)),
         ],
       ),
     );
   }
 }
 
-/// The chat's menu entries.
-enum MenuEntry {
-  members('Members', Routes.members),
-  profile('Profile', Routes.profile),
-  linkDevice('Link a new device', Routes.approveLink),
-  invite('Invite a user', Routes.invite),
-  invites('Invites', Routes.invites),
-  removeUser('Remove a user', Routes.removeUser);
-
-  const MenuEntry(this.label, this.route);
-
-  final String label;
-  final String route;
-
-  /// Whether only admin devices show it.
-  bool get adminOnly => switch (this) {
-    invite || invites || removeUser => true,
-    members || profile || linkDevice => false,
-  };
-}
-
-/// The chat's menu: everyone's entries, and the admin's only on admin
-/// devices (the server rejects other devices' admin calls anyway).
-/// The mute/unmute entry's value in [ChatMenu] (it is not a route like the
-/// other entries).
+/// The lobby/DM conversation menu: only conversation-scoped actions
+/// (app-shell: Conversation screen). It carries mute/unmute and, for the lobby,
+/// the greyed notes that its name is fixed and it cannot be closed. It no longer
+/// lists Members, Profile, Link a new device or the admin Invite/Invites/Remove
+/// actions: those are the Contacts and Profile tabs. With nothing to show it
+/// renders no button at all.
+///
+/// The mute/unmute entry's value in [ChatMenu].
 const String _muteAction = '__mute_toggle__';
 
 class ChatMenu extends StatelessWidget {
   const ChatMenu({
     super.key,
-    required this.admin,
     this.lobby = false,
     this.muted = false,
     this.onToggleMute,
   });
-
-  final bool admin;
 
   /// Whether this is the lobby's menu: it lists "Rename group" and "Close
   /// group" greyed out, so the fixed name and the missing close show
@@ -937,38 +1001,36 @@ class ChatMenu extends StatelessWidget {
   final Future<void> Function()? onToggleMute;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<Object>(
-    tooltip: 'Menu',
-    onSelected: (entry) {
-      if (entry == _muteAction) {
-        onToggleMute?.call();
-      } else if (entry is MenuEntry) {
-        Navigator.of(context).pushNamed(entry.route);
-      }
-    },
-    itemBuilder: (context) => [
-      if (onToggleMute != null)
-        PopupMenuItem<Object>(
-          key: const Key('conversation-mute-toggle'),
-          value: _muteAction,
-          child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
-        ),
-      for (final entry in MenuEntry.values)
-        if (admin || !entry.adminOnly)
-          PopupMenuItem(value: entry, child: Text(entry.label)),
-      if (lobby) ...const [
-        PopupMenuDivider(),
-        PopupMenuItem<Object>(
-          key: ValueKey('lobby-rename-disabled'),
-          enabled: false,
-          child: Text('Rename group (the lobby is fixed)'),
-        ),
-        PopupMenuItem<Object>(
-          key: ValueKey('lobby-close-disabled'),
-          enabled: false,
-          child: Text('Close group (the lobby cannot be closed)'),
-        ),
+  Widget build(BuildContext context) {
+    // Nothing conversation-scoped to offer: show no overflow button
+    // (app-shell: Conversation screen).
+    if (onToggleMute == null && !lobby) return const SizedBox.shrink();
+    return PopupMenuButton<Object>(
+      tooltip: 'Menu',
+      onSelected: (entry) {
+        if (entry == _muteAction) onToggleMute?.call();
+      },
+      itemBuilder: (context) => [
+        if (onToggleMute != null)
+          PopupMenuItem<Object>(
+            key: const Key('conversation-mute-toggle'),
+            value: _muteAction,
+            child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+          ),
+        if (lobby) ...const [
+          PopupMenuDivider(),
+          PopupMenuItem<Object>(
+            key: ValueKey('lobby-rename-disabled'),
+            enabled: false,
+            child: Text('Rename group (the lobby is fixed)'),
+          ),
+          PopupMenuItem<Object>(
+            key: ValueKey('lobby-close-disabled'),
+            enabled: false,
+            child: Text('Close group (the lobby cannot be closed)'),
+          ),
+        ],
       ],
-    ],
-  );
+    );
+  }
 }

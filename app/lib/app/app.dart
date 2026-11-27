@@ -21,8 +21,11 @@ import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
 import 'routes.dart';
+import 'share_intake.dart';
 import 'shell_app_bar.dart';
+import 'arcade/tokens.dart';
 import 'theme.dart';
+import 'theme_mode.dart';
 
 /// The app, over [core]. Pump it before opening the core: its chat model
 /// follows the core's events from the start.
@@ -37,9 +40,14 @@ class VyajenaApp extends StatefulWidget {
     this.voice = const DeviceVoicePlugins(),
     this.segmenter = const DeviceSegmenter(),
     this.video = const DeviceVideoSource(),
+    this.themeStore = const DeviceThemeModeStore(),
   });
 
   final CoreService core;
+
+  /// Where the Auto/Light/Dark choice is kept (app-ui: Arcade look); the
+  /// phone's store, or a memory one in widget tests.
+  final ThemeModeStore themeStore;
 
   /// Where a picture to send comes from (app-ui: Send an image); the
   /// gallery, or a fake in widget tests.
@@ -74,13 +82,27 @@ class VyajenaApp extends StatefulWidget {
 
 class _VyajenaAppState extends State<VyajenaApp> {
   late final ChatModel _chat = ChatModel(widget.core);
-  final _navigator = GlobalKey<NavigatorState>();
+  late final ThemeModeController _theme = ThemeModeController(
+    widget.themeStore,
+  );
   PushService? _push;
   NotificationService? _notifications;
+
+  /// The app's navigator and messenger, so an inbound share (which can arrive
+  /// while no chat is on screen) can open the picker and show a snackbar from
+  /// the app root (change `message-actions-share`).
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  final _messengerKey = GlobalKey<ScaffoldMessengerState>();
+  late final ShareIntake _shareIntake = ShareIntake(
+    core: widget.core,
+    navigatorKey: _navigatorKey,
+    messengerKey: _messengerKey,
+  );
 
   @override
   void initState() {
     super.initState();
+    unawaited(_theme.restore());
     final api = widget.push;
     if (api != null) {
       _push = PushService(core: widget.core, api: api)..start();
@@ -90,6 +112,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
         onOpen: _open,
       )..start();
     }
+    _shareIntake.start();
   }
 
   /// A tapped notification: once the core is open, the conversation it names.
@@ -107,7 +130,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
       await ready.future;
       core.state.removeListener(listener);
     }
-    final navigator = _navigator.currentState;
+    final navigator = _navigatorKey.currentState;
     if (core.state.value != CoreState.ready || navigator == null) return;
     await openTappedConversation(
       navigator: navigator,
@@ -120,8 +143,10 @@ class _VyajenaAppState extends State<VyajenaApp> {
   @override
   void dispose() {
     _notifications?.dispose();
+    _shareIntake.stop();
     _push?.dispose();
     _chat.dispose();
+    _theme.dispose();
     super.dispose();
   }
 
@@ -139,17 +164,35 @@ class _VyajenaAppState extends State<VyajenaApp> {
           segmenter: widget.segmenter,
           child: VideoScope(
             source: widget.video,
-            child: MaterialApp(
-              title: 'Vyajena',
-              // Never the debug banner, also in profile builds and screenshots
-              // (app-release design D7).
-              debugShowCheckedModeBanner: false,
-              theme: lightTheme,
-              darkTheme: darkTheme,
-              themeMode: themeMode,
-              navigatorKey: _navigator,
-              home: HomeScreen(core: widget.core, chat: _chat),
-              routes: appRoutes(widget.core),
+            child: ThemeModeScope(
+              controller: _theme,
+              // app-ui: Theme choice. The theme gives both palettes; the
+              // Auto/Light/Dark choice picks between them.
+              child: ListenableBuilder(
+                listenable: Listenable.merge([_theme, _theme.theme]),
+                builder: (context, _) => MaterialApp(
+                  title: 'Vyajena',
+                  navigatorKey: _navigatorKey,
+                  scaffoldMessengerKey: _messengerKey,
+                  // Never the debug banner, also in profile builds and screenshots
+                  // (app-release design D7).
+                  debugShowCheckedModeBanner: false,
+                  theme: themeFor(_theme.theme.value, Brightness.light),
+                  darkTheme: themeFor(_theme.theme.value, Brightness.dark),
+                  themeMode: _theme.value,
+                  // The text scale is capped (app-ui: Arcade motion).
+                  builder: (context, child) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: MediaQuery.textScalerOf(
+                        context,
+                      ).clamp(maxScaleFactor: maxTextScale),
+                    ),
+                    child: child!,
+                  ),
+                  home: HomeScreen(core: widget.core, chat: _chat),
+                  routes: appRoutes(widget.core),
+                ),
+              ),
             ),
           ),
         ),
