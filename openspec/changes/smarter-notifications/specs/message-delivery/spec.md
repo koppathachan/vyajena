@@ -49,3 +49,24 @@ notifications are fixed, content-free phrases). The server enforces this.
 - **WHEN** an offline device's only backlog is a commit that re-keys the group and
   does not change that user's membership
 - **THEN** the server sends no wake push (unchanged from `push-kind-aware`)
+
+### Requirement: A muted conversation's backlog never alerts a device
+The server SHALL NOT count a pending `APPLICATION` entry in a conversation the
+device's user has muted when deciding whether an offline device has a backlog to
+alert for, and SHALL NOT count any entry for a user who muted the whole app. A
+device whose only notifiable backlog is muted is therefore sent no wake push by
+the sweep catch-up, the re-ping on stream loss, or an unrelated control envelope
+in another conversation, since the device could show nothing for it (a phantom
+alert on iOS, where a pushed alert cannot be withdrawn). The entry stays queued and
+arrives on the device's next `Connect`. The server enforces this.
+
+#### Scenario: A muted backlog is not swept
+- **WHEN** Bob muted "Work", is offline with a push token, and his only queued
+  entry is a message in "Work"
+- **THEN** repeated sweeps send him no wake push, and the message is still there on
+  his next `Connect`
+
+#### Scenario: A muted backlog does not ride another conversation's control traffic
+- **WHEN** the same muted "Work" message is queued and a commit arrives in an
+  unmuted group
+- **THEN** the server sends Bob no wake push

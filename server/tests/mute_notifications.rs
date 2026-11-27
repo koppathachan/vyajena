@@ -250,3 +250,48 @@ async fn an_unmuted_conversation_still_pings() {
     wait_pings(&w.server, &w.phone, 1).await;
     assert_eq!(w.server.pushes.count(&w.phone.device_id), 1);
 }
+
+// spec: notification-prefs/a-muted-conversation-gets-no-wake-push
+#[tokio::test]
+async fn a_backlog_only_in_a_muted_conversation_is_never_swept() {
+    // A muted conversation's queued message must not be turned into a wake push
+    // later by the catch-up sweep: the device has nothing it may show.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    set_mute(&w, &w.phone, pb::MuteScope::Conversation, GROUP_ID, true)
+        .await
+        .check("SetMutePref");
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    say(&mut w.admin, &mut w.admin_stream, b"muted news").await;
+    for _ in 0..3 {
+        w.server.clock.advance(Duration::from_secs(61));
+        w.server.sweep().await;
+    }
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(w.server.pushes.count(&w.phone.device_id), 0);
+
+    // The message was only unpinged, not dropped.
+    w.phone_stream = reconnect(&w.conn, &mut w.phone).await;
+    let envelope = receive(&mut w.phone_stream, &mut w.phone).await;
+    assert_eq!(envelope.group_id, GROUP_ID);
+}
+
+// spec: notification-prefs/a-muted-conversation-gets-no-wake-push
+#[tokio::test]
+async fn a_muted_backlog_gets_no_catch_up_ping_at_stream_loss() {
+    // The stream is lost with only a muted conversation's entry undelivered: the
+    // re-ping on stream loss must see that there is nothing to show.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    set_mute(&w, &w.phone, pb::MuteScope::Conversation, GROUP_ID, true)
+        .await
+        .check("SetMutePref");
+    // Queued while the phone's stream is open and never acked.
+    say(&mut w.admin, &mut w.admin_stream, b"muted, while open").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(w.server.pushes.count(&w.phone.device_id), 0);
+}
