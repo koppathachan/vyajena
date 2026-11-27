@@ -54,14 +54,19 @@ pub(crate) struct NewEnvelope<'a> {
     pub epoch: u64,
     pub ciphertext: &'a [u8],
     pub welcome: Option<&'a [u8]>,
+    /// push-silent-app-envelopes: the sender marked this `APPLICATION` envelope
+    /// as carrying no user-visible message, so it does not alert an offline
+    /// device. Always false for a control envelope and for a server-generated
+    /// proposal.
+    pub silent: bool,
     pub accepted_at: SystemTime,
 }
 
 pub(crate) fn insert_envelope(conn: &Connection, e: &NewEnvelope<'_>) -> Result<(), StoreError> {
     conn.execute(
         "INSERT INTO envelopes (server_seq, msg_id, sender_device_id, kind, epoch, ciphertext,
-                                welcome, accepted_at, group_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                                welcome, accepted_at, group_id, silent)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             i64_of(e.server_seq),
             e.msg_id,
@@ -72,6 +77,7 @@ pub(crate) fn insert_envelope(conn: &Connection, e: &NewEnvelope<'_>) -> Result<
             e.welcome,
             unix_millis(e.accepted_at),
             e.group_id,
+            e.silent,
         ],
     )?;
     Ok(())
@@ -137,11 +143,14 @@ pub(crate) fn has_backlog(conn: &Connection, device_id: &DeviceId) -> Result<boo
     )?)
 }
 
-/// Whether `device_id` has any undelivered `APPLICATION` entry, across all
-/// groups (push-kind-aware: Only an application backlog alerts an offline
-/// device). A device whose only backlog is control envelopes
-/// (`COMMIT`/`WELCOME`/`PROPOSAL`) has no user-facing new message, so it is
-/// never woken by a push; it syncs on its next reconnect.
+/// Whether `device_id` has any undelivered **notifiable** entry, across all
+/// groups (push-kind-aware: Only an application backlog alerts an offline device;
+/// push-silent-app-envelopes: Only a user-visible message alerts an offline
+/// device). A notifiable entry is an `APPLICATION` envelope that is not `silent`.
+/// A device whose only backlog is control envelopes (`COMMIT`/`WELCOME`/
+/// `PROPOSAL`) or `silent` application envelopes (profile/group-settings/delete)
+/// has no user-facing new message, so it is never woken by a push; it syncs on
+/// its next reconnect.
 pub(crate) fn has_application_backlog(
     conn: &Connection,
     device_id: &DeviceId,
@@ -149,22 +158,24 @@ pub(crate) fn has_application_backlog(
     Ok(conn.query_row(
         "SELECT EXISTS (
              SELECT 1 FROM deliveries d JOIN envelopes e ON e.server_seq = d.server_seq
-             WHERE d.device_id = ?1 AND e.kind = ?2)",
+             WHERE d.device_id = ?1 AND e.kind = ?2 AND e.silent = 0)",
         params![device_id.as_slice(), Kind::Application as i32],
         |row| row.get::<_, bool>(0),
     )?)
 }
 
-/// Every device that still has an undelivered `APPLICATION` entry
-/// (notification-reliability: Sweep catch-up wake ping; push-kind-aware: Only
-/// an application backlog alerts an offline device). A control-only backlog
-/// (`COMMIT`/`WELCOME`/`PROPOSAL`) is excluded, so the sweep never fires a wake
-/// ping — nor spends the catch-up budget — for a device with no new message.
+/// Every device that still has an undelivered **notifiable** entry
+/// (notification-reliability: Sweep catch-up wake ping; push-kind-aware: Only an
+/// application backlog alerts an offline device; push-silent-app-envelopes: Only
+/// a user-visible message alerts an offline device). A backlog of only control
+/// envelopes (`COMMIT`/`WELCOME`/`PROPOSAL`) or `silent` application envelopes is
+/// excluded, so the sweep never fires a wake ping — nor spends the catch-up
+/// budget — for a device with no new message.
 pub(crate) fn backlogged_devices(conn: &Connection) -> Result<Vec<DeviceId>, StoreError> {
     let mut stmt = conn.prepare(
         "SELECT DISTINCT d.device_id FROM deliveries d
          JOIN envelopes e ON e.server_seq = d.server_seq
-         WHERE e.kind = ?1",
+         WHERE e.kind = ?1 AND e.silent = 0",
     )?;
     let rows = stmt.query_map(params![Kind::Application as i32], |row| {
         row.get::<_, Vec<u8>>(0)
@@ -395,6 +406,10 @@ pub(crate) fn pending(
                 // inbound; clients honour the encrypted `Content.Delete`, so
                 // delivered envelopes carry no `deletes`.
                 deletes: None,
+                // push-silent-app-envelopes: `silent` is an inbound sender hint
+                // for the wake-push decision; a recipient learns visibility from
+                // the decrypted `Content`, so delivered envelopes do not echo it.
+                silent: false,
                 sender,
                 server_seq: seq,
                 accepted_at: Some(to_timestamp(from_unix_millis(at))),

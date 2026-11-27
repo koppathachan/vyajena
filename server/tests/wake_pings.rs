@@ -8,8 +8,10 @@ use std::time::Duration;
 
 use support::clients::TestDevice;
 use support::harness::{Conn, TestServer, authed};
-use support::messaging::{Stream, commit_envelope, offline, say, wait_offline, world};
+use support::messaging::{Stream, commit_envelope, offline, say, say_silent, wait_offline, world};
 use support::{Check, pb};
+
+const MINUTE: Duration = Duration::from_secs(61);
 
 async fn set_token(conn: &Conn, device: &TestDevice, token: &str) {
     conn.devices()
@@ -112,6 +114,51 @@ async fn control_only_backlog_fires_no_ping_but_a_message_does() {
     pings_settle(&w.server, &w.phone, 0).await;
 
     // A real message to the same offline device does fire exactly one ping.
+    say(&mut w.admin, &mut w.admin_stream, b"a real message").await;
+    pings_settle(&w.server, &w.phone, 1).await;
+}
+
+// spec: message-delivery/content-free-wake-pings
+#[tokio::test]
+async fn silent_app_envelope_fires_no_ping_but_a_message_does() {
+    // push-silent-app-envelopes: Only a user-visible message alerts an offline
+    // device. A `silent` APPLICATION envelope (a profile update, a group-settings
+    // change or a delete tombstone) is content the receiver applies with nothing
+    // to show, so it must not fire a visible wake push.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    // A silent application envelope is queued to the offline phone.
+    say_silent(&mut w.admin, &mut w.admin_stream, b"a profile update").await;
+    pings_settle(&w.server, &w.phone, 0).await;
+
+    // A real (non-silent) message to the same offline device fires exactly one.
+    say(&mut w.admin, &mut w.admin_stream, b"a real message").await;
+    pings_settle(&w.server, &w.phone, 1).await;
+}
+
+// spec: message-delivery/content-free-wake-pings
+#[tokio::test]
+async fn a_silent_only_backlog_is_not_swept() {
+    // push-silent-app-envelopes: a silent-only backlog neither fires a catch-up
+    // ping nor spends the catch-up budget, exactly as a control-only one.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    // Only a silent application envelope is queued to the offline phone.
+    say_silent(&mut w.admin, &mut w.admin_stream, b"a profile update").await;
+    // Neither the write path nor repeated sweeps wake it.
+    w.server.clock.advance(MINUTE);
+    w.server.sweep().await;
+    w.server.clock.advance(MINUTE);
+    w.server.sweep().await;
+    pings_settle(&w.server, &w.phone, 0).await;
+
+    // A real message makes it notifiable again: it is woken exactly once.
     say(&mut w.admin, &mut w.admin_stream, b"a real message").await;
     pings_settle(&w.server, &w.phone, 1).await;
 }

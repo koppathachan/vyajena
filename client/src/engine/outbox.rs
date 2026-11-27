@@ -203,6 +203,11 @@ impl Engine {
                 // message-deletion: a Delete carries its server-visible target,
                 // so the server retracts the target's undelivered copies.
                 deletes: crate::messaging::delete_target(&message.content),
+                // push-silent-app-envelopes: mark a profile/group-settings/delete
+                // envelope silent, so the server fires no visible wake push for a
+                // device whose only backlog is content the receiver applies
+                // silently.
+                silent: crate::messaging::is_silent_content(&message.content),
                 ..Default::default()
             };
             self.send(Out::Envelope(envelope)).await?;

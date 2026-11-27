@@ -614,6 +614,20 @@ pub(crate) fn delete_target(content: &[u8]) -> Option<pb::DeleteTarget> {
     }
 }
 
+/// push-silent-app-envelopes: Only a user-visible message alerts an offline
+/// device. Whether this `APPLICATION` content carries no user-visible message, so
+/// the sender SHALL mark its envelope `silent` and the server SHALL NOT fire a
+/// visible wake push for it. True for a profile update, a group-settings change
+/// and a message-deletion tombstone — each is applied silently by the receiver
+/// (`Decoded::Profile`/`GroupSettings` render no message; `Decoded::Delete` is a
+/// non-revealable tombstone). False for a text, image, audio or video message.
+pub(crate) fn is_silent_content(content: &[u8]) -> bool {
+    matches!(
+        decode(content).body,
+        Decoded::Profile(_) | Decoded::GroupSettings { .. } | Decoded::Delete(_)
+    )
+}
+
 /// `<username>@<server_id>` as a [`UserId`]. Thin shim over [`UserId::parse`],
 /// kept only for the `engine` call sites (`outbox`, `jobs`) still to adopt the
 /// canonical parser; new code should call [`UserId::parse`] directly.

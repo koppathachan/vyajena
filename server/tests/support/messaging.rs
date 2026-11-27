@@ -538,6 +538,19 @@ pub async fn say(device: &mut TestDevice, stream: &mut Stream, text: &[u8]) -> u
         .await
 }
 
+/// `device` sends a `silent` application envelope (push-silent-app-envelopes: a
+/// profile update, a group-settings change or a message-deletion tombstone — a
+/// body the receiver applies with nothing to show) in its current epoch and
+/// expects `Accepted`; returns the `server_seq`. The server never decrypts, so
+/// any application ciphertext stands in for such a body; only `silent` matters.
+pub async fn say_silent(device: &mut TestDevice, stream: &mut Stream, text: &[u8]) -> u64 {
+    let epoch = device.epoch();
+    let ciphertext = device.message(text);
+    let mut env = envelope(Kind::Application, epoch, ciphertext);
+    env.silent = true;
+    stream.accepted(env).await
+}
+
 /// Authenticates `device` again (tokens last an hour) and opens a stream
 /// whose connect-time work is done.
 pub async fn reconnect(conn: &Conn, device: &mut TestDevice) -> Stream {
