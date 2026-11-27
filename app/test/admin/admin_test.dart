@@ -1,4 +1,6 @@
-// app-ui: Admin screens.
+// app-ui: Admin screens. The admin actions (Invite a user, Invites, Remove a
+// user) live on the Contacts tab (app-shell: Contacts tab) since
+// `shell-nav-consistency` retired the chat overflow menu's copies.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/core/core_service.dart';
@@ -15,8 +17,8 @@ void main() {
   testWidgets('Admin invites Bob: the core calls Admin.CreateInvite and the '
       'app shows the invite text with a share button', (tester) async {
     final shared = recordShares(tester);
-    final core = await openApp(tester, adminCore());
-    await menu(tester, 'Invite a user');
+    final core = await openHome(tester, adminCore());
+    await contactsAction(tester, 'contacts-invite');
     await tester.enterText(find.byKey(const Key('username')), 'bob');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
 
@@ -29,8 +31,8 @@ void main() {
 
   // spec: app-ui/invite-expiry-is-surfaced
   testWidgets('a created invite shows when it expires', (tester) async {
-    await openApp(tester, adminCore());
-    await menu(tester, 'Invite a user');
+    await openHome(tester, adminCore());
+    await contactsAction(tester, 'contacts-invite');
     await tester.enterText(find.byKey(const Key('username')), 'bob');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
     final expiry = find.byKey(const Key('invite-expiry'));
@@ -49,8 +51,8 @@ void main() {
         kind: CoreErrorKind.refused,
         message: 'this user already exists',
       );
-    await openApp(tester, core);
-    await menu(tester, 'Invite a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-invite');
     expect(find.byKey(const Key('recovery-note')), findsOneWidget);
     await tester.enterText(find.byKey(const Key('username')), 'bob');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
@@ -65,15 +67,15 @@ void main() {
         MemberDevice(user: akhil, device: '01'),
         MemberDevice(user: bob, device: '03'),
       ];
-    await openApp(tester, core);
-    await menu(tester, 'Remove a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-remove-user');
     await tap(tester, find.widgetWithText(TextButton, 'Remove'));
     await tap(tester, find.widgetWithText(FilledButton, 'Remove'));
     expect(core.args['removeUser'], bob);
     await tester.pageBack();
     await settle(tester);
     // The freed username can now be invited again.
-    await menu(tester, 'Invite a user');
+    await contactsAction(tester, 'contacts-invite');
     await tester.enterText(find.byKey(const Key('username')), 'bob');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
     expect(core.args['createInvite'], 'bob');
@@ -86,8 +88,8 @@ void main() {
   ) async {
     final core = adminCore()
       ..invites = const [InviteInfo(code: 'c-bob', user: bob, expiresAtMs: 0)];
-    await openApp(tester, core);
-    await menu(tester, 'Invite a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-invite');
     await tester.enterText(find.byKey(const Key('username')), 'bob');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
     expect(find.byKey(const Key('invite-existed')), findsOneWidget);
@@ -97,29 +99,28 @@ void main() {
   testWidgets('inviting a fresh username shows no already-existed note', (
     tester,
   ) async {
-    await openApp(tester, adminCore());
-    await menu(tester, 'Invite a user');
+    await openHome(tester, adminCore());
+    await contactsAction(tester, 'contacts-invite');
     await tester.enterText(find.byKey(const Key('username')), 'carol');
     await tap(tester, find.widgetWithText(FilledButton, 'Invite'));
     expect(find.byKey(const Key('invite-existed')), findsNothing);
   });
 
   // spec: app-ui/admin-screens
-  testWidgets('Bob has no admin screens: no invite, remove or group-settings '
-      'entries', (tester) async {
-    await openApp(tester, FakeCoreService(storedUser: bob));
-    await tap(tester, find.byTooltip('Menu'));
+  testWidgets('Bob has no admin entries on the Contacts tab', (tester) async {
+    await openHome(tester, FakeCoreService(storedUser: bob));
+    await tap(tester, find.byKey(const Key('tab-contacts')));
     for (final entry in adminEntries) {
       expect(find.text(entry), findsNothing);
     }
-    expect(find.text('Members'), findsOneWidget);
-    expect(find.text('Profile'), findsOneWidget);
   });
 
   // spec: app-ui/admin-screens
-  testWidgets('the admin\'s device shows every admin entry', (tester) async {
-    await openApp(tester, adminCore());
-    await tap(tester, find.byTooltip('Menu'));
+  testWidgets('the admin\'s Contacts tab shows every admin entry', (
+    tester,
+  ) async {
+    await openHome(tester, adminCore());
+    await tap(tester, find.byKey(const Key('tab-contacts')));
     for (final entry in adminEntries) {
       expect(find.text(entry), findsOneWidget);
     }
@@ -163,8 +164,8 @@ void main() {
           expiresAtMs: 0,
         ),
       ];
-    await openApp(tester, core);
-    await menu(tester, 'Invites');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-invites');
     expect(find.text('bob@chat'), findsOneWidget);
     expect(find.text('carol@chat'), findsOneWidget);
 
@@ -186,8 +187,8 @@ void main() {
         MemberDevice(user: akhil, device: '01'),
         MemberDevice(user: bob, device: '03'),
       ];
-    await openApp(tester, core);
-    await menu(tester, 'Remove a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-remove-user');
     // Not the admin themself.
     expect(find.text('akhil'), findsNothing);
     await tap(tester, find.widgetWithText(TextButton, 'Remove'));
@@ -207,8 +208,8 @@ void main() {
   testWidgets('the admin re-invites a member who lost their phone: the confirm '
       'warns and calls nothing until confirmed', (tester) async {
     final core = adminWithBob();
-    await openApp(tester, core);
-    await menu(tester, 'Remove a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-remove-user');
     await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
     // The confirm names Bob and warns it resets his devices and loses history.
     expect(find.text('Re-invite bob?'), findsOneWidget);
@@ -223,8 +224,8 @@ void main() {
       'shareable code', (tester) async {
     final shared = recordShares(tester);
     final core = adminWithBob();
-    await openApp(tester, core);
-    await menu(tester, 'Remove a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-remove-user');
     await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
     await tap(tester, find.widgetWithText(FilledButton, 'Re-invite'));
     // CreateInvite is called for the same username, with no remove first.
@@ -240,8 +241,8 @@ void main() {
   // spec: app-ui/re-invite-action
   testWidgets('cancelling the re-invite changes nothing', (tester) async {
     final core = adminWithBob();
-    await openApp(tester, core);
-    await menu(tester, 'Remove a user');
+    await openHome(tester, core);
+    await contactsAction(tester, 'contacts-remove-user');
     await tap(tester, find.byKey(const ValueKey('reinvite-bob')));
     await tap(tester, find.widgetWithText(TextButton, 'Cancel'));
     expect(core.calls, isNot(contains('createInvite')));
@@ -257,9 +258,9 @@ void main() {
         MemberDevice(user: akhil, device: '01'),
         MemberDevice(user: bob, device: '03'),
       ];
-    await openApp(tester, core);
-    // No admin members screen to reach, so no Re-invite anywhere.
-    await tap(tester, find.byTooltip('Menu'));
+    await openHome(tester, core);
+    // No admin Remove-a-user action on the Contacts tab, so no Re-invite.
+    await tap(tester, find.byKey(const Key('tab-contacts')));
     expect(find.text('Remove a user'), findsNothing);
     expect(find.text('Re-invite'), findsNothing);
   });

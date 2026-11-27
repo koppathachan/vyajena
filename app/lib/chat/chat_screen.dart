@@ -14,7 +14,6 @@ import 'package:flutter/material.dart';
 import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
 import '../app/moderation.dart';
-import '../app/routes.dart';
 import '../app/connection_indicator.dart';
 import '../shell/avatars.dart';
 import '../core/core_service.dart';
@@ -686,7 +685,6 @@ class _ChatScreenState extends State<ChatScreen> {
               )
             else
               ChatMenu(
-                admin: widget.admin && _model.isMain,
                 lobby: _model.isMain,
                 muted: _muted,
                 onToggleMute: _toggleMuted,
@@ -893,43 +891,23 @@ class _NewMessagesDivider extends StatelessWidget {
   }
 }
 
-/// The chat's menu entries.
-enum MenuEntry {
-  members('Members', Routes.members),
-  profile('Profile', Routes.profile),
-  linkDevice('Link a new device', Routes.approveLink),
-  invite('Invite a user', Routes.invite),
-  invites('Invites', Routes.invites),
-  removeUser('Remove a user', Routes.removeUser);
-
-  const MenuEntry(this.label, this.route);
-
-  final String label;
-  final String route;
-
-  /// Whether only admin devices show it.
-  bool get adminOnly => switch (this) {
-    invite || invites || removeUser => true,
-    members || profile || linkDevice => false,
-  };
-}
-
-/// The chat's menu: everyone's entries, and the admin's only on admin
-/// devices (the server rejects other devices' admin calls anyway).
-/// The mute/unmute entry's value in [ChatMenu] (it is not a route like the
-/// other entries).
+/// The lobby/DM conversation menu: only conversation-scoped actions
+/// (app-shell: Conversation screen). It carries mute/unmute and, for the lobby,
+/// the greyed notes that its name is fixed and it cannot be closed. It no longer
+/// lists Members, Profile, Link a new device or the admin Invite/Invites/Remove
+/// actions: those are the Contacts and Profile tabs. With nothing to show it
+/// renders no button at all.
+///
+/// The mute/unmute entry's value in [ChatMenu].
 const String _muteAction = '__mute_toggle__';
 
 class ChatMenu extends StatelessWidget {
   const ChatMenu({
     super.key,
-    required this.admin,
     this.lobby = false,
     this.muted = false,
     this.onToggleMute,
   });
-
-  final bool admin;
 
   /// Whether this is the lobby's menu: it lists "Rename group" and "Close
   /// group" greyed out, so the fixed name and the missing close show
@@ -944,38 +922,36 @@ class ChatMenu extends StatelessWidget {
   final Future<void> Function()? onToggleMute;
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<Object>(
-    tooltip: 'Menu',
-    onSelected: (entry) {
-      if (entry == _muteAction) {
-        onToggleMute?.call();
-      } else if (entry is MenuEntry) {
-        Navigator.of(context).pushNamed(entry.route);
-      }
-    },
-    itemBuilder: (context) => [
-      if (onToggleMute != null)
-        PopupMenuItem<Object>(
-          key: const Key('conversation-mute-toggle'),
-          value: _muteAction,
-          child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
-        ),
-      for (final entry in MenuEntry.values)
-        if (admin || !entry.adminOnly)
-          PopupMenuItem(value: entry, child: Text(entry.label)),
-      if (lobby) ...const [
-        PopupMenuDivider(),
-        PopupMenuItem<Object>(
-          key: ValueKey('lobby-rename-disabled'),
-          enabled: false,
-          child: Text('Rename group (the lobby is fixed)'),
-        ),
-        PopupMenuItem<Object>(
-          key: ValueKey('lobby-close-disabled'),
-          enabled: false,
-          child: Text('Close group (the lobby cannot be closed)'),
-        ),
+  Widget build(BuildContext context) {
+    // Nothing conversation-scoped to offer: show no overflow button
+    // (app-shell: Conversation screen).
+    if (onToggleMute == null && !lobby) return const SizedBox.shrink();
+    return PopupMenuButton<Object>(
+      tooltip: 'Menu',
+      onSelected: (entry) {
+        if (entry == _muteAction) onToggleMute?.call();
+      },
+      itemBuilder: (context) => [
+        if (onToggleMute != null)
+          PopupMenuItem<Object>(
+            key: const Key('conversation-mute-toggle'),
+            value: _muteAction,
+            child: Text(muted ? 'Unmute notifications' : 'Mute notifications'),
+          ),
+        if (lobby) ...const [
+          PopupMenuDivider(),
+          PopupMenuItem<Object>(
+            key: ValueKey('lobby-rename-disabled'),
+            enabled: false,
+            child: Text('Rename group (the lobby is fixed)'),
+          ),
+          PopupMenuItem<Object>(
+            key: ValueKey('lobby-close-disabled'),
+            enabled: false,
+            child: Text('Close group (the lobby cannot be closed)'),
+          ),
+        ],
       ],
-    ],
-  );
+    );
+  }
 }

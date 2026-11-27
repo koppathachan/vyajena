@@ -214,12 +214,14 @@ void main() {
     core.emit(CoreEvent.gap(newestExpiredAtMs: missedSince, chatId: 0));
     await settle(tester);
 
-    // Members is on top of the chat while a notice comes.
-    await menu(tester, 'Members');
+    // The chat is left (the chat list is shown) while notices come, then
+    // reopened.
+    await tester.pageBack();
+    await settle(tester);
     core.emit(const CoreEvent.identityKeyChanged(user: alice));
     core.receive(akhil, 'second');
     await settle(tester);
-    await tester.pageBack();
+    await enterGroup(tester);
     await settle(tester);
 
     final gap = find.textContaining('expired before this phone fetched them');

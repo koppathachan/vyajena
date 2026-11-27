@@ -375,13 +375,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       title: const Text('Link a new device'),
       onTap: () => Navigator.of(context).pushNamed(Routes.approveLink),
     ),
-    ListTile(
-      key: const Key('settings-members'),
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.people_outline),
-      title: const Text('Members and devices'),
-      onTap: () => Navigator.of(context).pushNamed(Routes.members),
-    ),
+    // The standalone members list was retired by `shell-nav-consistency`: the
+    // Contacts tab lists every member and a tap opens their profile (device count,
+    // Message, report/block), so there is no "Members and devices" entry here.
     // moderation: Published moderation policy; app-ui: Safety and moderation
     // entry. How to report and block, the 24-hour commitment and the contact.
     ListTile(

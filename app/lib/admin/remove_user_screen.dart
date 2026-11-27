@@ -8,7 +8,7 @@ import '../app/names.dart';
 import '../app/shell_app_bar.dart';
 import '../app/text_box.dart';
 import '../core/core_service.dart';
-import '../members/members_screen.dart';
+import '../members/member.dart';
 
 /// Pick a member to remove.
 class RemoveUserScreen extends StatefulWidget {

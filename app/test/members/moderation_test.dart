@@ -1,12 +1,16 @@
 // app-ui: Block and unblock a user; Report a message or a user (change
 // `report-and-block`). The per-user Report and Block/Unblock actions on the
-// members list (the user's profile surface) and the blocked marker.
+// member profile (reached by tapping a member on the Contacts tab) and the
+// blocked marker. The standalone members list was retired by
+// `shell-nav-consistency`.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/core/core_service.dart';
 
 import '../support/app.dart';
 import '../support/fake_core_service.dart';
+
+final contactsTab = find.byKey(const Key('tab-contacts'));
 
 FakeCoreService group() => FakeCoreService(storedUser: alice)
   ..dms = true
@@ -21,37 +25,38 @@ FakeCoreService group() => FakeCoreService(storedUser: alice)
     'akhil@chat': 'akhil',
   };
 
+/// Opens Bob's profile from the Contacts tab.
+Future<void> openBobsProfile(WidgetTester tester, FakeCoreService core) async {
+  await openHome(tester, core);
+  await tap(tester, contactsTab);
+  await tap(tester, find.byKey(const Key('contact-bob')));
+}
+
 void main() {
   // spec: app-ui/block-and-unblock-a-user
-  testWidgets('block then unblock a user from the members list', (tester) async {
+  testWidgets('block then unblock a user from their profile', (tester) async {
     final core = group();
-    await openApp(tester, core);
-    await menu(tester, 'Members');
+    await openBobsProfile(tester, core);
 
-    await tap(tester, find.byKey(const ValueKey('moderate-bob')));
-    expect(find.text('Report'), findsOneWidget);
-    await tap(tester, find.text('Block'));
+    await tap(tester, find.byKey(const ValueKey('block-bob')));
     expect(find.byKey(const Key('block-confirm')), findsOneWidget);
     await tap(tester, find.byKey(const Key('block-confirm-ok')));
 
     expect(core.calls, contains('blockUser'));
-    // A blocked marker where the user appears.
+    // A blocked marker beside the device count.
     expect(find.textContaining('blocked'), findsOneWidget);
 
-    await tap(tester, find.byKey(const ValueKey('moderate-bob')));
-    await tap(tester, find.text('Unblock'));
+    await tap(tester, find.byKey(const ValueKey('unblock-bob')));
     expect(core.calls, contains('unblockUser'));
     expect(find.textContaining('blocked'), findsNothing);
   });
 
   // spec: app-ui/report-a-message-or-a-user
-  testWidgets('report a user from the members list', (tester) async {
+  testWidgets('report a user from their profile', (tester) async {
     final core = group();
-    await openApp(tester, core);
-    await menu(tester, 'Members');
+    await openBobsProfile(tester, core);
 
-    await tap(tester, find.byKey(const ValueKey('moderate-bob')));
-    await tap(tester, find.text('Report'));
+    await tap(tester, find.byKey(const ValueKey('report-bob')));
     await tester.enterText(
       find.byKey(const Key('report-reason-field')),
       'abuse',

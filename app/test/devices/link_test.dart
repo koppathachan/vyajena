@@ -37,8 +37,10 @@ void main() {
       'approval', (tester) async {
     final shared = recordShares(tester);
     final phone = FakeCoreService(storedUser: alice);
-    await openApp(tester, phone);
-    await menu(tester, 'Link a new device');
+    tall(tester);
+    await openHome(tester, phone);
+    await openProfileTab(tester);
+    await tap(tester, find.byKey(const Key('settings-link-device')));
     await tester.enterText(
       find.byKey(const Key('request')),
       'vyajena-link:request',
@@ -57,8 +59,10 @@ void main() {
         kind: CoreErrorKind.notIdentityDevice,
         message: 'this device does not hold the identity key',
       );
-    await openApp(tester, laptop);
-    await menu(tester, 'Link a new device');
+    tall(tester);
+    await openHome(tester, laptop);
+    await openProfileTab(tester);
+    await tap(tester, find.byKey(const Key('settings-link-device')));
     await tester.enterText(
       find.byKey(const Key('request')),
       'vyajena-link:request',

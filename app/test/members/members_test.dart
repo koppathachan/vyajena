@@ -1,4 +1,6 @@
-// app-ui: Profile and members.
+// app-ui: Profile and members. The standalone members list was retired by
+// `shell-nav-consistency`; the Contacts tab now lists every member with their
+// device count, and a tap opens that member's profile.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/core/core_service.dart';
@@ -6,9 +8,11 @@ import 'package:vyajena/core/core_service.dart';
 import '../support/app.dart';
 import '../support/fake_core_service.dart';
 
+final contactsTab = find.byKey(const Key('tab-contacts'));
+
 void main() {
   // spec: app-ui/profile-and-members
-  testWidgets('the members list shows each user with the number of devices', (
+  testWidgets('the Contacts tab shows each user with the number of devices', (
     tester,
   ) async {
     final core = FakeCoreService(storedUser: alice)
@@ -22,25 +26,21 @@ void main() {
         MemberDevice(user: bob, device: '03'),
         MemberDevice(user: alice, device: '04'),
       ];
-    await openApp(tester, core);
-    await menu(tester, 'Members');
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
 
-    Finder row(String name) =>
-        find.ancestor(of: find.text(name), matching: find.byType(ListTile));
+    Finder row(String username) =>
+        find.byKey(ValueKey('contact-$username'));
     expect(
-      find.descendant(
-        of: row('Akhil (akhil)'),
-        matching: find.text('1 device'),
-      ),
+      find.descendant(of: row('akhil'), matching: find.text('1 device')),
       findsOneWidget,
     );
+    // Alice has two devices in the group.
     expect(
-      find.descendant(
-        of: row('Ali (alice) · you'),
-        matching: find.text('2 devices'),
-      ),
+      find.descendant(of: row('alice'), matching: find.text('2 devices')),
       findsOneWidget,
     );
+    expect(find.byKey(const ValueKey('you-alice')), findsOneWidget);
     expect(
       find.descendant(of: row('bob'), matching: find.text('1 device')),
       findsOneWidget,
