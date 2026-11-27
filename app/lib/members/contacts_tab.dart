@@ -1,13 +1,17 @@
 // app-shell: Contacts tab. The server's members, each with an avatar and name,
 // an `admin` badge and a "you" marker; tapping a member opens or starts the DM
-// with them. The admin's device also offers Invite, New group and the other
+// with them (app-ui: Contact tap: tapping yourself opens Profile, and a tap
+// when DMs are not offered says so, so a tap never does nothing). The admin's device also offers Invite, New group and the other
 // admin actions; no other device shows any of them.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 
 import '../admin/create_named_group_screen.dart';
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 import '../app/arcade/motion.dart';
+import '../app/arcade/sketch.dart';
 import '../app/errors.dart';
 import '../app/names.dart';
 import '../app/routes.dart';
@@ -18,14 +22,26 @@ import '../core/core_service.dart';
 import '../shell/avatars.dart';
 import 'members_screen.dart';
 
+/// What a contact tap says when the server does not offer DMs (yet).
+const dmsUnavailableText =
+    'Direct messages are not available yet. Try again once connected.';
+
 /// The Contacts tab.
 class ContactsTab extends StatefulWidget {
-  const ContactsTab({super.key, required this.core, required this.admin});
+  const ContactsTab({
+    super.key,
+    required this.core,
+    required this.admin,
+    this.onOpenProfile,
+  });
 
   final CoreService core;
 
   /// Whether this device's user is the admin.
   final bool admin;
+
+  /// Opens the Profile tab (tapping your own row).
+  final VoidCallback? onOpenProfile;
 
   @override
   State<ContactsTab> createState() => _ContactsTabState();
@@ -51,14 +67,45 @@ class _ContactsTabState extends State<ContactsTab> {
         _load();
       }
     });
+    // Whether the server offers DMs is learnt when the device connects, which
+    // may be after this tab first loaded: look again on every change.
+    widget.core.connection.addListener(_load);
     _load();
   }
 
   @override
   void dispose() {
+    widget.core.connection.removeListener(_load);
     _subscription?.cancel();
     super.dispose();
   }
+
+  /// A tap on a member always answers: your own row opens Profile, another
+  /// member's opens the DM (DM availability asked afresh), and when DMs are
+  /// not offered a snack bar says why nothing opens.
+  Future<void> _tapMember(MemberUser m) async {
+    if (_isMe(m.user)) {
+      final open = widget.onOpenProfile;
+      if (open != null) {
+        open();
+      } else {
+        _tell('This is you.');
+      }
+      return;
+    }
+    final dms = await widget.core.dmsAvailable();
+    if (!mounted) return;
+    if (dms != _dms) setState(() => _dms = dms);
+    if (dms) {
+      await messageUser(context, widget.core, m.user);
+    } else {
+      _tell(dmsUnavailableText);
+    }
+  }
+
+  void _tell(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _load() async {
     try {
@@ -102,17 +149,24 @@ class _ContactsTabState extends State<ContactsTab> {
   Widget _action(String key, IconData icon, String label, VoidCallback onTap) =>
       ListTile(
         key: Key(key),
-        leading: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary,
-            border: Border.all(
-              color: Theme.of(context).colorScheme.outline,
-              width: 2,
+        leading: ArcadeFloat(
+          distance: 3,
+          phase: floatPhase(key),
+          child: Askew(
+            seed: sketchSeed(key),
+            degrees: 3,
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: sketchBox(
+                rough: context.arcade.rough,
+                fill: Theme.of(context).colorScheme.primary,
+                border: Theme.of(context).colorScheme.outline,
+                seed: sketchSeed(key),
+              ),
+              child: Icon(icon, color: Theme.of(context).colorScheme.onPrimary),
             ),
           ),
-          child: Icon(icon, color: Theme.of(context).colorScheme.onPrimary),
         ),
         title: Text(label),
         onTap: onTap,
@@ -133,11 +187,20 @@ class _ContactsTabState extends State<ContactsTab> {
     return ListTile(
       key: ValueKey('contact-${m.user.username}'),
       // manual-presence: Presence indicator on avatars.
-      leading: PresenceAvatar(
-        core: widget.core,
-        user: m.user,
-        name: _names.short(m.user),
-        seed: m.user.username,
+      // Arcade motion: each contact's icon bobs on its own beat, askew.
+      leading: ArcadeFloat(
+        distance: 3,
+        phase: floatPhase('contact-${m.user.username}'),
+        child: Askew(
+          seed: sketchSeed(m.user.username),
+          degrees: 3,
+          child: PresenceAvatar(
+            core: widget.core,
+            user: m.user,
+            name: _names.short(m.user),
+            seed: m.user.username,
+          ),
+        ),
       ),
       title: Row(
         children: [
@@ -157,9 +220,12 @@ class _ContactsTabState extends State<ContactsTab> {
             Container(
               key: ValueKey('admin-badge-${m.user.username}'),
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: BorderRadius.zero,
+              decoration: sketchBox(
+                rough: context.arcade.rough,
+                fill: scheme.primaryContainer,
+                border: scheme.outline,
+                width: 1.5,
+                seed: sketchSeed('admin-${m.user.username}'),
               ),
               child: Text(
                 'admin',
@@ -172,9 +238,7 @@ class _ContactsTabState extends State<ContactsTab> {
         ],
       ),
       subtitle: Text(devicesText(m.devices.length)),
-      onTap: _dms && !me
-          ? () => messageUser(context, widget.core, m.user)
-          : null,
+      onTap: () => _tapMember(m),
     );
   }
 
@@ -216,7 +280,7 @@ class _ContactsTabState extends State<ContactsTab> {
                 'Remove a user',
                 () => Navigator.of(context).pushNamed(Routes.removeUser),
               ),
-              const Divider(),
+              const SketchDivider(seed: 5),
             ],
             for (final m in members) _member(m),
           ]),

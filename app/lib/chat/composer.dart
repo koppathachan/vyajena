@@ -24,6 +24,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/sketch.dart';
+import '../app/arcade/tokens.dart';
 import '../app/errors.dart';
 import '../core/core_service.dart';
 import 'audio_bubble.dart';
@@ -265,8 +268,13 @@ class _ComposerState extends State<Composer> {
       key: const Key('reply-bar'),
       margin: const EdgeInsets.fromLTRB(12, 4, 8, 0),
       padding: const EdgeInsets.only(left: 8),
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: scheme.primary, width: 3)),
+      decoration: ShapeDecoration(
+        shape: SketchEdgeBorder(
+          color: scheme.primary,
+          width: 3,
+          left: true,
+          rough: context.arcade.rough,
+        ),
       ),
       child: Row(
         children: [
@@ -864,14 +872,25 @@ class _ComposerState extends State<Composer> {
               ),
             ),
           ],
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
+          // Hand-drawn look: the button is smaller than the field, sits a
+          // little high and a little turned, so the row never looks ruled.
           if ((_micShown && !removed) || _recording)
             _micButton(context, removed)
           else
-            IconButton.filled(
-              tooltip: 'Send',
-              onPressed: _sending || removed ? null : _send,
-              icon: const Icon(Icons.send),
+            Padding(
+              padding: EdgeInsets.only(bottom: context.arcade.lively ? 5 : 0),
+              child: Askew(
+                seed: 3,
+                degrees: 3,
+                shift: 0,
+                child: IconButton.filled(
+                  tooltip: 'Send',
+                  style: sendButtonStyle(context, seed: 3),
+                  onPressed: _sending || removed ? null : _send,
+                  icon: const Icon(Icons.send, size: 18),
+                ),
+              ),
             ),
         ],
       ),
@@ -893,13 +912,22 @@ class _ComposerState extends State<Composer> {
         label: 'Hold to record a voice message',
         button: true,
         child: Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.outline, width: 2),
-            color: active
+          // Arcade: smaller than the field and off its line; a calm theme
+          // lines it up with the field (app-ui: Theme choice).
+          width: context.arcade.lively ? 36 : composerButtonCalmSize,
+          height: context.arcade.lively ? 36 : composerButtonCalmSize,
+          margin: context.arcade.lively
+              ? const EdgeInsets.only(bottom: 7, right: 3)
+              : EdgeInsets.zero,
+          decoration: sketchBox(
+            rough: context.arcade.rough,
+            border: scheme.outline,
+            fill: active
                 ? (_willCancel ? scheme.error : scheme.primary)
                 : scheme.primary,
+            shadow: buttonShadow * context.arcade.shadowScale,
+            shadowColor: scheme.shadow,
+            seed: 6,
           ),
           child: Icon(
             active && _willCancel ? Icons.delete : Icons.mic,
@@ -1003,11 +1031,17 @@ class _ComposerState extends State<Composer> {
                 },
               ),
               const SizedBox(width: 4),
-              IconButton.filled(
-                key: const Key('send-voice'),
-                tooltip: 'Send voice message',
-                onPressed: _sending ? null : _sendClip,
-                icon: const Icon(Icons.send),
+              Askew(
+                seed: 4,
+                degrees: 3,
+                shift: 0,
+                child: IconButton.filled(
+                  key: const Key('send-voice'),
+                  tooltip: 'Send voice message',
+                  style: sendButtonStyle(context, seed: 4),
+                  onPressed: _sending ? null : _sendClip,
+                  icon: const Icon(Icons.send, size: 18),
+                ),
               ),
             ],
           ),
@@ -1023,4 +1057,33 @@ class _ComposerState extends State<Composer> {
       if (mounted) setState(() => _error = errorText(error));
     }
   }
+}
+
+/// The send and mic buttons' size under a calm theme: the field's height.
+const double composerButtonCalmSize = 44;
+
+/// The send button's look: the accent fill with the accent's own text colour
+/// (navy on yellow in dark mode, never the white of plain icons), a
+/// hand-drawn box with the button shadow, and a size a little under the
+/// field's.
+ButtonStyle sendButtonStyle(BuildContext context, {int seed = 0}) {
+  final scheme = Theme.of(context).colorScheme;
+  final size = context.arcade.lively ? 36.0 : composerButtonCalmSize;
+  return IconButton.styleFrom(
+    backgroundColor: scheme.primary,
+    foregroundColor: scheme.onPrimary,
+    disabledBackgroundColor: scheme.primary.withValues(alpha: 0.5),
+    disabledForegroundColor: scheme.onPrimary.withValues(alpha: 0.7),
+    fixedSize: Size(size, size),
+    minimumSize: Size(size, size),
+    padding: EdgeInsets.zero,
+    tapTargetSize: MaterialTapTargetSize.padded,
+    shape: ArcadeBorder(
+      color: scheme.outline,
+      shadow: buttonShadow * context.arcade.shadowScale,
+      shadowColor: scheme.shadow,
+      seed: seed,
+      rough: context.arcade.rough,
+    ),
+  );
 }

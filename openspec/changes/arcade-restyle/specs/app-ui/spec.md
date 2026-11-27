@@ -9,7 +9,8 @@ stock widgets or the system font.
 
 ### Requirement: Arcade look
 The app SHALL use Material 3 widgets themed from one explicit token set, light
-and dark following the system. Every shape SHALL have radius 0. Borders SHALL be
+and dark following the system. Every shape SHALL have square (unrounded)
+corners, drawn by hand as in `Hand-drawn lines`. Borders SHALL be
 2px (white in dark, navy `#0F0F23` in light). Depth SHALL be a hard offset shadow
 with no blur: 6px on cards, 3px on buttons, 2px on chat bubbles. Headings and
 labels SHALL use the bundled Press Start 2P font and body text SHALL use a
@@ -20,13 +21,16 @@ keeps the appearance choice.
 #### Scenario: Dark mode
 - **WHEN** Alice's phone is in dark mode
 - **THEN** the app uses the dark tokens: background `#0F0F23`, text white, cards
-  `#1B1B3A`, white 2px borders and yellow buttons
+  `#1B1B3A`, white 2px borders and yellow `#E6D84D` buttons (a duller yellow
+  than `#FFFF00`, easier on the eyes), with navy icons and text on them,
+  the send icon included
 
 #### Scenario: Light mode
 - **WHEN** Alice's phone is in light mode
 - **THEN** the app uses the light tokens: background `#FFF8E7`, navy text and
   borders, white cards and purple `#764BA2` buttons, and the hard shadows are
-  visible
+  visible; headings are drawn twice 0.6px apart, so an app-bar title such as
+  "Chats" looks as thick as in dark mode
 
 #### Scenario: Dialogs, sheets and menus
 - **WHEN** Alice opens a dialog, a bottom sheet, a pop-up menu or a snack bar
@@ -40,8 +44,10 @@ keeps the appearance choice.
 
 ### Requirement: Arcade motion
 Motion SHALL use stepped curves only. Hover and press SHALL take 200ms in 4
-steps; an entrance slide 800ms in 8 steps with a 120ms stagger; a float 3s in 5
-steps. The message list SHALL have no entrance or hover motion. Text scale SHALL
+steps; an entrance slide 800ms in 8 steps with a 120ms stagger; a float one
+3s loop of at most 8 frames, each a whole number of pixels high (a sprite's
+jump, never a glide). The Profile avatar, the chat list's row icons and the
+Contacts tab's icons float, each from its own point in the loop. The message list SHALL have no entrance or hover motion. Text scale SHALL
 be capped at 1.3. When the system asks to reduce motion, the app SHALL run no
 animation or transition of its own.
 
@@ -49,6 +55,11 @@ animation or transition of its own.
 - **WHEN** the chat list or the Profile, Contacts or join screen first appears
 - **THEN** its rows slide up into place in 8 steps, 120ms apart, and a row does not
   slide in again when it is scrolled back or the list reloads
+
+#### Scenario: Icons bob like sprites
+- **WHEN** the chat list or the Contacts tab is shown
+- **THEN** each row's icon bobs up and down by whole pixels a few times a
+  second, not in step with its neighbours
 
 #### Scenario: Message list stays instant
 - **WHEN** a message arrives in a chat
@@ -71,6 +82,28 @@ choice SHALL be kept on this device between runs.
 - **WHEN** Alice has never chosen, and her phone switches to dark mode
 - **THEN** the app is dark
 
+### Requirement: Theme choice
+The Profile tab SHALL offer a Theme beside the Appearance choice: Arcade, the
+default, and Calm. A theme SHALL set the look and the colours together; they
+are never chosen separately. Arcade is the look the other requirements of this
+change describe. Calm SHALL use straight square lines, no hard shadows,
+nothing turned, offset or bobbing, monospace headings with no shadow, and its
+own teal palette. Every theme SHALL have a light and a dark palette that meet
+WCAG AA, and the Appearance choice (Auto, Light, Dark) SHALL pick between them.
+The theme SHALL be kept on this device between runs. Under Calm the
+requirements `Hand-drawn lines`, `Irregular boxes` and the float of
+`Arcade motion` do not apply.
+
+#### Scenario: Choose Calm
+- **WHEN** Alice picks Calm on the Profile tab
+- **THEN** at once the app's lines are straight, nothing tilts or bobs, the
+  headings are plain monospace and the accent is teal, and it is still Calm the
+  next time the app opens
+
+#### Scenario: Theme and appearance together
+- **WHEN** Alice has picked Calm and Dark
+- **THEN** the app uses Calm's dark palette
+
 ### Requirement: Downloaded video shows its first frame
 A video bubble SHALL show the clip's real first frame in place of the blur once
 the clip is in the device's cache, so a downloaded video reads as downloaded. It
@@ -92,3 +125,59 @@ The lobby row's styling (change `lobby-distinct`) SHALL use the Arcade look: the
 #### Scenario: Square hash tile
 - **WHEN** the chat list shows the lobby
 - **THEN** its `#` tile is a square with the 2px border
+
+### Requirement: Hand-drawn lines
+Every line the app draws SHALL look drawn by hand: box outlines (cards,
+buttons, fields, dialogs, sheets, menus, bubbles, avatars, tiles, pills), the
+app bar's and navigation bar's edges, dividers and quote bars. A box's corners
+SHALL sit up to 2px off true and its edges SHALL bow slightly, drawn as two
+strokes; its fill and hard shadow SHALL follow the same outline. A box's shape
+SHALL come from a seed and its size, so it is the same on every repaint.
+
+#### Scenario: A button is not ruled
+- **WHEN** Alice looks at any button or card
+- **THEN** its outline is a slightly crooked, hand-drawn box, and it looks the
+  same each time the screen redraws
+
+### Requirement: Irregular boxes
+Boxes SHALL NOT line up as if on a grid. In a chat each bubble SHALL sit a
+few pixels off the column and be turned by under a degree, from its message
+id; chat-list and Contacts icons SHALL be set a little askew; the composer's
+send and microphone buttons SHALL be smaller than the text box and sit off its
+line.
+
+#### Scenario: Stacked bubbles
+- **WHEN** a chat shows several messages from Alice in a row
+- **THEN** their bubbles do not share an edge or a tilt, and each keeps its
+  place when the list redraws
+
+#### Scenario: The composer
+- **WHEN** Alice types a message
+- **THEN** the send button is smaller than the text box and not aligned with
+  its edges
+
+### Requirement: Groups distinct from DMs
+In the chat list a named group's row SHALL differ from a DM's: its avatar is
+a stack of two tiles and its name carries a group mark, where a DM shows one
+person's single tile (with the presence dot) and a plain name. The lobby keeps
+its own `#` tile and system pill.
+
+#### Scenario: Group and DM rows
+- **WHEN** the chat list shows the lobby, the "Weekend" group and a DM with Bob
+- **THEN** the lobby has the `#` tile, Weekend a stacked tile and a group
+  mark, and Bob's row one tile and no mark
+
+### Requirement: Contact tap
+Tapping any row on the Contacts tab SHALL do something: another member's row
+opens or starts the DM with them, asking the core afresh whether DMs are
+offered (the answer can arrive after the tab first loaded); when DMs are not
+offered, a snack bar says so; the user's own row opens the Profile tab.
+
+#### Scenario: DMs learnt after the tab loaded
+- **WHEN** the Contacts tab loaded before the device connected, and Alice taps
+  Bob once the server says it offers DMs
+- **THEN** the DM with Bob opens
+
+#### Scenario: Own row
+- **WHEN** Alice taps her own row
+- **THEN** the Profile tab opens

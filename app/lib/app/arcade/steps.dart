@@ -20,6 +20,5 @@ const entranceDuration = Duration(milliseconds: 800);
 const entranceStagger = Duration(milliseconds: 120);
 const entranceCurve = Steps(8);
 
-/// Float: 3s in 5 steps.
+/// Float: one 3s loop of whole-pixel frames (motion.dart, floatFrames).
 const floatDuration = Duration(seconds: 3);
-const floatCurve = Steps(5);

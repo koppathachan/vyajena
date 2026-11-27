@@ -28,6 +28,22 @@
   simulator in light and dark: dialogs scroll (no overflow under the keyboard),
   menus use the body font, text buttons use the monospace body.
 
-## 4. Review
+## 4. Owner review 2 (design D11-D14)
 
-- [ ] 4.1 Owner views light and dark on a simulator before commit.
+- [x] 4.2 Duller dark-mode yellow `#E6D84D`; navy send icon on the yellow
+  button; light-mode heading drawn twice for weight (`app-ui/arcade-look`).
+- [x] 4.3 Hand-drawn lines: `sketch.dart`, `ArcadeBorder`, `SketchInputBorder`,
+  `SketchEdgeBorder`, `SketchDivider` across the theme, avatars, tiles, pills,
+  bars and dividers (`app-ui/hand-drawn-lines`).
+- [x] 4.4 Irregular boxes: bubbles offset and turned per message, icons askew,
+  send and mic buttons smaller than the field (`app-ui/irregular-boxes`).
+- [x] 4.5 Groups distinct from DMs: stacked group avatar and group mark
+  (`app-ui/groups-distinct-from-dms`).
+- [x] 4.6 Contact tap never does nothing (`app-ui/contact-tap`).
+- [x] 4.7 Sprite float on chat list and Contacts icons (`app-ui/arcade-motion`).
+- [x] 4.8 Theme choice Arcade/Calm on the Profile tab, look and colours
+  together, kept on the device (`app-ui/theme-choice`, design D15).
+
+## 5. Review
+
+- [ ] 5.1 Owner views light and dark on a simulator before commit.

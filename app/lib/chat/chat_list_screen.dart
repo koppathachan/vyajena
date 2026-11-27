@@ -20,6 +20,7 @@ import '../shell/avatars.dart';
 import '../core/core_service.dart';
 import '../members/members_screen.dart';
 import '../app/arcade/motion.dart';
+import '../app/arcade/sketch.dart';
 import 'chat_model.dart';
 import 'chat_preview.dart';
 import 'chat_screen.dart';
@@ -387,7 +388,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
         name ?? unnamedGroupName,
         closed ? groupClosedText : null,
         closed,
-        NameAvatar(
+        // app-ui: Groups distinct from DMs: a stack of tiles, not one.
+        GroupAvatar(
           name: name ?? unnamedGroupName,
           seed: 'group-${chat.chatId}',
           muted: closed,
@@ -416,6 +418,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     // lobby-distinct: the lobby, and only the lobby, is styled as the system
     // space: italic name, a "system" pill and a faint accent tint.
     final lobby = chat.kind is ChatKindInfo_Lobby;
+    final group = chat.kind is ChatKindInfo_Group;
     final titleText = Text(
       title,
       maxLines: 1,
@@ -426,16 +429,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
           ? const TextStyle(fontStyle: FontStyle.italic)
           : null,
     );
+    // Arcade motion: each row's icon bobs on its own beat, a little askew.
+    final leading = ArcadeFloat(
+      distance: 3,
+      phase: floatPhase('chat-${chat.chatId}'),
+      child: Askew(seed: chat.chatId + 1, degrees: 3, child: avatar),
+    );
     final tile = ListTile(
       key: key,
-      leading: avatar,
+      leading: leading,
       enabled: true,
       // Keep a plain Text title when there is no marker, so the row reads the
       // same as before (tests and layout).
       tileColor: lobby ? lobbyRowTint(context) : null,
-      title: showMuteMarker || lobby
+      title: showMuteMarker || lobby || group
           ? Row(
               children: [
+                if (group) ...[
+                  Icon(
+                    Icons.groups_outlined,
+                    key: ValueKey('chat-group-mark-${chat.chatId}'),
+                    size: 16,
+                    color: closed ? disabled : null,
+                  ),
+                  const SizedBox(width: 6),
+                ],
                 if (showMuteMarker) ...[
                   Icon(
                     Icons.notifications_off_outlined,

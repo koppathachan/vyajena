@@ -30,7 +30,8 @@ void main() {
     expect(darkTheme.scaffoldBackgroundColor, const Color(0xFF0F0F23));
     expect(darkTheme.colorScheme.onSurface, const Color(0xFFFFFFFF));
     expect(darkTheme.cardTheme.color, const Color(0xFF1B1B3A));
-    expect(darkTheme.colorScheme.primary, const Color(0xFFFFFF00));
+    // A duller yellow than #FFFF00 (owner review 2).
+    expect(darkTheme.colorScheme.primary, const Color(0xFFE6D84D));
     expect(lightTheme.scaffoldBackgroundColor, const Color(0xFFFFF8E7));
     expect(lightTheme.colorScheme.onSurface, const Color(0xFF0F0F23));
     expect(lightTheme.cardTheme.color, const Color(0xFFFFFFFF));
@@ -51,8 +52,7 @@ void main() {
           theme.filledButtonTheme.style!.shape!.resolve({})! as ArcadeBorder;
       expect(button.width, arcadeBorderWidth);
       expect(button.shadow, buttonShadow);
-      final field = theme.inputDecorationTheme.border! as OutlineInputBorder;
-      expect(field.borderRadius, BorderRadius.zero);
+      final field = theme.inputDecorationTheme.border! as SketchInputBorder;
       expect(field.borderSide.width, arcadeBorderWidth);
       expect(bubbleShadow, 2);
     }
@@ -87,9 +87,19 @@ void main() {
         expect(heading.fontFamily, pixelFont);
         // 4px on headlines, 2px on the app-bar title (legibility).
         final offset = heading == text.titleLarge! ? 2.0 : 4.0;
-        expect(heading.shadows!.single.offset, Offset(offset, offset));
-        expect(heading.shadows!.single.blurRadius, 0);
-        expect(heading.shadows!.single.color, const Color(0xFFFF0000));
+        final red = heading.shadows!.first;
+        expect(red.offset, Offset(offset, offset));
+        expect(red.blurRadius, 0);
+        expect(red.color, const Color(0xFFFF0000));
+        // Light mode draws the heading twice, 0.6px apart, so dark-on-light
+        // reads as thick as light-on-dark (owner review 2).
+        if (theme.brightness == Brightness.light) {
+          expect(heading.shadows!.length, 2);
+          expect(heading.shadows![1].offset, const Offset(0.6, 0));
+          expect(heading.shadows![1].color, heading.color);
+        } else {
+          expect(heading.shadows!.length, 1);
+        }
       }
       for (final body in [text.bodyLarge!, text.bodyMedium!, text.bodySmall!]) {
         expect(body.fontFamily, isNot(pixelFont));
@@ -99,8 +109,15 @@ void main() {
   });
 
   // spec: app-ui/arcade-look
+  // spec: app-ui/theme-choice
   test('text and controls meet WCAG AA contrast on their fills', () {
-    for (final t in [ArcadeTokens.light, ArcadeTokens.dark]) {
+    // Every theme's palettes (app-ui: Theme choice).
+    for (final t in [
+      ArcadeTokens.light,
+      ArcadeTokens.dark,
+      ArcadeTokens.calmLight,
+      ArcadeTokens.calmDark,
+    ]) {
       final pairs = <String, double>{
         'text on bg': contrast(t.text, t.bg),
         'text on card': contrast(t.text, t.card),

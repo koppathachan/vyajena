@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/chat/chat_screen.dart';
 import 'package:vyajena/core/core_service.dart';
+import 'package:vyajena/members/contacts_tab.dart';
 import 'package:vyajena/shell/avatars.dart';
 
 import '../chat/dms_test.dart' show aliceInGroup, dmWithBob;
@@ -76,8 +77,8 @@ void main() {
       of: profileTab,
       matching: find.byKey(const Key('profile-presence-dot')),
     );
-    BoxDecoration deco() =>
-        tester.widget<Container>(dot).decoration! as BoxDecoration;
+    ShapeDecoration deco() =>
+        tester.widget<Container>(dot).decoration! as ShapeDecoration;
 
     // Offline is the first-launch default, so the dot starts in the error
     // colour.
@@ -306,6 +307,41 @@ void main() {
     final core = aliceInGroup();
     await openHome(tester, core);
     await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    expect(core.calls, contains('openDm'));
+    expect(find.byType(ChatScreen), findsOneWidget);
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('tapping your own row opens the Profile tab', (tester) async {
+    tall(tester);
+    final core = aliceInGroup();
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-alice')));
+    expect(find.byKey(const Key('profile-list')), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('a tap when DMs are not offered says so', (tester) async {
+    final core = aliceInGroup()..dms = false;
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    await tap(tester, find.byKey(const Key('contact-bob')));
+    expect(find.text(dmsUnavailableText), findsOneWidget);
+    expect(core.calls, isNot(contains('openDm')));
+  });
+
+  // spec: app-ui/contact-tap
+  testWidgets('DMs offered after the tab loaded: the tap still opens the DM', (
+    tester,
+  ) async {
+    final core = aliceInGroup()..dms = false;
+    await openHome(tester, core);
+    await tap(tester, contactsTab);
+    // The device connects and learns the server offers DMs.
+    core.dms = true;
     await tap(tester, find.byKey(const Key('contact-bob')));
     expect(core.calls, contains('openDm'));
     expect(find.byType(ChatScreen), findsOneWidget);

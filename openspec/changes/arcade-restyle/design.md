@@ -46,6 +46,48 @@ silent `video_player` in the bubble (disposed with it), over the blur; a
 file that cannot be opened keeps the blur. **D10 Entrance ids.** A row slides in
 the first time its id is shown in a run, so reloads and scrolling do not replay it.
 
+**D11 Owner review 2 (2026-11-27).** After using it on a phone the owner asked
+for: a duller dark-mode yellow (`#E6D84D` replaces `#FFFF00`; contrast with navy
+stays far above AA); navy, not white, on the yellow send button (the icon-button
+theme's white foreground had won over the filled variant, so the send buttons
+take an explicit style); no box that looks laid on a grid and every line hand
+drawn; groups distinct from DMs; contact taps that never do nothing; a thicker
+light-mode heading; and choppy, pixel-step motion on the chat list and Contacts
+icons too. This replaces "radius 0, straight 2px borders" with hand-drawn
+square boxes (D12) and the 5-step float with a frame loop (D13).
+
+**D12 Hand-drawn boxes, no package.** `sketch.dart` draws each box from its
+four corners moved up to 2px, edges as cubics bowed up to 1.2px with ends that
+overshoot, stroked twice (0.9 and 0.55 of the width) like a pen going over it.
+`ArcadeBorder` keeps its name and fields (plus a `seed`) so every theme and test
+that names it still holds; `SketchInputBorder` does the same for fields (it
+leaves the floating label's gap open) and `SketchEdgeBorder` for the app bar,
+navigation bar and quote bars. The wobble is seeded by role or id and mixed
+with the box's rounded size: stable on repaint, different between boxes. Fill,
+clip and shadow use the same outline. Irregular placement is separate:
+`Askew` (rotation and shift from a seed) on list icons and the send button, and
+a per-message margin and sub-degree turn on bubbles; a sticker is not turned.
+
+**D13 Sprite float.** One 3s loop of 8 frames (0, 0, ½, 1, 1, 1, ½, 0 of the
+height), snapped to whole logical pixels, about 375ms a frame, rebuilt only when
+the frame changes. Each icon starts at its own phase (from its id). Still under
+reduce-motion.
+
+**D14 Contact taps.** The Contacts tab read "DMs offered?" once, often before
+the device had connected, and left rows with no tap. It now listens to the
+connection, asks the core again on each tap, explains when DMs are not offered,
+and sends a tap on your own row to the Profile tab.
+
+**D15 Themes (owner, 2026-11-27).** The owner asked for a theme selector in
+which a theme is the look and the colours together, as Slack, Discord and
+Telegram do it (a named theme; light or dark stays a separate setting). Two
+themes keep it simple: Arcade (this change's look) and Calm. A theme is a pair
+of `ArcadeTokens` (light, dark) that now also carry the look: `rough` (corner
+wobble, 0 for straight), `lively` (tilt, bubble offsets, icon bob),
+`pixelHeadings` and `shadowScale`. Borders take `rough` from the theme; `Askew`,
+`ArcadeFloat` and the bubble jitter read `lively` from the context. The choice
+is one more string in `shared_preferences`, beside the Auto/Light/Dark one.
+
 ## Verification
 
 Widget tests on the fake core; the owner reviews light and dark on a simulator

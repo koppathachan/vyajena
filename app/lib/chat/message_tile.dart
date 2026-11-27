@@ -13,12 +13,14 @@
 //
 // app-ui: Play a voice message. A voice message is a bubble with a play button
 // and the waveform (audio_bubble.dart).
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../app/arcade/arcade_border.dart';
+import '../app/arcade/sketch.dart';
 import '../app/arcade/tokens.dart';
 
 import '../core/core_service.dart';
@@ -386,8 +388,13 @@ class MessageTile extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 4),
         padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-        decoration: BoxDecoration(
-          border: Border(left: BorderSide(color: scheme.primary, width: 3)),
+        decoration: ShapeDecoration(
+          shape: SketchEdgeBorder(
+            color: scheme.primary,
+            width: 3,
+            left: true,
+            rough: context.arcade.rough,
+          ),
           color: scheme.surfaceContainerHighest,
         ),
         child: Column(
@@ -579,9 +586,20 @@ class MessageTile extends StatelessWidget {
             ],
           );
     final arcade = context.arcade;
+    // Hand-drawn look: every bubble sits a few pixels off the column, a hair
+    // turned, with its own wobble, so the list never looks stacked. All from
+    // the message id, so a bubble keeps its place on every rebuild.
+    // A theme that is not lively (app-ui: Theme choice) keeps the column.
+    final jitter = SketchRandom(sketchSeed('bubble-${message.id}'));
+    final lively = arcade.lively;
+    final side = lively ? 8 + jitter.next() * 10 : 12.0;
+    final top = lively ? 1 + jitter.next() * 3 : 2.0;
+    final turn = sticker || !lively ? 0.0 : jitter.range(0.6) * math.pi / 180;
     final bubble = Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
+      child: _turned(
+        turn,
+        ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: Card(
           color: sticker
@@ -596,10 +614,17 @@ class MessageTile extends StatelessWidget {
               ? const RoundedRectangleBorder()
               : ArcadeBorder(
                   color: message.mentionsMe ? arcade.mention : arcade.border,
-                  shadow: bubbleShadow,
+                  shadow: bubbleShadow * arcade.shadowScale,
                   shadowColor: arcade.shadow,
+                  seed: sketchSeed('bubble-${message.id}'),
+                  rough: arcade.rough,
                 ),
-          margin: const EdgeInsets.fromLTRB(12, 2, 12, 2 + bubbleShadow),
+          margin: EdgeInsets.fromLTRB(
+            own ? 12 : side,
+            top,
+            own ? side : 12,
+            top + bubbleShadow * arcade.shadowScale,
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: IntrinsicWidth(
@@ -652,6 +677,7 @@ class MessageTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
     final startReply = onReply;
@@ -751,3 +777,7 @@ class _MessageTextState extends State<_MessageText> {
     );
   }
 }
+
+/// [child] turned by [angle] radians (none for 0).
+Widget _turned(double angle, Widget child) =>
+    angle == 0 ? child : Transform.rotate(angle: angle, child: child);

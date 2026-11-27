@@ -21,7 +21,7 @@ void tall(WidgetTester tester) {
 
 /// The decoration colour of the one presence dot matched by [finder].
 Color dotColour(WidgetTester tester, Finder finder) =>
-    (tester.widget<Container>(finder).decoration! as BoxDecoration).color!;
+    (tester.widget<Container>(finder).decoration! as ShapeDecoration).color!;
 
 void main() {
   // spec: presence/toggle-your-status-on-the-profile-screen
@@ -75,7 +75,7 @@ void main() {
     expect(dots, findsWidgets);
     for (final element in dots.evaluate()) {
       final container = element.widget as Container;
-      expect((container.decoration! as BoxDecoration).color, _green);
+      expect((container.decoration! as ShapeDecoration).color, _green);
     }
 
     // Bob set Offline: the dots turn to the error colour.
@@ -86,7 +86,7 @@ void main() {
     await settle(tester);
     for (final element in find.byKey(const Key('presence-dot')).evaluate()) {
       final container = element.widget as Container;
-      expect((container.decoration! as BoxDecoration).color, scheme.error);
+      expect((container.decoration! as ShapeDecoration).color, scheme.error);
     }
   });
 

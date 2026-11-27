@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../app/connection_indicator.dart';
+import '../app/arcade/app_theme.dart';
 import '../app/arcade/motion.dart';
 import '../app/errors.dart';
 import '../app/theme_mode.dart';
@@ -269,6 +270,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
           selected: {mode},
           onSelectionChanged: (chosen) => unawaited(theme.choose(chosen.first)),
+        ),
+      ),
+      const SizedBox(height: 16),
+      // app-ui: Theme choice. A theme is the look and its colours together.
+      Text('Theme', style: Theme.of(context).textTheme.titleSmall),
+      const SizedBox(height: 8),
+      ValueListenableBuilder<AppTheme>(
+        valueListenable: theme.theme,
+        builder: (context, chosen, _) => SegmentedButton<AppTheme>(
+          key: const Key('app-theme'),
+          showSelectedIcon: false,
+          segments: [
+            for (final t in AppTheme.values)
+              ButtonSegment(
+                value: t,
+                label: Text(t.label, key: Key('app-theme-${t.name}')),
+              ),
+          ],
+          selected: {chosen},
+          onSelectionChanged: (picked) =>
+              unawaited(theme.chooseTheme(picked.first)),
         ),
       ),
       const SizedBox(height: 16),

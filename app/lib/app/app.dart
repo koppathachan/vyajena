@@ -118,16 +118,18 @@ class _VyajenaAppState extends State<VyajenaApp> {
             source: widget.video,
             child: ThemeModeScope(
               controller: _theme,
-              child: ValueListenableBuilder<ThemeMode>(
-                valueListenable: _theme,
-                builder: (context, mode, _) => MaterialApp(
+              // app-ui: Theme choice. The theme gives both palettes; the
+              // Auto/Light/Dark choice picks between them.
+              child: ListenableBuilder(
+                listenable: Listenable.merge([_theme, _theme.theme]),
+                builder: (context, _) => MaterialApp(
                   title: 'Vyajena',
                   // Never the debug banner, also in profile builds and screenshots
                   // (app-release design D7).
                   debugShowCheckedModeBanner: false,
-                  theme: lightTheme,
-                  darkTheme: darkTheme,
-                  themeMode: mode,
+                  theme: themeFor(_theme.theme.value, Brightness.light),
+                  darkTheme: themeFor(_theme.theme.value, Brightness.dark),
+                  themeMode: _theme.value,
                   // The text scale is capped (app-ui: Arcade motion).
                   builder: (context, child) => MediaQuery(
                     data: MediaQuery.of(context).copyWith(

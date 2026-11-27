@@ -2,7 +2,9 @@
 // system's reduce-motion setting. Never used in the message list.
 import 'package:flutter/material.dart';
 
+import 'sketch.dart';
 import 'steps.dart';
+import 'tokens.dart';
 
 bool reducedMotion(BuildContext context) =>
     MediaQuery.maybeDisableAnimationsOf(context) ?? false;
@@ -81,32 +83,64 @@ class _ArcadeEntranceState extends State<ArcadeEntrance>
   }
 }
 
-/// Bobs [child] up and down: 3s in 5 steps, repeating. Static under
-/// reduce-motion, so a test that pumps until settled is not held up.
+/// Bobs [child] up and down like a sprite: whole-pixel jumps at a few frames a
+/// second (never a smooth glide), one 3s loop. [phase] (0..1) shifts where in
+/// the loop it starts, so a column of bobbing icons never moves in step.
+/// Static under reduce-motion, so a test that pumps until settled is not held
+/// up.
 class ArcadeFloat extends StatefulWidget {
-  const ArcadeFloat({super.key, this.distance = 6, required this.child});
+  const ArcadeFloat({
+    super.key,
+    this.distance = 4,
+    this.phase = 0,
+    required this.child,
+  });
 
+  /// How high it bobs, in logical pixels.
   final double distance;
+
+  /// Where in the loop it starts (0..1).
+  final double phase;
   final Widget child;
 
   @override
   State<ArcadeFloat> createState() => _ArcadeFloatState();
 }
 
+/// A loop position for [id], so each icon bobs at its own moment.
+double floatPhase(Object id) => (sketchSeed('$id') % 997) / 997;
+
+/// The bob's frames, as fractions of its height: up, hold, down, hold.
+const List<double> floatFrames = [0, 0, 0.5, 1, 1, 1, 0.5, 0];
+
+/// Which [floatFrames] entry shows at loop position [t] (0..1) with [phase].
+int floatFrameAt(double t, double phase) =>
+    (((t + phase) % 1) * floatFrames.length).floor() % floatFrames.length;
+
 class _ArcadeFloatState extends State<ArcadeFloat>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: floatDuration ~/ 2,
-  );
+    duration: floatDuration,
+  )..addListener(_tick);
+
+  late int _frame = floatFrameAt(0, widget.phase);
+
+  /// Rebuilds only when the frame changes (a few times a second), not on
+  /// every tick.
+  void _tick() {
+    final frame = floatFrameAt(_controller.value, widget.phase);
+    if (frame != _frame) setState(() => _frame = frame);
+  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (reducedMotion(context)) {
+    // Still under reduce-motion, and under a theme that is not lively.
+    if (reducedMotion(context) || !context.arcade.lively) {
       _controller.stop();
     } else if (!_controller.isAnimating) {
-      _controller.repeat(reverse: true);
+      _controller.repeat();
     }
   }
 
@@ -117,17 +151,15 @@ class _ArcadeFloatState extends State<ArcadeFloat>
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _controller,
-    child: widget.child,
-    builder: (context, child) => Transform.translate(
-      offset: Offset(
-        0,
-        -widget.distance * floatCurve.transform(_controller.value),
-      ),
-      child: child,
-    ),
-  );
+  Widget build(BuildContext context) {
+    final still = reducedMotion(context) || !context.arcade.lively;
+    // Whole logical pixels only: a sprite jumps, it does not glide.
+    final dy = still ? 0.0 : -(widget.distance * floatFrames[_frame]).round();
+    return Transform.translate(
+      offset: Offset(0, dy.toDouble()),
+      child: widget.child,
+    );
+  }
 }
 
 /// [children] with each content widget (not spacers or dividers) wrapped in an
@@ -136,7 +168,7 @@ List<Widget> arcadeEntrances(List<Widget> children) {
   var i = 0;
   return [
     for (final child in children)
-      if (child is SizedBox || child is Divider)
+      if (child is SizedBox || child is Divider || child is SketchDivider)
         child
       else
         ArcadeEntrance(index: i++, child: child),

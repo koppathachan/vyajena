@@ -3,6 +3,8 @@
 // italic name, a "system" pill and a faint accent tint. Only the lobby.
 import 'package:flutter/material.dart';
 
+import '../app/arcade/arcade_border.dart';
+import '../app/arcade/tokens.dart';
 import '../app/theme.dart';
 
 /// The `#` hash tile that replaces the lobby's plain avatar: a bordered square
@@ -20,14 +22,16 @@ class LobbyHashTile extends StatelessWidget {
       width: radius * 2,
       height: radius * 2,
       alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: scheme.primary,
-        border: Border.all(color: scheme.outline, width: 2),
+      decoration: sketchBox(
+        rough: context.arcade.rough,
+        fill: scheme.primary,
+        border: scheme.outline,
+        seed: 41,
       ),
       child: Text(
         '#',
         style: TextStyle(
-          fontFamily: pixelFont,
+          fontFamily: context.arcade.pixelHeadings ? pixelFont : bodyFont,
           fontFamilyFallback: bodyFontFallback,
           shadows: const <Shadow>[],
           fontSize: radius,
@@ -49,14 +53,17 @@ class SystemPill extends StatelessWidget {
     return Container(
       key: const Key('lobby-system-pill'),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: scheme.primary,
-        border: Border.all(color: scheme.outline, width: 1.5),
+      decoration: sketchBox(
+        rough: context.arcade.rough,
+        fill: scheme.primary,
+        border: scheme.outline,
+        width: 1.5,
+        seed: 43,
       ),
       child: Text(
         'system',
         style: TextStyle(
-          fontFamily: pixelFont,
+          fontFamily: context.arcade.pixelHeadings ? pixelFont : bodyFont,
           fontFamilyFallback: bodyFontFallback,
           shadows: const <Shadow>[],
           fontSize: 8,
