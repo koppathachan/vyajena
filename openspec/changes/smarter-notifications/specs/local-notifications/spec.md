@@ -53,16 +53,18 @@ enforces this.
 
 ### Requirement: Admin-event notifications are fixed, content-free phrases
 The core SHALL raise a notification for an admin-event that changes the user's own
-access — the user was removed from a conversation (`RemovedNotice`), a conversation
-was closed (`GroupClosed`, `DmClosed`), or the user was added to a new named group —
+access — the user was removed from a named group (the admin's Remove commit that
+takes this device out of it), a conversation was closed (`GroupClosed`,
+`DmClosed`), or the user was added to a new named group (a Welcome into a group
+the user had no device in) —
 using a fixed phrase, never text derived from any message. It SHALL NOT raise a
 notification for routine membership churn (other users joining or leaving, device
-links, renames, or inactivity re-adds). The conversation name used in the phrase is
+links, renames, or the server's inactivity Removes and re-adds, which the `RemovedNotice` carries). The conversation name used in the phrase is
 the device's local name for the conversation. The client enforces this.
 
 #### Scenario: You were removed
-- **WHEN** the admin removes Bob from "Work" and Bob's device receives
-  `RemovedNotice` for it
+- **WHEN** the admin removes Bob from "Work" and Bob's device processes the Remove
+  commit that takes it out of the group
 - **THEN** Bob's phone shows a local notification "You were removed from Work", with
   no message content
 

@@ -154,7 +154,30 @@ enum BackgroundTask {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    let started = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // Taps on a notification come here (app-ui: A notification opens its
+    // conversation); with no delegate iOS shows nothing while the app is in front.
+    UNUserNotificationCenter.current().delegate = self
+    return started
+  }
+
+  // The app is in front and connected: a notification would only repeat the screen.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([])
+  }
+
+  // A tap on a notification: open the conversation it is for.
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    Push.tapped(response.notification.request.content.userInfo)
+    completionHandler()
   }
 
   // APNs hands over the device token (app-ui: Push notifications).
@@ -221,10 +244,21 @@ enum BackgroundTask {
 }
 
 /// APNs for the app (app-ui: Push notifications; push design D8, D9): no
-/// Firebase. The server sends a visible alert with the fixed text "New message";
-/// iOS shows it, and tapping it opens the app. While the app is in front no
-/// alert is shown (no UNUserNotificationCenter delegate): it is connected.
+/// Firebase. The server sends a visible alert with the fixed text "New message"
+/// and `mutable-content`; iOS shows it, after the Notification Service Extension
+/// (smarter-notifications) has had the chance to put the app's saved
+/// count-and-type line in its place. A tap opens the conversation it is for.
+/// While the app is in front no alert is shown: it is connected.
 enum Push {
+  /// The App Group the app and its notification extension share, and the key of
+  /// the one line the app saves for the extension (see NotificationService).
+  static let group = "group.com.purplechaamba.vyajena"
+  static let snapshotKey = "wakeSnapshot"
+  /// The tap that launched the app, until Dart asks; after that taps go straight
+  /// to Dart.
+  private static var pendingTap: [String: Any]?
+  private static var dartListening = false
+
   static let channelName = "vyajena/push"
   static var channel: FlutterMethodChannel?
   /// The APNs token as hex, once iOS gave one this launch.
@@ -244,6 +278,20 @@ enum Push {
     case "clearNotifications":
       UNUserNotificationCenter.current().removeAllDeliveredNotifications()
       result(nil)
+    case "clearConversation":
+      clearConversation(call.arguments as? Int)
+      result(nil)
+    case "saveSnapshot":
+      saveSnapshot(call.arguments as? [String: Any])
+      result(nil)
+    case "takeLaunchTap":
+      dartListening = true
+      let tap = pendingTap
+      pendingTap = nil
+      result(tap)
+    // iOS shows the server's alert itself, and the extension rewrites it.
+    case "showNotifications", "wakeDone":
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -255,7 +303,7 @@ enum Push {
     center.getNotificationSettings { settings in
       switch settings.authorizationStatus {
       case .notDetermined:
-        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
           DispatchQueue.main.async { result(granted) }
         }
       case .authorized, .provisional, .ephemeral:
@@ -286,6 +334,58 @@ enum Push {
   }
 
   static func failed() { answer(nil) }
+
+  /// app-ui: A notification opens its conversation. The extension put the
+  /// conversation's id in `userInfo` when exactly one was involved.
+  static func tapped(_ userInfo: [AnyHashable: Any]) {
+    let chat = (userInfo["chatId"] as? NSNumber)?.intValue
+    if dartListening {
+      channel?.invokeMethod("notificationTapped", arguments: chat)
+    } else {
+      pendingTap = ["chatId": chat as Any? ?? NSNull()]
+    }
+  }
+
+  /// Removes the delivered alerts of one conversation (the extension groups them
+  /// by thread).
+  private static func clearConversation(_ chat: Int?) {
+    guard let chat else { return }
+    let center = UNUserNotificationCenter.current()
+    center.getDeliveredNotifications { delivered in
+      let ids = delivered
+        .filter { $0.request.content.threadIdentifier == "chat-\(chat)" }
+        .map { $0.request.identifier }
+      center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+  }
+
+  /// Saves, for the Notification Service Extension, the one line it may show
+  /// (a type and a count, already worded at the user's chosen detail level; no
+  /// sender, no text), and sets the app-icon badge.
+  private static func saveSnapshot(_ arguments: [String: Any]?) {
+    let combined = arguments?["combined"] as? String ?? ""
+    let badge = arguments?["badge"] as? Int ?? 0
+    if let defaults = UserDefaults(suiteName: group) {
+      if combined.isEmpty {
+        defaults.removeObject(forKey: snapshotKey)
+      } else {
+        var line: [String: Any] = ["combined": combined]
+        if let chat = arguments?["singleChatId"] as? Int { line["singleChatId"] = chat }
+        if let data = try? JSONSerialization.data(withJSONObject: line),
+          let text = String(data: data, encoding: .utf8)
+        {
+          defaults.set(text, forKey: snapshotKey)
+        }
+      }
+    }
+    DispatchQueue.main.async {
+      if #available(iOS 16.0, *) {
+        UNUserNotificationCenter.current().setBadgeCount(badge)
+      } else {
+        UIApplication.shared.applicationIconBadgeNumber = badge
+      }
+    }
+  }
 
   private static func answer(_ value: String?) {
     let results = waiting

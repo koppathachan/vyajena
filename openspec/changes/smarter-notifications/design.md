@@ -300,3 +300,60 @@ these answers and no owner decision is outstanding. This also drops the
 decrypt-in-NSE spike from v1 scope. Implementation remains gated on the tracker's
 pre-step of archiving the unarchived `push` / `push-kind-aware` changes (tasks.md
 gate 0).
+
+## Apply-time findings (2026-11-27)
+
+Recorded while implementing; each is a place the code showed the first reading of
+the design needed a precision, not a change of decision.
+
+- **A1. `RemovedNotice` is the inactivity notice, not the admin's removal.** In the
+  core, `RemovedNotice` means the *server's inactivity Remove* (and that is exactly
+  the routine, un-notified case). The user's removal from a named group reaches the
+  device as the admin's Remove **commit** (control traffic, merged during catch-up),
+  so the core raises the Removed admin-event when it merges a commit that takes
+  *this* device out of a named group, committed by another user and not an
+  inactivity Remove. Closed comes from `GroupClosed` / `DmClosed`; Added from the
+  Welcome that joins a named group. The local-notifications spec wording is fixed
+  accordingly. The admin's own device raises none of the three (it is the actor).
+- **A2. The admin-event wake is sent from the places that know.** The server
+  (`messaging/write.rs`) reads the old members before saving an accepted commit and
+  wakes every device of a user the commit removes entirely, and the devices of a
+  user the commit adds to a *named* group where they had none. It skips the
+  committer's own leave, other devices being linked or unlinked, the server's
+  inactivity Removes, and the lobby and DMs. Close wakes come from `CloseGroup`,
+  `RemoveUser` (the peer of a closed DM) and account deletion. A whole-account
+  `RemoveUser` itself wakes nobody: the removed devices are revoked and cannot
+  connect. The wake bypasses `push-kind-aware`'s application-backlog check and a
+  conversation's own mute; whole-app mute still silences it (D4).
+- **A3. iOS shows what the app last saved.** The extension cannot connect or
+  decrypt (D7), so it copies the one line the app saved in the App Group when it
+  last went to the background (`Push.saveSnapshot`), already worded at the chosen
+  detail level. That line is the unread state *as of the app's last run*: the
+  message that triggered the push is not in it, and with nothing unread then the
+  generic "New message" stays. Admin-events are cleared when the user has been in
+  the app, so they never reach the extension; on iOS an admin-event is therefore
+  the generic alert until the app opens. The count is still never accumulated from
+  pushes (local-notifications: Unread count, not push count), which is why a fresher
+  iOS count needs a later change (an extension that connects and counts queued
+  envelopes, no proto change) rather than a counter here.
+- **A4. Android runs the wake in the app's engine, or a headless one.**
+  `onMessageReceived` posts to the live Flutter engine if there is one (Dart does
+  nothing while the app is in front), otherwise starts a headless engine at
+  `notificationWake`. FCM allows a pushed app only a few seconds, so the wait is
+  capped at 9 s; past it the work is dropped and the next open catches up (D5). The
+  core is "caught up" once connected and quiet for 1.2 s. A user opening the app
+  during that window runs a second core on the same database for the few seconds
+  left; accepted for v1.
+- **A5. Basic sets no badge.** The badge is a count, so at Basic it is left at zero;
+  More sets it to the unread total of notifiable conversations (muted and closed
+  ones excluded).
+- **A6. Identity of a conversation in a notification is the core's chat id.** The
+  summary names a conversation by the core's local `ChatId` (stable on the device)
+  rather than the wire `group_id`, which the app never needs; `Core.chat_group_id`
+  gives the wire id where a test must classify one.
+- **A7. Release steps only the owner can do.** The new iOS extension needs its App ID
+  (`com.purplechaamba.vyajena.NotificationService`) and the App Group
+  `group.com.purplechaamba.vyajena` registered in the Apple developer portal, and
+  provisioning profiles for both; Android needs the app shipped before or with the
+  server's data-message switch (Migration), since an app without this change shows
+  nothing for a data wake.

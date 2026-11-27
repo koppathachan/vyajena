@@ -1,0 +1,5 @@
+// The notification extension carries the app's version (FLUTTER_BUILD_NAME and
+// FLUTTER_BUILD_NUMBER, which flutter writes to Generated.xcconfig): App Store
+// validation needs the extension's version to equal the app's. No Pods here: the
+// extension decrypts nothing and links no Flutter or Rust code.
+#include "Generated.xcconfig"

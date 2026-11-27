@@ -576,6 +576,26 @@ abstract class CoreService {
   /// Whether whole-app mute is on (notification-prefs: Mute the whole app).
   Future<bool> appMuted();
 
+  // --- Local notifications (change `smarter-notifications`) ---
+
+  /// What to show as notifications right now (local-notifications: The device
+  /// builds the notification locally): per conversation with unread messages its
+  /// type and unread count, plus pending admin-events. Metadata only: no sender,
+  /// body or caption exists in it. Read it once the core has caught up.
+  Future<NotificationSummaryView> notificationSummary();
+
+  /// Forgets the pending admin-events up to [upTo] (the app notified for them, or
+  /// the user is looking at the app).
+  Future<void> clearAdminEvents(int upTo);
+
+  /// This device's "Notification detail" level (app-ui: Notification detail
+  /// level): [NotificationDetailLevel.basic] until the user picks More.
+  Future<NotificationDetailLevel> notificationDetail();
+
+  /// Sets this device's "Notification detail" level. Local only: it changes no
+  /// push and is never sent to the server.
+  Future<void> setNotificationDetail(NotificationDetailLevel level);
+
   // --- Presence (manual-presence; change `manual-presence`) ---
 
   /// Sets this user's own manual presence flag (manual-presence: Setting your

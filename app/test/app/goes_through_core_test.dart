@@ -199,7 +199,7 @@ void main() {
 
   // spec: app-ui/ui-goes-through-the-core
   test('every server call goes through a bridge function: only the core '
-      'service and main.dart reach the bindings', () {
+      'service and the two entry points reach the bindings', () {
     final bad = <String>[];
     for (final file in libFiles()) {
       if (generated(file)) continue;
@@ -208,6 +208,9 @@ void main() {
         if (!uri.contains('src/rust/')) continue;
         final ok = switch (path) {
           'lib/main.dart' => uri == 'src/rust/frb_generated.dart',
+          // The second entry point: the headless engine an Android data wake
+          // starts when the app is closed (smarter-notifications).
+          'lib/push/wake_entry.dart' => uri == '../src/rust/frb_generated.dart',
           'lib/core/rust_core_service.dart' => true,
           // The plain types and errors, re-exported to the screens.
           'lib/core/core_service.dart' =>

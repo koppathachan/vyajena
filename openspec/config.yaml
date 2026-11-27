@@ -36,6 +36,13 @@ context: |
     2026-11-20) — authorised (an admin in the lobby or a named group, the
     original sender in a DM) and always paired with a delivered Delete
     tombstone, so the message is superseded, never silently lost.
+  - The wake push to FCM/APNs is content-free and metadata-minimal (change
+    `smarter-notifications`, owner 2026-11-27): no message content, sender,
+    `group_id` or count ever rides in a push payload, only a wake and the one
+    fixed text "New message"; the server builds it in one place for both
+    providers and everything richer is made on the device from decrypted state
+    (a count and conversation type, never a sender in v1) and shown as a local
+    notification, identical on iOS and Android.
   - Identity, auth and MLS signature keys live only in the OS key store
     (desktop: the OS keychain; a 0600 key file only on explicit opt-in where
     there is none). OpenMLS group state is in SQLite only sealed under a

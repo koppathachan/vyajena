@@ -73,7 +73,9 @@ void main() {
     expect(usages, {'NSMicrophoneUsageDescription'});
     expect(plist, isNot(contains('UIBackgroundModes')));
     // push design D12: the one capability beyond the default keychain is
-    // Push Notifications (aps-environment), in Runner.entitlements only.
+    // Push Notifications (aps-environment), in Runner.entitlements only; with
+    // `smarter-notifications` also the App Group the app shares with its
+    // notification extension (the one line the extension may show).
     final entitlements = Directory('ios/Runner')
         .listSync()
         .map((e) => e.path)
@@ -83,7 +85,10 @@ void main() {
     final keys = RegExp(
       r'<key>([^<]+)</key>',
     ).allMatches(read(entitlements.single)).map((m) => m.group(1)).toList();
-    expect(keys, ['aps-environment']);
+    expect(keys, [
+      'aps-environment',
+      'com.apple.security.application-groups',
+    ]);
   });
 
   // spec: app-release/encryption-export-declaration

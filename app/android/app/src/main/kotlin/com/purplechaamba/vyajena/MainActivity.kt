@@ -1,7 +1,6 @@
 package com.purplechaamba.vyajena
 
 import android.Manifest
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -22,6 +21,31 @@ class MainActivity : FlutterActivity() {
         Keyring.initializeNdkContext(applicationContext)
         super.onCreate(savedInstanceState)
         createMessagesChannel()
+        noteTap(intent, launching = true)
+    }
+
+    // A notification was tapped while the app was already open.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        noteTap(intent, launching = false)
+    }
+
+    /**
+     * A tapped notification (app-ui: A notification opens its conversation):
+     * remembered for Dart to read at launch, or sent to Dart if it is running.
+     */
+    private fun noteTap(intent: Intent?, launching: Boolean) {
+        if (intent?.getBooleanExtra(LocalNotifications.EXTRA_TAPPED, false) != true) return
+        val chat = if (intent.hasExtra(LocalNotifications.EXTRA_CHAT)) {
+            intent.getIntExtra(LocalNotifications.EXTRA_CHAT, 0)
+        } else {
+            null
+        }
+        if (launching) {
+            launchTap = Tap(chat)
+        } else {
+            PushChannel.channel?.invokeMethod("notificationTapped", chat)
+        }
     }
 
     private var pendingPermission: MethodChannel.Result? = null
@@ -58,9 +82,25 @@ class MainActivity : FlutterActivity() {
                 "token" -> token(result)
                 "deleteToken" -> deleteToken(result)
                 "clearNotifications" -> {
-                    getSystemService(NotificationManager::class.java)?.cancelAll()
+                    LocalNotifications.clearAll(this)
                     result.success(null)
                 }
+                "clearConversation" -> {
+                    (call.arguments as? Number)?.let { LocalNotifications.clear(this, it.toInt()) }
+                    result.success(null)
+                }
+                "showNotifications" -> {
+                    WakeRunner.showNotifications(this, call.arguments as? Map<*, *>)
+                    result.success(null)
+                }
+                // Android shows its notifications itself: nothing saved for an extension.
+                "saveSnapshot" -> result.success(null)
+                "takeLaunchTap" -> {
+                    val tap = launchTap
+                    launchTap = null
+                    result.success(tap?.let { mapOf("chatId" to it.chatId) })
+                }
+                "wakeDone" -> result.success(null)
                 else -> result.notImplemented()
             }
         }
@@ -79,16 +119,8 @@ class MainActivity : FlutterActivity() {
     private fun notificationsAllowed(): Boolean =
         getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() == true
 
-    /** The channel FCM shows "New message" on (the manifest's default). */
-    private fun createMessagesChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val channel = NotificationChannel(
-            "messages",
-            "Messages",
-            NotificationManager.IMPORTANCE_HIGH,
-        )
-        getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
-    }
+    /** The channel the app's local notifications are shown on. */
+    private fun createMessagesChannel() = LocalNotifications.ensureChannel(this)
 
     /** Asks once per install (Android 13+), then reports whether allowed. */
     private fun ensurePermission(result: MethodChannel.Result) {
@@ -146,8 +178,15 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /** A tapped notification: the conversation it opens, or the chat list. */
+    class Tap(val chatId: Int?)
+
     private companion object {
         const val NOTIFICATIONS_REQUEST = 7301
+
+        /** The tap that launched the app, until Dart reads it. */
+        @Volatile
+        var launchTap: Tap? = null
     }
 
     // The system share sheet for an invite, link request or link approval
@@ -164,9 +203,5 @@ class MainActivity : FlutterActivity() {
     // phone): app-private storage that Android never backs up or transfers
     // (noBackupFilesDir), on top of allowBackup="false". Keys are not here:
     // the core keeps them in the Android Keystore.
-    private fun coreDataDir(): File {
-        val dir = File(noBackupFilesDir, "core")
-        dir.mkdirs()
-        return dir
-    }
+    private fun coreDataDir(): File = WakeRunner.coreDataDir(this)
 }

@@ -1,6 +1,8 @@
 // The app shell: theme, lifecycle, the named routes (flutter-app design D3)
 // and the first screen, which follows the core's state: join or link when
 // this device has no user yet, the group (create, wait or chat) once it has.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../chat/chat_model.dart';
@@ -13,6 +15,8 @@ import '../core/core_service.dart';
 import '../onboarding/onboarding_screen.dart';
 import '../push/push_platform.dart';
 import 'background_task.dart';
+import '../push/notification_service.dart';
+import '../push/open_conversation.dart';
 import '../push/push_service.dart';
 import 'errors.dart';
 import 'lifecycle.dart';
@@ -70,7 +74,9 @@ class VyajenaApp extends StatefulWidget {
 
 class _VyajenaAppState extends State<VyajenaApp> {
   late final ChatModel _chat = ChatModel(widget.core);
+  final _navigator = GlobalKey<NavigatorState>();
   PushService? _push;
+  NotificationService? _notifications;
 
   @override
   void initState() {
@@ -78,11 +84,42 @@ class _VyajenaAppState extends State<VyajenaApp> {
     final api = widget.push;
     if (api != null) {
       _push = PushService(core: widget.core, api: api)..start();
+      _notifications = NotificationService(
+        core: widget.core,
+        api: api,
+        onOpen: _open,
+      )..start();
     }
+  }
+
+  /// A tapped notification: once the core is open, the conversation it names.
+  Future<void> _open(NotificationTap tap) async {
+    final core = widget.core;
+    if (core.state.value == CoreState.opening) {
+      final ready = Completer<void>();
+      void listener() {
+        if (core.state.value != CoreState.opening && !ready.isCompleted) {
+          ready.complete();
+        }
+      }
+
+      core.state.addListener(listener);
+      await ready.future;
+      core.state.removeListener(listener);
+    }
+    final navigator = _navigator.currentState;
+    if (core.state.value != CoreState.ready || navigator == null) return;
+    await openTappedConversation(
+      navigator: navigator,
+      core: core,
+      chat: _chat,
+      tap: tap,
+    );
   }
 
   @override
   void dispose() {
+    _notifications?.dispose();
     _push?.dispose();
     _chat.dispose();
     super.dispose();
@@ -110,6 +147,7 @@ class _VyajenaAppState extends State<VyajenaApp> {
               theme: lightTheme,
               darkTheme: darkTheme,
               themeMode: themeMode,
+              navigatorKey: _navigator,
               home: HomeScreen(core: widget.core, chat: _chat),
               routes: appRoutes(widget.core),
             ),

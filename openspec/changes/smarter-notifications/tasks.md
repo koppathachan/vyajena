@@ -1,10 +1,7 @@
 # Tasks
 
-**Held for owner approval.** Do not start until the owner resolves open decisions
-a–d (design.md "Owner decisions to confirm before apply"). The tasks below assume
-the recommended answers and will be revised if the owner chooses differently. No
-proto change is expected; if apply surfaces one, raise it to the owner first
-(config.yaml: proto-first).
+Owner approved a–e (2026-11-27); implementing (see design.md "Apply-time
+findings"). No proto change was needed.
 
 ## 0. Gate
 
@@ -48,27 +45,27 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 ## 3. App — local notifications (decisions b, c, d)
 
-- [ ] 3.1 `app/lib/push/` builds local notifications from the core summary:
+- [x] 3.1 `app/lib/push/` builds local notifications from the core summary:
   type-aware wording, per-conversation lines, OS grouping per `group_id`, total
   unread as the app badge; **no sender**; identical content on iOS and Android.
   Tests (widget, on the fake core) `app-ui/type-aware-notification-wording`,
   `app-ui/a-notification-opens-its-conversation`.
-- [ ] 3.2 Settings: a "Notification detail" control (Basic / More, default Basic).
+- [x] 3.2 Settings: a "Notification detail" control (Basic / More, default Basic).
   The core summary carries count/type; the app gates rendering on the level. Tests
   `app-ui/notification-detail-level`,
   `local-notifications/respect-the-notification-detail-level`.
-- [ ] 3.3 Android: `VyajenaMessagingService.onMessageReceived` handles the
+- [x] 3.3 Android: `VyajenaMessagingService.onMessageReceived` handles the
   high-priority data message, runs the core, posts the metadata-only notification
   (count + type, no sender); fallback to catch-up-on-open documented.
-- [ ] 3.4 iOS: a **metadata-only** Notification Service Extension target that rewrites
+- [x] 3.4 iOS: a **metadata-only** Notification Service Extension target that rewrites
   the alert to count + type from the shared App Group metadata (no in-extension
   decrypt, no sender — D7); generic alert stays if it cannot finish. No
   `spikes/nse-decrypt/` in v1 (only needed if a later change adds iOS sender names).
-- [ ] 3.5 Tap → open the conversation (by `group_id`) and clear its notification.
+- [x] 3.5 Tap → open the conversation (by `group_id`) and clear its notification.
 
 ## 4. Compose with mute (no mute code here)
 
-- [ ] 4.1 The local build re-checks the core's mute view before posting, so a
+- [x] 4.1 The local build re-checks the core's mute view before posting, so a
   conversation muted after a wake is still silenced locally (change
   `mute-notifications` gates the server push). Test that a muted conversation's
   summary raises no local notification once mute lands; until then, a placeholder
@@ -76,15 +73,15 @@ proto change is expected; if apply surfaces one, raise it to the owner first
 
 ## 5. Docs + invariant
 
-- [ ] 5.1 `docs/architecture-decisions.md` "who sees what": add the explicit "push
+- [x] 5.1 `docs/architecture-decisions.md` "who sees what": add the explicit "push
   provider sees only a content-free wake" line and the iOS NSE / Android data-message
   flow diagram.
-- [ ] 5.2 Add the content-free-payload invariant to `openspec/config.yaml` context
+- [x] 5.2 Add the content-free-payload invariant to `openspec/config.yaml` context
   (owner-approved, since it changes the invariant list).
 
 ## 6. Done
 
-- [ ] 6.1 `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D
+- [x] 6.1 `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D
   warnings`, `cargo fmt --check`, `cd app && flutter analyze && flutter test`,
   `buf lint`, `openspec validate smarter-notifications --strict` all pass; every
   requirement has a test naming it.

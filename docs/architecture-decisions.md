@@ -26,7 +26,7 @@ The MVP is old-school messaging, text and one picture at a time, in a system lob
 - Invite-only signup
 - Store-and-forward through the server
 - One delivery status: accepted by the server (⏳ sending → ✓ accepted)
-- Push notifications as content-free wake pings (FCM, APNs) showing one fixed text, "New message" (change `push`, owner 2026-11-16); decrypted on-device previews are a later change
+- Push notifications as content-free wake pings (FCM, APNs) showing one fixed text, "New message" (change `push`, owner 2026-11-16); decrypted on-device previews are a later change. **The wake payload is content-free and metadata-minimal** (change `smarter-notifications`, owner 2026-11-27): nothing but the wake and that one text ever reaches a push provider — no content, sender, group id or count; everything richer is built on the device as a local notification from a count-and-type summary (no sender in v1, identical on iOS and Android), at a per-device "Notification detail" of Basic (default, "New message") or More (e.g. "3 new in Work")
 - iOS and Android apps first; desktop later (decision #3)
 - Material 3 UI, `ColorScheme.fromSeed` with a muted seed and the `neutral` variant
 - Manual online/offline presence (change `manual-presence`, owner 2026-11-26): a user-set online/offline flag shown to others, **never** derived from connection or activity — a sliding toggle on the Profile screen, green/red dots on avatars. The server stores one two-value flag per user as plaintext routing metadata, like push tokens and the mute set
@@ -79,6 +79,23 @@ flowchart LR
   push -.->|"&quot;New message&quot;; tap opens the app"| core
 ```
 
+### What a push provider sees, and where the notification is made
+
+The push payload is a wake and nothing more. Everything a person reads is made on
+the device, after it decrypts, from a summary of conversation types and unread
+counts (never a sender or text), the same on iOS and Android
+(`smarter-notifications`).
+
+```mermaid
+flowchart TB
+  server["server: ciphertext only"] -->|"wake: 'New message' + mutable-content (iOS)<br/>high-priority data wake (Android). No content,<br/>sender, group id or count"| provider["Apple / Google"]
+  provider --> ios["iOS: shows 'New message' and runs the<br/>Notification Service Extension"]
+  provider --> and["Android: wakes the app (onMessageReceived)"]
+  ios --> nse["extension copies the line the app saved in the App Group:<br/>'2 new DMs, 1 new in Work'. No decrypt, no sender.<br/>If it cannot run, 'New message' stays"]
+  and --> core["core catches up on the device<br/>-> summary of type + unread count"]
+  core --> local["local notification, same words:<br/>'3 new in Work' (More) or 'New message' (Basic)"]
+```
+
 - **Flutter UI:** draws screens only; never opens a connection. iOS and Android (`app/`); every call goes through `flutter_rust_bridge` to the core (`bridge/`, no logic). Decrypted text is in Dart memory only while shown; the core's SQLite keeps the only copy. Pictures are made, encrypted, uploaded and decrypted by the core, which keeps them in its own cache; Dart is handed the picked file going in and WebP bytes to draw coming out (change `media-blobs`). Video is the one media the core does not transform: a native plugin normalizes the clip to H.264/MP4 (change `video-messages`, a documented departure) and the core does the blob crypto, handed the normalized bytes going in and a cached MP4 file path to play coming out. The app watches whether the phone has a network (`connectivity_plus`, state only, no connection) and tells the core to reconnect at once when one comes up (qa-fixes).
 - **Rust core:** OpenMLS, networking, local SQLite, keys in the OS key store (Keystore/Keychain on phones, the OS keychain on desktop). Linked through `flutter_rust_bridge`.
 - **GCP relay:** dumb TCP passthrough so no port opens at home.
@@ -92,7 +109,7 @@ OpenMLS (RFC 9420) runs inside the Rust core on every device, so the relay and t
 | --- | --- | --- |
 | GCP relay | TLS bytes, client IPs, timing | Anything inside TLS |
 | Server | Group id, member devices and their public leaf keys, admin id, epoch, sender, time, size, membership changes; for a picture, the group it was uploaded for, its size and when | Message content, group name and settings, profiles, a picture or its key |
-| Apple / Google | When a device gets a wake ping (its push token, the fixed text "New message") | Content, sender, group, count |
+| Apple / Google | **Only a content-free wake:** when a device gets a wake ping (its push token, the fixed text "New message" and, on iOS, `mutable-content`) | Content, sender, group id, count, conversation type — nothing the device later shows |
 
 Each layer of a message on the wire, and who can open it:
 
