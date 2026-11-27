@@ -301,6 +301,9 @@ pub(crate) fn submit(
             epoch,
             ciphertext: &envelope.ciphertext,
             welcome: envelope.welcome.as_ref().map(|b| b.welcome.as_slice()),
+            // push-silent-app-envelopes: the sender marks a profile/group-settings/
+            // delete `APPLICATION` envelope silent so it alerts no offline device.
+            silent: kind == Kind::Application && envelope.silent,
             accepted_at,
         },
     )?;
@@ -462,6 +465,8 @@ fn propose_remove(
             epoch: state.epoch(),
             ciphertext: &proposal,
             welcome: None,
+            // A control envelope is never silent; the push gate excludes it by kind.
+            silent: false,
             accepted_at: ctx.now,
         },
     )?;

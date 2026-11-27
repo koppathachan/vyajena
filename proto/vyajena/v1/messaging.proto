@@ -172,6 +172,20 @@ message Envelope {
   // nothing.
   DeleteTarget deletes = 11;
 
+  // push-silent-app-envelopes: Only a user-visible message alerts an offline
+  // device. Set by the sending client on an `APPLICATION` envelope whose
+  // encrypted `Content` carries no user-visible message — a profile update, a
+  // group-settings change or a message-deletion tombstone (`Content.profile`,
+  // `Content.group_settings`, `Content.delete`). The receiver applies such an
+  // envelope silently, so the server SHALL NOT fire a visible wake push for a
+  // device whose only undelivered backlog is `silent` (and/or control)
+  // envelopes; the envelope is still queued and delivered, and still counts
+  // toward the queue cap and the application TTL. Unset (false) on a text,
+  // image, audio or video message, on every control envelope, and on every
+  // envelope the server sends. A server that predates this field ignores it and
+  // treats the envelope as not silent (the pre-fix behaviour).
+  bool silent = 12;
+
   // --- Set by the server when it accepts the envelope; ignored if a client sets
   // them. ---
 

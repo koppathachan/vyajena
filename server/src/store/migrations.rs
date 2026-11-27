@@ -21,6 +21,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0010_mute_prefs.sql"),
     include_str!("migrations/0011_presence.sql"),
     include_str!("migrations/0012_reusable_invites.sql"),
+    include_str!("migrations/0013_silent_envelopes.sql"),
 ];
 
 /// The schema version this binary writes.
