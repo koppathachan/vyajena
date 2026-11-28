@@ -135,6 +135,10 @@ enum BackgroundTask {
     case "end":
       end()
       result(nil)
+    case "protectedDataAvailable":
+      // The core's database is NSFileProtectionComplete: unreadable while the
+      // device is locked (change ios-stop-core-when-locked).
+      result(UIApplication.shared.isProtectedDataAvailable)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -146,6 +150,24 @@ enum BackgroundTask {
       task = .invalid
     }
   }
+
+  /// Tell Dart when the device locks (change ios-stop-core-when-locked). iOS then
+  /// makes the NSFileProtectionComplete database unreadable, so the core must
+  /// stop before its background tick touches it (SIGBUS otherwise). This warning
+  /// fires a few seconds before the file pages are evicted, enough to stop.
+  static func observeProtectedData() {
+    guard !observing else { return }
+    observing = true
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
+      object: nil, queue: .main
+    ) { _ in
+      channel?.invokeMethod("locked", arguments: nil)
+      end()
+    }
+  }
+
+  private static var observing = false
 }
 
 @main
@@ -237,6 +259,7 @@ enum BackgroundTask {
       binaryMessenger: engineBridge.applicationRegistrar.messenger())
     BackgroundTask.channel = background
     background.setMethodCallHandler(BackgroundTask.handle)
+    BackgroundTask.observeProtectedData()
     let sticker = FlutterMethodChannel(
       name: Sticker.channelName,
       binaryMessenger: engineBridge.applicationRegistrar.messenger())

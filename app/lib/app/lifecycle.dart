@@ -115,6 +115,21 @@ class _CoreLifecycleState extends State<CoreLifecycle> {
       _finish();
       return;
     }
+    // If the phone is already locked, the core's NSFileProtectionComplete
+    // database is unreadable; keeping the core running would fault the moment
+    // its background tick reads the database (change `ios-stop-core-when-locked`).
+    // Stop now instead of waiting; the send waits for the next unlock.
+    var available = true;
+    try {
+      available = await widget.background?.protectedDataAvailable() ?? true;
+    } catch (_) {
+      // Cannot tell: wait, as before.
+    }
+    if (pause != _pause) return;
+    if (!available) {
+      _finish();
+      return;
+    }
     _wait(pause);
   }
 
@@ -131,6 +146,13 @@ class _CoreLifecycleState extends State<CoreLifecycle> {
       if (pause == _pause) _finish();
     });
     if (expired != null) _waiting.add(expired);
+    // The phone locked while finishing the send: stop the core before its
+    // background tick reads the now-unreadable NSFileProtectionComplete database
+    // (change `ios-stop-core-when-locked`).
+    final locked = widget.background?.locked.listen((_) {
+      if (pause == _pause) _finish();
+    });
+    if (locked != null) _waiting.add(locked);
     _connectCap = Timer(kBackgroundConnectWait, () {
       if (pause == _pause) _finish();
     });
