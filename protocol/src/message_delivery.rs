@@ -18,9 +18,17 @@ pub const QUEUE_ENTRY_TTL: Duration = Duration::from_secs(7 * DAY);
 /// least this long (Idempotent sends).
 pub const DEDUP_MIN_RETENTION: Duration = Duration::from_secs(7 * DAY);
 
-/// The server sends at most one wake ping per device per this interval
-/// (Content-free wake pings).
+/// The server sends at most one wake ping per device per this interval for a
+/// catch-up or own-access **nudge** (Content-free wake pings).
 pub const WAKE_PING_MIN_INTERVAL: Duration = Duration::from_secs(60);
+
+/// The minimum interval between wake pings for a newly-queued **notifiable
+/// message** to one device (Content-free wake pings). A message ping is floored by
+/// this, not by [`WAKE_PING_MIN_INTERVAL`], and is never suppressed by a nudge, so
+/// a real message is not starved by an unrelated catch-up or own-access ping. The
+/// on-device `collapse_key` means pings inside this window collapse to one
+/// notification.
+pub const NEW_MESSAGE_PING_MIN_INTERVAL: Duration = Duration::from_secs(10);
 
 /// The most catch-up wake pings the sweep sends for one offline device's backlog
 /// before it gives up, so a device whose app is gone is not pinged forever

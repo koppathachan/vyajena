@@ -8,10 +8,7 @@
 
 mod support;
 
-use client::{
-    AdminEventKind, ChatId, ChatKind, ConversationKind, Event, MessageBody, MuteTarget,
-    NotificationDetail,
-};
+use client::{AdminEventKind, ChatId, ChatKind, ConversationKind, Event, MessageBody, MuteTarget};
 use support::Check;
 use support::device::{self, Device, member, user};
 use support::server::TestServer;
@@ -363,34 +360,4 @@ async fn a_muted_conversation_and_whole_app_mute_gate_the_local_build() {
         .check("mute all");
     let summary = bob.client.notification_summary().check("summary");
     assert!(summary.conversations.is_empty() && summary.admin_events.is_empty());
-}
-
-// spec: local-notifications/respect-the-notification-detail-level
-#[tokio::test(flavor = "multi_thread")]
-async fn the_detail_level_defaults_to_basic_and_survives_a_restart() {
-    let server = TestServer::start().await;
-    let (_admin, _alice, mut bob, _carol) = lobby(&server).await;
-    assert_eq!(
-        bob.client.notification_detail().check("detail"),
-        NotificationDetail::Basic
-    );
-    bob.client
-        .set_notification_detail(NotificationDetail::More)
-        .check("set More");
-    assert_eq!(
-        bob.client.notification_detail().check("detail"),
-        NotificationDetail::More
-    );
-    bob.restart().await;
-    assert_eq!(
-        bob.client.notification_detail().check("detail"),
-        NotificationDetail::More
-    );
-    bob.client
-        .set_notification_detail(NotificationDetail::Basic)
-        .check("set Basic");
-    assert_eq!(
-        bob.client.notification_detail().check("detail"),
-        NotificationDetail::Basic
-    );
 }

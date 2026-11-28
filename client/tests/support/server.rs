@@ -147,6 +147,15 @@ impl TestServer {
         Self::start_inner(&format!("[limits]\nmax_video_blob_bytes = {cap}\n")).await
     }
 
+    /// [`TestServer::start`] with the HTTP/2 keepalive pushed a day out of the
+    /// way, so no server keepalive PING crosses the `Connect` stream during the
+    /// test (wire-transport: Heartbeats). A test that counts relay bytes to
+    /// detect the client's app-level heartbeat needs this, so only the heartbeat
+    /// moves bytes on an otherwise-idle stream.
+    pub async fn start_with_quiet_keepalive() -> Self {
+        Self::start_inner("[limits]\nhttp2_keepalive_interval = 86400\n").await
+    }
+
     async fn start_inner(extra_config: &str) -> Self {
         super::init_logging();
         let dir = tempfile::tempdir().check("temp dir");

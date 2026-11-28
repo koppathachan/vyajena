@@ -244,7 +244,14 @@ impl Server {
             shutdown.await;
             hub.stop();
         };
+        // wire-transport: Heartbeats. HTTP/2 keepalive PINGs detect a dead or
+        // half-open `Connect` connection in about interval + timeout, so an offline
+        // device's wake push fires promptly instead of waiting out
+        // `stream_idle_timeout`. A live client's HTTP/2 layer answers automatically.
+        let limits = &self.state.config.limits;
         let served = tonic::transport::Server::builder()
+            .http2_keepalive_interval(Some(limits.http2_keepalive_interval))
+            .http2_keepalive_timeout(Some(limits.http2_keepalive_timeout))
             .layer(auth)
             .add_routes(routes(&self.state))
             .serve_with_incoming_shutdown(incoming, shutdown)
@@ -371,11 +378,14 @@ fn log_config(config: &Config) {
         queue_entry_ttl_secs = l.queue_entry_ttl.as_secs(),
         queue_cap = l.queue_cap as u64,
         stream_idle_timeout_secs = l.stream_idle_timeout.as_secs(),
+        http2_keepalive_interval_secs = l.http2_keepalive_interval.as_secs(),
+        http2_keepalive_timeout_secs = l.http2_keepalive_timeout.as_secs(),
         invite_ttl_secs = l.invite_ttl.as_secs(),
         blob_ttl_secs = l.blob_ttl.as_secs(),
         challenge_ttl_secs = l.challenge_ttl.as_secs(),
         dedup_min_retention_secs = l.dedup_min_retention.as_secs(),
         wake_ping_min_interval_secs = l.wake_ping_min_interval.as_secs(),
+        new_message_ping_min_interval_secs = l.new_message_ping_min_interval.as_secs(),
         catch_up_max = l.catch_up_max as u64,
         sweep_interval_secs = l.sweep_interval.as_secs(),
         max_blob_store_bytes = l.max_blob_store_bytes,

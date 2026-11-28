@@ -36,7 +36,7 @@ use crate::mls::MlsError;
 use crate::mls::verify;
 use crate::moderation::{Report, ReportKind};
 use crate::net::{Conn, NetError, Session};
-use crate::notification::{ConversationKind, NotificationDetail, NotificationSummary};
+use crate::notification::{ConversationKind, NotificationSummary};
 use crate::pb;
 use crate::store::{AccountRow, OutgoingMessage, ProfileRow, Store, StoreError};
 
@@ -1492,19 +1492,6 @@ impl Client {
     /// app and needs no notification for them).
     pub fn clear_admin_events(&self, up_to: i64) -> Result<(), ClientError> {
         self.shared.store.clear_admin_events(up_to)?;
-        Ok(())
-    }
-
-    /// This device's "Notification detail" level (app-ui: Notification detail
-    /// level): Basic until the user picks More.
-    pub fn notification_detail(&self) -> Result<NotificationDetail, ClientError> {
-        Ok(self.shared.store.notification_detail()?)
-    }
-
-    /// Sets this device's "Notification detail" level. Local only: it is never
-    /// sent to the server and changes no push.
-    pub fn set_notification_detail(&self, level: NotificationDetail) -> Result<(), ClientError> {
-        self.shared.store.set_notification_detail(level)?;
         Ok(())
     }
 

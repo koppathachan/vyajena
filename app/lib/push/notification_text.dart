@@ -105,21 +105,12 @@ String _addedGroup(String? name) =>
 String _capitalized(String text) =>
     text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
 
-/// The words for [summary] at [level]. Basic is the generic line whenever there
-/// is anything to notify about, whatever the summary carries.
-RenderedNotifications renderNotifications(
-  NotificationSummaryView summary,
-  NotificationDetailLevel level,
-) {
+/// The words for [summary]: one line per conversation with unread messages and
+/// per admin-event, with the per-conversation count and type — never a sender or
+/// any message text. Empty when there is nothing to notify about.
+RenderedNotifications renderNotifications(NotificationSummaryView summary) {
   if (summary.conversations.isEmpty && summary.adminEvents.isEmpty) {
     return RenderedNotifications.empty;
-  }
-  if (level == NotificationDetailLevel.basic) {
-    return const RenderedNotifications(
-      lines: [NotificationLine(key: 'basic', text: kGenericNotification)],
-      combined: kGenericNotification,
-      badge: 0,
-    );
   }
   final lines = <NotificationLine>[
     for (final c in summary.conversations)

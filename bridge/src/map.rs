@@ -13,8 +13,8 @@ use crate::api::types::{
     AdminEventNotification, AdminEventType, AudioView, ChatBody, ChatKindInfo, ChatMessage,
     ChatSummary, ConnectionStatus, ConversationNotification, CoreEvent, ImageView, InviteInfo,
     MediaStatus, MemberDevice, MentionSpan, MentionTarget, NotificationConversationKind,
-    NotificationDetailLevel, NotificationSummaryView, PresenceStatus, ReaddAnswer, ReplyKind,
-    ReplyQuote, ReportKindInfo, ReportView, SendState, UserRef, VideoView,
+    NotificationSummaryView, PresenceStatus, ReaddAnswer, ReplyKind, ReplyQuote, ReportKindInfo,
+    ReportView, SendState, UserRef, VideoView,
 };
 
 pub(crate) fn user(user: &UserId) -> UserRef {
@@ -291,20 +291,6 @@ pub(crate) fn notification_summary(
             })
             .collect(),
         total_unread: summary.total_unread,
-    }
-}
-
-pub(crate) fn detail_level(level: client::NotificationDetail) -> NotificationDetailLevel {
-    match level {
-        client::NotificationDetail::Basic => NotificationDetailLevel::Basic,
-        client::NotificationDetail::More => NotificationDetailLevel::More,
-    }
-}
-
-pub(crate) fn detail(level: NotificationDetailLevel) -> client::NotificationDetail {
-    match level {
-        NotificationDetailLevel::Basic => client::NotificationDetail::Basic,
-        NotificationDetailLevel::More => client::NotificationDetail::More,
     }
 }
 

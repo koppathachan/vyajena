@@ -1,10 +1,10 @@
 //! local-notifications through the bridge (change `smarter-notifications`): the
-//! summary Dart reads after the core catches up, and the per-device "Notification
-//! detail" level. Metadata only: the bridge types have no sender or text field.
+//! summary Dart reads after the core catches up. Metadata only: the bridge types
+//! have no sender or text field.
 
 mod support;
 
-use bridge::api::types::{CoreEvent, NotificationConversationKind, NotificationDetailLevel};
+use bridge::api::types::{CoreEvent, NotificationConversationKind};
 use support::Check;
 use support::device::{self, Device};
 use support::server::TestServer;
@@ -32,24 +32,5 @@ async fn the_summary_reaches_dart_as_a_type_and_a_count_only() {
     assert!(
         !shown.contains("secret") && !shown.contains("agenda"),
         "{shown}"
-    );
-}
-
-// spec: local-notifications/respect-the-notification-detail-level
-#[tokio::test(flavor = "multi_thread")]
-async fn the_detail_level_is_basic_until_the_user_picks_more() {
-    let server = TestServer::start().await;
-    let alice = device::admin_with_group(&server).await;
-    assert_eq!(
-        alice.core.notification_detail().check("detail"),
-        NotificationDetailLevel::Basic
-    );
-    alice
-        .core
-        .set_notification_detail(NotificationDetailLevel::More)
-        .check("set More");
-    assert_eq!(
-        alice.core.notification_detail().check("detail"),
-        NotificationDetailLevel::More
     );
 }

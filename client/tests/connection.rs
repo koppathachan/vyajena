@@ -188,10 +188,12 @@ async fn a_registered_device_refuses_a_server_with_another_key() {
 }
 
 /// Waits for the idle stream's next heartbeat to reach the server and the server's
-/// answer to come back: bytes up through the relay, then bytes down. Nothing
-/// else crosses an idle stream, and the server answers a frame only after
-/// counting it as activity. The core sends its heartbeat after
-/// [`HEARTBEAT_INTERVAL`] of real idle time.
+/// answer to come back: bytes up through the relay, then bytes down. On a stream
+/// that is idle apart from the heartbeat — the caller must keep the server's
+/// HTTP/2 keepalive from pinging (see [`TestServer::start_with_quiet_keepalive`]),
+/// or a keepalive PING/ACK would move these bytes first — only the heartbeat
+/// crosses, and the server answers a frame only after counting it as activity.
+/// The core sends its heartbeat after [`HEARTBEAT_INTERVAL`] of real idle time.
 ///
 /// [`HEARTBEAT_INTERVAL`]: protocol::wire_transport::HEARTBEAT_INTERVAL
 async fn heartbeat_answered(server: &TestServer) {
@@ -214,7 +216,11 @@ async fn heartbeat_answered(server: &TestServer) {
 // spec: client-runtime/connection-lifecycle
 #[tokio::test(flavor = "multi_thread")]
 async fn heartbeats_keep_an_idle_stream_open() {
-    let server = TestServer::start().await;
+    // This test watches relay bytes to spot the client's app-level heartbeat, so
+    // the server's HTTP/2 keepalive must not also cross the idle stream and move
+    // bytes; push it a day out of the way. The keepalive's own behaviour (closing
+    // a genuinely dead connection) is covered separately.
+    let server = TestServer::start_with_quiet_keepalive().await;
     // The server accepted the stream, so the first frame named a protocol
     // version it supports.
     let mut admin = device::admin(&server).await;

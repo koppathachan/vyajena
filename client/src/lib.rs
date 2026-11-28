@@ -58,6 +58,5 @@ pub use events::{
 };
 pub use moderation::{Report, ReportKind};
 pub use notification::{
-    AdminEvent, AdminEventKind, ConversationKind, ConversationSummary, NotificationDetail,
-    NotificationSummary,
+    AdminEvent, AdminEventKind, ConversationKind, ConversationSummary, NotificationSummary,
 };

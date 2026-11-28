@@ -483,7 +483,7 @@ impl Devices for DevicesService {
         for device_id in &revoked {
             let _ = self.state.revocations.send(*device_id);
         }
-        crate::messaging::notify(&self.state, notify);
+        crate::messaging::notify(&self.state, notify, crate::push::PingClass::Nudge);
         // message-delivery: Content-free wake for an own-access admin-event: the
         // closed DMs' other users.
         let owed: Vec<_> = closed.iter().map(|(device, _)| *device).collect();

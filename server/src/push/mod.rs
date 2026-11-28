@@ -217,25 +217,69 @@ impl PushProvider for Providers {
     }
 }
 
-/// When each device was last pinged, so none gets more than one ping per
-/// [`WAKE_PING_MIN_INTERVAL`].
+/// What kind of wake ping is being rate-limited (message-delivery: Content-free
+/// wake pings). The class decides which interval applies, so a real message is
+/// never starved by an unrelated nudge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PingClass {
+    /// A newly-queued user-visible message — the write path, or the stream-loss
+    /// re-ping that exists to deliver a pending message. Floored by the short
+    /// message interval and never suppressed by a nudge.
+    Message,
+    /// A catch-up sweep ping or an own-access admin-event ping. Keeps the 60 s
+    /// cadence and does not reset the message interval.
+    Nudge,
+}
+
+/// The last ping times for one device.
+#[derive(Debug, Clone, Copy)]
+struct Last {
+    /// The last ping of any class.
+    any: SystemTime,
+    /// The last `Message`-class ping, if any.
+    message: Option<SystemTime>,
+}
+
+/// When each device was last pinged, per class, so a real message is never starved
+/// by a catch-up or own-access nudge (message-delivery: Content-free wake pings).
 #[derive(Debug, Default)]
 pub struct PingLimiter {
-    last: Mutex<HashMap<DeviceId, SystemTime>>,
+    last: Mutex<HashMap<DeviceId, Last>>,
 }
 
 impl PingLimiter {
-    /// Whether `device_id` may be pinged at `now`; if so, records the ping.
-    /// A ping inside the interval is dropped, not deferred: the earlier ping
-    /// already woke the app, which fetches everything when it connects.
-    pub fn take(&self, device_id: &DeviceId, now: SystemTime, min_interval: Duration) -> bool {
+    /// Whether `device_id` may be pinged at `now` for `class`; if so, records it.
+    /// A `Message` is allowed once `message_interval` has passed since the last
+    /// message ping, ignoring any nudge in between; a `Nudge` is allowed once
+    /// `nudge_interval` has passed since the last ping of any class and does not
+    /// reset the message interval. A ping inside its interval is dropped, not
+    /// deferred: the device catches up on its next connect, and the on-device
+    /// collapse key means repeats collapse to one notification.
+    pub fn take(
+        &self,
+        device_id: &DeviceId,
+        now: SystemTime,
+        class: PingClass,
+        message_interval: Duration,
+        nudge_interval: Duration,
+    ) -> bool {
         let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
-        let allowed = last.get(device_id).is_none_or(|at| {
-            now.duration_since(*at)
-                .is_ok_and(|since| since >= min_interval)
-        });
+        let entry = last.get(device_id).copied();
+        let elapsed = |at: SystemTime, interval: Duration| {
+            now.duration_since(at).is_ok_and(|since| since >= interval)
+        };
+        let allowed = match class {
+            PingClass::Message => entry
+                .and_then(|l| l.message)
+                .is_none_or(|at| elapsed(at, message_interval)),
+            PingClass::Nudge => entry.is_none_or(|l| elapsed(l.any, nudge_interval)),
+        };
         if allowed {
-            last.insert(*device_id, now);
+            let message = match class {
+                PingClass::Message => Some(now),
+                PingClass::Nudge => entry.and_then(|l| l.message),
+            };
+            last.insert(*device_id, Last { any: now, message });
         }
         allowed
     }
