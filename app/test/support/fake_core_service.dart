@@ -1002,9 +1002,6 @@ class FakeCoreService extends CoreService {
     totalUnread: 0,
   );
 
-  /// The per-device "Notification detail" level; Basic until chosen.
-  NotificationDetailLevel detailValue = NotificationDetailLevel.basic;
-
   @override
   Future<NotificationSummaryView> notificationSummary() async {
     _call('notificationSummary');
@@ -1022,15 +1019,6 @@ class FakeCoreService extends CoreService {
       ],
       totalUnread: summaryValue.totalUnread,
     );
-  }
-
-  @override
-  Future<NotificationDetailLevel> notificationDetail() async => detailValue;
-
-  @override
-  Future<void> setNotificationDetail(NotificationDetailLevel level) async {
-    _call('setNotificationDetail', level);
-    detailValue = level;
   }
 
   // --- Moderation (block + report; change `report-and-block`) ---

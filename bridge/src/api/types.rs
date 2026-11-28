@@ -300,17 +300,6 @@ pub struct ChatSummary {
     pub muted: bool,
 }
 
-/// How much a notification says (app-ui: Notification detail level): a
-/// per-device choice that only changes how the app renders its own local
-/// notifications.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationDetailLevel {
-    /// Only the generic "New message". The default.
-    Basic,
-    /// The per-conversation count and type; still no sender and no text.
-    More,
-}
-
 /// What kind of conversation a notification is about (local-notifications: The
 /// device builds the notification locally).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -15,8 +15,8 @@ use super::error::{CoreError, CoreErrorKind};
 use super::text;
 use super::types::{
     ChatMessage, ChatSummary, CoreEvent, InviteInfo, MemberDevice, MentionSpan,
-    NotificationDetailLevel, NotificationSummaryView, PresenceStatus, ProfileInfo, PushPlatform,
-    ReportView, StickerSource, UserRef,
+    NotificationSummaryView, PresenceStatus, ProfileInfo, PushPlatform, ReportView, StickerSource,
+    UserRef,
 };
 use crate::frb_generated::StreamSink;
 use crate::map;
@@ -758,20 +758,6 @@ impl Core {
     /// notified for, or the user is looking at the app).
     pub fn clear_admin_events(&self, up_to: i64) -> Result<(), CoreError> {
         forward(self.client.clear_admin_events(up_to))
-    }
-
-    /// This device's "Notification detail" level (app-ui: Notification detail
-    /// level): Basic until the user picks More.
-    pub fn notification_detail(&self) -> Result<NotificationDetailLevel, CoreError> {
-        Ok(map::detail_level(forward(
-            self.client.notification_detail(),
-        )?))
-    }
-
-    /// Sets this device's "Notification detail" level. Local only: never sent to
-    /// the server, and it changes no push.
-    pub fn set_notification_detail(&self, level: NotificationDetailLevel) -> Result<(), CoreError> {
-        forward(self.client.set_notification_detail(map::detail(level)))
     }
 
     // --- Moderation (block + report; change `report-and-block`) ---

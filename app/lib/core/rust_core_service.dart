@@ -379,14 +379,6 @@ class RustCoreService extends CoreService {
   Future<void> clearAdminEvents(int upTo) => _c.clearAdminEvents(upTo: upTo);
 
   @override
-  Future<NotificationDetailLevel> notificationDetail() =>
-      _c.notificationDetail();
-
-  @override
-  Future<void> setNotificationDetail(NotificationDetailLevel level) =>
-      _c.setNotificationDetail(level: level);
-
-  @override
   Future<void> setPresence(bool online) => _c.setPresence(online: online);
 
   @override

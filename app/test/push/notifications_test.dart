@@ -1,7 +1,7 @@
-// app-ui: Notification detail level; Type-aware notification wording; A
-// notification opens its conversation. local-notifications: Respect the
-// notification detail level (change `smarter-notifications`). Over the fake core
-// and a fake phone; nothing here has a sender or a message body to show.
+// app-ui: Notification detail is fixed; Type-aware notification wording; A
+// notification opens its conversation. local-notifications: notifications show
+// the count and type (change `smarter-notifications`). Over the fake core and a
+// fake phone; nothing here has a sender or a message body to show.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:vyajena/app/app.dart';
@@ -42,12 +42,9 @@ void connect(FakeCoreService core) =>
 
 Future<(FakeCoreService, FakePush, NotificationService)> woken({
   required NotificationSummaryView summary,
-  NotificationDetailLevel level = NotificationDetailLevel.more,
   bool foreground = false,
 }) async {
-  final core = FakeCoreService(storedUser: bob)
-    ..summaryValue = summary
-    ..detailValue = level;
+  final core = FakeCoreService(storedUser: bob)..summaryValue = summary;
   await core.open();
   // The app went to the background and stopped the core.
   await core.stop();
@@ -66,11 +63,9 @@ Future<(FakeCoreService, FakePush, NotificationService)> woken({
 
 void main() {
   // spec: app-ui/type-aware-notification-wording
-  test('Bob at More: a group names itself, a DM names no one, the lobby is '
-      '"the lobby"', () {
+  test('a group names itself, a DM names no one, the lobby is "the lobby"', () {
     final shown = renderNotifications(
       summary([group(100, 'Work', 3), dm(1, 2)]),
-      NotificationDetailLevel.more,
     );
     expect(shown.lines.map((l) => l.text), ['3 new in Work', '2 new messages']);
     expect(shown.lines.map((l) => l.key), ['chat-100', 'chat-1']);
@@ -96,7 +91,6 @@ void main() {
       'in Work"', () {
     final shown = renderNotifications(
       summary([dm(1, 1), dm(2, 1), group(100, 'Work', 1)]),
-      NotificationDetailLevel.more,
     );
     expect(shown.combined, '2 new DMs, 1 new in Work');
   });
@@ -137,45 +131,28 @@ void main() {
     );
   });
 
-  // spec: local-notifications/respect-the-notification-detail-level
-  test('Basic ignores the summary\'s detail; More renders it', () {
+  // spec: local-notifications/notifications-show-the-count-and-type
+  test('a summary renders its count and type; nothing when empty', () {
     final work = summary([group(100, 'Work', 3)]);
-    final basic = renderNotifications(work, NotificationDetailLevel.basic);
-    expect(basic.lines.map((l) => l.text), ['New message']);
-    expect(basic.combined, 'New message');
-    expect(basic.badge, 0, reason: 'a number would say more than Basic does');
-    expect(basic.singleChatId, isNull);
-    final more = renderNotifications(work, NotificationDetailLevel.more);
-    expect(more.lines.map((l) => l.text), ['3 new in Work']);
-    expect(more.singleChatId, 100);
-    expect(more.badge, 3);
-    // Nothing to notify about: nothing, at either level.
-    for (final level in NotificationDetailLevel.values) {
-      expect(renderNotifications(summary([]), level).isEmpty, isTrue);
-    }
+    final shown = renderNotifications(work);
+    expect(shown.lines.map((l) => l.text), ['3 new in Work']);
+    expect(shown.singleChatId, 100);
+    expect(shown.badge, 3);
+    // Nothing to notify about: nothing.
+    expect(renderNotifications(summary([])).isEmpty, isTrue);
   });
 
-  // spec: app-ui/notification-detail-level
-  // spec: local-notifications/respect-the-notification-detail-level
-  test('a data wake at Basic posts only "New message", at More the count and '
-      'type', () async {
+  // spec: local-notifications/notifications-show-the-count-and-type
+  test('a data wake posts the count and type', () async {
     final work = summary([group(100, 'Work', 3)]);
-    var (core, push, service) = await woken(
-      summary: work,
-      level: NotificationDetailLevel.basic,
-    );
-    await push.wake();
-    expect(push.shown.single.lines.map((l) => l.text), ['New message']);
-    expect(core.calls, containsAllInOrder(['start', 'stop']));
-    await service.dispose();
-
-    (core, push, service) = await woken(summary: work);
+    final (core, push, service) = await woken(summary: work);
     await push.wake();
     expect(push.shown.single.lines.map((l) => l.text), ['3 new in Work']);
+    expect(core.calls, containsAllInOrder(['start', 'stop']));
     await service.dispose();
   });
 
-  // spec: app-ui/notification-detail-level
+  // spec: local-notifications/notifications-show-the-count-and-type
   test('a wake with nothing unread posts nothing, and one in front of the '
       'user posts nothing', () async {
     var (core, push, service) = await woken(summary: summary([]));
@@ -217,8 +194,8 @@ void main() {
     },
   );
 
-  // spec: app-ui/notification-detail-level
-  testWidgets('Notification detail starts at Basic; Bob picks More', (
+  // spec: app-ui/notification-detail-is-fixed
+  testWidgets('Notification detail shows the fixed description and no selector', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(800, 2400);
@@ -228,15 +205,10 @@ void main() {
     await openHome(tester, core);
     await tap(tester, find.byKey(const Key('tab-profile')));
     expect(find.text('Notification detail'), findsOneWidget);
-    SegmentedButton<NotificationDetailLevel> control() =>
-        tester.widget(find.byKey(const Key('notification-detail')));
-    expect(control().selected, {NotificationDetailLevel.basic});
-    expect(find.textContaining('Shows only “New message”'), findsOneWidget);
-
-    await tap(tester, find.text('More'));
-    expect(core.args['setNotificationDetail'], NotificationDetailLevel.more);
-    expect(control().selected, {NotificationDetailLevel.more});
+    // The fixed description, and no Basic/More selector to choose a level.
     expect(find.textContaining('3 new in Work'), findsOneWidget);
+    expect(find.byKey(const Key('notification-detail')), findsNothing);
+    expect(find.text('Basic'), findsNothing);
   });
 
   // spec: app-ui/a-notification-opens-its-conversation

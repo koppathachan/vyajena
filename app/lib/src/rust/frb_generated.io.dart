@@ -190,9 +190,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   );
 
   @protected
-  NotificationDetailLevel dco_decode_notification_detail_level(dynamic raw);
-
-  @protected
   NotificationSummaryView dco_decode_notification_summary_view(dynamic raw);
 
   @protected
@@ -443,11 +440,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   NotificationConversationKind sse_decode_notification_conversation_kind(
-    SseDeserializer deserializer,
-  );
-
-  @protected
-  NotificationDetailLevel sse_decode_notification_detail_level(
     SseDeserializer deserializer,
   );
 
@@ -764,12 +756,6 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   @protected
   void sse_encode_notification_conversation_kind(
     NotificationConversationKind self,
-    SseSerializer serializer,
-  );
-
-  @protected
-  void sse_encode_notification_detail_level(
-    NotificationDetailLevel self,
     SseSerializer serializer,
   );
 
