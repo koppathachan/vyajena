@@ -44,6 +44,7 @@ FakeCoreService aliceInWeekend() => FakeCoreService(storedUser: alice)
     MemberDevice(user: bob, device: '03'),
   ]
   ..displayNames = {'bob@chat': 'Bobby (bob)', 'akhil@chat': 'akhil'}
+  ..profiles = {'bob@chat': const ProfileInfo(displayName: 'Bobby')}
   ..groupChats = [group(100, 'Weekend', unread: 2)]
   ..groupMemberDevices = {
     100: const [
@@ -88,7 +89,7 @@ void main() {
         .widgetList<ListTile>(find.byType(ListTile))
         .map(tileTitle)
         .toList();
-    expect(rows, ['#lobby', 'Weekend', 'Bobby (bob)']);
+    expect(rows, ['#lobby', 'Weekend', 'Bobby']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
   });

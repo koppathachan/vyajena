@@ -99,7 +99,8 @@ entrance go from 4 and 8 steps to 10 each, so they read as smooth with a trace
 of step. Chat bubbles become compact runs (spec: Compact message runs):
 consecutive messages from one sender within 2 minutes share one run, with fixed
 10px margins, no tilt and the shadow on the last bubble only. The bubble's max
-width stays 480px: on a phone it already reached about 92% of the screen. The float keeps its 8 whole-pixel
+width stays 480px: on a phone it already reached about 92% of the screen. The chat list's DM rows and the Contacts tab show one name,
+the display name else the username (`UserNames.short`), not "Name (username)". The float keeps its 8 whole-pixel
 frames: a 4px bob cannot show more than about 5 distinct positions.
 
 ## Verification

@@ -37,7 +37,7 @@ void main() {
       'one tile', (tester) async {
     await openHome(tester, aliceWithEverything());
     final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
-    expect(tiles.map(tileTitle), ['#lobby', 'Weekend', 'Bobby (bob)']);
+    expect(tiles.map(tileTitle), ['#lobby', 'Weekend', 'Bobby']);
     for (final tile in tiles.skip(1)) {
       expect(tile.tileColor, isNull);
       expect(

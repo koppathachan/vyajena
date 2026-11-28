@@ -48,8 +48,9 @@ void main() {
 
     // A member renames: the list follows.
     core.displayNames['bob@chat'] = 'Bobby (bob)';
+    core.profiles['bob@chat'] = const ProfileInfo(displayName: 'Bobby');
     core.emit(const CoreEvent.profileChanged(user: bob, displayName: 'Bobby'));
     await settle(tester);
-    expect(find.text('Bobby (bob)'), findsOneWidget);
+    expect(find.text('Bobby'), findsOneWidget);
   });
 }

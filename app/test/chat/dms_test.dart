@@ -42,7 +42,7 @@ final composer = find.byKey(const Key('composer'));
 
 void main() {
   // spec: app-ui/chat-list
-  testWidgets('Two chats: the group first, then "Bobby (bob)" with an unread '
+  testWidgets('Two chats: the group first, then "Bobby" with an unread '
       'mark; tapping it opens the DM', (tester) async {
     final core = aliceInGroup()..dmChats = [dmWithBob(unread: 1)];
     core.receive(bob, 'hi from the DM', chatId: 1, emitEvent: false);
@@ -58,7 +58,7 @@ void main() {
       reason: 'the group comes first',
     );
     expect(find.text('#lobby'), findsOneWidget);
-    expect(find.text('Bobby (bob)'), findsOneWidget);
+    expect(find.text('Bobby'), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
 
     await tap(tester, dm);
@@ -140,7 +140,7 @@ void main() {
     final picker = find.byKey(const Key('mention-picker'));
     expect(picker, findsOneWidget);
     expect(
-      find.descendant(of: picker, matching: find.text('Bobby (bob)')),
+      find.descendant(of: picker, matching: find.text('Bobby')),
       findsOneWidget,
     );
     expect(

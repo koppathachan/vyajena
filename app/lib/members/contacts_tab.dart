@@ -172,7 +172,7 @@ class _ContactsTabState extends State<ContactsTab> {
   Widget _member(MemberUser m) {
     final me = _isMe(m.user);
     final scheme = Theme.of(context).colorScheme;
-    final name = _names.of(m.user);
+    final name = _names.short(m.user);
     // The group names its admin to every member (core.adminUser); this
     // device's own admin status covers the moment before it has joined.
     final named = _admin;

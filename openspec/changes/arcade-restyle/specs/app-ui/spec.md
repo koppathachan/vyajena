@@ -203,3 +203,14 @@ forward, delete, report and swipe-to-reply.
 - **WHEN** Bob's next message arrives more than 2 minutes after his last
 - **THEN** it starts a new run with the sender and the time shown
 
+### Requirement: One name in chat rows and contacts
+A direct-message row in the chat list and a row in the Contacts tab SHALL show
+one name: the user's display name when they have one, else their username. The
+full "Name (username)" form stays where two people must be told apart (a
+group's sender labels, the member profile and the admin screens).
+
+#### Scenario: Display name first
+- **WHEN** Bob has the display name "Bobby"
+- **THEN** his DM row and his Contacts row read "Bobby", and a member with no
+  display name reads as their username
+

@@ -130,7 +130,7 @@ void main() {
         .widgetList<ListTile>(find.byType(ListTile))
         .map(tileTitle)
         .toList();
-    expect(rows, ['#lobby', 'Weekend', 'Bobby (bob)']);
+    expect(rows, ['#lobby', 'Weekend', 'Bobby']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
     // A group preview names the sender; a DM's does not. A voice message
@@ -161,7 +161,7 @@ void main() {
         .widgetList<ListTile>(find.byType(ListTile))
         .map(tileTitle)
         .toList();
-    expect(rows.last, 'Bobby (bob)');
+    expect(rows.last, 'Bobby');
   });
 
   Future<void> swipeClosedDm(WidgetTester tester) async {

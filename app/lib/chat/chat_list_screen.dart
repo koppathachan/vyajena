@@ -397,7 +397,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
       ChatKindInfo_Dm(:final peer, :final closed) => (
         ValueKey('chat-${chat.chatId}'),
-        _names.of(peer),
+        _names.short(peer),
         closed ? dmClosedText(_names.short(peer)) : null,
         closed,
         // manual-presence: Presence indicator on avatars. A DM row shows the
