@@ -9,8 +9,9 @@ import 'package:flutter/material.dart';
 const double arcadeRadius = 0;
 
 /// The border width of every card, button, field, dialog and bubble (reduced
-/// from the brief's 4px after review on a phone: 4px was too heavy).
-const double arcadeBorderWidth = 2;
+/// from the brief's 4px, then from 2px to 1px after owner review 3: still too
+/// heavy on a phone).
+const double arcadeBorderWidth = 1;
 
 /// Hard (blur 0) shadow offsets (reduced from 12/4/6 after review; bubbles 2).
 const double cardShadow = 6;
@@ -26,12 +27,20 @@ const double maxTextScale = 1.3;
 const Color _navy = Color(0xFF0F0F23);
 const Color _cardDark = Color(0xFF1B1B3A);
 
-/// The dark mode's yellow, a little duller than pure #FFFF00 (owner review 2:
-/// full yellow on navy was too harsh for some eyes).
-const Color _yellow = Color(0xFFE6D84D);
-const Color _red = Color(0xFFFF0000);
+/// The dark mode's yellow: a warm amber, duller than pure #FFFF00 and than the
+/// lemon #E6D84D (owner review 3: still too bright at night).
+const Color _yellow = Color(0xFFD9B84A);
+/// The dark heading's offset shadow: a softer red than pure #FF0000, so it
+/// does not outshine the dimmer yellow (owner review 3).
+const Color _red = Color(0xFFE5484D);
 const Color _purple = Color(0xFF764BA2);
-const Color _cream = Color(0xFFFFF8E7);
+/// The light page is butter, and its cards a warm off-white, so no large area
+/// reads as pure white (owner review 3).
+const Color _butter = Color(0xFFF6EBCB);
+const Color _butterCard = Color(0xFFFFFBEF);
+
+/// The light heading's offset shadow: a dull gold, echoing the dark yellow.
+const Color _gold = Color(0xFFD9A520);
 
 /// The arcade palette for one brightness.
 @immutable
@@ -127,18 +136,18 @@ class ArcadeTokens extends ThemeExtension<ArcadeTokens> {
 
   static const light = ArcadeTokens(
     brightness: Brightness.light,
-    bg: _cream,
+    bg: _butter,
     text: _navy,
     border: _navy,
-    card: Colors.white,
+    card: _butterCard,
     heading: _navy,
-    headingShadowColor: _red,
+    headingShadowColor: _gold,
     button: _purple,
     onButton: Colors.white,
     focus: _navy,
     bubbleMine: _purple,
     onBubbleMine: Colors.white,
-    bubbleTheirs: Colors.white,
+    bubbleTheirs: _butterCard,
     onBubbleTheirs: _navy,
     shadow: Colors.black,
     muted: Color(0xFF4A4A6A),

@@ -11,7 +11,7 @@ stock widgets or the system font.
 The app SHALL use Material 3 widgets themed from one explicit token set, light
 and dark following the system. Every shape SHALL have square (unrounded)
 corners, drawn by hand as in `Hand-drawn lines`. Borders SHALL be
-2px (white in dark, navy `#0F0F23` in light). Depth SHALL be a hard offset shadow
+1px (white in dark, navy `#0F0F23` in light). Depth SHALL be a hard offset shadow
 with no blur: 6px on cards, 3px on buttons, 2px on chat bubbles. Headings and
 labels SHALL use the bundled Press Start 2P font and body text SHALL use a
 monospace font, never the pixel font. Text and background colours SHALL meet
@@ -21,20 +21,21 @@ keeps the appearance choice.
 #### Scenario: Dark mode
 - **WHEN** Alice's phone is in dark mode
 - **THEN** the app uses the dark tokens: background `#0F0F23`, text white, cards
-  `#1B1B3A`, white 2px borders and yellow `#E6D84D` buttons (a duller yellow
-  than `#FFFF00`, easier on the eyes), with navy icons and text on them,
+  `#1B1B3A`, white 1px borders and amber `#D9B84A` buttons (a duller yellow
+  than `#FFFF00`, easier on the eyes at night), with navy icons and text on them,
   the send icon included
 
 #### Scenario: Light mode
 - **WHEN** Alice's phone is in light mode
-- **THEN** the app uses the light tokens: background `#FFF8E7`, navy text and
-  borders, white cards and purple `#764BA2` buttons, and the hard shadows are
+- **THEN** the app uses the light tokens: background butter `#F6EBCB`, navy text and
+  borders, warm off-white `#FFFBEF` cards (never pure white), headings with a
+  dull gold `#D9A520` shadow (dark headings take a soft red `#E5484D` one), and purple `#764BA2` buttons, and the hard shadows are
   visible; headings are drawn twice 0.6px apart, so an app-bar title such as
   "Chats" looks as thick as in dark mode
 
 #### Scenario: Dialogs, sheets and menus
 - **WHEN** Alice opens a dialog, a bottom sheet, a pop-up menu or a snack bar
-- **THEN** it is square with the 2px border, its dialog title uses the pixel
+- **THEN** it is square with the 1px border, its dialog title uses the pixel
   font, its text the monospace body font, and a dialog that holds a text field
   scrolls rather than overflowing under the keyboard
 
@@ -43,8 +44,8 @@ keeps the appearance choice.
 - **THEN** its text uses the monospace body font
 
 ### Requirement: Arcade motion
-Motion SHALL use stepped curves only. Hover and press SHALL take 200ms in 4
-steps; an entrance slide 800ms in 8 steps with a 120ms stagger; a float one
+Motion SHALL use stepped curves only. Hover and press SHALL take 200ms in 10
+steps; an entrance slide 800ms in 10 steps with a 120ms stagger; a float one
 3s loop of at most 8 frames, each a whole number of pixels high (a sprite's
 jump, never a glide). The Profile avatar, the chat list's row icons and the
 Contacts tab's icons float, each from its own point in the loop. The message list SHALL have no entrance or hover motion. Text scale SHALL
@@ -53,7 +54,7 @@ animation or transition of its own.
 
 #### Scenario: Chat list and screens slide in once
 - **WHEN** the chat list or the Profile, Contacts or join screen first appears
-- **THEN** its rows slide up into place in 8 steps, 120ms apart, and a row does not
+- **THEN** its rows slide up into place in 10 steps, 120ms apart, and a row does not
   slide in again when it is scrolled back or the list reloads
 
 #### Scenario: Icons bob like sprites
@@ -124,7 +125,7 @@ The lobby row's styling (change `lobby-distinct`) SHALL use the Arcade look: the
 
 #### Scenario: Square hash tile
 - **WHEN** the chat list shows the lobby
-- **THEN** its `#` tile is a square with the 2px border
+- **THEN** its `#` tile is a square with the 1px border
 
 ### Requirement: Hand-drawn lines
 Every line the app draws SHALL look drawn by hand: box outlines (cards,
@@ -181,3 +182,24 @@ offered, a snack bar says so; the user's own row opens the Profile tab.
 #### Scenario: Own row
 - **WHEN** Alice taps her own row
 - **THEN** the Profile tab opens
+
+### Requirement: Compact message runs
+The chat SHALL group consecutive messages from one sender, each sent within 2
+minutes of the one before, into a run. In a run only the first bubble names the sender, and
+only the last shows the time and the delivery tick (an earlier bubble shows a
+mark only when it is not simply delivered, such as sending or failed). Bubbles
+SHALL sit 2px apart inside a run and 8px apart between runs, 10px from the
+screen edge, without tilt, with 10x6 padding; the hard shadow SHALL be drawn on
+the last bubble of a run only. A notice, a report or the new-messages divider
+SHALL end a run. Each message SHALL remain its own bubble for reply, copy,
+forward, delete, report and swipe-to-reply.
+
+#### Scenario: Three messages in a row
+- **WHEN** Bob sends three messages within a minute
+- **THEN** the first names Bob, only the third shows the time, and they are 2px
+  apart
+
+#### Scenario: A long pause starts a new run
+- **WHEN** Bob's next message arrives more than 2 minutes after his last
+- **THEN** it starts a new run with the sender and the time shown
+

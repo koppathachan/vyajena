@@ -57,7 +57,7 @@ void main() {
   testWidgets('the lobby shows it is fixed: no rename, no close, even for the '
       'admin', (tester) async {
     await openHome(tester, adminWithGroups());
-    expect(find.text('lobby'), findsOneWidget);
+    expect(find.text('#lobby'), findsOneWidget);
     await enterGroup(tester);
     await tap(tester, find.byTooltip('Menu'));
     for (final key in ['lobby-rename-disabled', 'lobby-close-disabled']) {
@@ -88,7 +88,7 @@ void main() {
         .widgetList<ListTile>(find.byType(ListTile))
         .map(tileTitle)
         .toList();
-    expect(rows, ['lobby', 'Weekend', 'Bobby (bob)']);
+    expect(rows, ['#lobby', 'Weekend', 'Bobby (bob)']);
     expect(find.byKey(const ValueKey('chat-unread-100')), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
   });

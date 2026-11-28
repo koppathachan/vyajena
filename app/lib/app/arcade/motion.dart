@@ -16,7 +16,7 @@ final Set<Object> _entered = <Object>{};
 /// Forgets what has entered (a test starts each run clean).
 void resetArcadeEntrances() => _entered.clear();
 
-/// Slides [child] up into place once, when first shown: 800ms in 8 steps,
+/// Slides [child] up into place once, when first shown: 800ms in 10 steps,
 /// after [index] times 120ms (capped at six siblings). With an [id] it slides
 /// in only the first time that id is shown in this run.
 class ArcadeEntrance extends StatefulWidget {

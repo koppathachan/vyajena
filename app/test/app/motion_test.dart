@@ -65,7 +65,7 @@ void main() {
       ),
       findsNothing,
     );
-    expect(find.text('lobby'), findsOneWidget);
+    expect(find.text('#lobby'), findsOneWidget);
     await tester.pumpAndSettle();
   });
 

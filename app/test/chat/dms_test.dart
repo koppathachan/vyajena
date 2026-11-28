@@ -57,7 +57,7 @@ void main() {
       lessThan(tester.getTopLeft(dm).dy),
       reason: 'the group comes first',
     );
-    expect(find.text('lobby'), findsOneWidget);
+    expect(find.text('#lobby'), findsOneWidget);
     expect(find.text('Bobby (bob)'), findsOneWidget);
     expect(find.byKey(const ValueKey('chat-unread-1')), findsOneWidget);
 

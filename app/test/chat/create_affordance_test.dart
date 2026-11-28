@@ -40,7 +40,7 @@ void main() {
     await openHome(tester, core);
 
     expect(find.byKey(const ValueKey('chat-main')), findsOneWidget);
-    expect(find.text('lobby'), findsOneWidget);
+    expect(find.text('#lobby'), findsOneWidget);
     expect(composer, findsNothing, reason: 'the list, not the group chat');
   });
 

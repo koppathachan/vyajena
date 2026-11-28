@@ -168,7 +168,11 @@ ThemeData arcadeTheme(ArcadeTokens t) {
     focusColor: t.focus.withValues(alpha: 0.35),
     hoverColor: Colors.transparent,
     dividerColor: t.border,
-    dividerTheme: DividerThemeData(color: t.border, thickness: 2, space: 2),
+    dividerTheme: DividerThemeData(
+      color: t.border,
+      thickness: arcadeBorderWidth,
+      space: 2,
+    ),
     iconTheme: IconThemeData(color: t.text),
     appBarTheme: AppBarTheme(
       backgroundColor: t.card,

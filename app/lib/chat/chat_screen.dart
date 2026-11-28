@@ -234,6 +234,25 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Draws the "New messages" divider above [tile] when [id] is the first
   /// unread message (app-ui: Unread divider).
+  /// Whether [b], right after [a], joins [a]'s run of one sender's messages
+  /// (app-ui: Compact message runs). A notice, a report, or the new-messages
+  /// divider ends a run.
+  bool _joins(ChatItem a, ChatItem b, int? dividerBeforeId) {
+    if (a is! MessageItem || b is! MessageItem) return false;
+    if (b.message.id == dividerBeforeId) return false;
+    if (_reportText(a.message) != null || _reportText(b.message) != null) {
+      return false;
+    }
+    return sameRun(a.message, b.message);
+  }
+
+  bool _startsRun(List<ChatItem> items, int at, int? dividerBeforeId) =>
+      at == 0 || !_joins(items[at - 1], items[at], dividerBeforeId);
+
+  bool _endsRun(List<ChatItem> items, int at, int? dividerBeforeId) =>
+      at == items.length - 1 ||
+      !_joins(items[at], items[at + 1], dividerBeforeId);
+
   Widget _withDivider(int id, int? dividerBeforeId, Widget tile) =>
       id == dividerBeforeId
       ? Column(
@@ -781,7 +800,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: items.length,
                         itemBuilder: (context, index) {
-                          final item = items[items.length - 1 - index];
+                          final at = items.length - 1 - index;
+                          final item = items[at];
                           return switch (item) {
                             MessageItem(:final message) => _withDivider(
                               message.id,
@@ -798,6 +818,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   message: message,
                                   sender: _model.names.of(message.sender),
                                   showSender: peer == null,
+                                  firstInRun: _startsRun(items, at, dividerBeforeId),
+                                  lastInRun: _endsRun(items, at, dividerBeforeId),
                                   mentionLabel: _mentionLabel,
                                   me: me,
                                   replyTo: switch (message.reply) {

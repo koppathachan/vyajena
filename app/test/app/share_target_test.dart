@@ -60,7 +60,7 @@ void main() {
 
     expect(core.calls, contains('sendText'));
     expect(core.sent, contains('look at this'));
-    expect(find.text('Sent to lobby'), findsOneWidget);
+    expect(find.text('Sent to #lobby'), findsOneWidget);
   });
 
   // spec: app-ui/vyajena-is-a-share-target

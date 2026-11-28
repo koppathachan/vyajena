@@ -11,14 +11,14 @@ class Steps extends Curve {
   double transformInternal(double t) => (t * steps).floorToDouble() / steps;
 }
 
-/// Hover/press: 200ms in 4 steps.
+/// Hover/press: 200ms in 10 steps (owner review 3: 4 was too choppy).
 const hoverDuration = Duration(milliseconds: 200);
-const hoverCurve = Steps(4);
+const hoverCurve = Steps(10);
 
-/// Entrance slide: 800ms in 8 steps, 120ms between siblings.
+/// Entrance slide: 800ms in 10 steps, 120ms between siblings.
 const entranceDuration = Duration(milliseconds: 800);
 const entranceStagger = Duration(milliseconds: 120);
-const entranceCurve = Steps(8);
+const entranceCurve = Steps(10);
 
 /// Float: one 3s loop of whole-pixel frames (motion.dart, floatFrames).
 const floatDuration = Duration(seconds: 3);

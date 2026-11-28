@@ -135,7 +135,7 @@ class InactivityNotice extends Notice {
 
 /// The lobby's fixed name (multi-group: The system lobby): the app shows it
 /// whatever any `GroupSettings` says.
-const lobbyName = 'lobby';
+const lobbyName = '#lobby';
 
 /// The title of a named group before the admin sets a name (app-ui: Named
 /// group screen).
@@ -256,10 +256,10 @@ class ChatModel extends ChangeNotifier {
   List<int> get unseenMentions => _unseen;
 
   /// A named group's name, once its admin set one; null for the lobby, whose
-  /// name is the fixed "lobby", and for a DM.
+  /// name is the fixed "#lobby", and for a DM.
   String? get groupName => _groupName;
 
-  /// The chat's title: "lobby", a named group's name ("Unnamed group" until
+  /// The chat's title: "#lobby", a named group's name ("Unnamed group" until
   /// the admin sets one), or a DM's peer (the screen shows the peer's name).
   String get title => isMain
       ? lobbyName
