@@ -66,7 +66,9 @@ async fn offline_device_gets_one_ping_with_nothing_but_its_token() {
 
 // spec: message-delivery/content-free-wake-pings
 #[tokio::test]
-async fn at_most_one_ping_per_device_per_60_seconds() {
+async fn message_pings_are_floored_at_10_seconds() {
+    // A newly-queued message is floored at NEW_MESSAGE_PING_MIN_INTERVAL (10 s), not
+    // the 60 s nudge interval, so a real message is not held back for a whole minute.
     let mut w = world().await;
     set_token(&w.conn, &w.phone, "phone-fcm-token").await;
     w.phone_stream = offline(&w.conn, &w.phone).await;
@@ -74,11 +76,62 @@ async fn at_most_one_ping_per_device_per_60_seconds() {
 
     say(&mut w.admin, &mut w.admin_stream, b"one").await;
     pings_settle(&w.server, &w.phone, 1).await;
-    w.server.clock.advance(Duration::from_secs(59));
+    // A second message within 10 seconds collapses: no new ping.
+    w.server.clock.advance(Duration::from_secs(9));
     say(&mut w.admin, &mut w.admin_stream, b"two").await;
     pings_settle(&w.server, &w.phone, 1).await;
+    // Past the 10-second message floor, it pings again.
     w.server.clock.advance(Duration::from_secs(2));
     say(&mut w.admin, &mut w.admin_stream, b"three").await;
+    pings_settle(&w.server, &w.phone, 2).await;
+}
+
+// spec: message-delivery/content-free-wake-pings
+#[tokio::test]
+async fn a_recent_nudge_does_not_starve_a_new_message() {
+    // The failure this fixes: a real message queued within 60 s of a catch-up or
+    // own-access nudge used to be suppressed. A nudge must not consume the message
+    // interval.
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    // A first message pings and stays queued (the phone never acks).
+    say(&mut w.admin, &mut w.admin_stream, b"first").await;
+    pings_settle(&w.server, &w.phone, 1).await;
+
+    // 65 s later the catch-up sweep sends a nudge for the still-pending backlog.
+    w.server.clock.advance(Duration::from_secs(65));
+    w.server.sweep().await;
+    pings_settle(&w.server, &w.phone, 2).await;
+
+    // 15 s after the nudge — within its 60 s window — a new message still pings.
+    // Under the old single-budget limiter the nudge would have suppressed it.
+    w.server.clock.advance(Duration::from_secs(15));
+    say(&mut w.admin, &mut w.admin_stream, b"second").await;
+    pings_settle(&w.server, &w.phone, 3).await;
+}
+
+// spec: message-delivery/content-free-wake-pings
+#[tokio::test]
+async fn nudge_pings_keep_the_60_second_cadence() {
+    let mut w = world().await;
+    set_token(&w.conn, &w.phone, "phone-fcm-token").await;
+    w.phone_stream = offline(&w.conn, &w.phone).await;
+    wait_offline(&w.server, &w.phone).await;
+
+    // A message leaves a backlog and pings once.
+    say(&mut w.admin, &mut w.admin_stream, b"a message").await;
+    pings_settle(&w.server, &w.phone, 1).await;
+
+    // A sweep more than 60 s later sends a nudge for the backlog.
+    w.server.clock.advance(Duration::from_secs(65));
+    w.server.sweep().await;
+    pings_settle(&w.server, &w.phone, 2).await;
+    // Another sweep less than 60 s after the nudge sends none.
+    w.server.clock.advance(Duration::from_secs(30));
+    w.server.sweep().await;
     pings_settle(&w.server, &w.phone, 2).await;
 }
 

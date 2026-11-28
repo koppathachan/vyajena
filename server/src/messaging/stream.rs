@@ -262,7 +262,12 @@ impl Session {
                     recipients = notify.len(),
                     "accepted an envelope"
                 );
-                super::notify_in(&self.state, notify, Some(group_id));
+                super::notify_in(
+                    &self.state,
+                    notify,
+                    Some(group_id),
+                    crate::push::PingClass::Message,
+                );
                 super::notify_own_access(&self.state, own_access);
                 for (device, notice) in notices {
                     self.state.hub.send_frame(&device, notice);
@@ -557,8 +562,10 @@ pub(crate) async fn run(
     // notification-reliability: Re-ping on stream loss with a backlog. The
     // stream closed or idled out; if the device still has undelivered entries
     // (queued while this stream was open but dead, or never acked), wake it so
-    // the backlog is not left unpinged. `notify` skips a device that reconnected
-    // meanwhile and applies the one-per-60 s wake-ping limit.
+    // the backlog is not left unpinged. This delivers a pending message, so it is
+    // a `Message`-class ping (the inner gate still requires a notifiable backlog);
+    // `notify` skips a device that reconnected meanwhile and applies the
+    // per-device message interval.
     let had_backlog = session
         .state
         .store
@@ -566,7 +573,11 @@ pub(crate) async fn run(
         .await
         .unwrap_or(false);
     if had_backlog {
-        super::notify(&session.state, vec![device_id]);
+        super::notify(
+            &session.state,
+            vec![device_id],
+            crate::push::PingClass::Message,
+        );
     }
     tracing::debug!(device = %crate::runtime::redact(&device_id), "stream closed");
 }

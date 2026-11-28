@@ -367,7 +367,7 @@ impl Keys for KeysService {
             reason = %reason,
             "a device asked to be added again"
         );
-        messaging::notify(&self.state, notify);
+        messaging::notify(&self.state, notify, crate::push::PingClass::Nudge);
         for (helper, notice) in rejoin {
             self.state.hub.send_frame(&helper, notice);
         }

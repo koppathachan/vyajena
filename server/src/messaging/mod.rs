@@ -30,7 +30,7 @@ pub(crate) use write::{Context, mark_inactive};
 use crate::auth::caller;
 use crate::pb;
 use crate::pb::messaging_server::{Messaging, MessagingServer};
-use crate::push::WakeOutcome;
+use crate::push::{PingClass, WakeOutcome};
 use crate::runtime::State;
 use crate::store::records;
 
@@ -72,8 +72,8 @@ impl Messaging for MessagingService {
 /// device): an offline device is pinged only when it has a pending
 /// `APPLICATION` entry; control envelopes (commit/welcome/proposal) still wake
 /// an open stream here but fire no push.
-pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
-    notify_in(state, devices, None);
+pub(crate) fn notify(state: &State, devices: Vec<DeviceId>, class: PingClass) {
+    notify_in(state, devices, None, class);
 }
 
 /// Like [`notify`], but for entries that belong to one conversation. The wake
@@ -82,7 +82,12 @@ pub(crate) fn notify(state: &State, devices: Vec<DeviceId>) {
 /// open-stream wake and the queued entry are unaffected. With `group_id` `None`
 /// (a general backlog or catch-up nudge, not one conversation), only `muted_all`
 /// suppresses the ping.
-pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<Vec<u8>>) {
+pub(crate) fn notify_in(
+    state: &State,
+    devices: Vec<DeviceId>,
+    group_id: Option<Vec<u8>>,
+    class: PingClass,
+) {
     if devices.is_empty() {
         return;
     }
@@ -90,7 +95,7 @@ pub(crate) fn notify_in(state: &State, devices: Vec<DeviceId>, group_id: Option<
     if offline.is_empty() {
         return;
     }
-    ping_offline(state, offline, Why::Backlog(group_id));
+    ping_offline(state, offline, Why::Backlog(group_id), class);
 }
 
 /// An admin-event changed `devices`' own access (message-delivery: Content-free
@@ -110,7 +115,8 @@ pub(crate) fn notify_own_access(state: &State, devices: Vec<DeviceId>) {
     if offline.is_empty() {
         return;
     }
-    ping_offline(state, offline, Why::OwnAccess);
+    // An own-access admin-event is a nudge, not a new user message.
+    ping_offline(state, offline, Why::OwnAccess, PingClass::Nudge);
 }
 
 /// Why an offline device may be pinged.
@@ -124,7 +130,7 @@ enum Why {
 
 /// Sends the content-free wake push to each of `offline` that qualifies under
 /// `why` and has a push token, at most once per device per minute.
-fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why) {
+fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why, class: PingClass) {
     let state = state.clone();
     tokio::spawn(async move {
         let wanted = offline.clone();
@@ -147,6 +153,11 @@ fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why) {
                     let muted_group = match &why {
                         Why::Backlog(group_id) => {
                             if !log::has_application_backlog(conn, &device_id)? {
+                                tracing::debug!(
+                                    device = %crate::runtime::redact(&device_id),
+                                    reason = "no_notifiable_backlog",
+                                    "wake ping skipped"
+                                );
                                 continue;
                             }
                             group_id.as_deref()
@@ -154,6 +165,11 @@ fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why) {
                         Why::OwnAccess => None,
                     };
                     if crate::prefs::push_muted(conn, &device.username, muted_group)? {
+                        tracing::debug!(
+                            device = %crate::runtime::redact(&device_id),
+                            reason = "muted",
+                            "wake ping skipped"
+                        );
                         continue;
                     }
                     if let Some(token) = records::push_token(conn, &device_id)? {
@@ -173,17 +189,31 @@ fn ping_offline(state: &State, offline: Vec<DeviceId>, why: Why) {
         for (device_id, token) in tokens {
             // A device that connected meanwhile gets the entries on its stream.
             if state.hub.is_connected(&device_id) {
+                tracing::debug!(
+                    device = %crate::runtime::redact(&device_id),
+                    reason = "connected",
+                    "wake ping skipped"
+                );
                 continue;
             }
             if state.hub.pings().take(
                 &device_id,
                 state.clock.now(),
+                class,
+                state.config.limits.new_message_ping_min_interval,
                 state.config.limits.wake_ping_min_interval,
             ) {
                 let sent = token.token.clone();
                 if state.push.wake(device_id, token).await == WakeOutcome::TokenInvalid {
                     clear_invalid_token(&state, device_id, sent).await;
                 }
+            } else {
+                tracing::debug!(
+                    device = %crate::runtime::redact(&device_id),
+                    reason = "rate_limited",
+                    class = ?class,
+                    "wake ping skipped"
+                );
             }
         }
     });

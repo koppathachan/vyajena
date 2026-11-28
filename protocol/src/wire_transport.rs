@@ -99,6 +99,17 @@ pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(25);
 /// The server closes a stream that has received nothing for this long (Heartbeats).
 pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
+/// The server sends an HTTP/2 keepalive PING on an otherwise-idle `Connect`
+/// connection at least this often, so a dead or half-open connection is detected
+/// well before [`STREAM_IDLE_TIMEOUT`] (Heartbeats). A conforming client's HTTP/2
+/// layer answers PINGs automatically.
+pub const HTTP2_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(20);
+
+/// The server closes a `Connect` connection whose HTTP/2 keepalive PING is
+/// unanswered for this long (Heartbeats). Detection is about
+/// [`HTTP2_KEEPALIVE_INTERVAL`] + [`HTTP2_KEEPALIVE_TIMEOUT`].
+pub const HTTP2_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// The exact bytes a device auth key signs to answer a challenge:
 /// [`AUTH_CONTEXT`] `|| nonce || tls_exporter` (Session authentication).
 pub fn auth_signing_input(nonce: &[u8], tls_exporter: &[u8]) -> Vec<u8> {

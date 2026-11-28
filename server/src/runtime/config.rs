@@ -39,11 +39,14 @@
 //!                                        #   cost of server storage.
 //! queue_cap = 1000                       # per-device queue before marked inactive.
 //! stream_idle_timeout = 90               # seconds idle before a stream is reaped.
+//! http2_keepalive_interval = 20          # seconds between HTTP/2 keepalive PINGs.
+//! http2_keepalive_timeout = 10           # seconds before an unanswered PING closes it.
 //! invite_ttl = 604800                    # 7 days.
 //! blob_ttl = 604800                      # 7 days.
 //! challenge_ttl = 60                     # seconds an auth challenge is valid.
 //! dedup_min_retention = 604800           # 7 days; keep >= queue_entry_ttl.
-//! wake_ping_min_interval = 60            # min seconds between wake pushes per device.
+//! wake_ping_min_interval = 60            # min seconds between nudge wake pushes per device.
+//! new_message_ping_min_interval = 10     # min seconds between message wake pushes per device.
 //! catch_up_max = 5                       # bounded catch-up push attempts per backlog.
 //! sweep_interval = 60                    # seconds between periodic sweeps.
 //! max_blob_store_bytes = 1073741824      # 1 GiB blob-store ceiling.
@@ -125,6 +128,12 @@ pub struct Limits {
     pub queue_cap: usize,
     /// Idle before a `Connect` stream is reaped (`STREAM_IDLE_TIMEOUT`).
     pub stream_idle_timeout: Duration,
+    /// Interval between HTTP/2 keepalive PINGs on an idle `Connect` connection
+    /// (`HTTP2_KEEPALIVE_INTERVAL`).
+    pub http2_keepalive_interval: Duration,
+    /// How long an unanswered HTTP/2 keepalive PING waits before the connection is
+    /// closed (`HTTP2_KEEPALIVE_TIMEOUT`).
+    pub http2_keepalive_timeout: Duration,
     /// How long a created invite is usable (`INVITE_TTL`).
     pub invite_ttl: Duration,
     /// How long a stored blob is kept (`BLOB_TTL`).
@@ -133,8 +142,12 @@ pub struct Limits {
     pub challenge_ttl: Duration,
     /// Minimum retention of dedup records (`DEDUP_MIN_RETENTION`).
     pub dedup_min_retention: Duration,
-    /// Minimum interval between wake pushes to one device (`WAKE_PING_MIN_INTERVAL`).
+    /// Minimum interval between nudge wake pushes to one device
+    /// (`WAKE_PING_MIN_INTERVAL`).
     pub wake_ping_min_interval: Duration,
+    /// Minimum interval between wake pushes for a newly-queued notifiable message to
+    /// one device (`NEW_MESSAGE_PING_MIN_INTERVAL`).
+    pub new_message_ping_min_interval: Duration,
     /// Bounded catch-up push attempts for one backlog (`CATCH_UP_MAX`).
     pub catch_up_max: u32,
     /// How often the periodic sweep runs (`SWEEP_INTERVAL`, server-local).
@@ -163,11 +176,15 @@ impl Default for Limits {
             queue_entry_ttl: protocol::message_delivery::QUEUE_ENTRY_TTL,
             queue_cap: protocol::message_delivery::QUEUE_CAP,
             stream_idle_timeout: protocol::wire_transport::STREAM_IDLE_TIMEOUT,
+            http2_keepalive_interval: protocol::wire_transport::HTTP2_KEEPALIVE_INTERVAL,
+            http2_keepalive_timeout: protocol::wire_transport::HTTP2_KEEPALIVE_TIMEOUT,
             invite_ttl: protocol::device_identity::INVITE_TTL,
             blob_ttl: protocol::blob_store::BLOB_TTL,
             challenge_ttl: protocol::wire_transport::CHALLENGE_TTL,
             dedup_min_retention: protocol::message_delivery::DEDUP_MIN_RETENTION,
             wake_ping_min_interval: protocol::message_delivery::WAKE_PING_MIN_INTERVAL,
+            new_message_ping_min_interval:
+                protocol::message_delivery::NEW_MESSAGE_PING_MIN_INTERVAL,
             catch_up_max: protocol::message_delivery::CATCH_UP_MAX,
             sweep_interval: DEFAULT_SWEEP_INTERVAL,
             max_blob_store_bytes: protocol::blob_store::MAX_BLOB_STORE_BYTES,
@@ -238,11 +255,14 @@ pub mod field {
         "queue_entry_ttl",
         "queue_cap",
         "stream_idle_timeout",
+        "http2_keepalive_interval",
+        "http2_keepalive_timeout",
         "invite_ttl",
         "blob_ttl",
         "challenge_ttl",
         "dedup_min_retention",
         "wake_ping_min_interval",
+        "new_message_ping_min_interval",
         "catch_up_max",
         "sweep_interval",
         "max_blob_store_bytes",
@@ -440,6 +460,12 @@ fn limits(table: &toml::Table) -> Result<Limits, ConfigError> {
     if let Some(n) = pos_int(sub, "stream_idle_timeout")? {
         limits.stream_idle_timeout = Duration::from_secs(n);
     }
+    if let Some(n) = pos_int(sub, "http2_keepalive_interval")? {
+        limits.http2_keepalive_interval = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "http2_keepalive_timeout")? {
+        limits.http2_keepalive_timeout = Duration::from_secs(n);
+    }
     if let Some(n) = pos_int(sub, "invite_ttl")? {
         limits.invite_ttl = Duration::from_secs(n);
     }
@@ -454,6 +480,9 @@ fn limits(table: &toml::Table) -> Result<Limits, ConfigError> {
     }
     if let Some(n) = pos_int(sub, "wake_ping_min_interval")? {
         limits.wake_ping_min_interval = Duration::from_secs(n);
+    }
+    if let Some(n) = pos_int(sub, "new_message_ping_min_interval")? {
+        limits.new_message_ping_min_interval = Duration::from_secs(n);
     }
     if let Some(n) = pos_int(sub, "catch_up_max")? {
         limits.catch_up_max = bounded_u32("catch_up_max", n)?;

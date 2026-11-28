@@ -135,6 +135,6 @@ pub async fn sweep(state: &State) -> Result<(), StoreError> {
                 .await?;
         }
     }
-    super::notify(state, swept.notify);
+    super::notify(state, swept.notify, crate::push::PingClass::Nudge);
     Ok(())
 }
