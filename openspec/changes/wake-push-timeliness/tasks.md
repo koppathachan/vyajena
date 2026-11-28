@@ -5,8 +5,10 @@ its tests pass. Run `cargo clippy --workspace --all-targets -- -D warnings`,
 `cargo fmt --check` and `openspec validate wake-push-timeliness --strict` before done.
 
 ## 1. Constants (protocol)
-- [x] 1.1 Add `HTTP2_KEEPALIVE_INTERVAL` (20 s) and `HTTP2_KEEPALIVE_TIMEOUT` (10 s)
-      to `protocol/src/wire_transport.rs`.
+- [x] 1.1 Add `HTTP2_KEEPALIVE_INTERVAL` (30 s) and `HTTP2_KEEPALIVE_TIMEOUT` (20 s)
+      to `protocol/src/wire_transport.rs`. Interval kept above `HEARTBEAT_INTERVAL`
+      (25 s) so the server does not ping just before each app heartbeat; timeout has
+      headroom so a briefly-slow mobile radio is not false-closed.
 - [x] 1.2 Add `NEW_MESSAGE_PING_MIN_INTERVAL` (10 s) to
       `protocol/src/message_delivery.rs`, next to `WAKE_PING_MIN_INTERVAL`.
 
@@ -18,13 +20,21 @@ its tests pass. Run `cargo clippy --workspace --all-targets -- -D warnings`,
 - [x] 2.2 `server/src/runtime/mod.rs` (`Server::builder()` ~:247): set
       `.http2_keepalive_interval(Some(..))` and `.http2_keepalive_timeout(Some(..))`
       from the config.
-- [x] 2.3 Test: the keepalive is a tonic transport option with no in-process getter,
-      and a true half-open socket can't be simulated against the in-memory harness,
-      so there is no new unit test for it. The behaviour it accelerates — a lost
-      stream with a backlog gets a re-ping — is already covered by
+- [x] 2.3 The keepalive PING crosses an otherwise-idle `Connect` stream, which
+      tripped `client/tests/connection.rs` `heartbeats_keep_an_idle_stream_open`
+      (it counts relay bytes to spot the 25 s app heartbeat; the 20 s PING moved
+      bytes first, so the mock-clock reaper then reaped a healthy stream — a test
+      artifact, not a production fault: the client answers the PING in ~2 ms).
+      Fixed by `TestServer::start_with_quiet_keepalive` (pushes the keepalive a day
+      out) for that test, plus the corrected `heartbeat_answered` doc comment. The
+      re-ping-on-stream-loss behaviour the keepalive accelerates stays covered by
       `server/tests/notification_reliability.rs`
-      (`a_backlog_at_stream_loss_gets_a_catch_up_ping`). Transport-level detection is
-      verified by the staging check in 2.4.
+      (`a_backlog_at_stream_loss_gets_a_catch_up_ping`).
+- [ ] 2.3a FOLLOW-UP (deferred): add a test that the keepalive itself closes a
+      genuinely half-open connection. Needs a relay `stall()` that stops forwarding
+      bytes without dropping the TCP sockets (`cut()` sends FIN, so it exercises the
+      clean-close path, not half-open). Out of scope for this fix; transport-level
+      detection is meanwhile verified by the staging check in 2.4.
 - [ ] 2.4 Manual/staging check (owner or test session): a killed client's connection
       is closed within ~30 s **through the rathole relay**; note the result in
       `design.md`.

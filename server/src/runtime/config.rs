@@ -39,8 +39,8 @@
 //!                                        #   cost of server storage.
 //! queue_cap = 1000                       # per-device queue before marked inactive.
 //! stream_idle_timeout = 90               # seconds idle before a stream is reaped.
-//! http2_keepalive_interval = 20          # seconds between HTTP/2 keepalive PINGs.
-//! http2_keepalive_timeout = 10           # seconds before an unanswered PING closes it.
+//! http2_keepalive_interval = 30          # seconds between HTTP/2 keepalive PINGs.
+//! http2_keepalive_timeout = 20           # seconds before an unanswered PING closes it.
 //! invite_ttl = 604800                    # 7 days.
 //! blob_ttl = 604800                      # 7 days.
 //! challenge_ttl = 60                     # seconds an auth challenge is valid.

@@ -7,8 +7,8 @@ has received nothing for 90 seconds.
 
 In addition, the server SHALL keep each `Connect` connection alive with HTTP/2
 keepalive PINGs: it SHALL send a keepalive PING on an otherwise-idle connection at
-least every `HTTP2_KEEPALIVE_INTERVAL` (20 seconds) and SHALL close a connection
-whose keepalive PING is unanswered within `HTTP2_KEEPALIVE_TIMEOUT` (10 seconds),
+least every `HTTP2_KEEPALIVE_INTERVAL` (30 seconds) and SHALL close a connection
+whose keepalive PING is unanswered within `HTTP2_KEEPALIVE_TIMEOUT` (20 seconds),
 then treat the device as offline. A conforming client's HTTP/2 layer answers these
 PINGs automatically, with no application involvement. This detects a dead or
 half-open connection within about `HTTP2_KEEPALIVE_INTERVAL + HTTP2_KEEPALIVE_TIMEOUT`
