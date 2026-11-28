@@ -132,4 +132,37 @@ void main() {
     expect(stops(core), 1);
     expect(background.calls, ['begin', 'end']);
   });
+
+  // spec: app-ui/stop-the-core-when-the-phone-locks
+  testWidgets('Lock during a background send: the core stops at once', (
+    tester,
+  ) async {
+    final (core, background) = await openApp(tester, unsent: true);
+    connected(core);
+    await tester.pump();
+    pause(tester);
+    await tester.pump(const Duration(seconds: 5));
+    expect(stops(core), 0, reason: 'still finishing the send');
+    expect(background.calls, ['begin']);
+    // The phone locks: the core must stop before its background tick reads the
+    // now-unreadable NSFileProtectionComplete database (would SIGBUS).
+    background.lock();
+    await tester.pump();
+    expect(stops(core), 1);
+    expect(background.calls, ['begin', 'end']);
+  });
+
+  // spec: app-ui/stop-the-core-when-the-phone-locks
+  testWidgets('Already locked when backgrounded: the core stops at once, no '
+      'wait', (tester) async {
+    final (core, background) = await openApp(tester, unsent: true);
+    background.available = false; // the phone is already locked
+    connected(core);
+    await tester.pump();
+    pause(tester);
+    await tester.pump();
+    await tester.pump();
+    expect(stops(core), 1, reason: 'no wait while protected data is unavailable');
+    expect(background.calls, ['begin', 'end']);
+  });
 }

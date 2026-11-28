@@ -18,6 +18,16 @@ abstract class BackgroundTaskApi {
 
   /// The system says the time is over: stop at once.
   Stream<void> get expired;
+
+  /// iOS says its protected data became unavailable: the device locked, so the
+  /// core's `NSFileProtectionComplete` database is about to be unreadable and the
+  /// core must stop before it touches it (change `ios-stop-core-when-locked`).
+  /// Never fires on a phone without the native side (Android, tests).
+  Stream<void> get locked;
+
+  /// Whether iOS protected data is available now (the device is unlocked). A
+  /// phone without the native side (Android, tests) is always available.
+  Future<bool> protectedDataAvailable();
 }
 
 /// The real one, over `vyajena/background`.
@@ -25,14 +35,29 @@ class MethodChannelBackgroundTask implements BackgroundTaskApi {
   MethodChannelBackgroundTask() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'expired') _expired.add(null);
+      if (call.method == 'locked') _locked.add(null);
     });
   }
 
   static const _channel = MethodChannel('vyajena/background');
   final _expired = StreamController<void>.broadcast();
+  final _locked = StreamController<void>.broadcast();
 
   @override
   Stream<void> get expired => _expired.stream;
+
+  @override
+  Stream<void> get locked => _locked.stream;
+
+  @override
+  Future<bool> protectedDataAvailable() async {
+    try {
+      return await _channel.invokeMethod<bool>('protectedDataAvailable') ?? true;
+    } on MissingPluginException {
+      // No native side (Android, tests): nothing to protect, always available.
+      return true;
+    }
+  }
 
   // A phone without the native side (Android, tests) just has no extra time.
   @override
