@@ -189,7 +189,7 @@ class SketchDivider extends StatelessWidget {
     super.key,
     this.seed = 0,
     this.color,
-    this.thickness = 2,
+    this.thickness = arcadeBorderWidth,
     this.height = 12,
     this.indent = 0,
   });

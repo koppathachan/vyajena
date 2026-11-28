@@ -1,5 +1,5 @@
 // app-shell: Chats list (the Chats tab); app-ui: Chat list (changes `dms`,
-// `lobby-multi-group`). One unified list: the lobby first, labelled "lobby",
+// `lobby-multi-group`). One unified list: the lobby first, labelled "#lobby",
 // then the admin's named groups, then the DMs by the peer's name, newest
 // message first, closed ones last and greyed. Each row: an avatar, the name, a
 // one-line preview of the newest message (with a media glyph), its time, an
@@ -397,7 +397,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ),
       ChatKindInfo_Dm(:final peer, :final closed) => (
         ValueKey('chat-${chat.chatId}'),
-        _names.of(peer),
+        _names.short(peer),
         closed ? dmClosedText(_names.short(peer)) : null,
         closed,
         // manual-presence: Presence indicator on avatars. A DM row shows the

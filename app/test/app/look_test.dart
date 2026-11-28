@@ -30,16 +30,16 @@ void main() {
     expect(darkTheme.scaffoldBackgroundColor, const Color(0xFF0F0F23));
     expect(darkTheme.colorScheme.onSurface, const Color(0xFFFFFFFF));
     expect(darkTheme.cardTheme.color, const Color(0xFF1B1B3A));
-    // A duller yellow than #FFFF00 (owner review 2).
-    expect(darkTheme.colorScheme.primary, const Color(0xFFE6D84D));
-    expect(lightTheme.scaffoldBackgroundColor, const Color(0xFFFFF8E7));
+    // A duller amber than #FFFF00 (owner reviews 2 and 3).
+    expect(darkTheme.colorScheme.primary, const Color(0xFFD9B84A));
+    expect(lightTheme.scaffoldBackgroundColor, const Color(0xFFF6EBCB));
     expect(lightTheme.colorScheme.onSurface, const Color(0xFF0F0F23));
-    expect(lightTheme.cardTheme.color, const Color(0xFFFFFFFF));
+    expect(lightTheme.cardTheme.color, const Color(0xFFFFFBEF));
     expect(lightTheme.colorScheme.primary, const Color(0xFF764BA2));
     expect(ArcadeTokens.dark.border, const Color(0xFFFFFFFF));
     expect(ArcadeTokens.light.border, const Color(0xFF0F0F23));
-    expect(ArcadeTokens.light.headingShadowColor, const Color(0xFFFF0000));
-    expect(ArcadeTokens.dark.headingShadowColor, const Color(0xFFFF0000));
+    expect(ArcadeTokens.light.headingShadowColor, const Color(0xFFD9A520));
+    expect(ArcadeTokens.dark.headingShadowColor, const Color(0xFFE5484D));
   });
 
   // spec: app-ui/arcade-look
@@ -90,7 +90,13 @@ void main() {
         final red = heading.shadows!.first;
         expect(red.offset, Offset(offset, offset));
         expect(red.blurRadius, 0);
-        expect(red.color, const Color(0xFFFF0000));
+        // Red in dark, dull gold in light (owner review 3).
+        expect(
+          red.color,
+          theme.brightness == Brightness.light
+              ? const Color(0xFFD9A520)
+              : const Color(0xFFE5484D),
+        );
         // Light mode draws the heading twice, 0.6px apart, so dark-on-light
         // reads as thick as light-on-dark (owner review 2).
         if (theme.brightness == Brightness.light) {
@@ -174,11 +180,12 @@ void main() {
     expect(const Steps(4).transform(0.30), 0.25);
     expect(const Steps(4).transform(0.99), 0.75);
     expect(const Steps(4).transform(1), 1);
+    expect(const Steps(10), hoverCurve);
     expect(hoverDuration, const Duration(milliseconds: 200));
     expect(entranceDuration, const Duration(milliseconds: 800));
     expect(entranceStagger, const Duration(milliseconds: 120));
     expect(floatDuration, const Duration(seconds: 3));
-    expect(const Steps(8), entranceCurve);
+    expect(const Steps(10), entranceCurve);
     expect(maxTextScale, 1.3);
   });
 

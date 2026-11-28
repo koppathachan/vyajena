@@ -15,12 +15,12 @@ void main() {
       'pill and a tint, and is first', (tester) async {
     await openHome(tester, aliceWithEverything());
     final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
-    expect(tileTitle(tiles.first), 'lobby');
+    expect(tileTitle(tiles.first), '#lobby');
     expect(find.byKey(const Key('lobby-hash-tile')), findsOneWidget);
     expect(find.byKey(const Key('lobby-system-pill')), findsOneWidget);
     expect(find.text('system'), findsOneWidget);
     expect(tiles.first.tileColor, isNotNull);
-    final name = tester.widget<Text>(find.text('lobby'));
+    final name = tester.widget<Text>(find.text('#lobby'));
     expect(name.style?.fontStyle, FontStyle.italic);
     // The hash tile is a hand-drawn square with the 2px border.
     final tile = tester.widget<Container>(
@@ -37,7 +37,7 @@ void main() {
       'one tile', (tester) async {
     await openHome(tester, aliceWithEverything());
     final tiles = tester.widgetList<ListTile>(find.byType(ListTile)).toList();
-    expect(tiles.map(tileTitle), ['lobby', 'Weekend', 'Bobby (bob)']);
+    expect(tiles.map(tileTitle), ['#lobby', 'Weekend', 'Bobby']);
     for (final tile in tiles.skip(1)) {
       expect(tile.tileColor, isNull);
       expect(

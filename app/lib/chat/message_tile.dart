@@ -13,7 +13,6 @@
 //
 // app-ui: Play a voice message. A voice message is a bubble with a play button
 // and the waveform (audio_bubble.dart).
-import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/gestures.dart';
@@ -100,6 +99,20 @@ const deletedQuote = 'deleted message';
 /// Receiver may reveal in a DM).
 const revealLabel = 'Reveal';
 
+/// How close in time, in ms, two messages from one sender must be to share a
+/// run (app-ui: Compact message runs).
+const runGapMs = 2 * 60 * 1000;
+
+/// Whether [b], the message after [a], continues [a]'s run: the same sender
+/// within [runGapMs].
+bool sameRun(ChatMessage a, ChatMessage b) {
+  if (a.sender != b.sender || a.ownUser != b.ownUser) return false;
+  final ta = (a.sentAtMs ?? a.acceptedAtMs)?.toInt();
+  final tb = (b.sentAtMs ?? b.acceptedAtMs)?.toInt();
+  if (ta == null || tb == null) return false;
+  return (tb - ta).abs() <= runGapMs;
+}
+
 /// One message row.
 class MessageTile extends StatelessWidget {
   const MessageTile({
@@ -124,9 +137,17 @@ class MessageTile extends StatelessWidget {
     this.revealed,
     this.playback,
     this.showSender = true,
+    this.firstInRun = true,
+    this.lastInRun = true,
   });
 
   final ChatMessage message;
+
+  /// Whether this bubble opens a run of one sender's messages (it names the
+  /// sender) and whether it closes it (it shows the time and the hard shadow).
+  /// A lone message is both (app-ui: Compact message runs).
+  final bool firstInRun;
+  final bool lastInRun;
 
   /// Whether another user's bubble names its sender: in the lobby and named
   /// groups only, never in a DM (app-shell: Conversation screen).
@@ -573,6 +594,11 @@ class MessageTile extends StatelessWidget {
     final own = message.ownUser;
     final status = message.outgoing ? message.status : null;
     final sentMs = (message.sentAtMs ?? message.acceptedAtMs)?.toInt();
+    // The time and the delivery tick sit on a run's last bubble; a bubble
+    // earlier in the run shows a mark only when it is not simply delivered.
+    final showMeta = lastInRun
+        ? (sentMs != null || status != null)
+        : (status != null && status is! SendState_Accepted);
     // A revealed tombstone shows the original body in place of the tombstone.
     final displayBody = message.body is ChatBody_Deleted && revealed != null
         ? revealed!.body
@@ -624,7 +650,7 @@ class MessageTile extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (showSender) ...[
+              if (showSender && firstInRun) ...[
                 Text(
                   sender,
                   style: text.labelMedium?.copyWith(color: scheme.primary),
@@ -635,15 +661,15 @@ class MessageTile extends StatelessWidget {
             ],
           );
     final arcade = context.arcade;
-    // Hand-drawn look: every bubble sits a few pixels off the column, a hair
-    // turned, with its own wobble, so the list never looks stacked. All from
-    // the message id, so a bubble keeps its place on every rebuild.
-    // A theme that is not lively (app-ui: Theme choice) keeps the column.
-    final jitter = SketchRandom(sketchSeed('bubble-${message.id}'));
-    final lively = arcade.lively;
-    final side = lively ? 8 + jitter.next() * 10 : 12.0;
-    final top = lively ? 1 + jitter.next() * 3 : 2.0;
-    final turn = sticker || !lively ? 0.0 : jitter.range(0.6) * math.pi / 180;
+    // Compact runs (app-ui: Compact message runs): a fixed 10px from the
+    // screen edge, no tilt, 2px between the bubbles of one run and 8px between
+    // runs, and the hard shadow on the run's last bubble only. Each bubble keeps
+    // its own hand-drawn wobble, from the message id.
+    const side = 10.0;
+    final top = firstInRun ? 4.0 : 1.0;
+    final shadow = lastInRun ? bubbleShadow * arcade.shadowScale : 0.0;
+    final bottom = lastInRun ? 2.0 + shadow : 1.0;
+    const turn = 0.0;
     final bubble = Align(
       alignment: own ? Alignment.centerRight : Alignment.centerLeft,
       child: _turned(
@@ -663,7 +689,7 @@ class MessageTile extends StatelessWidget {
               ? const RoundedRectangleBorder()
               : ArcadeBorder(
                   color: message.mentionsMe ? arcade.mention : arcade.border,
-                  shadow: bubbleShadow * arcade.shadowScale,
+                  shadow: shadow,
                   shadowColor: arcade.shadow,
                   seed: sketchSeed('bubble-${message.id}'),
                   rough: arcade.rough,
@@ -672,17 +698,17 @@ class MessageTile extends StatelessWidget {
             own ? 12 : side,
             top,
             own ? side : 12,
-            top + bubbleShadow * arcade.shadowScale,
+            bottom,
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 5),
             child: IntrinsicWidth(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   content,
-                  if (sentMs != null || status != null) ...[
+                  if (showMeta) ...[
                     const SizedBox(height: 2),
                     // The time and the delivery tick sit on one right-aligned
                     // line below the body. A MainAxisSize.max Row forwards its
@@ -693,7 +719,7 @@ class MessageTile extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.end,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        if (sentMs != null)
+                        if (sentMs != null && lastInRun)
                           Text(
                             clockText(context, sentMs),
                             key: ValueKey('time-${message.id}'),
@@ -703,9 +729,9 @@ class MessageTile extends StatelessWidget {
                               ),
                             ),
                           ),
-                        if (sentMs != null && status != null)
+                        if (sentMs != null && lastInRun && status != null)
                           const SizedBox(width: 6),
-                        if (status != null)
+                        if (status != null && (lastInRun || status is! SendState_Accepted))
                           Flexible(
                             child: Text(
                               statusText(status),

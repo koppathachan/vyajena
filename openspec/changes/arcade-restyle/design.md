@@ -88,6 +88,21 @@ wobble, 0 for straight), `lively` (tilt, bubble offsets, icon bob),
 `ArcadeFloat` and the bubble jitter read `lively` from the context. The choice
 is one more string in `shared_preferences`, beside the Auto/Light/Dark one.
 
+**D16 Owner review 3 (2026-11-28).** Chosen on the style-mixer artifact against
+the running app: dark yellow `#E6D84D` becomes amber `#D9B84A`; the light page
+becomes butter `#F6EBCB` and its cards, app bar, nav bar and incoming bubbles
+`#FFFBEF` (they were pure white, so white covered most of the screen); the
+light heading's red shadow becomes dull gold `#D9A520` (red on cream vibrated;
+the dark mode keeps `#FF0000`); borders go from 2px to 1px (`arcadeBorderWidth`,
+dividers follow it); the dark heading shadow softens to `#E5484D`; hover and
+entrance go from 4 and 8 steps to 10 each, so they read as smooth with a trace
+of step. Chat bubbles become compact runs (spec: Compact message runs):
+consecutive messages from one sender within 2 minutes share one run, with fixed
+10px margins, no tilt and the shadow on the last bubble only. The bubble's max
+width stays 480px: on a phone it already reached about 92% of the screen. The chat list's DM rows and the Contacts tab show one name,
+the display name else the username (`UserNames.short`), not "Name (username)". The float keeps its 8 whole-pixel
+frames: a 4px bob cannot show more than about 5 distinct positions.
+
 ## Verification
 
 Widget tests on the fake core; the owner reviews light and dark on a simulator
