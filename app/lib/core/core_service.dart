@@ -592,14 +592,6 @@ abstract class CoreService {
   /// the user is looking at the app).
   Future<void> clearAdminEvents(int upTo);
 
-  /// This device's "Notification detail" level (app-ui: Notification detail
-  /// level): [NotificationDetailLevel.basic] until the user picks More.
-  Future<NotificationDetailLevel> notificationDetail();
-
-  /// Sets this device's "Notification detail" level. Local only: it changes no
-  /// push and is never sent to the server.
-  Future<void> setNotificationDetail(NotificationDetailLevel level);
-
   // --- Presence (manual-presence; change `manual-presence`) ---
 
   /// Sets this user's own manual presence flag (manual-presence: Setting your

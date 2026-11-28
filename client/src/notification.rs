@@ -13,34 +13,6 @@
 
 use crate::events::{ChatId, ChatKind};
 
-/// How much a notification says (app-ui: Notification detail level). A per-device
-/// choice; it only changes how the app renders, never what the server sends.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NotificationDetail {
-    /// Only the generic "New message": no count, no type. The default.
-    #[default]
-    Basic,
-    /// The per-conversation count and type, still no sender and no text.
-    More,
-}
-
-impl NotificationDetail {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Basic => "basic",
-            Self::More => "more",
-        }
-    }
-
-    pub(crate) fn parse(text: &str) -> Option<Self> {
-        match text {
-            "basic" => Some(Self::Basic),
-            "more" => Some(Self::More),
-            _ => None,
-        }
-    }
-}
-
 /// What kind of conversation a notification is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConversationKind {

@@ -232,10 +232,6 @@ abstract class Core implements RustOpaqueInterface {
   /// only then.
   Future<bool> namedGroupsAvailable();
 
-  /// This device's "Notification detail" level (app-ui: Notification detail
-  /// level): Basic until the user picks More.
-  Future<NotificationDetailLevel> notificationDetail();
-
   /// What to show as notifications right now (local-notifications: The device
   /// builds the notification locally): per conversation with unread messages
   /// its type and unread count, plus pending admin-events. Metadata only: it
@@ -469,10 +465,6 @@ abstract class Core implements RustOpaqueInterface {
     required PlatformInt64 chatId,
     required bool muted,
   });
-
-  /// Sets this device's "Notification detail" level. Local only: never sent to
-  /// the server, and it changes no push.
-  Future<void> setNotificationDetail({required NotificationDetailLevel level});
 
   /// manual-presence: Setting your status. Sets this user's own manual flag —
   /// `true` for Online, `false` for Offline — recording it on this device and

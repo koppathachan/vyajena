@@ -9,7 +9,7 @@ use rusqlite::params;
 
 use super::{Store, StoreError};
 use crate::clock::unix_millis;
-use crate::notification::{AdminEventKind, NotificationDetail};
+use crate::notification::AdminEventKind;
 
 impl Store {
     /// Records an admin-event on `group_id` until the app has notified for it
@@ -61,35 +61,6 @@ impl Store {
             conn.execute(
                 "DELETE FROM notification_admin_events WHERE id <= ?1",
                 params![up_to],
-            )?;
-            Ok(())
-        })
-    }
-
-    /// The chosen "Notification detail" level; Basic until one is chosen.
-    pub fn notification_detail(&self) -> Result<NotificationDetail, StoreError> {
-        self.db.with(|conn| {
-            let level: Option<String> = conn
-                .query_row(
-                    "SELECT level FROM notification_detail WHERE id = 1",
-                    [],
-                    |row| row.get(0),
-                )
-                .ok();
-            Ok(level
-                .as_deref()
-                .and_then(NotificationDetail::parse)
-                .unwrap_or_default())
-        })
-    }
-
-    /// Chooses the "Notification detail" level for this device.
-    pub fn set_notification_detail(&self, level: NotificationDetail) -> Result<(), StoreError> {
-        self.db.with(|conn| {
-            conn.execute(
-                "INSERT INTO notification_detail (id, level) VALUES (1, ?1)
-                 ON CONFLICT (id) DO UPDATE SET level = excluded.level",
-                params![level.as_str()],
             )?;
             Ok(())
         })

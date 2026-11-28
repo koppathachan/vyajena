@@ -116,16 +116,15 @@ class NotificationService {
 
   static int _max(int a, int b) => a > b ? a : b;
 
-  /// The words to show now, from the core's summary and this device's level.
+  /// The words to show now, from the core's summary.
   Future<RenderedNotifications> render() async {
     final summary = await core.notificationSummary();
-    final level = await core.notificationDetail();
-    return renderNotifications(summary, level);
+    return renderNotifications(summary);
   }
 
   /// Saves what the iOS Notification Service Extension may show, and sets the
-  /// app-icon badge. Call it when the app goes to the background and when the
-  /// detail level changes, so the saved words match the core's unread state.
+  /// app-icon badge. Call it when the app goes to the background, so the saved
+  /// words match the core's unread state.
   Future<void> refreshSnapshot() {
     final step = _queue.then((_) async {
       try {
@@ -150,8 +149,7 @@ class NotificationService {
     try {
       await _caughtUp();
       final summary = await core.notificationSummary();
-      final level = await core.notificationDetail();
-      final rendered = renderNotifications(summary, level);
+      final rendered = renderNotifications(summary);
       if (!rendered.isEmpty) {
         await api.showNotifications(rendered);
         if (summary.adminEvents.isNotEmpty) {
